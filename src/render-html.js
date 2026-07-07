@@ -34,6 +34,54 @@ function depthLabel(tool) {
   return bits.join(' · ');
 }
 
+// Formatea bytes a una unidad legible (B/KB/MB). Solo presentación: el dato
+// crudo (tool.footprint.bytes) ya viene agregado y saneado del scanner.
+function humanizeBytes(bytes) {
+  if (bytes === null || bytes === undefined) return null;
+  if (bytes < 1024) return `${bytes}&nbsp;B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb < 10 ? kb.toFixed(1) : Math.round(kb)}&nbsp;KB`;
+  const mb = kb / 1024;
+  return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)}&nbsp;MB`;
+}
+
+// tool.footprint es null cuando la herramienta no tiene ruta propia que medir
+// (detectada solo por bin/vscodeExt) — se renderiza null y el llamador lo omite.
+function footprintLabel(tool) {
+  if (!tool.footprint) return null;
+  const { bytes, files } = tool.footprint;
+  const size = humanizeBytes(bytes);
+  const filesLabel = `${files}&nbsp;${files === 1 ? 'fichero' : 'ficheros'}`;
+  return size ? `${filesLabel} · ${size}` : filesLabel;
+}
+
+const RECENCY_LABEL = {
+  today: 'hoy',
+  this_week: 'esta semana',
+  this_month: 'este mes',
+  this_quarter: 'este trimestre',
+  stale: 'desactualizado',
+};
+
+// Badge de recencia: cuenta con bucket=null (sin footprint que fechar) y lo
+// omite en silencio, en vez de mostrar un estado inventado.
+function recencyBadge(tool) {
+  const r = tool.recency;
+  if (!r || !r.bucket) return '';
+  const label = RECENCY_LABEL[r.bucket] || r.bucket;
+  const title = r.lastModified
+    ? `última modificación: ${new Date(r.lastModified).toLocaleDateString()}`
+    : '';
+  return `<span class="recency ${esc(r.bucket)}"${title ? ` title="${esc(title)}"` : ''}>${esc(label)}</span>`;
+}
+
+// tool.version es null cuando no se detectó por binario en PATH, o el binario
+// no respondió a --version: se omite, nunca se inventa "desconocida".
+function versionLabel(tool) {
+  if (!tool.version) return '';
+  return `<span class="ver">v${esc(tool.version)}</span>`;
+}
+
 function toolRow(tool) {
   if (!tool.detected) {
     return `<li class="tool off">
@@ -47,12 +95,14 @@ function toolRow(tool) {
   const s = strength(tool);
   const bars = Array.from({ length: 4 }, (_, i) =>
     `<i class="${i < s ? 'on' : ''}"></i>`).join('');
+  const metaLeft = [depthLabel(tool), footprintLabel(tool)].filter(Boolean).join(' · ')
+    || esc(tool.vendor);
   return `<li class="tool on">
     <span class="dot" aria-hidden="true"></span>
-    <span class="nm">${esc(tool.name)}</span>
+    <span class="nm">${esc(tool.name)}${versionLabel(tool)}</span>
     <span class="cat">${esc(tool.category)}</span>
     <span class="sig" title="intensidad de configuración">${bars}</span>
-    <span class="meta">${depthLabel(tool) || esc(tool.vendor)}</span>
+    <span class="meta"><span class="left">${metaLeft}</span>${recencyBadge(tool)}</span>
   </li>`;
 }
 
@@ -65,6 +115,14 @@ function renderHtml(report, maturity) {
 
   const detectedCount = report.tools.filter((t) => t.detected).length;
   const dataJson = esc(JSON.stringify({ report, maturity }, null, 2));
+
+  // Bloque Entorno: campo nuevo del scanner, opcional por compatibilidad con
+  // informes generados antes de este campo (report.environment ausente).
+  const env = report.environment || {};
+  const editors = Array.isArray(env.editorsInstalled) ? env.editorsInstalled : [];
+  const editorChips = editors.length
+    ? editors.map((id) => `<span class="chip">${esc(id)}</span>`).join('')
+    : '<span class="chip empty">ninguno detectado</span>';
 
   // Escala de niveles 0..4 para el indicador de progreso por pasos.
   const levelPips = Array.from({ length: 5 }, (_, i) => {
@@ -215,6 +273,8 @@ function renderHtml(report, maturity) {
   .tool.on .dot{background:var(--emphasis);
     box-shadow:0 0 0 4px color-mix(in srgb,var(--emphasis) 18%, transparent)}
   .tool .nm{font-weight:600;letter-spacing:-.01em}
+  .tool .nm .ver{margin-left:7px;font-size:11px;font-weight:500;letter-spacing:0;
+    color:var(--faint);font-variant-numeric:tabular-nums;font-family:var(--font-mono)}
   .tool .cat{font-size:11px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;
     color:var(--secondary-fg);background:var(--secondary);
     padding:3px 9px;border-radius:var(--r-full);justify-self:start}
@@ -225,10 +285,38 @@ function renderHtml(report, maturity) {
   .tool .sig i:nth-child(4){height:16px}
   .tool.on .sig i.on{background:var(--emphasis)}
   .tool .meta{grid-column:2 / -1;font-size:12.5px;color:var(--faint);
-    font-variant-numeric:tabular-nums}
+    font-variant-numeric:tabular-nums;display:flex;flex-wrap:wrap;
+    align-items:center;justify-content:space-between;gap:4px 10px}
+  .tool .meta .left{min-width:0}
   .tool.off{background:color-mix(in srgb,var(--bg) 55%, var(--surface))}
   .tool.off .nm{color:var(--faint);font-weight:500}
   .tool.off .cat{background:transparent;color:var(--faint);padding-left:0}
+
+  /* ---- Badge de recencia (bucket derivado del mtime, ver ADR-003 scanner) ---- */
+  .recency{flex:none;font-size:10px;font-weight:600;letter-spacing:.04em;
+    text-transform:uppercase;padding:2px 8px;border-radius:var(--r-full);
+    white-space:nowrap}
+  .recency.today,.recency.this_week{background:var(--secondary);color:var(--secondary-fg)}
+  .recency.this_month{background:var(--track);color:var(--muted)}
+  .recency.this_quarter{background:var(--track);color:var(--faint)}
+  .recency.stale{background:color-mix(in srgb,var(--accent-lime) 32%, transparent);
+    color:var(--accent-lime-fg)}
+
+  /* ---- Entorno ---- */
+  .env{padding:20px 22px;display:flex;flex-wrap:wrap;gap:20px 36px;align-items:flex-start}
+  .env-grid{display:flex;flex-wrap:wrap;gap:18px 32px}
+  .env-item{display:flex;flex-direction:column;gap:4px;min-width:100px}
+  .env-item .k{font-size:11px;font-weight:600;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--faint)}
+  .env-item .v{font-size:14px;font-weight:600;color:var(--fg);
+    font-variant-numeric:tabular-nums}
+  .env-editors{display:flex;flex-direction:column;gap:8px;flex:1;min-width:200px}
+  .env-editors .k{font-size:11px;font-weight:600;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--faint)}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{font-size:11px;font-weight:500;letter-spacing:.02em;color:var(--secondary-fg);
+    background:var(--secondary);padding:3px 10px;border-radius:var(--r-full)}
+  .chip.empty{background:transparent;color:var(--faint);padding-left:0}
 
   /* ---- Siguiente paso (acento lime = impulso) ---- */
   .next{padding:22px 24px;border-left:4px solid var(--accent-lime);
@@ -304,6 +392,21 @@ function renderHtml(report, maturity) {
     <ul class="tools">
       ${rows}
     </ul>
+  </section>
+
+  <section>
+    <div class="h2">Entorno</div>
+    <div class="card env">
+      <div class="env-grid">
+        <div class="env-item"><span class="k">Plataforma</span><span class="v">${esc(env.platform ?? '—')}</span></div>
+        <div class="env-item"><span class="k">Arquitectura</span><span class="v">${esc(env.arch ?? '—')}</span></div>
+        <div class="env-item"><span class="k">Node</span><span class="v">${esc(env.nodeVersion ?? '—')}</span></div>
+      </div>
+      <div class="env-editors">
+        <span class="k">Editores instalados</span>
+        <div class="chips">${editorChips}</div>
+      </div>
+    </div>
   </section>
 
   <section>
