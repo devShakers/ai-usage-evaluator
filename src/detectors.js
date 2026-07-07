@@ -231,6 +231,8 @@ const detectors = [
     signals: [
       // Confianza media: directorio de configuración de la app de terminal Warp.
       { type: 'homePath', path: '.warp' },
+      // En Linux la configuración de Warp vive bajo ~/.config/warp-terminal.
+      { type: 'homePath', path: '.config/warp-terminal' },
     ],
   },
   {
