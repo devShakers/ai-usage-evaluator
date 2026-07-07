@@ -9,17 +9,17 @@ const { renderHtml } = require('../src/render-html');
 const { save } = require('../src/store');
 
 function parseArgs(argv) {
-  const opts = { html: false, json: false, save: true, root: null, enroll: null, share: false, yes: false };
+  const opts = { html: false, json: false, save: true, root: null, enroll: null, consent: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--html' || a === '-w') opts.html = true;
     else if (a === '--json') opts.json = true;
     else if (a === '--no-save') opts.save = false;
     else if (a === '--root') opts.root = argv[++i];
-    else if (a === '--share') opts.share = true;
-    else if (a === '--yes' || a === '-y') opts.yes = true;
     else if (a === '--enroll') opts.enroll = argv[++i];
     else if (a.startsWith('--enroll=')) opts.enroll = a.slice('--enroll='.length);
+    else if (a === '--consent') opts.consent = argv[++i];
+    else if (a.startsWith('--consent=')) opts.consent = a.slice('--consent='.length);
     else if (a === '--help' || a === '-h') opts.help = true;
   }
   return opts;
@@ -42,17 +42,18 @@ Uso:
   ai-footprint [opciones]
 
 Opciones:
-  -w, --html         Genera y abre el dashboard HTML en el navegador
-      --json         Imprime el informe en JSON por stdout
-      --no-save      No guarda nada en disco (solo muestra)
-      --root DIR     Escanea DIR en vez del directorio actual
-      --enroll CODE  Enrola este equipo con el código de tu panel de Shakers
-      --share        Envía tu informe a la plataforma (pide confirmación)
-  -y, --yes          En --share, no preguntar (usar con cuidado)
-  -h, --help         Muestra esta ayuda
+  -w, --html          Genera y abre el dashboard HTML en el navegador
+      --json          Imprime el informe en JSON por stdout
+      --no-save       No guarda nada en disco (solo muestra)
+      --root DIR      Escanea DIR en vez del directorio actual
+      --enroll CODE   Enrola este equipo con el código de tu panel de Shakers
+      --consent on|off  Activa/desactiva el envío automático de tu informe
+  -h, --help          Muestra esta ayuda
 
-El informe se genera y se muestra SIEMPRE en tu equipo. El envío (--share) es
-opt-in, requiere estar enrolado y te muestra el payload exacto antes de mandar.
+El informe se genera y se muestra SIEMPRE en tu equipo. Si estás enrolado y el
+envío está activado (--consent on), tu informe se envía automáticamente al
+final de cada ejecución (máx. 1 vez por hora), sin preview ni confirmación.
+Sin enrolar, o con el envío desactivado, todo se queda en local.
 `;
 }
 
@@ -63,7 +64,10 @@ async function doEnroll(code) {
     const r = await enroll(code);
     if (r.ok) {
       process.stdout.write(`  Listo. Enrolado${r.cred.talentId ? ` como ${r.cred.talentId}` : ''}.\n`);
-      process.stdout.write('  Ya puedes usar: ai-footprint --share\n\n');
+      process.stdout.write(
+        '  El envío automático está DESACTIVADO por defecto. Actívalo con:\n' +
+        '    ai-footprint --consent=on\n\n',
+      );
     } else {
       process.stdout.write(`  No se pudo enrolar: ${r.reason}\n\n`);
       process.exitCode = 1;
@@ -74,15 +78,36 @@ async function doEnroll(code) {
   }
 }
 
-async function doShare(report, maturity, assumeYes) {
-  const { share } = require('../src/share');
-  try {
-    const r = await share(report, maturity, { assumeYes });
-    if (r.ok) process.stdout.write('  Informe enviado. Gracias.\n\n');
-    else process.stdout.write(`  ${r.reason}\n\n`);
-  } catch (e) {
-    process.stdout.write(`  Error al enviar: ${e.message}\n\n`);
+async function doConsent(value) {
+  const { setConsent } = require('../src/share');
+  const enabled = /^on$/i.test(value);
+  const disabled = /^off$/i.test(value);
+  if (!enabled && !disabled) {
+    process.stdout.write('  Valor no válido para --consent: usa "on" u "off".\n\n');
     process.exitCode = 1;
+    return;
+  }
+  const r = setConsent(enabled);
+  if (r.ok) {
+    process.stdout.write(`  Envío automático de tu informe ${enabled ? 'ACTIVADO' : 'DESACTIVADO'}.\n\n`);
+  } else {
+    process.stdout.write(`  ${r.reason}\n\n`);
+    process.exitCode = 1;
+  }
+}
+
+// Envío automático, silencioso: sin preview ni confirmación (ADR-005,
+// talents-ai-score). Nunca debe romper el run local, pase lo que pase.
+async function maybeAutoShare(report, maturity) {
+  const { autoShare } = require('../src/share');
+  try {
+    const r = await autoShare(report, maturity);
+    if (!r.ok && r.notice) process.stdout.write(`  ${r.notice}\n\n`);
+    // Resto de motivos para no enviar (no enrolado, consentimiento OFF,
+    // throttle, red, 429, otros HTTP): silenciosos a propósito, no son
+    // errores del run local.
+  } catch {
+    // Nunca debe romper el informe local.
   }
 }
 
@@ -96,6 +121,12 @@ async function main() {
   // Enrolamiento: no necesita escanear nada.
   if (opts.enroll) {
     await doEnroll(opts.enroll);
+    return;
+  }
+
+  // Activar/desactivar el envío automático: no necesita escanear nada.
+  if (opts.consent) {
+    await doConsent(opts.consent);
     return;
   }
 
@@ -125,10 +156,9 @@ async function main() {
     process.stdout.write(`  Dashboard temporal: ${tmp}\n\n`);
   }
 
-  // Envío opt-in, siempre al final y tras haber visto el informe.
-  if (opts.share) {
-    await doShare(report, maturity, opts.yes);
-  }
+  // Envío automático, siempre al final y tras haber visto el informe local.
+  // Gated por enrolamiento + consentimiento + throttle (src/share.js).
+  await maybeAutoShare(report, maturity);
 }
 
 main();

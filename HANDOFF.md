@@ -21,10 +21,14 @@ su perfil con la plataforma para entender la adopción de IA en el pool.
 
 ## 2. Decisiones de diseño clave (con su porqué)
 
-1. **Local primero, envío aparte y opt-in.** El repo original solo autodiagnostica
+1. **Local primero, envío aparte y automático.** El repo original solo autodiagnostica
    y no envía nada. Aquí el informe se genera y se muestra siempre en local (es el
    gancho de valor para el talento). El envío a la plataforma es un paso separado,
-   explícito, y solo tras mostrar el payload y pedir confirmación.
+   automático tras enrolarse (sin preview ni confirmación por-ejecución), gated por
+   un flag de consentimiento persistido en la credencial local — **activo por
+   defecto** (ADR-006, `active-work/talents-ai-score/decisions.md`; revisa el
+   default OFF original de ADR-005), pero desactivable en cualquier momento con
+   `--consent=off` sin re-enrolar.
 
 2. **Solo se envían señales derivadas, nunca contenido.** Se comparten booleanos
    (detectada sí/no), conteos (nº de MCP, skills, reglas) y nivel/score. Nunca el
@@ -73,7 +77,7 @@ src/maturity.js               Cálculo de nivel (0-4) y score (0-100)
 src/render-terminal.js        Salida en terminal con colores ANSI
 src/render-html.js            Dashboard HTML autocontenido
 src/store.js                  Persistencia en ~/.config/ai-footprint/
-src/share.js                  Enrolamiento, consentimiento y envío (opt-in)
+src/share.js                  Enrolamiento, flag de consentimiento (ON por defecto) y envío automático
 reference-server/server.js    Servidor de referencia (STUB en memoria) con capa admin
 ```
 
@@ -110,13 +114,19 @@ Shakers, (2) instala con el one-liner o clonando, (3) ejecuta el `--enroll` una
 vez, que canjea el código por un token guardado en `~/.config/ai-footprint/`.
 
 Cada vez que quiera: ejecuta `ai-footprint` (o `--html`) desde la carpeta de su
-proyecto y ve su informe en local. Esto NO requiere enrolamiento ni envía nada.
+proyecto y ve su informe en local. Sin enrolar, esto NO envía nada.
 
-Compartir (opcional): `ai-footprint --share` muestra el payload exacto, pide
-confirmación y envía con el token guardado.
+Envío: si está enrolado y el consentimiento está ON (por defecto, ADR-006),
+cada ejecución normal envía el informe automáticamente al final, sin preview
+ni confirmación, con un throttle cliente de 1h (no reenvía si el último envío
+fue hace menos de una hora). Puede desactivarlo en cualquier momento con
+`ai-footprint --consent=off` (y reactivarlo con `--consent=on`), sin volver a
+enrolarse.
 
-Re-enrolar: solo si el token caduca (TTL) o se revoca. El siguiente `--share` da
-401 con mensaje de "vuelve a enrolarte". Instalar no hace falta otra vez.
+Re-enrolar: solo si el token caduca (TTL) o se revoca. El siguiente intento de
+envío automático falla en silencio salvo por un aviso no bloqueante de "vuelve
+a enrolarte" (401); el informe local sigue funcionando igual. Instalar no hace
+falta otra vez.
 
 El escáner mira la carpeta actual (config de proyecto) y el home (config global),
 por eso se ejecuta desde dentro del proyecto.
@@ -140,7 +150,8 @@ Todo lo siguiente se ha verificado end to end en local:
   Claude Code, Cursor, Copilot, Windsurf, Gemini, Codex).
 - Instalación por copia (repo clonado) y desinstalación (`install.sh --uninstall`).
 - Dashboard HTML autocontenido (verificado: sin ninguna llamada de red).
-- Enrolamiento, consentimiento con payload exacto, envío y atribución.
+- Enrolamiento, envío automático gated por el flag de consentimiento persistido,
+  y atribución.
 - Rechazos del servidor: 401 token inválido/revocado/caducado, 404 código
   desconocido, 409 código ya usado, 429 rate limit (5/hora).
 - Ciclo de control: admin emite código -> talento enrola y envía -> admin audita
@@ -168,9 +179,13 @@ El servidor de referencia es un ejemplo mínimo. Antes de producción:
 
 Enviar datos sobre cómo trabaja una persona es tratamiento de datos personales
 (RGPD, consentimiento, transparencia), y los talentos suelen estar en la UE.
-El envío debe validarse con un experto legal/laboral antes de activarse en
-producción. El diseño ya es opt-in y transparente (muestra el payload), pero eso
-no sustituye la base jurídica ni la información previa.
+Desde ADR-006 el envío es automático y el flag de consentimiento del CLI viene
+**activo por defecto** (igual que el kill switch de servidor) — decisión
+explícita del usuario, con la salvedad reforzada de que **requiere visto bueno
+de un experto legal/laboral ANTES de desplegar el backend y distribuir el CLI**,
+que es cuando arranca el flujo real de datos sobre talentos reales. El
+mecanismo de apagado (flag + kill switch) se mantiene intacto para poder
+revertir sin redeploy.
 
 ## 12. Próximos pasos sugeridos
 
