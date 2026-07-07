@@ -69,6 +69,16 @@ function evalSignal(sig, root) {
   }
 }
 
+// Resuelve la ruta absoluta de una señal projectPath/homePath. Las señales
+// bin/vscodeExt no apuntan a un fichero propio de la herramienta (vscodeExt
+// apunta al directorio COMPARTIDO de extensiones), así que no se usan para
+// tamaño ni recencia — mezclarlas ensuciaría ambas métricas.
+function resolveSignalPath(sig, root) {
+  if (sig.type === 'projectPath') return path.join(root, sig.path);
+  if (sig.type === 'homePath') return path.join(os.homedir(), sig.path);
+  return null;
+}
+
 /* ---------- sondas de PROFUNDIDAD: devuelven SOLO números ---------- */
 
 function countDirEntries(p) {
@@ -99,6 +109,149 @@ function countJsonKeys(file, key) {
   }
 }
 
+/* ---------- huella de configuración: SOLO tamaño en bytes y nº de ficheros ---------- */
+/* Nunca se guarda un nombre de fichero ni una ruta: se agregan solo números.  */
+
+const FOOTPRINT_MAX_DEPTH = 4; // acota el coste si algún dir de config es profundo
+const FOOTPRINT_MAX_FILES = 5000; // cota de seguridad, evita escaneos costosos
+
+function pathFootprint(p, depth = 0, budget = { files: 0 }) {
+  if (budget.files >= FOOTPRINT_MAX_FILES) return { bytes: 0, files: 0 };
+  try {
+    const st = fs.lstatSync(p);
+    if (st.isSymbolicLink()) return { bytes: 0, files: 0 }; // no seguimos symlinks
+    if (st.isFile()) {
+      budget.files += 1;
+      return { bytes: st.size, files: 1 };
+    }
+    if (st.isDirectory() && depth < FOOTPRINT_MAX_DEPTH) {
+      let bytes = 0;
+      let files = 0;
+      let entries = [];
+      try {
+        entries = fs.readdirSync(p, { withFileTypes: true });
+      } catch {
+        return { bytes: 0, files: 0 };
+      }
+      for (const e of entries) {
+        if (budget.files >= FOOTPRINT_MAX_FILES) break;
+        const sub = pathFootprint(path.join(p, e.name), depth + 1, budget);
+        bytes += sub.bytes;
+        files += sub.files;
+      }
+      return { bytes, files };
+    }
+    return { bytes: 0, files: 0 };
+  } catch {
+    return { bytes: 0, files: 0 };
+  }
+}
+
+function aggregateFootprint(paths) {
+  const budget = { files: 0 };
+  let bytes = 0;
+  let files = 0;
+  for (const p of paths) {
+    const sub = pathFootprint(p, 0, budget);
+    bytes += sub.bytes;
+    files += sub.files;
+  }
+  return { bytes, files };
+}
+
+/* ---------- recencia: SOLO mtime -> fecha derivada (ADR-003) ---------- */
+/* Prohibido: leer contenido de logs/historiales para inferir frecuencia de uso. */
+/* Único dato capturado: la fecha de última modificación de los ficheros/dirs de */
+/* configuración ya detectados como existentes — nunca su contenido.            */
+
+function latestMtime(paths) {
+  let max = null;
+  for (const p of paths) {
+    try {
+      const st = fs.statSync(p);
+      if (!max || st.mtime > max) max = st.mtime;
+    } catch {
+      /* ignorado: no existe o sin permisos */
+    }
+  }
+  return max;
+}
+
+function recencyBucket(days) {
+  if (days === null || days === undefined) return null;
+  if (days <= 1) return 'today';
+  if (days <= 7) return 'this_week';
+  if (days <= 30) return 'this_month';
+  if (days <= 90) return 'this_quarter';
+  return 'stale';
+}
+
+function computeRecency(paths) {
+  const mtime = latestMtime(paths);
+  if (!mtime) return { lastModified: null, daysSinceModified: null, bucket: null };
+  const daysSinceModified = Math.max(0, Math.floor((Date.now() - mtime.getTime()) / 86400000));
+  return {
+    lastModified: mtime.toISOString(),
+    daysSinceModified,
+    bucket: recencyBucket(daysSinceModified),
+  };
+}
+
+/* ---------- versión: SOLO se ejecuta el binario YA detectado, con --version ---------- */
+/* Nunca comandos arbitrarios; se descarta toda la salida salvo el patrón de versión. */
+
+function getVersion(bin) {
+  try {
+    const out = execFileSync(bin, ['--version'], {
+      timeout: 3000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).toString('utf8');
+    const match = out.match(/\d+\.\d+(?:\.\d+)?(?:[-.\w]*)?/);
+    return match ? match[0] : null;
+  } catch {
+    return null; // binario sin --version, timeout, o cualquier fallo: se ignora
+  }
+}
+
+/* ---------- metadatos de entorno: SO/arquitectura/editores instalados ---------- */
+
+const EDITOR_CANDIDATES = [
+  {
+    id: 'vscode',
+    name: 'Visual Studio Code',
+    signals: [{ type: 'bin', name: 'code' }, { type: 'homePath', path: '.vscode' }],
+  },
+  {
+    id: 'vscode-insiders',
+    name: 'VS Code Insiders',
+    signals: [{ type: 'bin', name: 'code-insiders' }, { type: 'homePath', path: '.vscode-insiders' }],
+  },
+  { id: 'sublime-text', name: 'Sublime Text', signals: [{ type: 'bin', name: 'subl' }] },
+  { id: 'vim', name: 'Vim', signals: [{ type: 'bin', name: 'vim' }] },
+  { id: 'neovim', name: 'Neovim', signals: [{ type: 'bin', name: 'nvim' }] },
+  { id: 'emacs', name: 'Emacs', signals: [{ type: 'bin', name: 'emacs' }] },
+  {
+    // Confianza media: la ruta de config de JetBrains varía por SO/producto/versión;
+    // se comprueba la carpeta paraguas de cada SO, no un IDE concreto.
+    id: 'jetbrains',
+    name: 'JetBrains IDEs',
+    signals: [
+      { type: 'homePath', path: '.config/JetBrains' },
+      { type: 'homePath', path: 'Library/Application Support/JetBrains' },
+      { type: 'homePath', path: 'AppData/Roaming/JetBrains' },
+    ],
+  },
+];
+
+function detectEditors(root) {
+  const installed = [];
+  for (const ed of EDITOR_CANDIDATES) {
+    const hit = ed.signals.some((s) => evalSignal(s, root));
+    if (hit) installed.push(ed.id);
+  }
+  return installed;
+}
+
 const probes = {
   'claude-code': (root) => ({
     mcpServers:
@@ -124,6 +277,9 @@ const probes = {
     rules:
       (exists(path.join(root, '.windsurfrules')) ? 1 : 0) +
       countFiles(path.join(root, '.windsurf', 'rules'), '.md'),
+    // Confianza media: nombre de fichero recordado de memoria, sin verificar
+    // contra la doc actual de Windsurf en este entorno (sin acceso a red).
+    mcpServers: countJsonKeys(path.join(os.homedir(), '.codeium', 'windsurf', 'mcp_config.json'), 'mcpServers'),
   }),
   aider: (root) => ({
     config: exists(path.join(root, '.aider.conf.yml')) ? 1 : 0,
@@ -135,9 +291,15 @@ const probes = {
   }),
   'gemini-cli': (root) => ({
     instructions: exists(path.join(root, 'GEMINI.md')) ? 1 : 0,
+    // Confianza media: mismo caveat que windsurf.mcpServers arriba.
+    mcpServers: countJsonKeys(path.join(os.homedir(), '.gemini', 'settings.json'), 'mcpServers'),
   }),
   'codex-cli': (root) => ({
     instructions: exists(path.join(root, 'AGENTS.md')) ? 1 : 0,
+  }),
+  trae: (root) => ({
+    // Confianza baja: estructura de `.trae/rules` no verificada (ver detectors.js).
+    rules: countFiles(path.join(root, '.trae', 'rules')),
   }),
 };
 
@@ -162,10 +324,36 @@ function scan(options = {}) {
       signalTypes: [...new Set(matched.map((s) => s.type))],
       signalCount: matched.length,
       depth: {},
+      // Huella de config: SOLO tamaño agregado en bytes y nº de ficheros, nunca
+      // rutas ni nombres. null cuando la herramienta no se detectó por
+      // projectPath/homePath (p.ej. solo por bin o vscodeExt: no hay ruta propia
+      // que medir sin arriesgar contar el directorio compartido de extensiones).
+      footprint: null,
+      // Recencia: SOLO fecha derivada del mtime más reciente entre sus ficheros
+      // de config ya detectados (ADR-003). Nunca contenido, logs ni historiales.
+      recency: { lastModified: null, daysSinceModified: null, bucket: null },
+      // Versión: solo si la herramienta se detectó por binario en PATH; se
+      // ejecuta ESE binario, ya detectado, con `--version` únicamente.
+      version: null,
     };
 
     if (detected && probes[det.id]) {
       tool.depth = probes[det.id](root);
+    }
+
+    if (detected) {
+      const pathSignals = matched
+        .map((s) => resolveSignalPath(s, root))
+        .filter((p) => p !== null);
+      if (pathSignals.length > 0) {
+        tool.footprint = aggregateFootprint(pathSignals);
+        tool.recency = computeRecency(pathSignals);
+      }
+
+      const binSignal = matched.find((s) => s.type === 'bin');
+      if (binSignal) {
+        tool.version = getVersion(binSignal.name);
+      }
     }
 
     tools.push(tool);
@@ -187,6 +375,17 @@ function scan(options = {}) {
     anonId,
     platform: process.platform,
     scope: options.root ? 'custom' : 'cwd',
+    // Metadatos de entorno: SO/arquitectura/versión de Node (constantes de
+    // process.*, nunca leídas de fichero) y qué editores tiene instalados
+    // (booleanos de presencia, catálogo EDITOR_CANDIDATES arriba). Campo nuevo,
+    // no rompe `platform` (se mantiene como string por compatibilidad con
+    // share.js/render-html.js existentes).
+    environment: {
+      platform: process.platform,
+      arch: process.arch,
+      nodeVersion: process.version,
+      editorsInstalled: detectEditors(root),
+    },
     summary: {
       totalDetected: detectedTools.length,
       categories: [...new Set(detectedTools.map((t) => t.category))],

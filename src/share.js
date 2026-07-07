@@ -118,6 +118,33 @@ async function enroll(enrollString) {
 
 // Solo estos campos salen del equipo. Aunque el objeto reporte crezca en el
 // futuro, aquí se elige explícitamente qué se comparte.
+//
+// DECISIÓN PENDIENTE (talents-ai-score, ampliación de señales — dejar al
+// humano, "default conservador" según el encargo): el escaneo local (scanner.js)
+// ahora produce más campos por herramienta (version, footprint, recency) y a
+// nivel de informe (environment: platform/arch/nodeVersion/editorsInstalled).
+// NINGUNO se ha añadido aquí todavía. Propuesta, campo por campo:
+//
+//   - tool.version                     -> NO incluir por defecto. Aumenta la
+//     capacidad de re-identificar/correlacionar el equipo entre envíos (huella
+//     más fina que anonId) sin un valor de producto claro a cambio.
+//   - tool.footprint (bytes/ficheros)  -> Riesgo bajo, sensibilidad similar a
+//     los conteos de depth ya compartidos. Candidato razonable a incluir, pero
+//     se deja a criterio humano: agrega tamaño real del equipo del talento, no
+//     es tan "puro" como un booleano/nivel.
+//   - tool.recency (mtime/días/bucket) -> NO incluir. Es la señal más sensible
+//     de las nuevas: aunque es una fecha derivada (ADR-003), enviarla convierte
+//     "huella de setup" en "monitorización de actividad" sobre cómo trabaja el
+//     talento — el riesgo que ADR-003 dejó explícitamente gated. Requiere
+//     revisión legal/RGPD antes de plantearlo siquiera.
+//   - environment.arch / .nodeVersion  -> Riesgo bajo, útil para entender el
+//     parque de máquinas del pool de talento. Candidato razonable.
+//   - environment.editorsInstalled     -> Riesgo bajo-medio (añade otra
+//     dimensión de fingerprint combinada con anonId). Fuera por defecto.
+//
+// Nada de lo anterior se activa solo: para incluir un campo, añadirlo aquí de
+// forma explícita tras decisión humana (y documentarlo en decisions.md si es
+// una decisión cross-role, ADR).
 function derivePayload(report, maturity) {
   return {
     schemaVersion: report.schemaVersion,
