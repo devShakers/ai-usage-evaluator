@@ -5,21 +5,41 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 const https = require('https');
-const readline = require('readline');
 
 /*
- * Capa de compartición OPT-IN.
+ * Capa de compartición.
  *
  * Principios:
  *  - El código público NO contiene ningún endpoint ni secreto. La URL a la que
  *    se envía llega DENTRO de la credencial que se obtiene al enrolarse.
  *  - Solo se envía un payload DERIVADO y mínimo (booleanos, conteos, nivel).
  *    Nunca contenido de ficheros, rutas ni credenciales del talento.
- *  - Antes de enviar nada se muestra el payload EXACTO y se pide confirmación.
+ *  - talents-ai-score / ADR-005: se retira el preview + confirmación
+ *    interactiva. El envío es AUTOMÁTICO al final de un run normal si hay
+ *    credencial vigente y el flag de consentimiento (persistido en la propia
+ *    credencial) está ON. "Construir el mecanismo no es activarlo": el flag
+ *    sigue existiendo justamente para poder apagar el envío sin tocar código
+ *    (además del kill switch de servidor — doble interruptor, ADR-005).
  */
 
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'ai-footprint');
 const CRED_PATH = path.join(CONFIG_DIR, 'credentials.json');
+
+// Throttle cliente: no reintentar un envío si el último fue hace menos de 1h.
+// Independiente del rate-limit del servidor (eso lo aplica el backend).
+const SEND_THROTTLE_MS = 60 * 60 * 1000;
+
+// DEFAULT del flag de consentimiento persistido en la credencial.
+//
+// ADR-006 (active-work/talents-ai-score/decisions.md) revisa explícitamente
+// el default OFF de ADR-005 a ON: "el usuario decide que el envío se haga
+// desde el arranque, sin defaults en OFF". El mecanismo de apagado (este flag
+// + el kill switch de servidor) se mantiene intacto — solo cambia el valor
+// por defecto. Por su propia salvedad, ADR-006 ES el punto de no retorno de
+// ADR-005: sigue requiriendo visto bueno legal/laboral ANTES de desplegar el
+// backend y distribuir el CLI (ese despliegue, no este código, es lo que
+// arranca el flujo real de datos sobre talentos reales).
+const DEFAULT_CONSENT = true;
 
 /* ---------- utilidad HTTP mínima (sin dependencias) ---------- */
 
@@ -76,6 +96,42 @@ function saveCredentials(cred) {
   try { fs.chmodSync(CRED_PATH, 0o600); } catch { /* p.ej. Windows */ }
 }
 
+/* ---------- consentimiento ----------
+ *
+ * El flag vive en la credencial local, no como argumento por-run (specs.md
+ * #cli-changes-ai-usage-evaluator). Default ON (ADR-006). `setConsent` es el
+ * mecanismo para apagarlo/encenderlo sin re-enrolar ni tocar código —
+ * necesario para poder revertir a OFF (o a opt-in restaurando el bloque de
+ * confirmación en código) si el gate legal de ADR-005/006 lo exige.
+ */
+
+function hasConsent(cred) {
+  if (!cred) return false;
+  return cred.consent === undefined ? DEFAULT_CONSENT : !!cred.consent;
+}
+
+function setConsent(enabled) {
+  const cred = loadCredentials();
+  if (!cred) {
+    return {
+      ok: false,
+      reason: 'No estás enrolado. Enrólate primero con: ai-footprint --enroll=TU_CODIGO',
+    };
+  }
+  cred.consent = !!enabled;
+  saveCredentials(cred);
+  return { ok: true, cred };
+}
+
+/* ---------- throttle cliente ---------- */
+
+function isThrottled(cred, now = Date.now()) {
+  if (!cred || !cred.lastSentAt) return false;
+  const last = new Date(cred.lastSentAt).getTime();
+  if (Number.isNaN(last)) return false;
+  return now - last < SEND_THROTTLE_MS;
+}
+
 /* ---------- enrolamiento ---------- */
 
 // La cadena de enrolamiento es base64url de {enrollUrl, code}. La genera el
@@ -104,6 +160,8 @@ async function enroll(enrollString) {
       talentId: res.json.talentId || null,
       enrolledAt: new Date().toISOString(),
       expiresAt: res.json.expiresAt || null,
+      consent: DEFAULT_CONSENT,
+      lastSentAt: null,
     };
     saveCredentials(cred);
     return { ok: true, cred };
@@ -164,60 +222,58 @@ function derivePayload(report, maturity) {
   };
 }
 
-/* ---------- consentimiento ---------- */
+/* ---------- envío automático ---------- */
 
-function askYesNo(question) {
-  return new Promise((resolve) => {
-    if (!process.stdin.isTTY) return resolve(false); // sin terminal: no enviar
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    rl.question(question, (ans) => {
-      rl.close();
-      resolve(/^s(i|í)?$/i.test(ans.trim()));
-    });
-  });
-}
-
-/* ---------- envío ---------- */
-
-async function share(report, maturity, { assumeYes = false } = {}) {
+// Envío silencioso: sin preview ni confirmación (ADR-005). Se invoca al final
+// de un run normal. Nunca lanza — cualquier motivo para no enviar o cualquier
+// fallo de envío resuelve con { ok:false, ... }, nunca rompe el informe local.
+async function autoShare(report, maturity) {
   const cred = loadCredentials();
-  if (!cred) {
-    return {
-      ok: false,
-      reason:
-        'No estás enrolado. Pide tu enlace en tu panel de Shakers y ejecuta:\n' +
-        '  ai-footprint --enroll=TU_CODIGO',
-    };
-  }
+  if (!cred) return { ok: false, skipped: true, reason: 'not-enrolled' };
   if (cred.expiresAt && new Date(cred.expiresAt) < new Date()) {
-    return { ok: false, reason: 'Tu credencial ha caducado. Vuelve a enrolarte.' };
+    return { ok: false, skipped: true, reason: 'expired' };
   }
+  if (!hasConsent(cred)) return { ok: false, skipped: true, reason: 'consent-off' };
+  if (isThrottled(cred)) return { ok: false, skipped: true, reason: 'throttled' };
 
   const payload = derivePayload(report, maturity);
 
-  // Mostrar SIEMPRE el payload exacto antes de enviar.
-  process.stdout.write('\n  Esto es exactamente lo que se enviaría a la plataforma:\n\n');
-  process.stdout.write(
-    JSON.stringify(payload, null, 2).split('\n').map((l) => '    ' + l).join('\n') + '\n\n',
-  );
-  process.stdout.write(`  Destino: ${cred.endpoint}\n`);
-  if (cred.talentId) process.stdout.write(`  Como talento: ${cred.talentId}\n`);
-  process.stdout.write('  No se incluye ningún contenido de ficheros, ruta ni credencial.\n\n');
+  let res;
+  try {
+    res = await requestJson('POST', cred.endpoint, { token: cred.token, body: payload });
+  } catch (e) {
+    // Fallo de red: no rompe el informe local.
+    return { ok: false, skipped: false, reason: 'network-error', error: e.message };
+  }
 
-  const go = assumeYes || (await askYesNo('  ¿Enviar este informe? [s/N] '));
-  if (!go) return { ok: false, reason: 'Envío cancelado. No se ha enviado nada.' };
-
-  const res = await requestJson('POST', cred.endpoint, { token: cred.token, body: payload });
-  if (res.status >= 200 && res.status < 300) return { ok: true, response: res.json };
-  if (res.status === 401) return { ok: false, reason: 'Credencial rechazada (401). Vuelve a enrolarte.' };
-  if (res.status === 429) return { ok: false, reason: 'Demasiados envíos (429). Prueba más tarde.' };
-  return { ok: false, reason: `El servidor respondió ${res.status}.` };
+  if (res.status >= 200 && res.status < 300) {
+    cred.lastSentAt = new Date().toISOString();
+    saveCredentials(cred);
+    return { ok: true, response: res.json };
+  }
+  if (res.status === 401) {
+    return {
+      ok: false,
+      skipped: false,
+      reason: 'unauthorized',
+      notice: 'Tu credencial ya no es válida. Vuelve a enrolarte: ai-footprint --enroll=TU_CODIGO',
+    };
+  }
+  if (res.status === 429) {
+    return { ok: false, skipped: false, reason: 'rate-limited' };
+  }
+  return { ok: false, skipped: false, reason: `http-${res.status}` };
 }
 
 module.exports = {
   enroll,
-  share,
+  autoShare,
+  setConsent,
+  hasConsent,
+  isThrottled,
   derivePayload,
   loadCredentials,
   CRED_PATH,
+  SEND_THROTTLE_MS,
+  DEFAULT_CONSENT,
 };
