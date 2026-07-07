@@ -3,7 +3,7 @@
 # AI Footprint — instalador
 #
 # Uso rápido (desde cualquier sitio):
-#   curl -fsSL https://raw.githubusercontent.com/devShakers/ai-usage-evaluator/feat/talents-ai-score/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/devShakers/ai-usage-evaluator/main/install.sh | bash
 #
 # O, si has clonado el repo, desde dentro de la carpeta:
 #   ./install.sh
@@ -17,11 +17,11 @@ set -euo pipefail
 # ─── Configuración (EDITA ESTO con tu org/repo real) ───────────────────────
 OWNER="devShakers"
 REPO="ai-usage-evaluator"
-# PoC "solo distribución" (active-work/talents-ai-score, ADR-002): esta rama de
-# feature es la única que existe hoy en el repo. Cuando se mergee a main,
-# cambiar BRANCH a "main" (el one-liner curl | raw.githubusercontent resuelve
-# los ficheros por rama, así que el instalador se rompe si no se actualiza).
-BRANCH="feat/talents-ai-score"
+# PoC "solo distribución" (active-work/talents-ai-score, ADR-002): el CLI ya
+# vive en main (el one-liner curl | raw.githubusercontent resuelve los
+# ficheros por rama, así que el instalador se rompe si BRANCH no coincide con
+# la rama publicada en el remoto).
+BRANCH="main"
 # ───────────────────────────────────────────────────────────────────────────
 
 RAW="https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}"

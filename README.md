@@ -1,7 +1,7 @@
 # AI Footprint
 
-> **Estado: prueba de concepto (PoC) — solo distribución.** Esta rama
-> (`feat/talents-ai-score`) publica únicamente el CLI. El informe local
+> **Estado: prueba de concepto (PoC) — solo distribución.** Este repositorio
+> publica únicamente el CLI (PoC). El informe local
 > funciona al 100%. `--enroll` / `--share` (compartir con la plataforma) están
 > **inertes**: no hay ningún servidor desplegado detrás. Ver la sección
 > ["Compartir el informe con la plataforma" ↓](#compartir-el-informe-con-la-plataforma-opt-in-todavía-no-disponible-en-esta-poc)
@@ -20,13 +20,12 @@ mercado, no solo Claude.
 Una sola línea:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/devShakers/ai-usage-evaluator/feat/talents-ai-score/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/devShakers/ai-usage-evaluator/main/install.sh | bash
 ```
 
-> Nota (PoC): el one-liner apunta a la rama `feat/talents-ai-score` porque es
-> la única que existe hoy en el repo. Cuando esta rama se mergee a `main`, la
-> URL de referencia pasará a usar `main` — revisa `install.sh` para la versión
-> vigente si este README queda desactualizado.
+> Nota (PoC): el one-liner apunta a la rama `main`, que es la única publicada
+> en el remoto — revisa `install.sh` para la versión vigente si este README
+> queda desactualizado.
 
 El instalador comprueba que tienes Node 18+, coloca la herramienta en
 `~/.ai-footprint/` y deja el comando `ai-footprint` en `~/.local/bin`.
@@ -38,7 +37,7 @@ antes de instalar, que es lo recomendable):
 ```bash
 git clone https://github.com/devShakers/ai-usage-evaluator
 cd ai-usage-evaluator
-git checkout feat/talents-ai-score
+git checkout main
 ./install.sh
 ```
 
