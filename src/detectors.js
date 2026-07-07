@@ -15,6 +15,16 @@
  *   homePath     -> ruta relativa al home del usuario
  *   bin          -> binario disponible en el PATH
  *   vscodeExt    -> extensión instalada en ~/.vscode/extensions (prefijo)
+ *
+ * NOTA sobre las entradas añadidas tras el catálogo original de 12 (herramienta
+ * talents-ai-score, ampliación de señales): igual que advierte
+ * active-work/talents-ai-score/decisions.md ADR-001, este catálogo envejece
+ * rápido y sigue sin dueño asignado. Cada entrada nueva lleva un comentario de
+ * CONFIANZA sobre sus rutas/ids exactos (no se ha podido verificar contra la
+ * documentación viva del vendor en este entorno, sin acceso a red). Confianza
+ * "media/baja" => falso negativo probable si el vendor cambió el nombre; el
+ * riesgo de falso positivo es bajo porque la comprobación es solo existencia.
+ * Revisar y corregir antes de tratar estas señales como definitivas.
  */
 
 const CATEGORIES = {
@@ -22,6 +32,7 @@ const CATEGORIES = {
   AI_EDITOR: 'Editor con IA',
   IDE_ASSISTANT: 'Asistente en IDE',
   COMPLETION: 'Autocompletado',
+  AI_TERMINAL: 'Terminal con IA',
 };
 
 const detectors = [
@@ -158,6 +169,82 @@ const detectors = [
     signals: [
       { type: 'homePath', path: '.config/TabNine' },
       { type: 'vscodeExt', prefix: 'tabnine.tabnine-vscode' },
+    ],
+  },
+
+  // ---- Ampliación (talents-ai-score, más señales) — confianza por entrada abajo ----
+  {
+    id: 'amazon-q-developer',
+    name: 'Amazon Q Developer',
+    vendor: 'AWS',
+    category: CATEGORIES.AGENTIC_CLI,
+    signals: [
+      // Confianza alta: binario e id de extensión estables de la CLI/extension oficiales.
+      { type: 'bin', name: 'q' },
+      { type: 'vscodeExt', prefix: 'amazonwebservices.amazon-q-vscode' },
+      // Confianza media: directorio de credenciales/caché de la CLI bajo .aws.
+      { type: 'homePath', path: '.aws/amazonq' },
+    ],
+  },
+  {
+    id: 'codeium',
+    name: 'Codeium',
+    vendor: 'Codeium (Exafunction)',
+    category: CATEGORIES.IDE_ASSISTANT,
+    signals: [
+      // Extensión base de Codeium (autocompletado en cualquier editor), distinta
+      // de Windsurf (editor propio, ya catalogado arriba). Confianza alta en el
+      // id de extensión; media en la ruta de config local.
+      { type: 'vscodeExt', prefix: 'codeium.codeium' },
+      { type: 'homePath', path: '.codeium/config.json' },
+    ],
+  },
+  {
+    id: 'supermaven',
+    name: 'Supermaven',
+    vendor: 'Supermaven',
+    category: CATEGORIES.COMPLETION,
+    signals: [
+      // Confianza alta en el id de extensión; media en el directorio de estado local.
+      { type: 'vscodeExt', prefix: 'supermaven.supermaven' },
+      { type: 'homePath', path: '.supermaven' },
+    ],
+  },
+  {
+    id: 'pieces',
+    name: 'Pieces for Developers',
+    vendor: 'Mesh Intelligent Technologies',
+    category: CATEGORIES.IDE_ASSISTANT,
+    signals: [
+      // Confianza media: id de extensión recordado de memoria, sin poder
+      // verificar contra el marketplace en este entorno. Sin homePath: la ruta
+      // de datos de Pieces OS difiere demasiado entre SO (Application
+      // Support/AppData/.local/share) para una señal fiable sin verificarla.
+      { type: 'vscodeExt', prefix: 'meshintelligenttechnologiesinc.pieces-vscode' },
+    ],
+  },
+  {
+    id: 'warp-ai',
+    name: 'Warp (AI terminal)',
+    vendor: 'Warp',
+    category: CATEGORIES.AI_TERMINAL,
+    signals: [
+      // Confianza media: directorio de configuración de la app de terminal Warp.
+      { type: 'homePath', path: '.warp' },
+    ],
+  },
+  {
+    id: 'trae',
+    name: 'Trae',
+    vendor: 'ByteDance',
+    category: CATEGORIES.AI_EDITOR,
+    signals: [
+      // Confianza baja/media: Trae es un fork de VS Code con reglas de proyecto
+      // al estilo Cursor/Windsurf; nombre de carpeta `.trae` no verificado contra
+      // documentación oficial en este entorno (sin acceso a red).
+      { type: 'projectPath', path: '.trae' },
+      { type: 'homePath', path: '.trae' },
+      { type: 'bin', name: 'trae' },
     ],
   },
 ];

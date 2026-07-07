@@ -19,7 +19,22 @@ const LEVELS = [
 ];
 
 const AGENTIC_IDS = ['claude-code', 'aider', 'gemini-cli', 'codex-cli'];
+// DECISIÓN ABIERTA (talents-ai-score, ampliación de señales): se añadió
+// 'amazon-q-developer' al catálogo (detectors.js) como CLI agéntica
+// (CATEGORIES.AGENTIC_CLI), pero NO se ha añadido a AGENTIC_IDS — cambiaría en
+// silencio qué cuenta para el nivel 4 ("CLI agéntica + MCP + personalización
+// propia", HANDOFF §4). Se deja fuera por defecto; añadirlo es una decisión
+// explícita pendiente de revisión humana, no un ajuste rutinario.
 
+// DECISIÓN (talents-ai-score, ampliación de señales): las definiciones de
+// nivel (LEVELS, HANDOFF §4) y los pesos de `score` de más abajo NO se han
+// tocado. Sí se añadieron sondas de profundidad nuevas en scanner.js
+// (windsurf.mcpServers, gemini-cli.mcpServers) que alimentan `mcp` aquí de
+// forma automática porque depthTotals ya suma `d.mcpServers` de CUALQUIER
+// herramienta por nombre de clave — no es una recalibración de la fórmula,
+// pero SÍ cambia el resultado para talentos con esas herramientas configuradas
+// (antes su MCP no contaba). Se mantiene porque hace el score más fiel a la
+// definición existente, no la redefine; se señala aquí por transparencia.
 function depthTotals(tools) {
   let instructions = 0; // ficheros de instrucciones/reglas de proyecto
   let mcp = 0; // servidores MCP configurados
