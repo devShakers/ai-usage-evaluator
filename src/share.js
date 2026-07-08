@@ -159,6 +159,48 @@ function recordConsent(decision, email = null) {
   return state;
 }
 
+/* ---------- consent management (issue 007: status / revoke / change email) ----------
+ *
+ * One-shot actions (do not scan), same pattern the retired `--enroll` used.
+ * GDPR-adjacent requirement (ADR-007): revocation must be trivial and must
+ * not require re-running the disclosure or scanning anything.
+ */
+
+// Read-only snapshot for `--consent-status`. Never throws.
+function getConsentStatus() {
+  const state = loadConsentState();
+  return {
+    consent: getConsentDecision(state),
+    email: state && state.email ? state.email : null,
+    lastSentAt: state && state.lastSentAt ? state.lastSentAt : null,
+  };
+}
+
+// Revokes consent unconditionally (works even with no prior decision, or
+// after a prior `denied` — idempotent): from this point on `autoShare`
+// skips with `consent-denied`. Does NOT re-scan or send a "last" report,
+// and does NOT clear the persisted email (kept for context/audit; a talent
+// who re-grants later doesn't have to retype it, though they still can via
+// `--consent-email` or by going through the disclosure flow again).
+function revokeConsent() {
+  const state = recordConsent('denied');
+  return { ok: true, state };
+}
+
+// Changes the persisted email WITHOUT touching the consent decision
+// (specs.md: "sin tocar la decisión de consentimiento"). Works whether or
+// not a decision exists yet; the next successful send (if consent is
+// `granted`) uses the new email.
+function setEmail(newEmail) {
+  if (!isValidEmail(newEmail)) {
+    return { ok: false, reason: 'invalid-email' };
+  }
+  const state = loadConsentState() || {};
+  state.email = normalizeEmail(newEmail);
+  saveConsentState(state);
+  return { ok: true, state };
+}
+
 /* ---------- client-side throttle ---------- */
 
 function isThrottled(state, now = Date.now()) {
@@ -281,6 +323,9 @@ module.exports = {
   saveConsentState,
   getConsentDecision,
   recordConsent,
+  getConsentStatus,
+  revokeConsent,
+  setEmail,
   isValidEmail,
   normalizeEmail,
   isThrottled,

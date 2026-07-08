@@ -10,7 +10,14 @@ const { renderHtml } = require('../src/render-html');
 const { save } = require('../src/store');
 const { detectReportLang, getCatalog } = require('../src/i18n');
 const { parseArgs } = require('../src/cli-args');
-const { loadConsentState, getConsentDecision, autoShare } = require('../src/share');
+const {
+  loadConsentState,
+  getConsentDecision,
+  autoShare,
+  getConsentStatus,
+  revokeConsent,
+  setEmail,
+} = require('../src/share');
 const { runDisclosureFlow } = require('../src/consent-flow');
 
 function openInBrowser(file) {
@@ -57,6 +64,37 @@ function createStdinAsk() {
   });
 }
 
+// One-shot consent management commands (issue 007). Mirror the retired
+// `--enroll` pattern: they act immediately and do NOT scan.
+
+function doConsentStatus(catalog) {
+  const status = getConsentStatus();
+  const s = catalog.consent.status;
+  process.stdout.write(`\n  ${s.heading}\n\n`);
+  const decisionLine =
+    status.consent === 'granted' ? s.decisionGranted
+    : status.consent === 'denied' ? s.decisionDenied
+    : s.decisionNone;
+  process.stdout.write(`  ${decisionLine}\n`);
+  process.stdout.write(`  ${s.email(status.email)}\n`);
+  process.stdout.write(`  ${s.lastSentAt(status.lastSentAt)}\n\n`);
+}
+
+function doConsentRevoke(catalog) {
+  revokeConsent();
+  process.stdout.write(`\n  ${catalog.consent.revoked}\n\n`);
+}
+
+function doConsentEmail(newEmail, catalog) {
+  const r = setEmail(newEmail);
+  if (r.ok) {
+    process.stdout.write(`\n  ${catalog.consent.emailChanged(r.state.email)}\n\n`);
+  } else {
+    process.stdout.write(`\n  ${catalog.consent.emailInvalidCli}\n\n`);
+    process.exitCode = 1;
+  }
+}
+
 // Automatic, silent sending once consent is `granted` (ADR-007). Must never
 // break the local run, no matter what.
 async function maybeAutoShare(report, maturity) {
@@ -80,6 +118,20 @@ async function main() {
 
   const lang = detectReportLang();
   const catalog = getCatalog(lang);
+
+  // Consent management commands: one-shot, don't scan (issue 007).
+  if (opts.consentStatus) {
+    doConsentStatus(catalog);
+    return;
+  }
+  if (opts.consentRevoke) {
+    doConsentRevoke(catalog);
+    return;
+  }
+  if (opts.consentEmail) {
+    doConsentEmail(opts.consentEmail, catalog);
+    return;
+  }
 
   // Disclosure + consent + email: shown ONCE, before any scanning, only if
   // there's no decision persisted yet (talents-ai-score, ADR-007, issue

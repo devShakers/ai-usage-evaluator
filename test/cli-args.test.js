@@ -43,3 +43,21 @@ test('parseArgs: retired --enroll and --consent on|off do NOT set any option (no
   assert.equal(opts.root, null);
   assert.equal(opts2.root, null);
 });
+
+// --- issue 007: consent management flags ---
+
+test('parseArgs: --consent-status', () => {
+  assert.equal(parseArgs(['--consent-status']).consentStatus, true);
+  assert.equal(parseArgs([]).consentStatus, false);
+});
+
+test('parseArgs: --consent-revoke', () => {
+  assert.equal(parseArgs(['--consent-revoke']).consentRevoke, true);
+  assert.equal(parseArgs([]).consentRevoke, false);
+});
+
+test('parseArgs: --consent-email (space and = forms)', () => {
+  assert.equal(parseArgs(['--consent-email', 'a@b.com']).consentEmail, 'a@b.com');
+  assert.equal(parseArgs(['--consent-email=a@b.com']).consentEmail, 'a@b.com');
+  assert.equal(parseArgs([]).consentEmail, null);
+});
