@@ -7,41 +7,42 @@ const http = require('http');
 const https = require('https');
 
 /*
- * Capa de compartición.
+ * Sharing layer.
  *
- * Principios:
- *  - El código público NO contiene ningún endpoint ni secreto. La URL a la que
- *    se envía llega DENTRO de la credencial que se obtiene al enrolarse.
- *  - Solo se envía un payload DERIVADO y mínimo (booleanos, conteos, nivel).
- *    Nunca contenido de ficheros, rutas ni credenciales del talento.
- *  - talents-ai-score / ADR-005: se retira el preview + confirmación
- *    interactiva. El envío es AUTOMÁTICO al final de un run normal si hay
- *    credencial vigente y el flag de consentimiento (persistido en la propia
- *    credencial) está ON. "Construir el mecanismo no es activarlo": el flag
- *    sigue existiendo justamente para poder apagar el envío sin tocar código
- *    (además del kill switch de servidor — doble interruptor, ADR-005).
+ * Principles:
+ *  - The public code contains NO endpoint or secret. The URL it sends to
+ *    arrives INSIDE the credential obtained at enrollment time.
+ *  - Only a minimal, DERIVED payload is sent (booleans, counts, level).
+ *    Never file contents, paths, or the talent's credentials.
+ *  - talents-ai-score / ADR-005: the interactive preview + confirmation is
+ *    removed. Sending is AUTOMATIC at the end of a normal run if there's a
+ *    valid credential and the consent flag (persisted in the credential
+ *    itself) is ON. "Building the mechanism is not activating it": the flag
+ *    still exists precisely so sending can be turned off without touching
+ *    code (in addition to the server kill switch — double switch, ADR-005).
  */
 
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'ai-footprint');
 const CRED_PATH = path.join(CONFIG_DIR, 'credentials.json');
 
-// Throttle cliente: no reintentar un envío si el último fue hace menos de 1h.
-// Independiente del rate-limit del servidor (eso lo aplica el backend).
+// Client-side throttle: don't retry a submission if the last one was less
+// than 1h ago. Independent of the server's rate limit (that's enforced by
+// the backend).
 const SEND_THROTTLE_MS = 60 * 60 * 1000;
 
-// DEFAULT del flag de consentimiento persistido en la credencial.
+// DEFAULT of the consent flag persisted in the credential.
 //
-// ADR-006 (active-work/talents-ai-score/decisions.md) revisa explícitamente
-// el default OFF de ADR-005 a ON: "el usuario decide que el envío se haga
-// desde el arranque, sin defaults en OFF". El mecanismo de apagado (este flag
-// + el kill switch de servidor) se mantiene intacto — solo cambia el valor
-// por defecto. Por su propia salvedad, ADR-006 ES el punto de no retorno de
-// ADR-005: sigue requiriendo visto bueno legal/laboral ANTES de desplegar el
-// backend y distribuir el CLI (ese despliegue, no este código, es lo que
-// arranca el flujo real de datos sobre talentos reales).
+// ADR-006 (active-work/talents-ai-score/decisions.md) explicitly revises
+// ADR-005's OFF default to ON: "the user decides that sending happens from
+// the start, with no OFF defaults". The kill mechanism (this flag + the
+// server kill switch) remains intact — only the default value changes. By
+// its own caveat, ADR-006 IS the point of no return for ADR-005: it still
+// requires legal/labor sign-off BEFORE deploying the backend and
+// distributing the CLI (that deployment, not this code, is what kicks off
+// the real data flow about real talents).
 const DEFAULT_CONSENT = true;
 
-/* ---------- utilidad HTTP mínima (sin dependencias) ---------- */
+/* ---------- minimal HTTP utility (no dependencies) ---------- */
 
 function requestJson(method, url, { token, body } = {}) {
   return new Promise((resolve, reject) => {
@@ -68,7 +69,7 @@ function requestJson(method, url, { token, body } = {}) {
         res.on('data', (c) => (raw += c));
         res.on('end', () => {
           let json = null;
-          try { json = raw ? JSON.parse(raw) : null; } catch { /* respuesta no-JSON */ }
+          try { json = raw ? JSON.parse(raw) : null; } catch { /* non-JSON response */ }
           resolve({ status: res.statusCode, json, raw });
         });
       },
@@ -80,7 +81,7 @@ function requestJson(method, url, { token, body } = {}) {
   });
 }
 
-/* ---------- credenciales ---------- */
+/* ---------- credentials ---------- */
 
 function loadCredentials() {
   try {
@@ -93,16 +94,17 @@ function loadCredentials() {
 function saveCredentials(cred) {
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
   fs.writeFileSync(CRED_PATH, JSON.stringify(cred, null, 2));
-  try { fs.chmodSync(CRED_PATH, 0o600); } catch { /* p.ej. Windows */ }
+  try { fs.chmodSync(CRED_PATH, 0o600); } catch { /* e.g. Windows */ }
 }
 
-/* ---------- consentimiento ----------
+/* ---------- consent ----------
  *
- * El flag vive en la credencial local, no como argumento por-run (specs.md
- * #cli-changes-ai-usage-evaluator). Default ON (ADR-006). `setConsent` es el
- * mecanismo para apagarlo/encenderlo sin re-enrolar ni tocar código —
- * necesario para poder revertir a OFF (o a opt-in restaurando el bloque de
- * confirmación en código) si el gate legal de ADR-005/006 lo exige.
+ * The flag lives in the local credential, not as a per-run argument
+ * (specs.md #cli-changes-ai-usage-evaluator). Default ON (ADR-006).
+ * `setConsent` is the mechanism to turn it off/on without re-enrolling or
+ * touching code — needed to be able to revert to OFF (or to opt-in by
+ * restoring the confirmation block in code) if the ADR-005/006 legal gate
+ * requires it.
  */
 
 function hasConsent(cred) {
@@ -123,7 +125,7 @@ function setConsent(enabled) {
   return { ok: true, cred };
 }
 
-/* ---------- throttle cliente ---------- */
+/* ---------- client-side throttle ---------- */
 
 function isThrottled(cred, now = Date.now()) {
   if (!cred || !cred.lastSentAt) return false;
@@ -132,10 +134,10 @@ function isThrottled(cred, now = Date.now()) {
   return now - last < SEND_THROTTLE_MS;
 }
 
-/* ---------- enrolamiento ---------- */
+/* ---------- enrollment ---------- */
 
-// La cadena de enrolamiento es base64url de {enrollUrl, code}. La genera el
-// panel de la plataforma, personalizada por talento, con un código de un solo uso.
+// The enrollment string is base64url of {enrollUrl, code}. It's generated by
+// the platform panel, personalized per talent, with a single-use code.
 function decodeEnrollString(str) {
   let obj;
   try {
@@ -172,37 +174,39 @@ async function enroll(enrollString) {
   return { ok: false, reason: `El servidor respondió ${res.status}.` };
 }
 
-/* ---------- payload derivado (whitelist estricta) ---------- */
+/* ---------- derived payload (strict whitelist) ---------- */
 
-// Solo estos campos salen del equipo. Aunque el objeto reporte crezca en el
-// futuro, aquí se elige explícitamente qué se comparte.
+// Only these fields leave the machine. Even if the report object grows in
+// the future, what's shared is chosen explicitly here.
 //
-// DECISIÓN PENDIENTE (talents-ai-score, ampliación de señales — dejar al
-// humano, "default conservador" según el encargo): el escaneo local (scanner.js)
-// ahora produce más campos por herramienta (version, footprint, recency) y a
-// nivel de informe (environment: platform/arch/nodeVersion/editorsInstalled).
-// NINGUNO se ha añadido aquí todavía. Propuesta, campo por campo:
+// PENDING DECISION (talents-ai-score, signal expansion — left to a human,
+// "conservative default" per the brief): the local scan (scanner.js) now
+// produces more per-tool fields (version, footprint, recency) and
+// report-level fields (environment: platform/arch/nodeVersion/
+// editorsInstalled). NONE of them have been added here yet. Proposal,
+// field by field:
 //
-//   - tool.version                     -> NO incluir por defecto. Aumenta la
-//     capacidad de re-identificar/correlacionar el equipo entre envíos (huella
-//     más fina que anonId) sin un valor de producto claro a cambio.
-//   - tool.footprint (bytes/ficheros)  -> Riesgo bajo, sensibilidad similar a
-//     los conteos de depth ya compartidos. Candidato razonable a incluir, pero
-//     se deja a criterio humano: agrega tamaño real del equipo del talento, no
-//     es tan "puro" como un booleano/nivel.
-//   - tool.recency (mtime/días/bucket) -> NO incluir. Es la señal más sensible
-//     de las nuevas: aunque es una fecha derivada (ADR-003), enviarla convierte
-//     "huella de setup" en "monitorización de actividad" sobre cómo trabaja el
-//     talento — el riesgo que ADR-003 dejó explícitamente gated. Requiere
-//     revisión legal/RGPD antes de plantearlo siquiera.
-//   - environment.arch / .nodeVersion  -> Riesgo bajo, útil para entender el
-//     parque de máquinas del pool de talento. Candidato razonable.
-//   - environment.editorsInstalled     -> Riesgo bajo-medio (añade otra
-//     dimensión de fingerprint combinada con anonId). Fuera por defecto.
+//   - tool.version                     -> Do NOT include by default.
+//     Increases the ability to re-identify/correlate the machine across
+//     submissions (a finer fingerprint than anonId) with no clear product
+//     value in return.
+//   - tool.footprint (bytes/files)     -> Low risk, similar sensitivity to
+//     the depth counts already shared. Reasonable candidate to include, but
+//     left to human judgment: it adds the talent's actual machine size,
+//     which isn't as "pure" as a boolean/level.
+//   - tool.recency (mtime/days/bucket) -> Do NOT include. It's the most
+//     sensitive of the new signals: even though it's a derived date
+//     (ADR-003), sending it turns "setup footprint" into "activity
+//     monitoring" of how the talent works — the exact risk ADR-003
+//     explicitly gated. Requires legal/GDPR review before even considering it.
+//   - environment.arch / .nodeVersion  -> Low risk, useful to understand
+//     the talent pool's machine landscape. Reasonable candidate.
+//   - environment.editorsInstalled     -> Low-medium risk (adds another
+//     fingerprinting dimension combined with anonId). Off by default.
 //
-// Nada de lo anterior se activa solo: para incluir un campo, añadirlo aquí de
-// forma explícita tras decisión humana (y documentarlo en decisions.md si es
-// una decisión cross-role, ADR).
+// None of the above activates on its own: to include a field, add it here
+// explicitly after a human decision (and document it in decisions.md if
+// it's a cross-role decision, ADR).
 function derivePayload(report, maturity) {
   return {
     schemaVersion: report.schemaVersion,
@@ -222,11 +226,11 @@ function derivePayload(report, maturity) {
   };
 }
 
-/* ---------- envío automático ---------- */
+/* ---------- automatic sending ---------- */
 
-// Envío silencioso: sin preview ni confirmación (ADR-005). Se invoca al final
-// de un run normal. Nunca lanza — cualquier motivo para no enviar o cualquier
-// fallo de envío resuelve con { ok:false, ... }, nunca rompe el informe local.
+// Silent sending: no preview or confirmation (ADR-005). Invoked at the end
+// of a normal run. Never throws — any reason not to send, or any sending
+// failure, resolves with { ok:false, ... }, never breaks the local report.
 async function autoShare(report, maturity) {
   const cred = loadCredentials();
   if (!cred) return { ok: false, skipped: true, reason: 'not-enrolled' };
@@ -242,7 +246,7 @@ async function autoShare(report, maturity) {
   try {
     res = await requestJson('POST', cred.endpoint, { token: cred.token, body: payload });
   } catch (e) {
-    // Fallo de red: no rompe el informe local.
+    // Network failure: doesn't break the local report.
     return { ok: false, skipped: false, reason: 'network-error', error: e.message };
   }
 

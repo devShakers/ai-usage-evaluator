@@ -5,12 +5,13 @@ const os = require('os');
 const path = require('path');
 
 /*
- * Persistencia SIEMPRE en el home del usuario, nunca en el directorio del
- * proyecto escaneado. Así el informe no se cuela en un commit (sería una fuga,
- * porque lista tu setup) y no ensucia los repos del talento. Guarda:
- *   - latest.json  (se sobrescribe)
- *   - report.html  (dashboard, se sobrescribe)
- *   - history/<fecha>.json  (histórico para ver evolución)
+ * Persistence ALWAYS in the user's home directory, never in the scanned
+ * project's directory. This way the report doesn't slip into a commit
+ * (that would be a leak, since it lists your setup) and doesn't clutter the
+ * talent's repos. Saves:
+ *   - latest.json  (overwritten each time)
+ *   - report.html  (dashboard, overwritten each time)
+ *   - history/<date>.json  (history to see evolution over time)
  */
 
 function baseDir() {

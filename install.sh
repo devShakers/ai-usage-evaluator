@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
 #
-# AI Footprint — instalador
+# AI Footprint — installer
 #
-# Uso rápido (desde cualquier sitio):
+# Quick usage (from anywhere):
 #   curl -fsSL https://raw.githubusercontent.com/devShakers/ai-usage-evaluator/main/install.sh | bash
 #
-# O, si has clonado el repo, desde dentro de la carpeta:
+# Or, if you've cloned the repo, from inside the folder:
 #   ./install.sh
 #
-# El script detecta si los ficheros están en local (instala copiando) o no
-# (los descarga desde el repo). Al terminar deja el comando `ai-footprint`
-# disponible. Desinstalar: ./install.sh --uninstall
+# The script detects whether the files are local (installs by copying) or
+# not (downloads them from the repo). When done it leaves the `ai-footprint`
+# command available. Uninstall: ./install.sh --uninstall
 #
 set -euo pipefail
 
-# ─── Configuración (EDITA ESTO con tu org/repo real) ───────────────────────
+# ─── Configuration (EDIT THIS with your real org/repo) ─────────────────────
 OWNER="devShakers"
 REPO="ai-usage-evaluator"
-# PoC "solo distribución" (active-work/talents-ai-score, ADR-002): el CLI ya
-# vive en main (el one-liner curl | raw.githubusercontent resuelve los
-# ficheros por rama, así que el instalador se rompe si BRANCH no coincide con
-# la rama publicada en el remoto).
+# "Distribution only" PoC (active-work/talents-ai-score, ADR-002): the CLI
+# already lives on main (the curl | raw.githubusercontent one-liner resolves
+# files by branch, so the installer breaks if BRANCH doesn't match the
+# branch published on the remote).
 BRANCH="main"
 # ───────────────────────────────────────────────────────────────────────────
 
@@ -29,7 +29,7 @@ INSTALL_DIR="${AI_FOOTPRINT_HOME:-$HOME/.ai-footprint}"
 BIN_DIR="${AI_FOOTPRINT_BIN:-$HOME/.local/bin}"
 VERSION="0.1.0"
 
-# Colores (solo si la salida es una terminal)
+# Colors (only if output is a terminal)
 if [ -t 1 ]; then
   C='\033[0;36m'; G='\033[0;32m'; Y='\033[0;33m'; R='\033[0;31m'; B='\033[1m'; N='\033[0m'
 else
@@ -65,13 +65,13 @@ uninstall() {
 printf "\n  ${B}${C}AI Footprint — instalador v${VERSION}${N}\n"
 say  "${C}perfil local de uso de IA · 12 herramientas${N}\n"
 
-# ─── Requisitos ─────────────────────────────────────────────────────────────
+# ─── Requirements ───────────────────────────────────────────────────────────
 command -v node >/dev/null 2>&1 || die "Node.js es necesario y no está instalado.\n    Instálalo desde https://nodejs.org (v18 o superior)."
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
 [ "$NODE_MAJOR" -ge 18 ] || die "Se requiere Node 18+. Tienes $(node -v)."
 say "${G}+${N} Node $(node -v) detectado"
 
-# ¿Instalación local (repo clonado) o remota (curl)?
+# Local install (cloned repo) or remote (curl)?
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo '')"
 LOCAL=0
 if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/bin/report.js" ]; then
@@ -82,7 +82,7 @@ else
   say "${G}+${N} Instalando desde ${OWNER}/${REPO}@${BRANCH}"
 fi
 
-# ─── Colocar los ficheros ───────────────────────────────────────────────────
+# ─── Place the files ────────────────────────────────────────────────────────
 mkdir -p "$INSTALL_DIR/bin" "$INSTALL_DIR/src" "$BIN_DIR"
 say "\n  Copiando ficheros..."
 for f in "${FILES[@]}"; do
@@ -96,7 +96,7 @@ for f in "${FILES[@]}"; do
   say "    ${G}+${N} $f"
 done
 
-# ─── Crear el lanzador `ai-footprint` ───────────────────────────────────────
+# ─── Create the `ai-footprint` launcher ─────────────────────────────────────
 SHIM="$BIN_DIR/ai-footprint"
 cat > "$SHIM" <<EOF
 #!/usr/bin/env bash
@@ -105,12 +105,12 @@ EOF
 chmod +x "$SHIM"
 say "\n  ${G}+${N} Comando creado en $SHIM"
 
-# ─── Verificación ───────────────────────────────────────────────────────────
+# ─── Verification ───────────────────────────────────────────────────────────
 node "$INSTALL_DIR/bin/report.js" --help >/dev/null 2>&1 \
   && say "  ${G}+${N} Verificación OK" \
   || die "La verificación falló al ejecutar la herramienta."
 
-# ─── Mensaje final ──────────────────────────────────────────────────────────
+# ─── Final message ──────────────────────────────────────────────────────────
 printf "\n  ${G}${B}Instalado correctamente.${N}\n\n"
 say "  ${B}Uso:${N}"
 say "    ${C}ai-footprint${N}          Informe en la terminal"
@@ -118,7 +118,7 @@ say "    ${C}ai-footprint --html${N}   + abre el dashboard visual"
 say "    ${C}ai-footprint --json${N}   Salida en JSON"
 printf "\n"
 
-# Aviso si ~/.local/bin no está en el PATH
+# Notice if ~/.local/bin is not in the PATH
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *)

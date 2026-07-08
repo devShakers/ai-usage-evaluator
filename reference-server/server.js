@@ -2,29 +2,29 @@
 'use strict';
 
 /*
- * SERVIDOR DE REFERENCIA (STUB) — NO USAR EN PRODUCCIÓN TAL CUAL.
+ * REFERENCE SERVER (STUB) — DO NOT USE IN PRODUCTION AS-IS.
  *
- * Ejemplo mínimo, sin dependencias, del contrato y del CONTROL DE TOKENS.
- * Simplificaciones deliberadas (a sustituir en real):
- *   - Almacenes EN MEMORIA (se pierden al reiniciar) -> usar base de datos.
- *   - Rate limiting en memoria -> usar Redis o equivalente.
- *   - Sin TLS aquí -> lo aporta tu pasarela/balanceador.
- * Lo que SÍ ilustra bien:
- *   - Los tokens se guardan HASHEADOS (nunca en claro).
- *   - Ciclo de vida completo: emitir código -> canjear -> usar -> revocar/caducar.
- *   - Superficie de administración para controlar los tokens.
+ * Minimal, dependency-free example of the contract and of TOKEN CONTROL.
+ * Deliberate simplifications (to replace for real):
+ *   - IN-MEMORY stores (lost on restart) -> use a database.
+ *   - In-memory rate limiting -> use Redis or equivalent.
+ *   - No TLS here -> your gateway/load balancer provides it.
+ * What it DOES illustrate well:
+ *   - Tokens are stored HASHED (never in plaintext).
+ *   - Full lifecycle: issue code -> exchange -> use -> revoke/expire.
+ *   - An admin surface to control tokens.
  *
- * Rutas de talento:
+ * Talent routes:
  *   GET  /health
- *   POST /enroll   {code}     -> canjea código de un solo uso por un token
- *   POST /reports  (Bearer)   -> ingesta, atribuida al talento del token
+ *   POST /enroll   {code}     -> exchanges a single-use code for a token
+ *   POST /reports  (Bearer)   -> ingestion, attributed to the token's talent
  *
- * Rutas de administración (requieren cabecera X-Admin-Key):
- *   POST /admin/enroll-codes  {talentId, ttlHours?}  -> crea código + cadena --enroll
- *   GET  /admin/tokens                                -> lista tokens (sin el secreto)
- *   POST /admin/revoke        {id}                    -> revoca un token por su id
+ * Admin routes (require the X-Admin-Key header):
+ *   POST /admin/enroll-codes  {talentId, ttlHours?}  -> creates a code + --enroll string
+ *   GET  /admin/tokens                                -> lists tokens (without the secret)
+ *   POST /admin/revoke        {id}                    -> revokes a token by its id
  *
- * Arranque:  ADMIN_KEY=miclave node reference-server/server.js
+ * Startup:  ADMIN_KEY=mykey node reference-server/server.js
  */
 
 const http = require('http');
@@ -35,16 +35,16 @@ const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
 const RATE_LIMIT = 5;
 const RATE_WINDOW_MS = 60 * 60 * 1000;
 const TOKEN_TTL_DAYS = 180;
-// Clave de admin: si no se pasa por entorno, se genera una y se muestra al arrancar.
+// Admin key: if not passed via environment, one is generated and shown at startup.
 const ADMIN_KEY = process.env.ADMIN_KEY || 'adm_' + crypto.randomBytes(16).toString('hex');
 
-/* ---------- almacenes en memoria (reemplazar por BD real) ---------- */
+/* ---------- in-memory stores (replace with a real DB) ---------- */
 const enrollCodes = new Map(); // code -> { talentId, expiresAt, used }
 const tokens = new Map();      // tokenHash -> { id, talentId, issuedAt, lastUsedAt, expiresAt, revoked }
 const rate = new Map();        // tokenHash -> { count, windowStart }
 const reports = [];
 
-/* ---------- utilidades ---------- */
+/* ---------- utilities ---------- */
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 
 function send(res, status, obj) {
@@ -89,7 +89,7 @@ function checkRate(hash) {
   return true;
 }
 
-/* ---------- rutas ---------- */
+/* ---------- routes ---------- */
 async function handle(req, res) {
   const { method, url } = req;
 
@@ -97,7 +97,7 @@ async function handle(req, res) {
     return send(res, 200, { ok: true, tokens: tokens.size, reportsReceived: reports.length });
   }
 
-  /* --- administración: control de tokens --- */
+  /* --- administration: token control --- */
   if (url.startsWith('/admin/')) {
     if (!isAdmin(req)) return send(res, 401, { error: 'admin key requerida' });
 
@@ -109,13 +109,13 @@ async function handle(req, res) {
         code,
         talentId: body.talentId,
         enrollString: enrollStringFor(code),
-        // Esto es lo que mostrarías en el panel del talento:
+        // This is what you'd show on the talent's panel:
         command: `ai-footprint --enroll=${enrollStringFor(code)}`,
       });
     }
 
     if (method === 'GET' && url === '/admin/tokens') {
-      // Nunca se devuelve el token; solo su id público y metadatos de auditoría.
+      // The token itself is never returned; only its public id and audit metadata.
       const list = [...tokens.values()].map((t) => ({
         id: t.id, talentId: t.talentId, issuedAt: t.issuedAt,
         lastUsedAt: t.lastUsedAt, expiresAt: t.expiresAt, revoked: t.revoked,
@@ -134,7 +134,7 @@ async function handle(req, res) {
     return send(res, 404, { error: 'ruta admin no encontrada' });
   }
 
-  /* --- canje de código por token --- */
+  /* --- exchange a code for a token --- */
   if (method === 'POST' && url === '/enroll') {
     const body = await readJson(req);
     const code = body && body.code;
@@ -144,11 +144,11 @@ async function handle(req, res) {
     if (new Date(entry.expiresAt) < new Date()) return send(res, 400, { error: 'código caducado' });
 
     entry.used = true;
-    const token = 'aft_' + crypto.randomBytes(24).toString('hex'); // se entrega UNA vez
+    const token = 'aft_' + crypto.randomBytes(24).toString('hex'); // handed out ONCE
     const hash = sha256(token);
     const expiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 864e5).toISOString();
     tokens.set(hash, {
-      id: 'tok_' + hash.slice(0, 12), // id público para auditar/revocar sin el secreto
+      id: 'tok_' + hash.slice(0, 12), // public id to audit/revoke without the secret
       talentId: entry.talentId,
       issuedAt: new Date().toISOString(),
       lastUsedAt: null,
@@ -158,10 +158,10 @@ async function handle(req, res) {
     return send(res, 200, { token, endpoint: `${PUBLIC_URL}/reports`, talentId: entry.talentId, expiresAt });
   }
 
-  /* --- ingesta de informes --- */
+  /* --- report ingestion --- */
   if (method === 'POST' && url === '/reports') {
     const token = bearer(req);
-    const rec = token && tokens.get(sha256(token)); // se compara por hash
+    const rec = token && tokens.get(sha256(token)); // compared by hash
     if (!rec || rec.revoked) return send(res, 401, { error: 'token inválido o revocado' });
     if (new Date(rec.expiresAt) < new Date()) return send(res, 401, { error: 'token caducado' });
     if (!checkRate(sha256(token))) return send(res, 429, { error: 'límite de envíos superado' });

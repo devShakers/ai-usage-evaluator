@@ -1,195 +1,211 @@
-# AI Footprint — Documento de traspaso (contexto para otro agente)
+# AI Footprint — Handoff document (context for another agent)
 
-Este documento resume el proyecto, las decisiones tomadas y su estado, para que
-otro agente pueda continuar sin el historial de la conversación.
+This document summarizes the project, the decisions made and its status, so
+another agent can continue without the conversation history.
 
-## 1. Qué es y de dónde sale
+## 1. What it is and where it comes from
 
-Herramienta de línea de comandos que genera **en local** un perfil del uso de
-herramientas de IA de un desarrollador: qué copilotos/agentes tiene, con cuánta
-profundidad de configuración, y en qué nivel de madurez está (0 a 4).
+Command-line tool that generates **locally** a profile of a developer's AI
+tool usage: which copilots/agents they have, how deep the configuration
+goes, and what maturity level they're at (0 to 4).
 
-Origen: se inspira en el repo `darnoux/claude-code-level-up` (escanear señales
-locales y clasificar por nivel). Se descartó hacerlo como *skill* de Claude Code
-porque ataría la herramienta a usuarios de Claude Code, y el objetivo explícito
-es cubrir **cualquier** herramienta de IA, no solo Claude. Por eso es una CLI
-independiente.
+Origin: inspired by the `darnoux/claude-code-level-up` repo (scan local
+signals and classify by level). Building it as a Claude Code *skill* was
+ruled out because it would tie the tool to Claude Code users, and the
+explicit goal is to cover **any** AI tool, not just Claude. That's why it's
+a standalone CLI.
 
-Contexto de negocio: la impulsa Shakers (marketplace de talento freelance). La
-idea es que los "talentos" (freelancers) la ejecuten y, opcionalmente, compartan
-su perfil con la plataforma para entender la adopción de IA en el pool.
+Business context: driven by Shakers (freelance talent marketplace). The
+idea is for "talents" (freelancers) to run it and, optionally, share their
+profile with the platform to understand AI adoption across the pool.
 
-## 2. Decisiones de diseño clave (con su porqué)
+## 2. Key design decisions (with their rationale)
 
-1. **Local primero, envío aparte y automático.** El repo original solo autodiagnostica
-   y no envía nada. Aquí el informe se genera y se muestra siempre en local (es el
-   gancho de valor para el talento). El envío a la plataforma es un paso separado,
-   automático tras enrolarse (sin preview ni confirmación por-ejecución), gated por
-   un flag de consentimiento persistido en la credencial local — **activo por
-   defecto** (ADR-006, `active-work/talents-ai-score/decisions.md`; revisa el
-   default OFF original de ADR-005), pero desactivable en cualquier momento con
-   `--consent=off` sin re-enrolar.
+1. **Local first, sending separate and automatic.** The original repo only
+   self-diagnoses and sends nothing. Here the report is always generated
+   and shown locally (that's the value hook for the talent). Sending to the
+   platform is a separate step, automatic after enrolling (no preview or
+   per-run confirmation), gated by a consent flag persisted in the local
+   credential — **ON by default** (ADR-006,
+   `active-work/talents-ai-score/decisions.md`; revises ADR-005's original
+   OFF default), but can be turned off at any time with `--consent=off`
+   without re-enrolling.
 
-2. **Solo se envían señales derivadas, nunca contenido.** Se comparten booleanos
-   (detectada sí/no), conteos (nº de MCP, skills, reglas) y nivel/score. Nunca el
-   contenido de ficheros, rutas absolutas, variables de entorno ni credenciales.
-   El único fichero que se parsea (`.mcp.json`) se abre solo para contar claves.
-   Motivo: evitar construir un exfiltrador de secretos sin querer.
+2. **Only derived signals are sent, never content.** Booleans (detected
+   yes/no), counts (number of MCP servers, skills, rules) and level/score
+   are shared. Never file contents, absolute paths, environment variables
+   or credentials. The only file that gets parsed (`.mcp.json`) is opened
+   only to count keys. Reason: avoid unintentionally building a secrets
+   exfiltrator.
 
-3. **Cero dependencias.** Todo con módulos nativos de Node. Un talento clona y
-   ejecuta sin `npm install`. Motivo: confianza (no pedir que instale paquetes de
-   terceros en una herramienta que le escanea el equipo).
+3. **Zero dependencies.** Everything with native Node modules. A talent
+   clones and runs without `npm install`. Reason: trust (don't ask them to
+   install third-party packages in a tool that scans their machine).
 
-4. **Persistencia en el home, no en el proyecto.** Los informes van a
-   `~/.config/ai-footprint/`, nunca al repo escaneado, para que no se cuelen en un
-   commit (sería una fuga, porque el informe lista su setup).
+4. **Persistence in the home directory, not in the project.** Reports go
+   to `~/.config/ai-footprint/`, never into the scanned repo, so they don't
+   slip into a commit (that would be a leak, since the report lists their
+   setup).
 
-5. **Repo público, pero endpoint y secretos fuera del código.** La herramienta es
-   pública y auditable (refuerza la confianza; el one-liner de instalación por
-   `raw.githubusercontent` requiere repo público). La URL del endpoint NO está en
-   el código: llega dentro de la credencial que se obtiene al enrolarse.
+5. **Public repo, but endpoint and secrets kept out of the code.** The tool
+   is public and auditable (reinforces trust; the install one-liner via
+   `raw.githubusercontent` requires a public repo). The endpoint URL is NOT
+   in the code: it arrives inside the credential obtained when enrolling.
 
-6. **Control de acceso en el endpoint, no en el repo.** Que cualquiera pueda USAR
-   la herramienta es inevitable y no cuesta nada. Lo que se controla es quién puede
-   ENVIAR. Se resuelve con enrolamiento por token: sin credencial válida, el envío
-   se rechaza (401). Así no llegan reportes de desconocidos.
+6. **Access control at the endpoint, not in the repo.** Anyone being able
+   to USE the tool is unavoidable and costs nothing. What's controlled is
+   who can SEND. This is solved with token-based enrollment: without a
+   valid credential, sending is rejected (401). This way no reports arrive
+   from strangers.
 
-7. **Ciclo de vida del token controlado por la plataforma.** Emisión (código de un
-   solo uso atado a un `talentId`), caducidad (TTL), revocación, y auditoría. Los
-   tokens se guardan **hasheados** (nunca en claro); el secreto se entrega una sola
-   vez al enrolar. La atribución del reporte la hace el servidor según el token, no
-   según lo que diga el cliente (nadie envía en nombre de otro).
+7. **Token lifecycle controlled by the platform.** Issuance (single-use
+   code tied to a `talentId`), expiry (TTL), revocation, and audit. Tokens
+   are stored **hashed** (never in plaintext); the secret is handed out
+   only once at enrollment time. The server attributes the report based on
+   the token, not on what the client claims (nobody can send on someone
+   else's behalf).
 
-8. **Dashboard HTML con identidad propia.** Autocontenido (sin llamadas de red),
-   estética de "consola de señales", para que sea presentable sin parecer genérico.
+8. **HTML dashboard with its own identity.** Self-contained (no network
+   calls), "signal console" aesthetic, so it's presentable without looking
+   generic.
 
-## 3. Arquitectura y ficheros
+## 3. Architecture and files
 
 ```
-install.sh                    Instalador (curl | bash, o local si el repo está clonado)
+install.sh                    Installer (curl | bash, or local if the repo is cloned)
 package.json
 README.md
-HANDOFF.md                    Este documento
-bin/report.js                 Orquestador CLI (flags y flujo)
-src/detectors.js              Catálogo de 12 herramientas y sus señales
-src/scanner.js                Motor de escaneo -> objeto reporte (solo booleanos/conteos)
-src/maturity.js               Cálculo de nivel (0-4) y score (0-100)
-src/render-terminal.js        Salida en terminal con colores ANSI
-src/render-html.js            Dashboard HTML autocontenido
-src/store.js                  Persistencia en ~/.config/ai-footprint/
-src/share.js                  Enrolamiento, flag de consentimiento (ON por defecto) y envío automático
-reference-server/server.js    Servidor de referencia (STUB en memoria) con capa admin
+HANDOFF.md                    This document
+bin/report.js                 CLI orchestrator (flags and flow)
+src/detectors.js              Catalog of 12 tools and their signals
+src/scanner.js                Scan engine -> report object (booleans/counts only)
+src/maturity.js               Level (0-4) and score (0-100) calculation
+src/render-terminal.js        Terminal output with ANSI colors
+src/render-html.js            Self-contained HTML dashboard
+src/store.js                  Persistence in ~/.config/ai-footprint/
+src/share.js                  Enrollment, consent flag (ON by default) and automatic sending
+src/locale.js                 OS locale detection for report localization
+src/i18n.js                   Report text catalogs (es/en)
+reference-server/server.js    Reference server (in-memory STUB) with an admin layer
 ```
 
-Nota: `report.js` usa `require` relativos a su ubicación, así que la estructura
-de carpetas debe preservarse (el instalador la respeta).
+Note: `report.js` uses `require` paths relative to its location, so the
+folder structure must be preserved (the installer respects it).
 
-## 4. Detección y clasificación
+## 4. Detection and classification
 
-Herramientas detectadas (12): Claude Code, Cursor, GitHub Copilot, Windsurf,
-Aider, Continue, Cline, Gemini CLI, Codex CLI, Cody, Zed, Tabnine.
+Detected tools (12): Claude Code, Cursor, GitHub Copilot, Windsurf, Aider,
+Continue, Cline, Gemini CLI, Codex CLI, Cody, Zed, Tabnine.
 
-Señales: existencia de ficheros/directorios de config en el proyecto, config
-global en el home, binarios en el PATH, y extensiones de editor instaladas.
-Profundidad: conteos por herramienta (instrucciones, reglas, MCP, skills,
-comandos, hooks).
+Signals: existence of project config files/directories, global config in
+the home directory, binaries on PATH, and installed editor extensions.
+Depth: per-tool counts (instructions, rules, MCP servers, skills, commands,
+hooks).
 
-Niveles de madurez: 0 Sin rastro · 1 Explorando (hay herramientas sin config de
-proyecto) · 2 Integrado (hay instrucciones/reglas de proyecto) · 3 Power user
-(MCP, o skills/comandos/reglas propias, o 3+ herramientas) · 4 Orquestador (CLI
-agéntica + MCP + personalización propia).
+Maturity levels: 0 No trace · 1 Exploring (tools exist without project
+config) · 2 Integrated (project instructions/rules exist) · 3 Power user
+(MCP, or own skills/commands/rules, or 3+ tools) · 4 Orchestrator (agentic
+CLI + MCP + own customization).
 
-## 5. Flujo de datos y payload
+## 5. Data flow and payload
 
-El escáner produce un objeto reporte ya saneado. Para el envío, `share.js`
-aplica un whitelist estricto (`derivePayload`) y solo manda:
+The scanner produces an already-sanitized report object. For sending,
+`share.js` applies a strict whitelist (`derivePayload`) and only sends:
 `schemaVersion, generatedAt, anonId, platform, level, levelName, score,
-totalDetected, categories, tools[{id, detected, depth{conteos}}]`.
-El `anonId` es un hash no reversible de hostname+usuario (solo para deduplicar).
+totalDetected, categories, tools[{id, detected, depth{counts}}]`.
+The `anonId` is a non-reversible hash of hostname+user (only for
+deduplication).
 
-## 6. Ciclo de vida para el talento
+## 6. Lifecycle for the talent
 
-Una sola vez: (1) recibe su comando `ai-footprint --enroll=...` desde su panel de
-Shakers, (2) instala con el one-liner o clonando, (3) ejecuta el `--enroll` una
-vez, que canjea el código por un token guardado en `~/.config/ai-footprint/`.
+One time only: (1) they receive their `ai-footprint --enroll=...` command
+from their Shakers panel, (2) they install via the one-liner or by cloning,
+(3) they run `--enroll` once, which exchanges the code for a token stored
+in `~/.config/ai-footprint/`.
 
-Cada vez que quiera: ejecuta `ai-footprint` (o `--html`) desde la carpeta de su
-proyecto y ve su informe en local. Sin enrolar, esto NO envía nada.
+Whenever they want: they run `ai-footprint` (or `--html`) from their
+project's folder and see their report locally. Without enrolling, this
+sends nothing.
 
-Envío: si está enrolado y el consentimiento está ON (por defecto, ADR-006),
-cada ejecución normal envía el informe automáticamente al final, sin preview
-ni confirmación, con un throttle cliente de 1h (no reenvía si el último envío
-fue hace menos de una hora). Puede desactivarlo en cualquier momento con
-`ai-footprint --consent=off` (y reactivarlo con `--consent=on`), sin volver a
-enrolarse.
+Sending: if enrolled and consent is ON (default, ADR-006), every normal run
+sends the report automatically at the end, with no preview or confirmation,
+with a 1h client-side throttle (doesn't resend if the last send was less
+than an hour ago). Can be turned off at any time with
+`ai-footprint --consent=off` (and back on with `--consent=on`), without
+re-enrolling.
 
-Re-enrolar: solo si el token caduca (TTL) o se revoca. El siguiente intento de
-envío automático falla en silencio salvo por un aviso no bloqueante de "vuelve
-a enrolarte" (401); el informe local sigue funcionando igual. Instalar no hace
-falta otra vez.
+Re-enrollment: only if the token expires (TTL) or is revoked. The next
+automatic-sending attempt fails silently except for a non-blocking
+"re-enroll" (401) notice; the local report keeps working the same. No need
+to install again.
 
-El escáner mira la carpeta actual (config de proyecto) y el home (config global),
-por eso se ejecuta desde dentro del proyecto.
+The scanner looks at the current folder (project config) and the home
+directory (global config), which is why it's run from inside the project.
 
-## 7. Contrato del servidor
+## 7. Server contract
 
-Rutas de talento:
+Talent routes:
 - `GET /health`
 - `POST /enroll {code}` -> `{token, endpoint, talentId, expiresAt}`
-- `POST /reports` (con `Authorization: Bearer`) -> 201 / 401 / 429 / 400
+- `POST /reports` (with `Authorization: Bearer`) -> 201 / 401 / 429 / 400
 
-Rutas de administración (cabecera `X-Admin-Key`):
-- `POST /admin/enroll-codes {talentId, ttlHours?}` -> devuelve `code`, `enrollString` y el `command` listo para el panel
-- `GET /admin/tokens` -> lista `{id, talentId, issuedAt, lastUsedAt, expiresAt, revoked}` (nunca el token)
-- `POST /admin/revoke {id}` -> revoca por id público
+Admin routes (`X-Admin-Key` header):
+- `POST /admin/enroll-codes {talentId, ttlHours?}` -> returns `code`,
+  `enrollString` and the `command` ready to show on the panel
+- `GET /admin/tokens` -> lists `{id, talentId, issuedAt, lastUsedAt,
+  expiresAt, revoked}` (never the token)
+- `POST /admin/revoke {id}` -> revokes by public id
 
-## 8. Estado actual (probado)
+## 8. Current status (tested)
 
-Todo lo siguiente se ha verificado end to end en local:
-- Escaneo + clasificación (nivel 0 en entorno vacío; nivel 4 en un fixture con
-  Claude Code, Cursor, Copilot, Windsurf, Gemini, Codex).
-- Instalación por copia (repo clonado) y desinstalación (`install.sh --uninstall`).
-- Dashboard HTML autocontenido (verificado: sin ninguna llamada de red).
-- Enrolamiento, envío automático gated por el flag de consentimiento persistido,
-  y atribución.
-- Rechazos del servidor: 401 token inválido/revocado/caducado, 404 código
-  desconocido, 409 código ya usado, 429 rate limit (5/hora).
-- Ciclo de control: admin emite código -> talento enrola y envía -> admin audita
-  token (ve último uso) -> admin revoca -> siguiente envío da 401. Admin sin clave: 401.
-- Tokens guardados hasheados (el listado nunca expone el secreto).
+All of the following has been verified end to end locally:
+- Scan + classification (level 0 in an empty environment; level 4 in a
+  fixture with Claude Code, Cursor, Copilot, Windsurf, Gemini, Codex).
+- Installation by copy (cloned repo) and uninstallation
+  (`install.sh --uninstall`).
+- Self-contained HTML dashboard (verified: no network calls at all).
+- Enrollment, automatic sending gated by the persisted consent flag, and
+  attribution.
+- Server rejections: 401 invalid/revoked/expired token, 404 unknown code,
+  409 code already used, 429 rate limit (5/hour).
+- Control cycle: admin issues code -> talent enrolls and sends -> admin
+  audits token (sees last use) -> admin revokes -> next send returns 401.
+  Admin without a key: 401.
+- Tokens stored hashed (the listing never exposes the secret).
 
-## 9. Es un STUB: qué falta para producción
+## 9. It's a STUB: what's missing for production
 
-El servidor de referencia es un ejemplo mínimo. Antes de producción:
-- Sustituir almacenes EN MEMORIA por base de datos (códigos, tokens, reportes).
-- Guardar tokens hasheados en la BD (el stub ya hashea, pero en memoria).
-- Rate limiting sobre Redis o equivalente (ventana deslizante), no en memoria.
-- Poner la superficie `/admin` detrás del auth interno real, no una sola `ADMIN_KEY`.
-- TLS en la pasarela/balanceador.
-- El panel de Shakers debe generar los códigos de enrolamiento por talento
-  (formato de la cadena `--enroll`: base64url de `{enrollUrl, code}`).
+The reference server is a minimal example. Before production:
+- Replace IN-MEMORY stores with a database (codes, tokens, reports).
+- Store hashed tokens in the DB (the stub already hashes, but in memory).
+- Rate limiting over Redis or equivalent (sliding window), not in memory.
+- Put the `/admin` surface behind real internal auth, not a single
+  `ADMIN_KEY`.
+- TLS at the gateway/load balancer.
+- The Shakers panel must generate enrollment codes per talent (`--enroll`
+  string format: base64url of `{enrollUrl, code}`).
 
-## 10. Configuración pendiente de rellenar
+## 10. Configuration pending to be filled in
 
-- `install.sh`: variables `OWNER`, `REPO`, `BRANCH` con el repo real (ahora `TU-ORG`).
-- Servidor: `ADMIN_KEY`, `PUBLIC_URL`, `PORT` por entorno.
-- Crear el repo público en GitHub y subir estos ficheros.
+- `install.sh`: `OWNER`, `REPO`, `BRANCH` variables with the real repo
+  (currently `TU-ORG`).
+- Server: `ADMIN_KEY`, `PUBLIC_URL`, `PORT` per environment.
+- Create the public repo on GitHub and upload these files.
 
-## 11. Aviso legal (no técnico, importante)
+## 11. Legal notice (non-technical, important)
 
-Enviar datos sobre cómo trabaja una persona es tratamiento de datos personales
-(RGPD, consentimiento, transparencia), y los talentos suelen estar en la UE.
-Desde ADR-006 el envío es automático y el flag de consentimiento del CLI viene
-**activo por defecto** (igual que el kill switch de servidor) — decisión
-explícita del usuario, con la salvedad reforzada de que **requiere visto bueno
-de un experto legal/laboral ANTES de desplegar el backend y distribuir el CLI**,
-que es cuando arranca el flujo real de datos sobre talentos reales. El
-mecanismo de apagado (flag + kill switch) se mantiene intacto para poder
-revertir sin redeploy.
+Sending data about how a person works is personal data processing (GDPR,
+consent, transparency), and talents are usually located in the EU. Since
+ADR-006, sending is automatic and the CLI's consent flag comes **ON by
+default** (same as the server kill switch) — an explicit user decision, with
+the reinforced caveat that it **requires legal/labor sign-off BEFORE
+deploying the backend and distributing the CLI**, which is when the real
+data flow about real talents kicks off. The kill mechanism (flag + kill
+switch) remains intact so it can be reverted without a redeploy.
 
-## 12. Próximos pasos sugeridos
+## 12. Suggested next steps
 
-- Conectar la emisión de códigos de enrolamiento con el panel de Shakers (cerrar
-  el primer paso del talento).
-- Definir las métricas de agregación del lado servidor para explotar los reportes.
-- Endurecer el servidor de referencia hacia producción (sección 9).
+- Connect enrollment code issuance to the Shakers panel (close the
+  talent's first step).
+- Define server-side aggregation metrics to make use of the reports.
+- Harden the reference server toward production (section 9).

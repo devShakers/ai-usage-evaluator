@@ -1,38 +1,39 @@
 # AI Footprint
 
-> **Estado: prueba de concepto (PoC) — solo distribución.** Este repositorio
-> publica únicamente el CLI (PoC). El informe local
-> funciona al 100%. El enrolamiento (`--enroll`) y el envío automático están
-> **inertes**: no hay ningún servidor desplegado detrás. Ver la sección
-> ["Compartir el informe con la plataforma" ↓](#compartir-el-informe-con-la-plataforma-todavía-no-disponible-en-esta-poc)
-> para el detalle.
+> **Status: proof of concept (PoC) — distribution only.** This repository
+> publishes only the CLI (PoC). The local report
+> works 100%. Enrollment (`--enroll`) and automatic sending are
+> **inert**: there is no server deployed behind them. See the section
+> ["Sharing the report with the platform" ↓](#sharing-the-report-with-the-platform--not-available-in-this-poc-yet)
+> for details.
 
-Herramienta de línea de comandos que genera, **en local**, un perfil del uso de
-herramientas de IA de un desarrollador: qué copilotos y agentes tiene
-configurados, con cuánta profundidad, y en qué nivel de madurez está (0–4).
+Command-line tool that generates, **locally**, a profile of a developer's AI
+tool usage: which copilots and agents they have configured, how deep that
+configuration goes, and what maturity level they're at (0–4).
 
-Inspirada en el mecanismo de `claude-code-level-up` (escanear señales locales y
-clasificar por nivel), pero extendida a las principales herramientas de IA del
-mercado, no solo Claude.
+Inspired by the mechanism in `claude-code-level-up` (scan local signals and
+classify by level), but extended to cover the main AI tools on the market,
+not just Claude.
 
-## Instalación
+## Installation
 
-Una sola línea:
+One line:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/devShakers/ai-usage-evaluator/main/install.sh | bash
 ```
 
-> Nota (PoC): el one-liner apunta a la rama `main`, que es la única publicada
-> en el remoto — revisa `install.sh` para la versión vigente si este README
-> queda desactualizado.
+> Note (PoC): the one-liner points at the `main` branch, the only one
+> published on the remote — check `install.sh` for the current version if
+> this README is out of date.
 
-El instalador comprueba que tienes Node 18+, coloca la herramienta en
-`~/.ai-footprint/` y deja el comando `ai-footprint` en `~/.local/bin`.
-Cero dependencias: no ejecuta `npm install` ni descarga paquetes de terceros.
+The installer checks that you have Node 18+, places the tool in
+`~/.ai-footprint/` and drops the `ai-footprint` command in `~/.local/bin`.
+Zero dependencies: it doesn't run `npm install` or download third-party
+packages.
 
-Alternativa clonando el repo (mismo resultado, pero puedes revisar el código
-antes de instalar, que es lo recomendable):
+Alternative by cloning the repo (same result, but you can review the code
+before installing, which is recommended):
 
 ```bash
 git clone https://github.com/devShakers/ai-usage-evaluator
@@ -41,215 +42,226 @@ git checkout main
 ./install.sh
 ```
 
-Desinstalar: `./install.sh --uninstall`.
+Uninstall: `./install.sh --uninstall`.
 
-## Uso
+## Usage
 
 ```bash
-ai-footprint                  # informe en la terminal
-ai-footprint --html           # además genera y abre el dashboard visual
-ai-footprint --json           # informe en JSON por stdout
-ai-footprint --root ../otro   # escanea otro directorio
-ai-footprint --no-save        # no escribe nada en disco
+ai-footprint                  # report in the terminal
+ai-footprint --html           # also generates and opens the visual dashboard
+ai-footprint --json           # report as JSON on stdout
+ai-footprint --root ../other  # scans another directory
+ai-footprint --no-save        # writes nothing to disk
 ```
 
-Sin instalar, desde una copia del repo, equivale a `node bin/report.js [opciones]`.
+Without installing, from a copy of the repo, this is equivalent to
+`node bin/report.js [options]`.
 
-## Compartir el informe con la plataforma — TODAVÍA NO DISPONIBLE EN ESTA POC
+## Sharing the report with the platform — NOT AVAILABLE IN THIS POC YET
 
-> **Inerte en esta PoC.** El mecanismo de enrolamiento y envío existe en el
-> código y está documentado abajo porque describe el diseño completo, pero
-> **no hay ningún servidor de Shakers desplegado en producción todavía**. El
-> código de enrolamiento (`--enroll=...`) se emite desde un panel de Shakers
-> que **no está en marcha**, así que hoy no existe forma de obtener uno real.
-> Sin enrolar, la herramienta no envía nada — no hay endpoint al que
-> conectarse. **No prometemos envío funcional en esta fase**, solo el informe
-> local (que sí funciona al 100%).
+> **Inert in this PoC.** The enrollment and sending mechanism exists in the
+> code and is documented below because it describes the full design, but
+> **there is no Shakers server deployed to production yet**. The enrollment
+> code (`--enroll=...`) is issued from a Shakers panel that **is not
+> running**, so there is no way to get a real one today. Without enrolling,
+> the tool sends nothing — there is no endpoint to connect to. **We don't
+> promise working delivery at this stage**, only the local report (which
+> does work 100%).
 
-Diseño (para cuando el servidor exista): el envío es **automático** tras
-enrolarse, sin preview ni confirmación por-ejecución. Se controla con un flag
-de consentimiento persistido en la propia credencial local, **activo (ON) por
-defecto** — se puede desactivar en cualquier momento sin volver a enrolarse
-(ver `--consent` abajo). El repo público **no contiene ningún endpoint ni
-secreto**: la URL de destino llega dentro de la credencial que se obtiene al
-enrolarse.
+Design (for when the server exists): sending is **automatic** after
+enrolling, with no preview or per-run confirmation. It's controlled by a
+consent flag persisted in the local credential itself, **ON by default** —
+it can be turned off at any time without re-enrolling (see `--consent`
+below). The public repo **contains no endpoint or secret**: the destination
+URL arrives inside the credential obtained when enrolling.
 
-Flujo previsto del talento (una vez el servidor esté desplegado):
+Expected talent flow (once the server is deployed):
 
 ```bash
-# 1) Enrolar (el código personalizado se obtendría del panel de Shakers)
-ai-footprint --enroll=CODIGO_DE_TU_PANEL
+# 1) Enroll (the personal code would come from your Shakers panel)
+ai-footprint --enroll=YOUR_PANEL_CODE
 
-# 2) A partir de aquí, cada ejecución normal envía el informe automáticamente
-#    (máx. 1 vez por hora), sin preview ni confirmación
+# 2) From here on, every normal run sends the report automatically
+#    (max. once per hour), with no preview or confirmation
 ai-footprint
 
-# 3) Para desactivar el envío automático en cualquier momento (o reactivarlo)
+# 3) To turn off automatic sending at any time (or turn it back on)
 ai-footprint --consent=off
 ai-footprint --consent=on
 ```
 
-Qué se enviaría: solo datos derivados (nivel, score, herramientas detectadas
-sí/no y conteos por herramienta). Nunca contenido de ficheros, rutas ni
-credenciales. Fallos de envío (red, credencial rechazada, límite de envíos)
-nunca rompen el informe local. La credencial se guardaría en
-`~/.config/ai-footprint/credentials.json` (permisos 600), junto con el flag
-de consentimiento y la marca de tiempo del último envío.
+What would be sent: only derived data (level, score, tools detected
+yes/no, and per-tool counts). Never file contents, paths or credentials.
+Sending failures (network, rejected credential, submission limit) never
+break the local report. The credential would be stored at
+`~/.config/ai-footprint/credentials.json` (permissions 600), along with the
+consent flag and the timestamp of the last submission.
 
-## Servidor de referencia (NO desplegado en esta PoC)
+## Reference server (NOT deployed in this PoC)
 
-> Fuera de alcance de esta PoC (ADR-002, `active-work/talents-ai-score`): el
-> código de `reference-server/` vive en el repo como documentación del
-> contrato y para revisión, pero **no se ejecuta ni se despliega**. No hay
-> ninguna instancia corriendo en Shakers a la que este CLI se conecte.
+> Out of scope for this PoC (ADR-002, `active-work/talents-ai-score`): the
+> `reference-server/` code lives in the repo as contract documentation and
+> for review, but **it is not run nor deployed**. There is no instance
+> running at Shakers that this CLI connects to.
 
-`reference-server/server.js` es un **stub sin dependencias** que ilustra el
-contrato: canjea un código de enrolamiento de un solo uso por un token
-revocable, e ingesta informes validando el token, atribuyéndolos al talento y
-aplicando rate limiting. Es un ejemplo en memoria; tu equipo lo reimplementa
-sobre la infraestructura real (BD, tokens hasheados, TLS en la pasarela).
+`reference-server/server.js` is a **dependency-free stub** that illustrates
+the contract: it exchanges a single-use enrollment code for a revocable
+token, and ingests reports validating the token, attributing them to the
+talent, and applying rate limiting. It's an in-memory example; your team
+reimplements it on real infrastructure (DB, hashed tokens, TLS at the
+gateway).
 
 ```bash
 node reference-server/server.js
-# imprime un código de demo y una cadena --enroll lista para probar el cliente
+# prints a demo code and an --enroll string ready to test the client
 ```
 
-Rutas: `GET /health`, `POST /enroll {code}`, `POST /reports` (con `Bearer`).
-Control de acceso: un desconocido que clone el repo obtiene un escáner que le
-muestra su informe local pero no tiene credencial válida, así que su envío se
-rechaza con 401. Solo los talentos que enroles pueden mandar reportes.
+Routes: `GET /health`, `POST /enroll {code}`, `POST /reports` (with
+`Bearer`). Access control: a stranger who clones the repo gets a scanner
+that shows them their local report but has no valid credential, so their
+submission is rejected with 401. Only the talents you enroll can send
+reports.
 
-### Control de tokens (administración)
+### Token control (administration)
 
-Los tokens se guardan **hasheados** (nunca en claro) y tienen ciclo de vida
-completo. Las rutas de administración requieren la cabecera `X-Admin-Key`:
+Tokens are stored **hashed** (never in plaintext) and have a full
+lifecycle. Admin routes require the `X-Admin-Key` header:
 
 ```bash
-# Emitir un código de enrolamiento para un talento (devuelve el comando a mostrar en su panel)
+# Issue an enrollment code for a talent (returns the command to show on their panel)
 curl -X POST http://localhost:8787/admin/enroll-codes \
-  -H "X-Admin-Key: TU_CLAVE" -H "Content-Type: application/json" \
+  -H "X-Admin-Key: YOUR_KEY" -H "Content-Type: application/json" \
   -d '{"talentId":"talent_123"}'
 
-# Auditar: lista todos los tokens con talento, emisión, último uso, caducidad y estado
-curl http://localhost:8787/admin/tokens -H "X-Admin-Key: TU_CLAVE"
+# Audit: lists all tokens with talent, issuance, last use, expiry and status
+curl http://localhost:8787/admin/tokens -H "X-Admin-Key: YOUR_KEY"
 
-# Revocar un token por su id público (corta el acceso; el siguiente envío da 401)
+# Revoke a token by its public id (cuts off access; the next submission gets 401)
 curl -X POST http://localhost:8787/admin/revoke \
-  -H "X-Admin-Key: TU_CLAVE" -H "Content-Type: application/json" \
+  -H "X-Admin-Key: YOUR_KEY" -H "Content-Type: application/json" \
   -d '{"id":"tok_abc123..."}'
 ```
 
-Cómo controlas cada fase:
+How you control each phase:
 
-- **Emisión**: sin un código emitido por ti (atado a un `talentId`) no hay token.
-- **Caducidad**: cada token nace con expiración (TTL); al caducar, el talento re-enrola.
-- **Revocación**: `/admin/revoke` corta el acceso al instante.
-- **Almacenamiento**: solo se guarda el hash del token; el secreto se entrega una
-  sola vez al enrolar y lo conserva el talento.
-- **Auditoría**: `/admin/tokens` muestra de quién es cada token, cuándo se usó por
-  última vez y si sigue activo.
+- **Issuance**: without a code issued by you (tied to a `talentId`) there is
+  no token.
+- **Expiry**: every token is born with an expiration (TTL); once it expires,
+  the talent re-enrolls.
+- **Revocation**: `/admin/revoke` cuts off access instantly.
+- **Storage**: only the token hash is stored; the secret is handed out once
+  at enrollment time and kept by the talent.
+- **Audit**: `/admin/tokens` shows who owns each token, when it was last
+  used, and whether it's still active.
 
-En producción, esta superficie de administración vive detrás de vuestro auth
-interno y sobre una base de datos, no sobre los almacenes en memoria del stub.
+In production, this admin surface lives behind your real internal auth and
+on top of a database, not the stub's in-memory stores.
 
-> Aviso: enviar datos sobre cómo trabaja una persona implica tratar datos
-> personales (RGPD, consentimiento). Valídalo con un experto legal/laboral antes
-> de activar el envío en producción.
+> Notice: sending data about how a person works involves processing personal
+> data (GDPR, consent). Validate it with a legal/labor expert before
+> enabling sending in production.
 
-## Uso (referencia rápida)
+## Usage (quick reference)
 
 ```bash
-ai-footprint                  # informe en la terminal
-ai-footprint --html           # además genera y abre el dashboard visual
-ai-footprint --json           # informe en JSON por stdout
-ai-footprint --root ../otro   # escanea otro directorio
-ai-footprint --no-save        # no escribe nada en disco
-ai-footprint --enroll=CODIGO   # enrola este equipo
-ai-footprint --consent=on     # activa el envío automático (ya viene activo por defecto)
-ai-footprint --consent=off    # desactiva el envío automático
+ai-footprint                  # report in the terminal
+ai-footprint --html           # also generates and opens the visual dashboard
+ai-footprint --json           # report as JSON on stdout
+ai-footprint --root ../other  # scans another directory
+ai-footprint --no-save        # writes nothing to disk
+ai-footprint --enroll=CODE    # enrolls this machine
+ai-footprint --consent=on     # turns on automatic sending (already on by default)
+ai-footprint --consent=off    # turns off automatic sending
 ```
 
-Los resultados se guardan en `~/.config/ai-footprint/` (`latest.json`,
-`report.html` y un histórico por fecha en `history/`). **Nunca** se escribe nada
-en el proyecto escaneado, para que el informe no acabe en un commit por error.
+Results are saved in `~/.config/ai-footprint/` (`latest.json`,
+`report.html`, and a dated history under `history/`). **Never** is anything
+written to the scanned project, so the report can't end up in a commit by
+mistake.
 
-## Herramientas que detecta
+## Tools it detects
 
 Claude Code, Cursor, GitHub Copilot, Windsurf, Aider, Continue, Cline,
-Gemini CLI, Codex CLI, Cody, Zed y Tabnine.
+Gemini CLI, Codex CLI, Cody, Zed and Tabnine.
 
-La detección se basa en la existencia de ficheros/directorios de configuración,
-binarios en el `PATH` y extensiones de editor instaladas. La "profundidad" mide
-cuánto se ha configurado cada herramienta (instrucciones de proyecto, reglas,
-servidores MCP, skills, comandos, hooks).
+Detection is based on the existence of config files/directories, binaries
+on `PATH`, and installed editor extensions. "Depth" measures how much each
+tool has been configured (project instructions, rules, MCP servers, skills,
+commands, hooks).
 
-## Niveles de madurez
+## Maturity levels
 
-| Nivel | Nombre | Criterio |
+| Level | Name | Criteria |
 |------|--------|----------|
-| 0 | Sin rastro de IA | ninguna herramienta detectada |
-| 1 | Explorando | hay herramientas, pero sin configuración de proyecto |
-| 2 | Integrado | existe al menos un fichero de instrucciones/reglas de proyecto |
-| 3 | Power user | hay MCP, skills/comandos/reglas propias, o 3+ herramientas |
-| 4 | Orquestador | CLI agéntica + MCP + personalización propia (automatización profunda) |
+| 0 | No AI footprint | no tool detected |
+| 1 | Exploring | tools exist, but no project configuration |
+| 2 | Integrated | at least one project instructions/rules file exists |
+| 3 | Power user | MCP, own skills/commands/rules, or 3+ tools |
+| 4 | Orchestrator | agentic CLI + MCP + own customization (deep automation) |
 
-## Diseño de privacidad (importante)
+(These are the English names; the report itself is localized to the
+talent's OS locale — Spanish or English — see `src/i18n.js`.)
 
-Esta herramienta está pensada para poder, en una segunda fase, compartir el
-perfil con la plataforma. Por eso el diseño separa con cuidado lo que se ve en
-local de lo que podría enviarse:
+## Privacy design (important)
 
-- **Solo se registran señales derivadas**: booleanos (detectada sí/no), conteos
-  (cuántos MCP, cuántas skills) y categorías. **Nunca** se lee ni se guarda el
-  *contenido* de tus ficheros, ni rutas absolutas, ni variables de entorno, ni
-  credenciales.
-- El único fichero que se parsea (`.mcp.json`) se abre **solo para contar
-  claves**; no se guarda ningún nombre ni valor.
-- El `id anónimo` es un hash no reversible de hostname + usuario, útil solo para
-  deduplicar, no para identificar a la persona.
-- **No hay envío de datos en esta PoC.** El módulo de compartición
-  (`src/share.js`) existe en el código —envío automático tras enrolarse, sin
-  preview ni confirmación, con un flag de consentimiento persistido en la
-  credencial local (activo por defecto, desactivable con `--consent=off`)—
-  pero está **inerte** mientras no haya servidor desplegado: sin credencial no
-  hay a quién enviar.
+This tool is meant to be able to, in a second phase, share the profile with
+the platform. That's why the design carefully separates what's seen
+locally from what could be sent:
 
-Si vas a desplegar esto entre terceros (p. ej. talentos de una plataforma),
-recuerda que recopilar datos sobre cómo trabaja una persona tiene implicaciones
-de RGPD y consentimiento: conviene validarlo con un experto legal/laboral antes
-de desplegar el servidor y distribuir el CLI con el envío activo.
+- **Only derived signals are recorded**: booleans (detected yes/no),
+  counts (how many MCP servers, how many skills) and categories. **Never**
+  is the *content* of your files, absolute paths, environment variables, or
+  credentials read or stored.
+- The only file that gets parsed (`.mcp.json`) is opened **only to count
+  keys**; no name or value is stored.
+- The `anonymous id` is a non-reversible hash of hostname + user, useful
+  only for deduplication, not for identifying the person.
+- **There is no data sending in this PoC.** The sharing module
+  (`src/share.js`) exists in the code — automatic sending after enrolling,
+  with no preview or confirmation, with a consent flag persisted in the
+  local credential (on by default, can be turned off with
+  `--consent=off`) — but it's **inert** while no server is deployed: with
+  no credential, there's no one to send to.
 
-## Cómo añadir una herramienta nueva
+If you're going to deploy this among third parties (e.g. a platform's
+talents), remember that collecting data about how a person works has GDPR
+and consent implications: it's worth validating it with a legal/labor
+expert before deploying the server and distributing the CLI with sending
+turned on.
 
-Edita `src/detectors.js` y añade una entrada con sus señales:
+## How to add a new tool
+
+Edit `src/detectors.js` and add an entry with its signals:
 
 ```js
 {
-  id: 'mi-tool',
-  name: 'Mi Tool',
+  id: 'my-tool',
+  name: 'My Tool',
   vendor: 'Vendor',
   category: CATEGORIES.AGENTIC_CLI,
   signals: [
-    { type: 'projectPath', path: '.mitool' },
-    { type: 'bin', name: 'mitool' },
+    { type: 'projectPath', path: '.mytool' },
+    { type: 'bin', name: 'mytool' },
   ],
 }
 ```
 
-Si quieres medir profundidad, añade una sonda en `src/scanner.js` dentro de
-`probes` que devuelva **solo números**.
+If you want to measure depth, add a probe in `src/scanner.js` inside
+`probes` that returns **only numbers**.
 
-## Estructura
+## Structure
 
 ```
-bin/report.js            Orquestador CLI
-src/detectors.js         Catálogo de herramientas y señales
-src/scanner.js           Motor de escaneo (produce el objeto reporte)
-src/maturity.js          Cálculo de nivel y score
-src/render-terminal.js   Salida en terminal
-src/render-html.js       Dashboard HTML autocontenido
-src/store.js             Persistencia en el home del usuario
-src/share.js             Enrolamiento, flag de consentimiento (ON por defecto) y envío automático
-reference-server/server.js  Servidor de referencia (stub) de enrolamiento e ingesta
-install.sh               Instalador (curl | bash o local)
+bin/report.js            CLI orchestrator
+src/detectors.js         Catalog of tools and signals
+src/scanner.js           Scan engine (produces the report object)
+src/maturity.js          Level and score calculation
+src/render-terminal.js   Terminal output
+src/render-html.js       Self-contained HTML dashboard
+src/store.js             Persistence in the user's home
+src/share.js             Enrollment, consent flag (ON by default) and automatic sending
+src/locale.js            OS locale detection for report localization
+src/i18n.js              Report text catalogs (es/en)
+reference-server/server.js  Reference (stub) enrollment and ingestion server
+install.sh               Installer (curl | bash or local)
 ```

@@ -1,30 +1,30 @@
 'use strict';
 
 /*
- * Catálogo de herramientas de IA para desarrolladores.
+ * Catalog of AI tools for developers.
  *
- * Cada detector declara SEÑALES (signals): comprobaciones de existencia de
- * ficheros/directorios o de binarios en el PATH. Nunca se lee el CONTENIDO de
- * los ficheros para decidir si una herramienta está presente: solo su
- * existencia. Las "sondas" (probe) opcionales extraen métricas de PROFUNDIDAD
- * (conteos), y están diseñadas para devolver únicamente números, jamás texto,
- * rutas absolutas ni valores de configuración.
+ * Each detector declares SIGNALS: checks for the existence of
+ * files/directories or binaries on PATH. The CONTENT of files is never read
+ * to decide whether a tool is present: only its existence. The optional
+ * "probes" extract DEPTH metrics (counts), and are designed to return only
+ * numbers, never text, absolute paths, or configuration values.
  *
- * Tipos de señal:
- *   projectPath  -> ruta relativa al directorio escaneado (cwd)
- *   homePath     -> ruta relativa al home del usuario
- *   bin          -> binario disponible en el PATH
- *   vscodeExt    -> extensión instalada en ~/.vscode/extensions (prefijo)
+ * Signal types:
+ *   projectPath  -> path relative to the scanned directory (cwd)
+ *   homePath     -> path relative to the user's home directory
+ *   bin          -> binary available on PATH
+ *   vscodeExt    -> extension installed under ~/.vscode/extensions (prefix)
  *
- * NOTA sobre las entradas añadidas tras el catálogo original de 12 (herramienta
- * talents-ai-score, ampliación de señales): igual que advierte
- * active-work/talents-ai-score/decisions.md ADR-001, este catálogo envejece
- * rápido y sigue sin dueño asignado. Cada entrada nueva lleva un comentario de
- * CONFIANZA sobre sus rutas/ids exactos (no se ha podido verificar contra la
- * documentación viva del vendor en este entorno, sin acceso a red). Confianza
- * "media/baja" => falso negativo probable si el vendor cambió el nombre; el
- * riesgo de falso positivo es bajo porque la comprobación es solo existencia.
- * Revisar y corregir antes de tratar estas señales como definitivas.
+ * NOTE on the entries added after the original catalog of 12 (talents-ai-score
+ * tool, signal expansion): as warned by
+ * active-work/talents-ai-score/decisions.md ADR-001, this catalog ages fast
+ * and remains without an assigned owner. Every new entry carries a
+ * CONFIDENCE comment about its exact paths/ids (it couldn't be verified
+ * against the vendor's live documentation in this environment, with no
+ * network access). "Medium/low" confidence => likely false negative if the
+ * vendor changed the name; false-positive risk is low because the check is
+ * existence-only. Review and correct before treating these signals as
+ * definitive.
  */
 
 const CATEGORIES = {
@@ -172,17 +172,17 @@ const detectors = [
     ],
   },
 
-  // ---- Ampliación (talents-ai-score, más señales) — confianza por entrada abajo ----
+  // ---- Expansion (talents-ai-score, more signals) — confidence per entry below ----
   {
     id: 'amazon-q-developer',
     name: 'Amazon Q Developer',
     vendor: 'AWS',
     category: CATEGORIES.AGENTIC_CLI,
     signals: [
-      // Confianza alta: binario e id de extensión estables de la CLI/extension oficiales.
+      // High confidence: binary and extension id are stable for the official CLI/extension.
       { type: 'bin', name: 'q' },
       { type: 'vscodeExt', prefix: 'amazonwebservices.amazon-q-vscode' },
-      // Confianza media: directorio de credenciales/caché de la CLI bajo .aws.
+      // Medium confidence: CLI credentials/cache directory under .aws.
       { type: 'homePath', path: '.aws/amazonq' },
     ],
   },
@@ -192,9 +192,9 @@ const detectors = [
     vendor: 'Codeium (Exafunction)',
     category: CATEGORIES.IDE_ASSISTANT,
     signals: [
-      // Extensión base de Codeium (autocompletado en cualquier editor), distinta
-      // de Windsurf (editor propio, ya catalogado arriba). Confianza alta en el
-      // id de extensión; media en la ruta de config local.
+      // Codeium's base extension (autocomplete in any editor), distinct from
+      // Windsurf (its own editor, already cataloged above). High confidence in
+      // the extension id; medium in the local config path.
       { type: 'vscodeExt', prefix: 'codeium.codeium' },
       { type: 'homePath', path: '.codeium/config.json' },
     ],
@@ -205,7 +205,7 @@ const detectors = [
     vendor: 'Supermaven',
     category: CATEGORIES.COMPLETION,
     signals: [
-      // Confianza alta en el id de extensión; media en el directorio de estado local.
+      // High confidence in the extension id; medium in the local state directory.
       { type: 'vscodeExt', prefix: 'supermaven.supermaven' },
       { type: 'homePath', path: '.supermaven' },
     ],
@@ -216,10 +216,10 @@ const detectors = [
     vendor: 'Mesh Intelligent Technologies',
     category: CATEGORIES.IDE_ASSISTANT,
     signals: [
-      // Confianza media: id de extensión recordado de memoria, sin poder
-      // verificar contra el marketplace en este entorno. Sin homePath: la ruta
-      // de datos de Pieces OS difiere demasiado entre SO (Application
-      // Support/AppData/.local/share) para una señal fiable sin verificarla.
+      // Medium confidence: extension id recalled from memory, could not be
+      // verified against the marketplace in this environment. No homePath:
+      // Pieces OS's data path differs too much across OSes (Application
+      // Support/AppData/.local/share) for a reliable signal without verifying it.
       { type: 'vscodeExt', prefix: 'meshintelligenttechnologiesinc.pieces-vscode' },
     ],
   },
@@ -229,9 +229,9 @@ const detectors = [
     vendor: 'Warp',
     category: CATEGORIES.AI_TERMINAL,
     signals: [
-      // Confianza media: directorio de configuración de la app de terminal Warp.
+      // Medium confidence: config directory of the Warp terminal app.
       { type: 'homePath', path: '.warp' },
-      // En Linux la configuración de Warp vive bajo ~/.config/warp-terminal.
+      // On Linux, Warp's config lives under ~/.config/warp-terminal.
       { type: 'homePath', path: '.config/warp-terminal' },
     ],
   },
@@ -241,9 +241,9 @@ const detectors = [
     vendor: 'ByteDance',
     category: CATEGORIES.AI_EDITOR,
     signals: [
-      // Confianza baja/media: Trae es un fork de VS Code con reglas de proyecto
-      // al estilo Cursor/Windsurf; nombre de carpeta `.trae` no verificado contra
-      // documentación oficial en este entorno (sin acceso a red).
+      // Low/medium confidence: Trae is a VS Code fork with project rules in
+      // the style of Cursor/Windsurf; the `.trae` folder name is not verified
+      // against official documentation in this environment (no network access).
       { type: 'projectPath', path: '.trae' },
       { type: 'homePath', path: '.trae' },
       { type: 'bin', name: 'trae' },
