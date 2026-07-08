@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
+const readline = require('readline');
 const { execFile } = require('child_process');
 const { scan } = require('../src/scanner');
 const { classify } = require('../src/maturity');
@@ -8,23 +9,9 @@ const { renderTerminal } = require('../src/render-terminal');
 const { renderHtml } = require('../src/render-html');
 const { save } = require('../src/store');
 const { detectReportLang, getCatalog } = require('../src/i18n');
-
-function parseArgs(argv) {
-  const opts = { html: false, json: false, save: true, root: null, enroll: null, consent: null };
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === '--html' || a === '-w') opts.html = true;
-    else if (a === '--json') opts.json = true;
-    else if (a === '--no-save') opts.save = false;
-    else if (a === '--root') opts.root = argv[++i];
-    else if (a === '--enroll') opts.enroll = argv[++i];
-    else if (a.startsWith('--enroll=')) opts.enroll = a.slice('--enroll='.length);
-    else if (a === '--consent') opts.consent = argv[++i];
-    else if (a.startsWith('--consent=')) opts.consent = a.slice('--consent='.length);
-    else if (a === '--help' || a === '-h') opts.help = true;
-  }
-  return opts;
-}
+const { parseArgs } = require('../src/cli-args');
+const { loadConsentState, getConsentDecision, autoShare } = require('../src/share');
+const { runDisclosureFlow } = require('../src/consent-flow');
 
 function openInBrowser(file) {
   const cmd =
@@ -47,66 +34,38 @@ Opciones:
       --json          Imprime el informe en JSON por stdout
       --no-save       No guarda nada en disco (solo muestra)
       --root DIR      Escanea DIR en vez del directorio actual
-      --enroll CODE   Enrola este equipo con el código de tu panel de Shakers
-      --consent on|off  Activa/desactiva el envío automático de tu informe
   -h, --help          Muestra esta ayuda
 
-El informe se genera y se muestra SIEMPRE en tu equipo. Si estás enrolado y el
-envío está activado (--consent on), tu informe se envía automáticamente al
-final de cada ejecución (máx. 1 vez por hora), sin preview ni confirmación.
-Sin enrolar, o con el envío desactivado, todo se queda en local.
+El informe se genera y se muestra SIEMPRE en tu equipo. La primera vez que
+ejecutas la herramienta se te pregunta si aceptas enviarlo (con tu correo)
+a la plataforma; puedes aceptar o rechazar, y solo se te pregunta una vez.
+Gestiona esa decisión con: --consent-status, --consent-revoke,
+--consent-email <correo>.
 `;
 }
 
-async function doEnroll(code) {
-  const { enroll } = require('../src/share');
-  process.stdout.write('\n  Enrolando este equipo...\n');
-  try {
-    const r = await enroll(code);
-    if (r.ok) {
-      process.stdout.write(`  Listo. Enrolado${r.cred.talentId ? ` como ${r.cred.talentId}` : ''}.\n`);
-      process.stdout.write(
-        '  El envío automático está DESACTIVADO por defecto. Actívalo con:\n' +
-        '    ai-footprint --consent=on\n\n',
-      );
-    } else {
-      process.stdout.write(`  No se pudo enrolar: ${r.reason}\n\n`);
-      process.exitCode = 1;
-    }
-  } catch (e) {
-    process.stdout.write(`  Error: ${e.message}\n\n`);
-    process.exitCode = 1;
-  }
+// Reads one line from real stdin. Injected as `ask` into
+// src/consent-flow.js's runDisclosureFlow so that module can be tested
+// without a TTY.
+function createStdinAsk() {
+  return (question) => new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question(`  ${question} `, (answer) => {
+      rl.close();
+      resolve(answer);
+    });
+  });
 }
 
-async function doConsent(value) {
-  const { setConsent } = require('../src/share');
-  const enabled = /^on$/i.test(value);
-  const disabled = /^off$/i.test(value);
-  if (!enabled && !disabled) {
-    process.stdout.write('  Valor no válido para --consent: usa "on" u "off".\n\n');
-    process.exitCode = 1;
-    return;
-  }
-  const r = setConsent(enabled);
-  if (r.ok) {
-    process.stdout.write(`  Envío automático de tu informe ${enabled ? 'ACTIVADO' : 'DESACTIVADO'}.\n\n`);
-  } else {
-    process.stdout.write(`  ${r.reason}\n\n`);
-    process.exitCode = 1;
-  }
-}
-
-// Automatic, silent sending: no preview or confirmation (ADR-005,
-// talents-ai-score). Must never break the local run, no matter what.
+// Automatic, silent sending once consent is `granted` (ADR-007). Must never
+// break the local run, no matter what.
 async function maybeAutoShare(report, maturity) {
-  const { autoShare } = require('../src/share');
   try {
-    const r = await autoShare(report, maturity);
-    if (!r.ok && r.notice) process.stdout.write(`  ${r.notice}\n\n`);
-    // Every other reason not to send (not enrolled, consent OFF, throttle,
-    // network, 429, other HTTP): silent on purpose, they aren't errors of
-    // the local run.
+    await autoShare(report, maturity);
+    // Every skip/failure reason (no-decision, consent-denied, throttled,
+    // no-endpoint-configured, network-error, rate-limited,
+    // service-unavailable, other HTTP): silent on purpose, they aren't
+    // errors of the local run.
   } catch {
     // Must never break the local report.
   }
@@ -119,16 +78,16 @@ async function main() {
     return;
   }
 
-  // Enrollment: doesn't need to scan anything.
-  if (opts.enroll) {
-    await doEnroll(opts.enroll);
-    return;
-  }
+  const lang = detectReportLang();
+  const catalog = getCatalog(lang);
 
-  // Turning automatic sending on/off: doesn't need to scan anything.
-  if (opts.consent) {
-    await doConsent(opts.consent);
-    return;
+  // Disclosure + consent + email: shown ONCE, before any scanning, only if
+  // there's no decision persisted yet (talents-ai-score, ADR-007, issue
+  // 006). Once a decision exists (granted or denied), a normal run never
+  // interrupts with this again.
+  const state = loadConsentState();
+  if (!getConsentDecision(state)) {
+    await runDisclosureFlow({ ask: createStdinAsk(), catalog });
   }
 
   const report = scan({ root: opts.root });
@@ -139,21 +98,14 @@ async function main() {
     return;
   }
 
-  // Report language: detected ONCE from the OS locale (see src/locale.js)
-  // and propagated to both renderers and the CLI notices tied to the report
-  // (saved/dashboard). Doesn't affect enroll/share, which are a separate
-  // mechanism (talents-ai-score, report-i18n).
-  const lang = detectReportLang();
-  const cli = getCatalog(lang).cli;
-
   process.stdout.write(renderTerminal(report, maturity, lang) + '\n');
 
   const html = renderHtml(report, maturity, lang);
   if (opts.save) {
     const paths = save(report, html);
-    process.stdout.write(`  ${cli.saved(paths.dir)}\n\n`);
+    process.stdout.write(`  ${catalog.cli.saved(paths.dir)}\n\n`);
     if (opts.html) openInBrowser(paths.htmlPath);
-    else process.stdout.write(`  ${cli.useHtmlHint}\n\n`);
+    else process.stdout.write(`  ${catalog.cli.useHtmlHint}\n\n`);
   } else if (opts.html) {
     const os = require('os');
     const fs = require('fs');
@@ -161,11 +113,11 @@ async function main() {
     const tmp = path.join(os.tmpdir(), `ai-footprint-${Date.now()}.html`);
     fs.writeFileSync(tmp, html);
     openInBrowser(tmp);
-    process.stdout.write(`  ${cli.tempDashboard(tmp)}\n\n`);
+    process.stdout.write(`  ${catalog.cli.tempDashboard(tmp)}\n\n`);
   }
 
   // Automatic sending, always at the end and after seeing the local report.
-  // Gated by enrollment + consent + throttle (src/share.js).
+  // Gated by consent + email + throttle + endpoint config (src/share.js).
   await maybeAutoShare(report, maturity);
 }
 

@@ -22,6 +22,14 @@ const { CATEGORIES } = require('./detectors');
  *     exports, by inverting its key->Spanish-text map (see categoryLabel
  *     below). Nothing is added or changed in detectors.js: only what it
  *     already exposes is read.
+ *
+ * Extension (talents-ai-score, ADR-007): the `consent` catalog below covers
+ * the disclosure + consent + email-management copy used by
+ * src/consent-flow.js and bin/report.js's one-shot consent commands. Unlike
+ * the original report-i18n note above (which scoped this file to report
+ * rendering only), the consent/disclosure flow is intentionally localized
+ * too — GDPR-adjacent copy shouldn't default to a language the talent may
+ * not read. It reuses the same `detectReportLang()` entry point.
  */
 
 const catalogs = {
@@ -102,6 +110,35 @@ const catalogs = {
       useHtmlHint: 'Usa --html para abrir el dashboard visual.',
       tempDashboard: (file) => `Dashboard temporal: ${file}`,
     },
+    consent: {
+      disclosureTitle: 'Antes de continuar: qué pasa con tu informe',
+      sendsHeading: 'SI ACEPTAS, esto se envía:',
+      sendsList: [
+        'Nivel (0-4) y puntuación (0-100)',
+        'Categorías y lista de herramientas detectadas',
+        'Conteos y booleanos derivados (profundidad de configuración)',
+        'Recencia de configuración (fecha de última modificación de ficheros de setup, no de tu actividad)',
+        'El correo que introduzcas (para vincular el informe a tu perfil de Talent, si existe)',
+      ],
+      neverSendsHeading: 'NUNCA se envía:',
+      neverSendsList: [
+        'El contenido de tus ficheros',
+        'Rutas absolutas de tu sistema',
+        'Variables de entorno ni credenciales',
+        'Historiales de shell ni logs de herramientas',
+      ],
+      purpose: 'Propósito: entender la adopción de IA en el pool de talento de Shakers.',
+      indicativeNotice: 'Este dato es indicativo, no verificado (el correo no se comprueba).',
+      revocableNotice: 'Es revocable en cualquier momento con: ai-footprint --consent-revoke',
+      legalPlaceholder: '[PENDIENTE DE REVISIÓN LEGAL: texto de aviso RGPD a redactar por un experto legal/laboral antes de activar el envío contra talentos reales — ADR-007]',
+      consentQuestion: '¿Aceptas enviar este informe? (s/n):',
+      invalidAnswer: 'Respuesta no reconocida. Responde "s" (sí) o "n" (no).',
+      emailPrompt: 'Introduce tu correo:',
+      invalidEmail: 'Correo no válido, inténtalo de nuevo.',
+      notObtained: 'No se ha podido registrar tu respuesta; se te volverá a preguntar la próxima vez.',
+      deniedSaved: 'Entendido, no se enviará nada. Puedes cambiar de opinión más adelante volviendo a ejecutar el comando.',
+      grantedSaved: (email) => `Gracias. A partir de ahora tu informe se enviará automáticamente (correo: ${email}, máx. 1 vez por hora).`,
+    },
   },
   en: {
     categories: {
@@ -177,6 +214,35 @@ const catalogs = {
       saved: (dir) => `Saved to ${dir}`,
       useHtmlHint: 'Use --html to open the visual dashboard.',
       tempDashboard: (file) => `Temporary dashboard: ${file}`,
+    },
+    consent: {
+      disclosureTitle: 'Before continuing: what happens with your report',
+      sendsHeading: 'IF YOU ACCEPT, this is sent:',
+      sendsList: [
+        'Level (0-4) and score (0-100)',
+        'Categories and the list of detected tools',
+        'Derived counts and booleans (configuration depth)',
+        'Setup recency (last-modified date of setup config files, not of your activity)',
+        'The email you type in (to link the report to your Talent profile, if one exists)',
+      ],
+      neverSendsHeading: 'NEVER sent:',
+      neverSendsList: [
+        'The content of your files',
+        'Absolute paths on your system',
+        'Environment variables or credentials',
+        'Shell history or tool logs',
+      ],
+      purpose: 'Purpose: understand AI adoption across the Shakers talent pool.',
+      indicativeNotice: 'This data is indicative, not verified (the email is not checked).',
+      revocableNotice: 'It is revocable at any time with: ai-footprint --consent-revoke',
+      legalPlaceholder: '[PENDING LEGAL REVIEW: GDPR notice text to be drafted by a legal/labor expert before enabling sending against real talents — ADR-007]',
+      consentQuestion: 'Do you accept sending this report? (y/n):',
+      invalidAnswer: 'Answer not recognized. Reply "y" (yes) or "n" (no).',
+      emailPrompt: 'Enter your email:',
+      invalidEmail: 'Invalid email, try again.',
+      notObtained: "Couldn't record your answer; you'll be asked again next time.",
+      deniedSaved: 'Understood, nothing will be sent. You can change your mind later by running the command again.',
+      grantedSaved: (email) => `Thanks. From now on your report will be sent automatically (email: ${email}, max. once per hour).`,
     },
   },
 };
