@@ -4,27 +4,37 @@
 /*
  * REFERENCE SERVER (STUB) — DO NOT USE IN PRODUCTION AS-IS.
  *
- * Minimal, dependency-free example of the contract and of TOKEN CONTROL.
- * Deliberate simplifications (to replace for real):
- *   - IN-MEMORY stores (lost on restart) -> use a database.
- *   - In-memory rate limiting -> use Redis or equivalent.
+ * talents-ai-score / ADR-007: this stub illustrates the CURRENT contract —
+ * a PUBLIC ingestion endpoint, no per-identity auth, identity is a
+ * self-affirmed EMAIL in the request body. It supersedes the previous
+ * token/enrollment stub (ADR-005/006; see git history for /enroll and the
+ * Bearer-token model). The REAL server for this contract is
+ * `shakers-hub-backend` (specs.md, active-work/talents-ai-score) — this
+ * file is contract documentation and a local testing aid, not what's
+ * deployed. It is NOT run nor deployed anywhere (ADR-002).
+ *
+ * Deliberate simplifications (to replace for real, in shakers-hub-backend):
+ *   - IN-MEMORY store (lost on restart) -> Postgres, upsert by email/talent_id
+ *     (see specs.md Data model: PK own to the row, talent_id nullable).
+ *   - In-memory rate limiting -> Redis or equivalent (per-replica ceiling
+ *     otherwise, see specs.md Backend integration points).
+ *   - No email <-> Talent match here (this stub has no Talent database):
+ *     every report is stored as a lead, keyed by normalized email. The real
+ *     match against `users`/`users_works_talents` is shakers-hub-backend's
+ *     job (a cross-module port, per specs.md).
  *   - No TLS here -> your gateway/load balancer provides it.
- * What it DOES illustrate well:
- *   - Tokens are stored HASHED (never in plaintext).
- *   - Full lifecycle: issue code -> exchange -> use -> revoke/expire.
- *   - An admin surface to control tokens.
  *
- * Talent routes:
+ * Routes:
  *   GET  /health
- *   POST /enroll   {code}     -> exchanges a single-use code for a token
- *   POST /reports  (Bearer)   -> ingestion, attributed to the token's talent
+ *   POST /reports        {email, payload}  -> public, no auth. 201 / 400 / 429 / 503
+ *   GET  /admin/reports   (X-Admin-Key)     -> lists stored reports (audit aid)
  *
- * Admin routes (require the X-Admin-Key header):
- *   POST /admin/enroll-codes  {talentId, ttlHours?}  -> creates a code + --enroll string
- *   GET  /admin/tokens                                -> lists tokens (without the secret)
- *   POST /admin/revoke        {id}                    -> revokes a token by its id
+ * Kill switch (specs.md: "default OFF" at rest): read once at startup from
+ * AI_FOOTPRINT_INGEST_ENABLED (unset/anything other than "true" = OFF).
+ * Restart the process to flip it — this stub does not need a runtime
+ * toggle endpoint.
  *
- * Startup:  ADMIN_KEY=mykey node reference-server/server.js
+ * Startup:  ADMIN_KEY=mykey AI_FOOTPRINT_INGEST_ENABLED=true node reference-server/server.js
  */
 
 const http = require('http');
@@ -34,18 +44,19 @@ const PORT = process.env.PORT || 8787;
 const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
 const RATE_LIMIT = 5;
 const RATE_WINDOW_MS = 60 * 60 * 1000;
-const TOKEN_TTL_DAYS = 180;
+const INGEST_ENABLED = process.env.AI_FOOTPRINT_INGEST_ENABLED === 'true';
 // Admin key: if not passed via environment, one is generated and shown at startup.
 const ADMIN_KEY = process.env.ADMIN_KEY || 'adm_' + crypto.randomBytes(16).toString('hex');
 
 /* ---------- in-memory stores (replace with a real DB) ---------- */
-const enrollCodes = new Map(); // code -> { talentId, expiresAt, used }
-const tokens = new Map();      // tokenHash -> { id, talentId, issuedAt, lastUsedAt, expiresAt, revoked }
-const rate = new Map();        // tokenHash -> { count, windowStart }
-const reports = [];
+// Keyed by normalized email. No Talent match in this stub (see header):
+// every row here is what specs.md calls a "lead" until a real backend
+// resolves talent_id.
+const reports = new Map(); // email -> { email, receivedAt, payload }
+const rateByEmail = new Map(); // email -> { count, windowStart }
+const rateByIp = new Map();    // ip -> { count, windowStart }
 
 /* ---------- utilities ---------- */
-const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 
 function send(res, status, obj) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -58,30 +69,43 @@ function readJson(req) {
     req.on('end', () => { try { resolve(JSON.parse(raw || '{}')); } catch { resolve(null); } });
   });
 }
-const bearer = (req) => {
-  const h = req.headers['authorization'] || '';
-  return h.startsWith('Bearer ') ? h.slice(7) : null;
-};
 const isAdmin = (req) => (req.headers['x-admin-key'] || '') === ADMIN_KEY;
 
-function enrollStringFor(code) {
-  return Buffer.from(JSON.stringify({ enrollUrl: `${PUBLIC_URL}/enroll`, code }))
-    .toString('base64url');
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function normalizeEmail(value) {
+  return String(value).trim().toLowerCase();
 }
-function makeEnrollCode(talentId, ttlHours = 72) {
-  const code = 'enr_' + crypto.randomBytes(9).toString('hex');
-  enrollCodes.set(code, {
-    talentId,
-    expiresAt: new Date(Date.now() + ttlHours * 3600e3).toISOString(),
-    used: false,
-  });
-  return code;
+function isValidEmail(value) {
+  return typeof value === 'string' && EMAIL_RE.test(value.trim());
 }
-function checkRate(hash) {
+
+// Same strict whitelist the CLI applies client-side (src/share.js#derivePayload),
+// re-applied server-side by NAMING each field (specs.md: the global
+// ValidationPipe alone doesn't enforce a class-validator whitelist).
+function whitelistPayload(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  if (typeof payload.level !== 'number' || typeof payload.schemaVersion !== 'number') return null;
+  return {
+    schemaVersion: payload.schemaVersion,
+    generatedAt: payload.generatedAt,
+    anonId: payload.anonId,
+    platform: payload.platform,
+    level: payload.level,
+    levelName: payload.levelName,
+    score: payload.score,
+    totalDetected: payload.totalDetected,
+    categories: payload.categories,
+    tools: Array.isArray(payload.tools)
+      ? payload.tools.map((t) => ({ id: t.id, detected: !!t.detected, depth: t.depth || {} }))
+      : [],
+  };
+}
+
+function checkRate(map, key) {
   const now = Date.now();
-  const r = rate.get(hash);
+  const r = map.get(key);
   if (!r || now - r.windowStart > RATE_WINDOW_MS) {
-    rate.set(hash, { count: 1, windowStart: now });
+    map.set(key, { count: 1, windowStart: now });
     return true;
   }
   if (r.count >= RATE_LIMIT) return false;
@@ -89,90 +113,60 @@ function checkRate(hash) {
   return true;
 }
 
+function clientIp(req) {
+  return req.socket.remoteAddress || 'unknown';
+}
+
 /* ---------- routes ---------- */
 async function handle(req, res) {
   const { method, url } = req;
 
   if (method === 'GET' && url === '/health') {
-    return send(res, 200, { ok: true, tokens: tokens.size, reportsReceived: reports.length });
+    return send(res, 200, { ok: true, ingestEnabled: INGEST_ENABLED, reportsReceived: reports.size });
   }
 
-  /* --- administration: token control --- */
+  /* --- administration: audit only (no token control anymore, ADR-007) --- */
   if (url.startsWith('/admin/')) {
     if (!isAdmin(req)) return send(res, 401, { error: 'admin key requerida' });
 
-    if (method === 'POST' && url === '/admin/enroll-codes') {
-      const body = await readJson(req);
-      if (!body || !body.talentId) return send(res, 400, { error: 'falta talentId' });
-      const code = makeEnrollCode(body.talentId, body.ttlHours);
-      return send(res, 201, {
-        code,
-        talentId: body.talentId,
-        enrollString: enrollStringFor(code),
-        // This is what you'd show on the talent's panel:
-        command: `ai-footprint --enroll=${enrollStringFor(code)}`,
-      });
-    }
-
-    if (method === 'GET' && url === '/admin/tokens') {
-      // The token itself is never returned; only its public id and audit metadata.
-      const list = [...tokens.values()].map((t) => ({
-        id: t.id, talentId: t.talentId, issuedAt: t.issuedAt,
-        lastUsedAt: t.lastUsedAt, expiresAt: t.expiresAt, revoked: t.revoked,
+    if (method === 'GET' && url === '/admin/reports') {
+      const list = [...reports.values()].map((r) => ({
+        email: r.email,
+        receivedAt: r.receivedAt,
+        level: r.payload.level,
+        score: r.payload.score,
       }));
-      return send(res, 200, { tokens: list });
-    }
-
-    if (method === 'POST' && url === '/admin/revoke') {
-      const body = await readJson(req);
-      const target = body && body.id;
-      for (const t of tokens.values()) {
-        if (t.id === target) { t.revoked = true; return send(res, 200, { ok: true, id: target }); }
-      }
-      return send(res, 404, { error: 'token no encontrado' });
+      return send(res, 200, { reports: list });
     }
     return send(res, 404, { error: 'ruta admin no encontrada' });
   }
 
-  /* --- exchange a code for a token --- */
-  if (method === 'POST' && url === '/enroll') {
-    const body = await readJson(req);
-    const code = body && body.code;
-    const entry = code && enrollCodes.get(code);
-    if (!entry) return send(res, 404, { error: 'código no reconocido' });
-    if (entry.used) return send(res, 409, { error: 'código ya usado' });
-    if (new Date(entry.expiresAt) < new Date()) return send(res, 400, { error: 'código caducado' });
-
-    entry.used = true;
-    const token = 'aft_' + crypto.randomBytes(24).toString('hex'); // handed out ONCE
-    const hash = sha256(token);
-    const expiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 864e5).toISOString();
-    tokens.set(hash, {
-      id: 'tok_' + hash.slice(0, 12), // public id to audit/revoke without the secret
-      talentId: entry.talentId,
-      issuedAt: new Date().toISOString(),
-      lastUsedAt: null,
-      expiresAt,
-      revoked: false,
-    });
-    return send(res, 200, { token, endpoint: `${PUBLIC_URL}/reports`, talentId: entry.talentId, expiresAt });
-  }
-
-  /* --- report ingestion --- */
+  /* --- report ingestion: public, no per-identity auth (ADR-007) --- */
   if (method === 'POST' && url === '/reports') {
-    const token = bearer(req);
-    const rec = token && tokens.get(sha256(token)); // compared by hash
-    if (!rec || rec.revoked) return send(res, 401, { error: 'token inválido o revocado' });
-    if (new Date(rec.expiresAt) < new Date()) return send(res, 401, { error: 'token caducado' });
-    if (!checkRate(sha256(token))) return send(res, 429, { error: 'límite de envíos superado' });
+    if (!INGEST_ENABLED) {
+      return send(res, 503, { error: 'ingesta desactivada (kill switch OFF)' });
+    }
 
-    const payload = await readJson(req);
-    if (!payload || typeof payload.level !== 'number') return send(res, 400, { error: 'payload inválido' });
+    const body = await readJson(req);
+    if (!body || !isValidEmail(body.email)) {
+      return send(res, 400, { error: 'correo inválido o ausente' });
+    }
+    const payload = whitelistPayload(body.payload);
+    if (!payload) {
+      return send(res, 400, { error: 'payload inválido' });
+    }
 
-    rec.lastUsedAt = new Date().toISOString();
-    reports.push({ talentId: rec.talentId, receivedAt: rec.lastUsedAt, report: payload });
-    console.log(`[ingesta] talento=${rec.talentId} nivel=${payload.level} detectadas=${payload.totalDetected} score=${payload.score}`);
-    return send(res, 201, { ok: true, talentId: rec.talentId });
+    const email = normalizeEmail(body.email);
+    if (!checkRate(rateByEmail, email)) return send(res, 429, { error: 'límite de envíos superado (por correo)' });
+    if (!checkRate(rateByIp, clientIp(req))) return send(res, 429, { error: 'límite de envíos superado (por IP)' });
+
+    const receivedAt = new Date().toISOString();
+    // Upsert by email — no Talent match in this stub (see header): the real
+    // backend additionally tries talent_id first (specs.md Data model).
+    reports.set(email, { email, receivedAt, payload });
+
+    console.log(`[ingesta] correo=${email} nivel=${payload.level} detectadas=${payload.totalDetected} score=${payload.score}`);
+    return send(res, 201, { ok: true });
   }
 
   send(res, 404, { error: 'no encontrado' });
@@ -182,11 +176,11 @@ http.createServer((req, res) => {
   handle(req, res).catch((e) => send(res, 500, { error: String(e.message || e) }));
 }).listen(PORT, () => {
   console.log(`\n  Servidor de referencia AI Footprint en ${PUBLIC_URL}`);
-  console.log(`  (STUB en memoria — no usar en producción)\n`);
-  console.log(`  ADMIN_KEY: ${ADMIN_KEY}`);
+  console.log(`  (STUB en memoria — no usar en producción; el real es shakers-hub-backend)\n`);
+  console.log(`  Kill switch (AI_FOOTPRINT_INGEST_ENABLED): ${INGEST_ENABLED ? 'ON' : 'OFF (default)'}`);
+  if (!INGEST_ENABLED) console.log(`  -> POST /reports responderá 503 hasta reiniciar con AI_FOOTPRINT_INGEST_ENABLED=true`);
+  console.log(`\n  ADMIN_KEY: ${ADMIN_KEY}`);
   if (!process.env.ADMIN_KEY) console.log(`  (generada al vuelo; fíjala con ADMIN_KEY=... para que persista)`);
-  console.log(`\n  Emite un código para un talento:`);
-  console.log(`    curl -s -X POST ${PUBLIC_URL}/admin/enroll-codes \\`);
-  console.log(`      -H "X-Admin-Key: ${ADMIN_KEY}" -H "Content-Type: application/json" \\`);
-  console.log(`      -d '{"talentId":"talent_123"}'\n`);
+  console.log(`\n  Auditar reportes recibidos:`);
+  console.log(`    curl ${PUBLIC_URL}/admin/reports -H "X-Admin-Key: ${ADMIN_KEY}"\n`);
 });
