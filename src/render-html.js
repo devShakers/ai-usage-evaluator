@@ -85,6 +85,72 @@ function versionLabel(tool) {
   return `<span class="ver">v${esc(tool.version)}</span>`;
 }
 
+/* ---------- agent org chart (talents-ai-score, ADR-009) ----------
+ * Nodes = agents. Structure + names only (name, wired tools, model,
+ * hierarchy) — the report never carries descriptions/prompts (see
+ * src/agent-org-chart.js / src/share.js), so there's nothing here to
+ * accidentally render beyond what the shape already whitelists.
+ */
+
+// Groups agents by their declared parent. Agents with no `parent`, or whose
+// declared `parent` doesn't resolve to another known agent (defensive:
+// never crash on a dangling reference), are treated as children of the
+// implicit root orchestrator (bucket `null`).
+function groupAgentsByParent(agents) {
+  const byName = new Set(agents.map((a) => a.name));
+  const childrenByParent = new Map();
+  for (const agent of agents) {
+    const parentKey = agent.parent && byName.has(agent.parent) ? agent.parent : null;
+    if (!childrenByParent.has(parentKey)) childrenByParent.set(parentKey, []);
+    childrenByParent.get(parentKey).push(agent);
+  }
+  return childrenByParent;
+}
+
+function agentToolChips(agent) {
+  return (agent.tools || []).map((tool) => `<span class="chip">${esc(tool)}</span>`).join('');
+}
+
+function agentModelChip(agent, t) {
+  if (!agent.model) return '';
+  return `<span class="chip model" title="${esc(t.html.orgChartModelLabel)}">${esc(agent.model)}</span>`;
+}
+
+function agentNode(agent, childrenByParent, t) {
+  const children = childrenByParent.get(agent.name) || [];
+  const childrenHtml = children.length
+    ? `<ul class="org-children">${children.map((c) => agentNode(c, childrenByParent, t)).join('')}</ul>`
+    : '';
+  return `<li class="org-node">
+    <div class="org-card">
+      <span class="org-name">${esc(agent.name)}</span>
+      <div class="org-meta">${agentModelChip(agent, t)}${agentToolChips(agent)}</div>
+    </div>
+    ${childrenHtml}
+  </li>`;
+}
+
+// `report.agents` is optional for compatibility with reports generated
+// before ADR-009 (agents field absent) — renders the empty state instead of
+// throwing.
+function orgChartSection(report, t) {
+  const agents = Array.isArray(report.agents) ? report.agents : [];
+  if (!agents.length) {
+    return `<section>
+    <div class="h2">${esc(t.html.orgChartHeading)}</div>
+    <div class="card org-empty">${esc(t.html.orgChartEmpty)}</div>
+  </section>`;
+  }
+  const childrenByParent = groupAgentsByParent(agents);
+  const roots = childrenByParent.get(null) || [];
+  return `<section>
+    <div class="h2">${esc(t.html.orgChartHeading)}</div>
+    <ul class="org-tree">
+      ${roots.map((agent) => agentNode(agent, childrenByParent, t)).join('\n')}
+    </ul>
+  </section>`;
+}
+
 function toolRow(tool, t, lang) {
   const category = categoryLabel(lang, tool.category);
   if (!tool.detected) {
@@ -329,6 +395,20 @@ function renderHtml(report, maturity, lang) {
     background:var(--secondary);padding:3px 10px;border-radius:var(--r-full)}
   .chip.empty{background:transparent;color:var(--faint);padding-left:0}
 
+  /* ---- Agent org chart (talents-ai-score, ADR-009) ---- */
+  .org-empty{padding:18px 20px;color:var(--faint);font-size:13px}
+  ul.org-tree{list-style:none;margin:0;padding:0}
+  ul.org-children{list-style:none;margin:10px 0 0 22px;padding:12px 0 0 20px;
+    border-left:2px dashed var(--border);display:flex;flex-direction:column;gap:10px}
+  li.org-node{margin:0 0 10px}
+  li.org-node:last-child{margin-bottom:0}
+  .org-card{background:var(--surface);border:1px solid var(--border);
+    border-radius:var(--r-md);box-shadow:var(--shadow-sm);
+    padding:12px 16px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}
+  .org-name{font-weight:600;letter-spacing:-.01em;font-size:14px}
+  .org-meta{display:flex;flex-wrap:wrap;gap:6px}
+  .chip.model{background:var(--track);color:var(--muted);font-family:var(--font-mono)}
+
   /* ---- Next step (lime accent = momentum) ---- */
   .next{padding:22px 24px;border-left:4px solid var(--accent-lime);
     display:flex;gap:16px;align-items:flex-start}
@@ -419,6 +499,8 @@ function renderHtml(report, maturity, lang) {
       </div>
     </div>
   </section>
+
+  ${orgChartSection(report, t)}
 
   <section>
     <div class="card next">

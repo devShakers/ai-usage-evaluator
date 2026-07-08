@@ -97,6 +97,11 @@ const catalogs = {
       installedEditors: 'Editores instalados',
       noEditorsDetected: 'ninguno detectado',
       nextStep: 'Siguiente paso',
+      // Agent org chart (talents-ai-score, ADR-009): structure + names only
+      // (name, wired tools, model, hierarchy) — never descriptions/prompts.
+      orgChartHeading: 'Organigrama de agentes',
+      orgChartEmpty: 'No se han detectado agentes de IA configurados (p. ej. .claude/agents/).',
+      orgChartModelLabel: 'modelo',
       privacyNote:
         'Este informe se ha generado en local. Solo registra qué herramientas '
         + 'existen, cuántas configuraciones tienes y tu nivel: nunca el contenido '
@@ -118,6 +123,7 @@ const catalogs = {
         'Categorías y lista de herramientas detectadas',
         'Conteos y booleanos derivados (profundidad de configuración)',
         'Recencia de configuración (fecha de última modificación de ficheros de setup, no de tu actividad)',
+        'El organigrama de tus agentes (nombres/roles, herramientas cableadas, modelo y jerarquía) y conteos de tu setup de IA',
         'El correo que introduzcas (para vincular el informe a tu perfil de Talent, si existe)',
       ],
       neverSendsHeading: 'NUNCA se envía:',
@@ -213,6 +219,11 @@ const catalogs = {
       installedEditors: 'Installed editors',
       noEditorsDetected: 'none detected',
       nextStep: 'Next step',
+      // Agent org chart (talents-ai-score, ADR-009): structure + names only
+      // (name, wired tools, model, hierarchy) — never descriptions/prompts.
+      orgChartHeading: 'Agent org chart',
+      orgChartEmpty: 'No configured AI agents detected (e.g. .claude/agents/).',
+      orgChartModelLabel: 'model',
       privacyNote:
         'This report was generated locally. It only records which tools exist, '
         + 'how many configurations you have and your level: never the content of '
@@ -234,6 +245,7 @@ const catalogs = {
         'Categories and the list of detected tools',
         'Derived counts and booleans (configuration depth)',
         'Setup recency (last-modified date of setup config files, not of your activity)',
+        'The org chart of your agents (names/roles, wired tools, model and hierarchy) and counts of your AI setup',
         'The email you type in (to link the report to your Talent profile, if one exists)',
       ],
       neverSendsHeading: 'NEVER sent:',

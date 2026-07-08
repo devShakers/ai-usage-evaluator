@@ -52,6 +52,23 @@ test('disclosureText: mentions what is sent, what never is, purpose, indicative 
   assert.match(text, /PENDIENTE DE REVISIÓN LEGAL/);
 });
 
+// talents-ai-score, ADR-009: the org chart is a NEW category of data sent,
+// so the "SÍ se envía" list must call it out explicitly, in both languages.
+test('disclosureText: mentions the agent org chart (names/roles, tools, model, hierarchy) and setup counts — es', () => {
+  const text = disclosureText(catalogEs);
+  assert.match(text, /organigrama de tus agentes/i);
+  assert.match(text, /herramientas.*modelo.*jerarqu[ií]a/is);
+  assert.match(text, /conteos de tu setup de IA/i);
+});
+
+test('disclosureText: mentions the agent org chart (names/roles, tools, model, hierarchy) and setup counts — en', () => {
+  const catalogEn = getCatalog('en');
+  const text = disclosureText(catalogEn);
+  assert.match(text, /org chart of your agents/i);
+  assert.match(text, /tools.*model.*hierarchy/is);
+  assert.match(text, /counts of your AI setup/i);
+});
+
 test('runDisclosureFlow: accept -> asks for email -> persists granted + email', async () => {
   const ask = scriptedAsk(['s', 'talent@example.com']);
   const decision = await runDisclosureFlow({ ask, catalog: catalogEs });

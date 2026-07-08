@@ -153,13 +153,52 @@ test('isThrottled: true within the window, false after it', () => {
 
 // --- derivePayload whitelist (unchanged invariant) ---------------------------
 
-test('derivePayload: whitelist unchanged, email is never part of the payload', () => {
+test('derivePayload: whitelist, email is never part of the payload', () => {
   const payload = derivePayload(REPORT, MATURITY);
   assert.deepEqual(Object.keys(payload).sort(), [
     'anonId', 'categories', 'generatedAt', 'level', 'levelName',
     'platform', 'schemaVersion', 'score', 'tools', 'totalDetected',
+    'agents', 'agentCounts',
   ].sort());
   assert.equal('email' in payload, false);
+});
+
+// --- agent org chart (talents-ai-score, ADR-009) -----------------------------
+
+test('derivePayload: includes the agent org chart with the exact shape {name, tools[], model, parent}', () => {
+  const reportWithAgents = {
+    ...REPORT,
+    agents: [{ name: 'backend-developer', tools: ['Read', 'Bash'], model: 'sonnet', parent: null }],
+    agentCounts: { agents: 1, skills: 2, commands: 3, mcpServers: 1, hooks: 0 },
+  };
+  const payload = derivePayload(reportWithAgents, MATURITY);
+  assert.deepEqual(payload.agents, [
+    { name: 'backend-developer', tools: ['Read', 'Bash'], model: 'sonnet', parent: null },
+  ]);
+  assert.deepEqual(payload.agentCounts, { agents: 1, skills: 2, commands: 3, mcpServers: 1, hooks: 0 });
+});
+
+test('derivePayload: never leaks extra agent fields (e.g. a description slipped onto the object) — re-applies the whitelist per agent', () => {
+  const reportWithLeakyAgent = {
+    ...REPORT,
+    agents: [{
+      name: 'leaky-agent',
+      tools: ['Read'],
+      model: 'sonnet',
+      parent: null,
+      description: 'this must never leave the machine',
+    }],
+    agentCounts: { agents: 1, skills: 0, commands: 0, mcpServers: 0, hooks: 0 },
+  };
+  const payload = derivePayload(reportWithLeakyAgent, MATURITY);
+  assert.deepEqual(Object.keys(payload.agents[0]).sort(), ['model', 'name', 'parent', 'tools'].sort());
+  assert.equal(JSON.stringify(payload).includes('this must never leave the machine'), false);
+});
+
+test('derivePayload: missing agents/agentCounts (report predating ADR-009) defaults gracefully, never throws', () => {
+  const payload = derivePayload(REPORT, MATURITY);
+  assert.deepEqual(payload.agents, []);
+  assert.deepEqual(payload.agentCounts, { agents: 0, skills: 0, commands: 0, mcpServers: 0, hooks: 0 });
 });
 
 // --- requestJson: no Authorization header (ADR-007 retires Bearer) ----------
