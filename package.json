@@ -7,7 +7,8 @@
   },
   "scripts": {
     "start": "node bin/report.js",
-    "report": "node bin/report.js --html"
+    "report": "node bin/report.js --html",
+    "test": "node --test test/*.test.js"
   },
   "engines": {
     "node": ">=18"

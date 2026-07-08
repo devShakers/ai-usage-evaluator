@@ -7,6 +7,7 @@ const { classify } = require('../src/maturity');
 const { renderTerminal } = require('../src/render-terminal');
 const { renderHtml } = require('../src/render-html');
 const { save } = require('../src/store');
+const { detectReportLang, getCatalog } = require('../src/i18n');
 
 function parseArgs(argv) {
   const opts = { html: false, json: false, save: true, root: null, enroll: null, consent: null };
@@ -138,14 +139,21 @@ async function main() {
     return;
   }
 
-  process.stdout.write(renderTerminal(report, maturity) + '\n');
+  // Idioma del informe: se detecta UNA vez a partir del locale del SO (ver
+  // src/locale.js) y se propaga a los dos renderers y a los avisos de CLI
+  // ligados al informe (guardado/dashboard). No afecta a enroll/share, que
+  // son un mecanismo aparte (talents-ai-score, report-i18n).
+  const lang = detectReportLang();
+  const cli = getCatalog(lang).cli;
 
-  const html = renderHtml(report, maturity);
+  process.stdout.write(renderTerminal(report, maturity, lang) + '\n');
+
+  const html = renderHtml(report, maturity, lang);
   if (opts.save) {
     const paths = save(report, html);
-    process.stdout.write(`  Guardado en ${paths.dir}\n\n`);
+    process.stdout.write(`  ${cli.saved(paths.dir)}\n\n`);
     if (opts.html) openInBrowser(paths.htmlPath);
-    else process.stdout.write(`  Usa --html para abrir el dashboard visual.\n\n`);
+    else process.stdout.write(`  ${cli.useHtmlHint}\n\n`);
   } else if (opts.html) {
     const os = require('os');
     const fs = require('fs');
@@ -153,7 +161,7 @@ async function main() {
     const tmp = path.join(os.tmpdir(), `ai-footprint-${Date.now()}.html`);
     fs.writeFileSync(tmp, html);
     openInBrowser(tmp);
-    process.stdout.write(`  Dashboard temporal: ${tmp}\n\n`);
+    process.stdout.write(`  ${cli.tempDashboard(tmp)}\n\n`);
   }
 
   // Envío automático, siempre al final y tras haber visto el informe local.

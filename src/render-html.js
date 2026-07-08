@@ -1,5 +1,7 @@
 'use strict';
 
+const { getCatalog, categoryLabel } = require('./i18n');
+
 /*
  * Genera un dashboard HTML AUTOCONTENIDO: todo el CSS y los datos van
  * incrustados en el fichero. No hace ninguna llamada de red, así el talento
@@ -14,6 +16,14 @@
  *
  * IMPORTANTE (invariante de privacidad/confianza): CERO llamadas de red. Sin
  * fuentes externas, sin CDN, sin imágenes remotas, sin fetch/XHR. Todo inline.
+ *
+ * i18n (talents-ai-score, report-i18n): `lang` ('es'|'en', ver src/i18n.js)
+ * decide el catálogo de copy (parámetro `t` que se pasa a los helpers de
+ * abajo). Nivel y categoría se traducen por CLAVE ESTABLE (maturity.key/level,
+ * categoryLabel) sin tocar maturity.js/detectors.js — ver cabecera de
+ * src/i18n.js. Las etiquetas de profundidad (depthLabel: mcpServers,
+ * instructions...) se dejan tal cual en ambos idiomas: son nombres de campo
+ * del scanner, no copy del informe.
  */
 
 function esc(s) {
@@ -36,6 +46,7 @@ function depthLabel(tool) {
 
 // Formatea bytes a una unidad legible (B/KB/MB). Solo presentación: el dato
 // crudo (tool.footprint.bytes) ya viene agregado y saneado del scanner.
+// Unidades (B/KB/MB) universales: no se localizan.
 function humanizeBytes(bytes) {
   if (bytes === null || bytes === undefined) return null;
   if (bytes < 1024) return `${bytes}&nbsp;B`;
@@ -47,30 +58,22 @@ function humanizeBytes(bytes) {
 
 // tool.footprint es null cuando la herramienta no tiene ruta propia que medir
 // (detectada solo por bin/vscodeExt) — se renderiza null y el llamador lo omite.
-function footprintLabel(tool) {
+function footprintLabel(tool, t) {
   if (!tool.footprint) return null;
   const { bytes, files } = tool.footprint;
   const size = humanizeBytes(bytes);
-  const filesLabel = `${files}&nbsp;${files === 1 ? 'fichero' : 'ficheros'}`;
+  const filesLabel = t.html.files(files);
   return size ? `${filesLabel} · ${size}` : filesLabel;
 }
 
-const RECENCY_LABEL = {
-  today: 'hoy',
-  this_week: 'esta semana',
-  this_month: 'este mes',
-  this_quarter: 'este trimestre',
-  stale: 'desactualizado',
-};
-
 // Badge de recencia: cuenta con bucket=null (sin footprint que fechar) y lo
 // omite en silencio, en vez de mostrar un estado inventado.
-function recencyBadge(tool) {
+function recencyBadge(tool, t) {
   const r = tool.recency;
   if (!r || !r.bucket) return '';
-  const label = RECENCY_LABEL[r.bucket] || r.bucket;
+  const label = t.recency[r.bucket] || r.bucket;
   const title = r.lastModified
-    ? `última modificación: ${new Date(r.lastModified).toLocaleDateString()}`
+    ? t.html.lastModified(new Date(r.lastModified).toLocaleDateString())
     : '';
   return `<span class="recency ${esc(r.bucket)}"${title ? ` title="${esc(title)}"` : ''}>${esc(label)}</span>`;
 }
@@ -82,39 +85,46 @@ function versionLabel(tool) {
   return `<span class="ver">v${esc(tool.version)}</span>`;
 }
 
-function toolRow(tool) {
+function toolRow(tool, t, lang) {
+  const category = categoryLabel(lang, tool.category);
   if (!tool.detected) {
     return `<li class="tool off">
       <span class="dot" aria-hidden="true"></span>
       <span class="nm">${esc(tool.name)}</span>
-      <span class="cat">${esc(tool.category)}</span>
+      <span class="cat">${esc(category)}</span>
       <span class="sig" aria-hidden="true"></span>
-      <span class="meta">no detectada</span>
+      <span class="meta">${esc(t.html.notDetected)}</span>
     </li>`;
   }
   const s = strength(tool);
   const bars = Array.from({ length: 4 }, (_, i) =>
     `<i class="${i < s ? 'on' : ''}"></i>`).join('');
-  const metaLeft = [depthLabel(tool), footprintLabel(tool)].filter(Boolean).join(' · ')
+  const metaLeft = [depthLabel(tool), footprintLabel(tool, t)].filter(Boolean).join(' · ')
     || esc(tool.vendor);
   return `<li class="tool on">
     <span class="dot" aria-hidden="true"></span>
     <span class="nm">${esc(tool.name)}${versionLabel(tool)}</span>
-    <span class="cat">${esc(tool.category)}</span>
-    <span class="sig" title="intensidad de configuración">${bars}</span>
-    <span class="meta"><span class="left">${metaLeft}</span>${recencyBadge(tool)}</span>
+    <span class="cat">${esc(category)}</span>
+    <span class="sig" title="${esc(t.html.configIntensity)}">${bars}</span>
+    <span class="meta"><span class="left">${metaLeft}</span>${recencyBadge(tool, t)}</span>
   </li>`;
 }
 
-function renderHtml(report, maturity) {
+// `lang` ('es'|'en', ver src/i18n.js) decide el catálogo de texto. Los datos
+// del informe (report/maturity) no cambian con el idioma, solo su copy.
+function renderHtml(report, maturity, lang) {
+  const t = getCatalog(lang);
   const rows = report.tools
     .slice()
     .sort((a, b) => Number(b.detected) - Number(a.detected))
-    .map(toolRow)
+    .map((tool) => toolRow(tool, t, lang))
     .join('\n');
 
-  const detectedCount = report.tools.filter((t) => t.detected).length;
+  const detectedCount = report.tools.filter((tool) => tool.detected).length;
   const dataJson = esc(JSON.stringify({ report, maturity }, null, 2));
+
+  const levelName = t.levelNames[maturity.key] || maturity.name;
+  const nextStep = t.nextSteps[maturity.level] || maturity.next;
 
   // Bloque Entorno: campo nuevo del scanner, opcional por compatibilidad con
   // informes generados antes de este campo (report.environment ausente).
@@ -122,7 +132,7 @@ function renderHtml(report, maturity) {
   const editors = Array.isArray(env.editorsInstalled) ? env.editorsInstalled : [];
   const editorChips = editors.length
     ? editors.map((id) => `<span class="chip">${esc(id)}</span>`).join('')
-    : '<span class="chip empty">ninguno detectado</span>';
+    : `<span class="chip empty">${esc(t.html.noEditorsDetected)}</span>`;
 
   // Escala de niveles 0..4 para el indicador de progreso por pasos.
   const levelPips = Array.from({ length: 5 }, (_, i) => {
@@ -131,11 +141,11 @@ function renderHtml(report, maturity) {
   }).join('');
 
   return `<!doctype html>
-<html lang="es">
+<html lang="${t.html.lang}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Footprint · Nivel ${maturity.level}</title>
+<title>${esc(t.html.title(maturity.level))}</title>
 <style>
   /* =========================================================
    * Tokens Shakers (Nexia). Layer 1 (primitivos) → Layer 2 (semánticos).
@@ -364,23 +374,23 @@ function renderHtml(report, maturity) {
 <div class="wrap">
   <header>
     <span class="badge"><span class="spark"></span>AI FOOTPRINT</span>
-    <h1>Tu perfil de uso de IA</h1>
-    <p class="sub">Un vistazo local a qué herramientas de IA tienes y cuánto las has configurado.</p>
+    <h1>${esc(t.html.h1)}</h1>
+    <p class="sub">${esc(t.html.sub)}</p>
   </header>
 
   <div class="card hero">
     <div class="lvl">
-      <div class="k">Nivel ${maturity.level} de 4</div>
+      <div class="k">${esc(t.html.levelOf(maturity.level))}</div>
       <div class="v">
         <span class="glyph">${maturity.emoji}</span>
-        <span class="name">${esc(maturity.name)}</span>
+        <span class="name">${esc(levelName)}</span>
       </div>
       <div class="pips">${levelPips}</div>
-      <div class="count"><b>${detectedCount}</b> de ${report.tools.length} herramientas detectadas</div>
+      <div class="count"><b>${detectedCount}</b> ${esc(t.html.detectedSuffix(report.tools.length))}</div>
     </div>
     <div class="meter">
       <div class="top">
-        <span>Madurez</span>
+        <span>${esc(t.html.maturity)}</span>
         <span class="score">${maturity.score}<span> / 100</span></span>
       </div>
       <div class="track"><div class="fill" id="fill"></div></div>
@@ -388,22 +398,22 @@ function renderHtml(report, maturity) {
   </div>
 
   <section>
-    <div class="h2">Herramientas</div>
+    <div class="h2">${esc(t.html.tools)}</div>
     <ul class="tools">
       ${rows}
     </ul>
   </section>
 
   <section>
-    <div class="h2">Entorno</div>
+    <div class="h2">${esc(t.html.environment)}</div>
     <div class="card env">
       <div class="env-grid">
-        <div class="env-item"><span class="k">Plataforma</span><span class="v">${esc(env.platform ?? '—')}</span></div>
-        <div class="env-item"><span class="k">Arquitectura</span><span class="v">${esc(env.arch ?? '—')}</span></div>
+        <div class="env-item"><span class="k">${esc(t.html.platform)}</span><span class="v">${esc(env.platform ?? '—')}</span></div>
+        <div class="env-item"><span class="k">${esc(t.html.architecture)}</span><span class="v">${esc(env.arch ?? '—')}</span></div>
         <div class="env-item"><span class="k">Node</span><span class="v">${esc(env.nodeVersion ?? '—')}</span></div>
       </div>
       <div class="env-editors">
-        <span class="k">Editores instalados</span>
+        <span class="k">${esc(t.html.installedEditors)}</span>
         <div class="chips">${editorChips}</div>
       </div>
     </div>
@@ -413,8 +423,8 @@ function renderHtml(report, maturity) {
     <div class="card next">
       <div class="icon" aria-hidden="true">→</div>
       <div>
-        <div class="k">Siguiente paso</div>
-        <div class="t">${esc(maturity.next)}</div>
+        <div class="k">${esc(t.html.nextStep)}</div>
+        <div class="t">${esc(nextStep)}</div>
       </div>
     </div>
   </section>
@@ -422,15 +432,11 @@ function renderHtml(report, maturity) {
   <footer>
     <div class="priv">
       <span class="lock" aria-hidden="true">🔒</span>
-      <span>Este informe se ha generado en local. Solo registra qué herramientas
-      existen, cuántas configuraciones tienes y tu nivel: nunca el contenido de tus
-      ficheros, rutas ni credenciales.</span>
+      <span>${esc(t.html.privacyNote)}</span>
     </div>
-    <div class="meta-line">Generado ${esc(new Date(report.generatedAt).toLocaleString())}
-      · id anónimo <code>${esc(report.anonId)}</code>
-      · plataforma ${esc(report.platform)}</div>
+    <div class="meta-line">${t.html.metaLine(esc(new Date(report.generatedAt).toLocaleString()), esc(report.anonId), esc(report.platform))}</div>
     <details>
-      <summary>Ver los datos exactos de este informe (JSON)</summary>
+      <summary>${esc(t.html.rawData)}</summary>
       <pre>${dataJson}</pre>
     </details>
   </footer>
