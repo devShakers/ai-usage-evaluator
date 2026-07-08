@@ -30,11 +30,11 @@ function formatBytes(n) {
   return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
 }
 
-// `lang` ('es'|'en', ver src/i18n.js) decide el catálogo de texto. Los datos
-// del informe (report/maturity) no cambian con el idioma, solo su copy.
-// Nivel y categoría se traducen por CLAVE ESTABLE (maturity.key/level,
-// categoría vía categoryLabel) sin tocar maturity.js/detectors.js — ver
-// cabecera de src/i18n.js.
+// `lang` ('es'|'en', see src/i18n.js) decides the text catalog. The report
+// data (report/maturity) doesn't change with the language, only its copy.
+// Level and category are translated by STABLE KEY (maturity.key/level,
+// category via categoryLabel) without touching maturity.js/detectors.js —
+// see the header of src/i18n.js.
 function renderTerminal(report, maturity, lang) {
   const t = getCatalog(lang);
   const lines = [];
@@ -48,12 +48,12 @@ function renderTerminal(report, maturity, lang) {
   p(`${c.gray}  ${new Date(report.generatedAt).toLocaleString()}  ·  ${t.terminal.toolsDetected(report.tools.filter((x) => x.detected).length, report.tools.length)}${c.reset}`);
   p();
 
-  // Nivel
+  // Level
   p(`  ${c.bold}${c.white}${t.terminal.level(maturity.level, levelName)}${c.reset}`);
   p(`  ${c.cyan}${bar(maturity.score)}${c.reset} ${c.dim}${maturity.score}/100${c.reset}`);
   p();
 
-  // Detectadas
+  // Detected
   p(`  ${c.bold}${t.terminal.detectedHeading}${c.reset}`);
   const detected = report.tools.filter((tool) => tool.detected);
   if (detected.length === 0) {
@@ -79,14 +79,14 @@ function renderTerminal(report, maturity, lang) {
   }
   p();
 
-  // No detectadas
+  // Not detected
   const missing = report.tools.filter((tool) => !tool.detected);
   if (missing.length) {
     p(`  ${c.gray}${t.terminal.notDetected(missing.map((tool) => tool.name).join(', '))}${c.reset}`);
     p();
   }
 
-  // Entorno
+  // Environment
   if (report.environment) {
     const env = report.environment;
     const editors = env.editorsInstalled && env.editorsInstalled.length
@@ -97,7 +97,7 @@ function renderTerminal(report, maturity, lang) {
     p();
   }
 
-  // Siguiente paso
+  // Next step
   p(`  ${c.bold}${c.yellow}${t.terminal.nextStep}${c.reset}`);
   p(`  ${c.white}${nextStep}${c.reset}`);
   p();

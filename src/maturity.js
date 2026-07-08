@@ -1,13 +1,13 @@
 'use strict';
 
 /*
- * Clasificación de madurez de uso de IA.
+ * AI usage maturity classification.
  *
- * Combina AMPLITUD (cuántas herramientas distintas) con PROFUNDIDAD (cuánto se
- * han configurado: instrucciones de proyecto, reglas, servidores MCP, skills,
- * comandos, hooks). La profundidad pesa más que la amplitud: tener 5
- * herramientas recién instaladas sin configurar es menos maduro que dominar
- * una sola a fondo.
+ * Combines BREADTH (how many distinct tools) with DEPTH (how much they've
+ * been configured: project instructions, rules, MCP servers, skills,
+ * commands, hooks). Depth weighs more than breadth: having 5 freshly
+ * installed, unconfigured tools is less mature than mastering a single one
+ * in depth.
  */
 
 const LEVELS = [
@@ -19,26 +19,26 @@ const LEVELS = [
 ];
 
 const AGENTIC_IDS = ['claude-code', 'aider', 'gemini-cli', 'codex-cli'];
-// DECISIÓN ABIERTA (talents-ai-score, ampliación de señales): se añadió
-// 'amazon-q-developer' al catálogo (detectors.js) como CLI agéntica
-// (CATEGORIES.AGENTIC_CLI), pero NO se ha añadido a AGENTIC_IDS — cambiaría en
-// silencio qué cuenta para el nivel 4 ("CLI agéntica + MCP + personalización
-// propia", HANDOFF §4). Se deja fuera por defecto; añadirlo es una decisión
-// explícita pendiente de revisión humana, no un ajuste rutinario.
+// OPEN DECISION (talents-ai-score, signal expansion): 'amazon-q-developer'
+// was added to the catalog (detectors.js) as an agentic CLI
+// (CATEGORIES.AGENTIC_CLI), but it has NOT been added to AGENTIC_IDS — that
+// would silently change what counts toward level 4 ("agentic CLI + MCP +
+// own customization", HANDOFF §4). Left out by default; adding it is an
+// explicit decision pending human review, not a routine tweak.
 
-// DECISIÓN (talents-ai-score, ampliación de señales): las definiciones de
-// nivel (LEVELS, HANDOFF §4) y los pesos de `score` de más abajo NO se han
-// tocado. Sí se añadieron sondas de profundidad nuevas en scanner.js
-// (windsurf.mcpServers, gemini-cli.mcpServers) que alimentan `mcp` aquí de
-// forma automática porque depthTotals ya suma `d.mcpServers` de CUALQUIER
-// herramienta por nombre de clave — no es una recalibración de la fórmula,
-// pero SÍ cambia el resultado para talentos con esas herramientas configuradas
-// (antes su MCP no contaba). Se mantiene porque hace el score más fiel a la
-// definición existente, no la redefine; se señala aquí por transparencia.
+// DECISION (talents-ai-score, signal expansion): the level definitions
+// (LEVELS, HANDOFF §4) and the `score` weights below have NOT been touched.
+// New depth probes WERE added in scanner.js (windsurf.mcpServers,
+// gemini-cli.mcpServers) that automatically feed `mcp` here, because
+// depthTotals already sums `d.mcpServers` from ANY tool by key name — this
+// is not a recalibration of the formula, but it DOES change the result for
+// talents with those tools configured (their MCP didn't count before). Kept
+// as is because it makes the score more faithful to the existing
+// definition, not a redefinition of it; flagged here for transparency.
 function depthTotals(tools) {
-  let instructions = 0; // ficheros de instrucciones/reglas de proyecto
-  let mcp = 0; // servidores MCP configurados
-  let custom = 0; // skills + comandos + reglas propias
+  let instructions = 0; // project instructions/rules files
+  let mcp = 0; // configured MCP servers
+  let custom = 0; // own skills + commands + rules
   let hooks = 0;
 
   for (const t of tools) {
@@ -58,23 +58,23 @@ function classify(report) {
   const d = depthTotals(detected);
   const hasAgentic = detected.some((t) => AGENTIC_IDS.includes(t.id));
 
-  // Score 0-100 para el medidor visual.
+  // Score 0-100 for the visual meter.
   const score = Math.min(
     100,
-    breadth * 8 + // amplitud
-      d.instructions * 6 + // reglas/instrucciones de proyecto
-      Math.min(d.mcp, 8) * 5 + // MCP (tope para no premiar en exceso)
-      Math.min(d.custom, 12) * 3 + // skills/comandos/reglas propias
-      d.hooks * 4 + // automatización con hooks
+    breadth * 8 + // breadth
+      d.instructions * 6 + // project rules/instructions
+      Math.min(d.mcp, 8) * 5 + // MCP (capped to avoid over-rewarding)
+      Math.min(d.custom, 12) * 3 + // own skills/commands/rules
+      d.hooks * 4 + // hook-based automation
       (hasAgentic ? 6 : 0),
   );
 
-  // Reglas de nivel: se cumple el nivel más alto cuyos criterios se satisfacen.
+  // Level rules: the highest level whose criteria are satisfied applies.
   let level = 0;
-  if (breadth >= 1) level = 1; // hay al menos una herramienta
-  if (d.instructions >= 1) level = 2; // hay config de proyecto
-  if (d.mcp >= 1 || d.custom >= 1 || breadth >= 3) level = 3; // uso avanzado
-  if (hasAgentic && d.mcp >= 1 && d.custom >= 1) level = 4; // automatización profunda
+  if (breadth >= 1) level = 1; // at least one tool
+  if (d.instructions >= 1) level = 2; // project config exists
+  if (d.mcp >= 1 || d.custom >= 1 || breadth >= 3) level = 3; // advanced usage
+  if (hasAgentic && d.mcp >= 1 && d.custom >= 1) level = 4; // deep automation
 
   const meta = LEVELS[level];
 

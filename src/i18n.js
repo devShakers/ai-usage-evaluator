@@ -4,24 +4,24 @@ const { detectLangCode } = require('./locale');
 const { CATEGORIES } = require('./detectors');
 
 /*
- * Localización del informe (HTML + terminal) y de los avisos del CLI
- * relacionados con el informe. Solo dos idiomas soportados: 'es' y 'en'.
- * Regla de resolución: cualquier idioma que NO empiece por 'es' cae en
- * inglés — inglés es el fallback universal, no solo el idioma para
- * angloparlantes (talents-ai-score, report-i18n).
+ * Localization of the report (HTML + terminal) and of the CLI notices tied
+ * to the report. Only two languages supported: 'es' and 'en'. Resolution
+ * rule: any language that does NOT start with 'es' falls back to English —
+ * English is the universal fallback, not just the language for English
+ * speakers (talents-ai-score, report-i18n).
  *
- * Cambio aislado (talents-ai-score, report-i18n): esto NO toca
- * src/maturity.js ni src/detectors.js/src/scanner.js. `maturity.name` /
- * `maturity.next` (español) siguen intactos porque src/share.js los consume
- * tal cual en el payload (maturity.name -> levelName). Aquí se traduce por
- * CLAVE ESTABLE ya existente:
- *   - nivel de madurez -> maturity.key ('none'|'exploring'|...) y
- *     maturity.level (0-4), ambos ya devueltos por maturity.js sin cambios.
- *   - categoría de herramienta -> se resuelve la clave estable
- *     (AGENTIC_CLI, AI_EDITOR...) a partir del propio catálogo `CATEGORIES`
- *     que detectors.js YA exporta, invirtiendo su mapa clave->texto-en-español
- *     (ver categoryLabel más abajo). No se añade ni se cambia nada en
- *     detectors.js: solo se lee lo que ya expone.
+ * Isolated change (talents-ai-score, report-i18n): this does NOT touch
+ * src/maturity.js or src/detectors.js/src/scanner.js. `maturity.name` /
+ * `maturity.next` (Spanish) remain untouched because src/share.js consumes
+ * them as-is in the payload (maturity.name -> levelName). Here translation
+ * happens by an already-existing STABLE KEY:
+ *   - maturity level -> maturity.key ('none'|'exploring'|...) and
+ *     maturity.level (0-4), both already returned by maturity.js unchanged.
+ *   - tool category -> the stable key (AGENTIC_CLI, AI_EDITOR...) is
+ *     resolved from the very `CATEGORIES` catalog that detectors.js ALREADY
+ *     exports, by inverting its key->Spanish-text map (see categoryLabel
+ *     below). Nothing is added or changed in detectors.js: only what it
+ *     already exposes is read.
  */
 
 const catalogs = {
@@ -74,8 +74,8 @@ const catalogs = {
       h1: 'Tu perfil de uso de IA',
       sub: 'Un vistazo local a qué herramientas de IA tienes y cuánto las has configurado.',
       levelOf: (level) => `Nivel ${level} de 4`,
-      // Solo el sufijo: el número va ya en negrita aparte en el markup (ver
-      // render-html.js), así se evita duplicar/parsear el string traducido.
+      // Suffix only: the number is already bolded separately in the markup
+      // (see render-html.js), so we avoid duplicating/parsing the translated string.
       detectedSuffix: (total) => `de ${total} herramientas detectadas`,
       maturity: 'Madurez',
       tools: 'Herramientas',
@@ -181,20 +181,21 @@ const catalogs = {
   },
 };
 
-// Mapa inverso {texto en español -> clave estable}, construido a partir del
-// catálogo CATEGORIES que detectors.js YA exporta (clave -> texto en
-// español). No se toca detectors.js: solo se lee lo que ya expone, para poder
-// traducir por clave en vez de por el string en español que consume el
-// scanner/HTML sin cambios.
+// Reverse map {Spanish text -> stable key}, built from the CATEGORIES
+// catalog that detectors.js ALREADY exports (key -> Spanish text).
+// detectors.js is not touched: only what it already exposes is read, so we
+// can translate by key instead of by the Spanish string consumed by the
+// scanner/HTML unchanged.
 const CATEGORY_KEY_BY_LABEL_ES = Object.fromEntries(
   Object.entries(CATEGORIES).map(([key, label]) => [label, key]),
 );
 
-// Traduce el `category` de una tool (siempre en español, tal como lo produce
-// el scanner) a la clave estable de CATEGORIES y de ahí al catálogo del
-// idioma pedido. Si en el futuro detectors.js añadiera una categoría nueva
-// sin registrar aquí su traducción, se degrada al texto en español tal cual
-// (nunca rompe el render; el gap quedaría anotado para revisión, no oculto).
+// Translates a tool's `category` (always in Spanish, as produced by the
+// scanner) to the stable CATEGORIES key and from there to the requested
+// language's catalog. If detectors.js were to add a new category in the
+// future without registering its translation here, it degrades to the
+// Spanish text as-is (never breaks rendering; the gap would be flagged for
+// review, not hidden).
 function categoryLabel(lang, categoryEs) {
   const key = CATEGORY_KEY_BY_LABEL_ES[categoryEs];
   const translated = key && catalogs[getResolvedLang(lang)].categories[key];
@@ -205,15 +206,15 @@ function getResolvedLang(lang) {
   return lang === 'es' || lang === 'en' ? lang : 'en';
 }
 
-// Regla de resolución: solo 'es' y 'en' soportados. Cualquier código que no
-// empiece por 'es' cae en inglés (fallback universal).
+// Resolution rule: only 'es' and 'en' supported. Any code that doesn't
+// start with 'es' falls back to English (universal fallback).
 function resolveLang(langCode) {
   return langCode && /^es/i.test(langCode) ? 'es' : 'en';
 }
 
-// Punto de entrada único para los llamadores del informe (bin/report.js):
-// detecta el idioma del SO (ver locale.js) y devuelve ya el código de
-// catálogo resuelto ('es' o 'en').
+// Single entry point for report callers (bin/report.js): detects the OS
+// language (see locale.js) and already returns the resolved catalog code
+// ('es' or 'en').
 function detectReportLang(env = process.env) {
   return resolveLang(detectLangCode(env));
 }

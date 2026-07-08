@@ -97,18 +97,18 @@ async function doConsent(value) {
   }
 }
 
-// Envío automático, silencioso: sin preview ni confirmación (ADR-005,
-// talents-ai-score). Nunca debe romper el run local, pase lo que pase.
+// Automatic, silent sending: no preview or confirmation (ADR-005,
+// talents-ai-score). Must never break the local run, no matter what.
 async function maybeAutoShare(report, maturity) {
   const { autoShare } = require('../src/share');
   try {
     const r = await autoShare(report, maturity);
     if (!r.ok && r.notice) process.stdout.write(`  ${r.notice}\n\n`);
-    // Resto de motivos para no enviar (no enrolado, consentimiento OFF,
-    // throttle, red, 429, otros HTTP): silenciosos a propósito, no son
-    // errores del run local.
+    // Every other reason not to send (not enrolled, consent OFF, throttle,
+    // network, 429, other HTTP): silent on purpose, they aren't errors of
+    // the local run.
   } catch {
-    // Nunca debe romper el informe local.
+    // Must never break the local report.
   }
 }
 
@@ -119,13 +119,13 @@ async function main() {
     return;
   }
 
-  // Enrolamiento: no necesita escanear nada.
+  // Enrollment: doesn't need to scan anything.
   if (opts.enroll) {
     await doEnroll(opts.enroll);
     return;
   }
 
-  // Activar/desactivar el envío automático: no necesita escanear nada.
+  // Turning automatic sending on/off: doesn't need to scan anything.
   if (opts.consent) {
     await doConsent(opts.consent);
     return;
@@ -139,10 +139,10 @@ async function main() {
     return;
   }
 
-  // Idioma del informe: se detecta UNA vez a partir del locale del SO (ver
-  // src/locale.js) y se propaga a los dos renderers y a los avisos de CLI
-  // ligados al informe (guardado/dashboard). No afecta a enroll/share, que
-  // son un mecanismo aparte (talents-ai-score, report-i18n).
+  // Report language: detected ONCE from the OS locale (see src/locale.js)
+  // and propagated to both renderers and the CLI notices tied to the report
+  // (saved/dashboard). Doesn't affect enroll/share, which are a separate
+  // mechanism (talents-ai-score, report-i18n).
   const lang = detectReportLang();
   const cli = getCatalog(lang).cli;
 
@@ -164,8 +164,8 @@ async function main() {
     process.stdout.write(`  ${cli.tempDashboard(tmp)}\n\n`);
   }
 
-  // Envío automático, siempre al final y tras haber visto el informe local.
-  // Gated por enrolamiento + consentimiento + throttle (src/share.js).
+  // Automatic sending, always at the end and after seeing the local report.
+  // Gated by enrollment + consent + throttle (src/share.js).
   await maybeAutoShare(report, maturity);
 }
 

@@ -3,27 +3,27 @@
 const { getCatalog, categoryLabel } = require('./i18n');
 
 /*
- * Genera un dashboard HTML AUTOCONTENIDO: todo el CSS y los datos van
- * incrustados en el fichero. No hace ninguna llamada de red, así el talento
- * abre el .html con doble clic y funciona sin servidor ni conexión.
+ * Generates a SELF-CONTAINED HTML dashboard: all the CSS and data are
+ * embedded in the file. It makes no network calls at all, so the talent
+ * opens the .html with a double-click and it works without a server or
+ * connection.
  *
- * Dirección de diseño: lenguaje visual de Shakers (design system "Nexia").
- * Superficie clara y sobria por defecto, verde teal corporativo como color de
- * marca y de "señal detectada", acento lime para el impulso ("siguiente paso"),
- * tipografía Inter (con fallback de sistema — ver nota de DRIFT). Layout basado
- * en tarjetas (cards) con la escala de radios/sombras/espaciado del DS.
- * Soporta claro y oscuro vía prefers-color-scheme, como define Nexia.
+ * Design direction: Shakers visual language (design system "Nexia"). Clear,
+ * sober surface by default, corporate teal green as the brand and
+ * "signal detected" color, lime accent for momentum ("next step"), Inter
+ * typography (with a system fallback — see the DRIFT note). Card-based
+ * layout with the DS's radius/shadow/spacing scale. Supports light and dark
+ * via prefers-color-scheme, as Nexia defines.
  *
- * IMPORTANTE (invariante de privacidad/confianza): CERO llamadas de red. Sin
- * fuentes externas, sin CDN, sin imágenes remotas, sin fetch/XHR. Todo inline.
+ * IMPORTANT (privacy/trust invariant): ZERO network calls. No external
+ * fonts, no CDN, no remote images, no fetch/XHR. Everything inline.
  *
- * i18n (talents-ai-score, report-i18n): `lang` ('es'|'en', ver src/i18n.js)
- * decide el catálogo de copy (parámetro `t` que se pasa a los helpers de
- * abajo). Nivel y categoría se traducen por CLAVE ESTABLE (maturity.key/level,
- * categoryLabel) sin tocar maturity.js/detectors.js — ver cabecera de
- * src/i18n.js. Las etiquetas de profundidad (depthLabel: mcpServers,
- * instructions...) se dejan tal cual en ambos idiomas: son nombres de campo
- * del scanner, no copy del informe.
+ * i18n (talents-ai-score, report-i18n): `lang` ('es'|'en', see src/i18n.js)
+ * decides the copy catalog (the `t` parameter passed to the helpers below).
+ * Level and category are translated by STABLE KEY (maturity.key/level,
+ * categoryLabel) without touching maturity.js/detectors.js — see the header
+ * of src/i18n.js. Depth labels (depthLabel: mcpServers, instructions...) are
+ * left as-is in both languages: they're scanner field names, not report copy.
  */
 
 function esc(s) {
@@ -44,9 +44,9 @@ function depthLabel(tool) {
   return bits.join(' · ');
 }
 
-// Formatea bytes a una unidad legible (B/KB/MB). Solo presentación: el dato
-// crudo (tool.footprint.bytes) ya viene agregado y saneado del scanner.
-// Unidades (B/KB/MB) universales: no se localizan.
+// Formats bytes into a readable unit (B/KB/MB). Presentation only: the raw
+// data (tool.footprint.bytes) already comes aggregated and sanitized from
+// the scanner. Units (B/KB/MB) are universal: not localized.
 function humanizeBytes(bytes) {
   if (bytes === null || bytes === undefined) return null;
   if (bytes < 1024) return `${bytes}&nbsp;B`;
@@ -56,8 +56,8 @@ function humanizeBytes(bytes) {
   return `${mb < 10 ? mb.toFixed(1) : Math.round(mb)}&nbsp;MB`;
 }
 
-// tool.footprint es null cuando la herramienta no tiene ruta propia que medir
-// (detectada solo por bin/vscodeExt) — se renderiza null y el llamador lo omite.
+// tool.footprint is null when the tool has no path of its own to measure
+// (detected only via bin/vscodeExt) — it renders as null and the caller omits it.
 function footprintLabel(tool, t) {
   if (!tool.footprint) return null;
   const { bytes, files } = tool.footprint;
@@ -66,8 +66,8 @@ function footprintLabel(tool, t) {
   return size ? `${filesLabel} · ${size}` : filesLabel;
 }
 
-// Badge de recencia: cuenta con bucket=null (sin footprint que fechar) y lo
-// omite en silencio, en vez de mostrar un estado inventado.
+// Recency badge: handles bucket=null (nothing to date) and silently omits
+// it, instead of showing a made-up state.
 function recencyBadge(tool, t) {
   const r = tool.recency;
   if (!r || !r.bucket) return '';
@@ -78,8 +78,8 @@ function recencyBadge(tool, t) {
   return `<span class="recency ${esc(r.bucket)}"${title ? ` title="${esc(title)}"` : ''}>${esc(label)}</span>`;
 }
 
-// tool.version es null cuando no se detectó por binario en PATH, o el binario
-// no respondió a --version: se omite, nunca se inventa "desconocida".
+// tool.version is null when it wasn't detected via a binary on PATH, or the
+// binary didn't respond to --version: it's omitted, never made up as "unknown".
 function versionLabel(tool) {
   if (!tool.version) return '';
   return `<span class="ver">v${esc(tool.version)}</span>`;
@@ -110,8 +110,8 @@ function toolRow(tool, t, lang) {
   </li>`;
 }
 
-// `lang` ('es'|'en', ver src/i18n.js) decide el catálogo de texto. Los datos
-// del informe (report/maturity) no cambian con el idioma, solo su copy.
+// `lang` ('es'|'en', see src/i18n.js) decides the text catalog. The report
+// data (report/maturity) doesn't change with the language, only its copy.
 function renderHtml(report, maturity, lang) {
   const t = getCatalog(lang);
   const rows = report.tools
@@ -126,15 +126,15 @@ function renderHtml(report, maturity, lang) {
   const levelName = t.levelNames[maturity.key] || maturity.name;
   const nextStep = t.nextSteps[maturity.level] || maturity.next;
 
-  // Bloque Entorno: campo nuevo del scanner, opcional por compatibilidad con
-  // informes generados antes de este campo (report.environment ausente).
+  // Environment block: new scanner field, optional for compatibility with
+  // reports generated before this field existed (report.environment absent).
   const env = report.environment || {};
   const editors = Array.isArray(env.editorsInstalled) ? env.editorsInstalled : [];
   const editorChips = editors.length
     ? editors.map((id) => `<span class="chip">${esc(id)}</span>`).join('')
     : `<span class="chip empty">${esc(t.html.noEditorsDetected)}</span>`;
 
-  // Escala de niveles 0..4 para el indicador de progreso por pasos.
+  // 0..4 level scale for the step progress indicator.
   const levelPips = Array.from({ length: 5 }, (_, i) => {
     const cls = i < maturity.level ? 'done' : (i === maturity.level ? 'here' : '');
     return `<span class="pip ${cls}"></span>`;
@@ -148,12 +148,12 @@ function renderHtml(report, maturity, lang) {
 <title>${esc(t.html.title(maturity.level))}</title>
 <style>
   /* =========================================================
-   * Tokens Shakers (Nexia). Layer 1 (primitivos) → Layer 2 (semánticos).
-   * Reimplementados inline: no se pueden importar componentes React en un
-   * HTML estático, así que reencarnamos el lenguaje visual, no los componentes.
+   * Shakers tokens (Nexia). Layer 1 (primitives) → Layer 2 (semantic).
+   * Reimplemented inline: React components can't be imported into a static
+   * HTML file, so we reincarnate the visual language, not the components.
    * ========================================================= */
   :root{
-    /* Layer 1 — primitivos de marca (subconjunto usado) */
+    /* Layer 1 — brand primitives (subset used) */
     --ds-teal-50:#e2f2f0; --ds-teal-100:#c5e5e1; --ds-teal-300:#51b1a5;
     --ds-teal-400:#269787; --ds-teal-500:#0e7d69; --ds-teal-600:#0b5a4c;
     --ds-teal-700:#08473c; --ds-teal-800:#05342c; --ds-teal-900:#03211c;
@@ -163,21 +163,22 @@ function renderHtml(report, maturity, lang) {
     --ds-zinc-700:#3f3f46; --ds-zinc-800:#27272a; --ds-zinc-900:#18181b;
     --ds-zinc-950:#09090b; --ds-white:#ffffff;
 
-    /* Radios (frame "Borde Radius") */
+    /* Radii ("Border Radius" frame) */
     --r-sm:6px; --r-md:8px; --r-lg:10px; --r-xl:14px; --r-full:9999px;
-    /* Sombras (shadcn upstream, mismo set claro/oscuro) */
+    /* Shadows (shadcn upstream, same light/dark set) */
     --shadow-sm:0 1px 3px 0 rgb(0 0 0 / .1), 0 1px 2px -1px rgb(0 0 0 / .1);
     --shadow-md:0 1px 3px 0 rgb(0 0 0 / .1), 0 2px 4px -1px rgb(0 0 0 / .1);
     --shadow-lg:0 1px 3px 0 rgb(0 0 0 / .1), 0 4px 6px -1px rgb(0 0 0 / .1);
 
-    /* Tipografía Inter con fallback de sistema (ver nota DRIFT). Sin @font-face
-       ni red: si Inter no está instalada, degrada al stack del propio DS. */
+    /* Inter typography with a system fallback (see the DRIFT note). No
+       @font-face or network: if Inter isn't installed, it degrades to the
+       DS's own stack. */
     --font-sans:"Inter",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,
       "Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif,
       "Apple Color Emoji","Segoe UI Emoji";
     --font-mono:ui-monospace,"SF Mono","Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
 
-    /* Layer 2 — semánticos (tema claro, default de Nexia) */
+    /* Layer 2 — semantic (light theme, Nexia default) */
     --bg:var(--ds-zinc-50);
     --surface:var(--ds-white);
     --fg:var(--ds-zinc-900);
@@ -240,7 +241,7 @@ function renderHtml(report, maturity, lang) {
     line-height:1.15;margin:16px 0 6px}
   .sub{color:var(--muted);font-size:15px;margin:0}
 
-  /* ---- Hero card: nivel + medidor ---- */
+  /* ---- Hero card: level + meter ---- */
   .hero{padding:28px;margin:24px 0;display:flex;flex-wrap:wrap;
     align-items:center;gap:28px 40px}
   .lvl{min-width:200px}
@@ -269,7 +270,7 @@ function renderHtml(report, maturity, lang) {
     transition:width 1.1s cubic-bezier(.2,.7,.2,1)}
   .fill.go{width:${maturity.score}%}
 
-  /* ---- Sección herramientas ---- */
+  /* ---- Tools section ---- */
   section{margin-bottom:24px}
   .h2{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
     color:var(--faint);margin:0 0 12px 2px}
@@ -302,7 +303,7 @@ function renderHtml(report, maturity, lang) {
   .tool.off .nm{color:var(--faint);font-weight:500}
   .tool.off .cat{background:transparent;color:var(--faint);padding-left:0}
 
-  /* ---- Badge de recencia (bucket derivado del mtime, ver ADR-003 scanner) ---- */
+  /* ---- Recency badge (bucket derived from mtime, see scanner ADR-003) ---- */
   .recency{flex:none;font-size:10px;font-weight:600;letter-spacing:.04em;
     text-transform:uppercase;padding:2px 8px;border-radius:var(--r-full);
     white-space:nowrap}
@@ -312,7 +313,7 @@ function renderHtml(report, maturity, lang) {
   .recency.stale{background:color-mix(in srgb,var(--accent-lime) 32%, transparent);
     color:var(--accent-lime-fg)}
 
-  /* ---- Entorno ---- */
+  /* ---- Environment ---- */
   .env{padding:20px 22px;display:flex;flex-wrap:wrap;gap:20px 36px;align-items:flex-start}
   .env-grid{display:flex;flex-wrap:wrap;gap:18px 32px}
   .env-item{display:flex;flex-direction:column;gap:4px;min-width:100px}
@@ -328,7 +329,7 @@ function renderHtml(report, maturity, lang) {
     background:var(--secondary);padding:3px 10px;border-radius:var(--r-full)}
   .chip.empty{background:transparent;color:var(--faint);padding-left:0}
 
-  /* ---- Siguiente paso (acento lime = impulso) ---- */
+  /* ---- Next step (lime accent = momentum) ---- */
   .next{padding:22px 24px;border-left:4px solid var(--accent-lime);
     display:flex;gap:16px;align-items:flex-start}
   .next .icon{flex:none;width:36px;height:36px;border-radius:var(--r-md);
@@ -361,7 +362,7 @@ function renderHtml(report, maturity, lang) {
     .hero{padding:22px}
   }
 
-  /* Animaciones sutiles (se anulan con reduced-motion) */
+  /* Subtle animations (disabled with reduced-motion) */
   ul.tools .tool{opacity:0;transform:translateY(6px);animation:rise .45s forwards}
   @keyframes rise{to{opacity:1;transform:none}}
   @media (prefers-reduced-motion:reduce){

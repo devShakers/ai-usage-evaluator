@@ -3,40 +3,43 @@
 const { execFileSync } = require('child_process');
 
 /*
- * Detección de idioma del sistema operativo, para localizar el informe
- * (ver i18n.js). Cero dependencias: solo módulos nativos de Node.
+ * Operating system language detection, to localize the report (see
+ * i18n.js). Zero dependencies: only native Node modules.
  *
- * Invariante (ADR-003, talents-ai-score): solo se leen SEÑALES DE IDIOMA
- * (variables de entorno de locale, API Intl, preferencia de idioma del SO).
- * Nunca contenido, rutas, otras variables de entorno ni credenciales.
+ * Invariant (ADR-003, talents-ai-score): only LANGUAGE SIGNALS are read
+ * (locale environment variables, the Intl API, the OS's language
+ * preference). Never content, paths, other environment variables, or
+ * credentials.
  *
- * Orden de precedencia (de más a menos explícito/autoritativo). Documentado
- * aquí porque cambiar el orden cambia el idioma que ve el talento:
+ * Precedence order (from most to least explicit/authoritative). Documented
+ * here because changing the order changes the language the talent sees:
  *
- *   1. LC_ALL    — POSIX: pisa cualquier otra variable de locale.
- *   2. LANG      — POSIX: locale general del sistema/shell.
- *   3. LANGUAGE  — extensión GNU: lista de preferencias ("es_ES:en"); se toma
- *                  la primera. Se comprueba tras LC_ALL/LANG porque fuera de
- *                  shells GNU (p.ej. macOS) suele venir vacía o inconsistente.
- *   4. macOS: `defaults read -g AppleLocale` — preferencia de idioma real
- *      fijada en Preferencias del Sistema. Se prueba SOLO si ninguna variable
- *      de entorno anterior dio idioma (p.ej. shell con LANG=C/POSIX o sin
- *      variables, pero el usuario sí tiene idioma fijado a nivel de SO). Se
- *      considera más autoritativa que Intl porque lee la preferencia real del
- *      SO, no una heurística de ICU que puede degradar a un default si el
- *      proceso no hereda el entorno de la shell (p.ej. lanzado desde una GUI).
- *   5. Intl.DateTimeFormat().resolvedOptions().locale — respaldo universal
- *      (cualquier plataforma, incluida Windows): Node/ICU siempre devuelve
- *      algo, así que se usa como último recurso algorítmico antes del
- *      fallback fijo.
- *   6. null — si nada de lo anterior resuelve un idioma. El fallback final a
- *      'en' (idioma universal) lo aplica el llamador (ver i18n.resolveLang).
+ *   1. LC_ALL    — POSIX: overrides any other locale variable.
+ *   2. LANG      — POSIX: the system/shell's general locale.
+ *   3. LANGUAGE  — GNU extension: a preference list ("es_ES:en"); the first
+ *                  one is taken. Checked after LC_ALL/LANG because outside
+ *                  GNU shells (e.g. macOS) it's usually empty or inconsistent.
+ *   4. macOS: `defaults read -g AppleLocale` — the real language preference
+ *      set in System Preferences. Only tried if no earlier environment
+ *      variable gave a language (e.g. a shell with LANG=C/POSIX or no
+ *      variables at all, but the user does have a language set at the OS
+ *      level). Considered more authoritative than Intl because it reads the
+ *      OS's actual preference, not an ICU heuristic that can degrade to a
+ *      default if the process doesn't inherit the shell's environment
+ *      (e.g. launched from a GUI).
+ *   5. Intl.DateTimeFormat().resolvedOptions().locale — universal fallback
+ *      (any platform, including Windows): Node/ICU always returns
+ *      something, so it's used as the last algorithmic resort before the
+ *      fixed fallback.
+ *   6. null — if none of the above resolves a language. The final fallback
+ *      to 'en' (the universal language) is applied by the caller (see
+ *      i18n.resolveLang).
  */
 
-// Extrae un código de idioma de 2 letras ("es", "en"...) de una cadena de
-// locale habitual: "es_ES.UTF-8", "es-ES", "es", o una lista "es_ES:en"
-// (formato de LANGUAGE, se toma el primer elemento). "C"/"POSIX" significan
-// "sin locale de idioma fijado", no un idioma real: se ignoran.
+// Extracts a 2-letter language code ("es", "en"...) from a common locale
+// string: "es_ES.UTF-8", "es-ES", "es", or a list "es_ES:en" (LANGUAGE
+// format, the first element is taken). "C"/"POSIX" mean "no language locale
+// set", not a real language: they're ignored.
 function langFromLocaleString(raw) {
   if (!raw) return null;
   const value = String(raw).trim();
@@ -63,7 +66,7 @@ function langFromAppleLocale() {
     }).toString('utf8');
     return langFromLocaleString(out);
   } catch {
-    return null; // clave sin fijar, comando ausente, o cualquier fallo: se ignora
+    return null; // key not set, command missing, or any other failure: ignored
   }
 }
 
@@ -75,10 +78,10 @@ function langFromIntl() {
   }
 }
 
-// Devuelve el código de idioma detectado ('es', 'en', 'fr', ...) o null si no
-// se pudo resolver ninguna señal. `env` es inyectable para tests (por defecto
-// process.env). La decisión de a qué catálogo mapea (es vs en, con en como
-// fallback universal) vive en i18n.js, no aquí.
+// Returns the detected language code ('es', 'en', 'fr', ...) or null if no
+// signal could be resolved. `env` is injectable for tests (defaults to
+// process.env). The decision of which catalog it maps to (es vs en, with en
+// as the universal fallback) lives in i18n.js, not here.
 function detectLangCode(env = process.env) {
   return langFromEnv(env) || langFromAppleLocale() || langFromIntl() || null;
 }

@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { detectors } = require('./detectors');
 
-/* ---------- utilidades de comprobación (solo existencia, nunca contenido) ---------- */
+/* ---------- existence-check utilities (existence only, never content) ---------- */
 
 function exists(p) {
   try {
@@ -22,7 +22,7 @@ function onPath(bin) {
   const cmd = process.platform === 'win32' ? 'where' : 'command';
   const args = process.platform === 'win32' ? [bin] : ['-v', bin];
   try {
-    // command -v necesita shell; usamos un enfoque portable
+    // command -v needs a shell; we use a portable approach
     if (process.platform === 'win32') {
       execFileSync('where', [bin], { stdio: 'ignore' });
     } else {
@@ -48,7 +48,7 @@ function vscodeExtInstalled(prefix) {
         return true;
       }
     } catch {
-      /* sin permisos: se ignora */
+      /* no permissions: ignored */
     }
   }
   return false;
@@ -69,17 +69,17 @@ function evalSignal(sig, root) {
   }
 }
 
-// Resuelve la ruta absoluta de una señal projectPath/homePath. Las señales
-// bin/vscodeExt no apuntan a un fichero propio de la herramienta (vscodeExt
-// apunta al directorio COMPARTIDO de extensiones), así que no se usan para
-// tamaño ni recencia — mezclarlas ensuciaría ambas métricas.
+// Resolves the absolute path of a projectPath/homePath signal. bin/vscodeExt
+// signals don't point to a file of the tool's own (vscodeExt points at the
+// SHARED extensions directory), so they aren't used for size or recency —
+// mixing them in would pollute both metrics.
 function resolveSignalPath(sig, root) {
   if (sig.type === 'projectPath') return path.join(root, sig.path);
   if (sig.type === 'homePath') return path.join(os.homedir(), sig.path);
   return null;
 }
 
-/* ---------- sondas de PROFUNDIDAD: devuelven SOLO números ---------- */
+/* ---------- DEPTH probes: return ONLY numbers ---------- */
 
 function countDirEntries(p) {
   try {
@@ -98,7 +98,7 @@ function countFiles(p, ext) {
 }
 
 function countJsonKeys(file, key) {
-  // Parsea el JSON SOLO para contar claves; no se guarda ningún valor ni nombre.
+  // Parses the JSON ONLY to count keys; no value or name is ever stored.
   try {
     const raw = fs.readFileSync(file, 'utf8');
     const obj = JSON.parse(raw);
@@ -109,17 +109,17 @@ function countJsonKeys(file, key) {
   }
 }
 
-/* ---------- huella de configuración: SOLO tamaño en bytes y nº de ficheros ---------- */
-/* Nunca se guarda un nombre de fichero ni una ruta: se agregan solo números.  */
+/* ---------- config footprint: ONLY size in bytes and file count ---------- */
+/* No file name or path is ever stored: only numbers are aggregated.        */
 
-const FOOTPRINT_MAX_DEPTH = 4; // acota el coste si algún dir de config es profundo
-const FOOTPRINT_MAX_FILES = 5000; // cota de seguridad, evita escaneos costosos
+const FOOTPRINT_MAX_DEPTH = 4; // caps the cost if some config dir is deeply nested
+const FOOTPRINT_MAX_FILES = 5000; // safety cap, avoids expensive scans
 
 function pathFootprint(p, depth = 0, budget = { files: 0 }) {
   if (budget.files >= FOOTPRINT_MAX_FILES) return { bytes: 0, files: 0 };
   try {
     const st = fs.lstatSync(p);
-    if (st.isSymbolicLink()) return { bytes: 0, files: 0 }; // no seguimos symlinks
+    if (st.isSymbolicLink()) return { bytes: 0, files: 0 }; // we don't follow symlinks
     if (st.isFile()) {
       budget.files += 1;
       return { bytes: st.size, files: 1 };
@@ -159,10 +159,10 @@ function aggregateFootprint(paths) {
   return { bytes, files };
 }
 
-/* ---------- recencia: SOLO mtime -> fecha derivada (ADR-003) ---------- */
-/* Prohibido: leer contenido de logs/historiales para inferir frecuencia de uso. */
-/* Único dato capturado: la fecha de última modificación de los ficheros/dirs de */
-/* configuración ya detectados como existentes — nunca su contenido.            */
+/* ---------- recency: ONLY mtime -> derived date (ADR-003) ---------- */
+/* Forbidden: reading log/history content to infer usage frequency.          */
+/* Only data captured: the last-modified date of the config files/dirs      */
+/* already detected as existing — never their content.                      */
 
 function latestMtime(paths) {
   let max = null;
@@ -171,7 +171,7 @@ function latestMtime(paths) {
       const st = fs.statSync(p);
       if (!max || st.mtime > max) max = st.mtime;
     } catch {
-      /* ignorado: no existe o sin permisos */
+      /* ignored: doesn't exist or no permissions */
     }
   }
   return max;
@@ -197,8 +197,8 @@ function computeRecency(paths) {
   };
 }
 
-/* ---------- versión: SOLO se ejecuta el binario YA detectado, con --version ---------- */
-/* Nunca comandos arbitrarios; se descarta toda la salida salvo el patrón de versión. */
+/* ---------- version: ONLY runs the ALREADY detected binary, with --version ---------- */
+/* Never arbitrary commands; all output is discarded except the version pattern. */
 
 function getVersion(bin) {
   try {
@@ -209,11 +209,11 @@ function getVersion(bin) {
     const match = out.match(/\d+\.\d+(?:\.\d+)?(?:[-.\w]*)?/);
     return match ? match[0] : null;
   } catch {
-    return null; // binario sin --version, timeout, o cualquier fallo: se ignora
+    return null; // binary without --version, timeout, or any failure: ignored
   }
 }
 
-/* ---------- metadatos de entorno: SO/arquitectura/editores instalados ---------- */
+/* ---------- environment metadata: OS/architecture/installed editors ---------- */
 
 const EDITOR_CANDIDATES = [
   {
@@ -231,8 +231,8 @@ const EDITOR_CANDIDATES = [
   { id: 'neovim', name: 'Neovim', signals: [{ type: 'bin', name: 'nvim' }] },
   { id: 'emacs', name: 'Emacs', signals: [{ type: 'bin', name: 'emacs' }] },
   {
-    // Confianza media: la ruta de config de JetBrains varía por SO/producto/versión;
-    // se comprueba la carpeta paraguas de cada SO, no un IDE concreto.
+    // Medium confidence: JetBrains's config path varies by OS/product/version;
+    // we check each OS's umbrella folder, not a specific IDE.
     id: 'jetbrains',
     name: 'JetBrains IDEs',
     signals: [
@@ -277,8 +277,8 @@ const probes = {
     rules:
       (exists(path.join(root, '.windsurfrules')) ? 1 : 0) +
       countFiles(path.join(root, '.windsurf', 'rules'), '.md'),
-    // Confianza media: nombre de fichero recordado de memoria, sin verificar
-    // contra la doc actual de Windsurf en este entorno (sin acceso a red).
+    // Medium confidence: file name recalled from memory, not verified against
+    // Windsurf's current docs in this environment (no network access).
     mcpServers: countJsonKeys(path.join(os.homedir(), '.codeium', 'windsurf', 'mcp_config.json'), 'mcpServers'),
   }),
   aider: (root) => ({
@@ -291,19 +291,19 @@ const probes = {
   }),
   'gemini-cli': (root) => ({
     instructions: exists(path.join(root, 'GEMINI.md')) ? 1 : 0,
-    // Confianza media: mismo caveat que windsurf.mcpServers arriba.
+    // Medium confidence: same caveat as windsurf.mcpServers above.
     mcpServers: countJsonKeys(path.join(os.homedir(), '.gemini', 'settings.json'), 'mcpServers'),
   }),
   'codex-cli': (root) => ({
     instructions: exists(path.join(root, 'AGENTS.md')) ? 1 : 0,
   }),
   trae: (root) => ({
-    // Confianza baja: estructura de `.trae/rules` no verificada (ver detectors.js).
+    // Low confidence: `.trae/rules` structure not verified (see detectors.js).
     rules: countFiles(path.join(root, '.trae', 'rules')),
   }),
 };
 
-/* ---------- escaneo principal ---------- */
+/* ---------- main scan ---------- */
 
 function scan(options = {}) {
   const root = options.root || process.cwd();
@@ -319,21 +319,22 @@ function scan(options = {}) {
       vendor: det.vendor,
       category: det.category,
       detected,
-      // Solo el TIPO de señal que casó (projectPath/homePath/bin/vscodeExt),
-      // nunca la ruta concreta, para no filtrar estructura de carpetas privadas.
+      // Only the signal TYPE that matched (projectPath/homePath/bin/vscodeExt),
+      // never the concrete path, so as not to leak private folder structure.
       signalTypes: [...new Set(matched.map((s) => s.type))],
       signalCount: matched.length,
       depth: {},
-      // Huella de config: SOLO tamaño agregado en bytes y nº de ficheros, nunca
-      // rutas ni nombres. null cuando la herramienta no se detectó por
-      // projectPath/homePath (p.ej. solo por bin o vscodeExt: no hay ruta propia
-      // que medir sin arriesgar contar el directorio compartido de extensiones).
+      // Config footprint: ONLY the aggregated size in bytes and file count,
+      // never paths or names. null when the tool wasn't detected via
+      // projectPath/homePath (e.g. only via bin or vscodeExt: there's no path
+      // of its own to measure without risking counting the shared extensions
+      // directory).
       footprint: null,
-      // Recencia: SOLO fecha derivada del mtime más reciente entre sus ficheros
-      // de config ya detectados (ADR-003). Nunca contenido, logs ni historiales.
+      // Recency: ONLY the date derived from the most recent mtime among its
+      // already-detected config files (ADR-003). Never content, logs or history.
       recency: { lastModified: null, daysSinceModified: null, bucket: null },
-      // Versión: solo si la herramienta se detectó por binario en PATH; se
-      // ejecuta ESE binario, ya detectado, con `--version` únicamente.
+      // Version: only if the tool was detected via a binary on PATH; runs
+      // THAT already-detected binary, with `--version` only.
       version: null,
     };
 
@@ -361,8 +362,9 @@ function scan(options = {}) {
 
   const detectedTools = tools.filter((t) => t.detected);
 
-  // ID anónimo estable por máquina: hash de hostname + usuario. No reversible
-  // a datos personales y sirve solo para deduplicar envíos, no para identificar.
+  // Stable per-machine anonymous id: hash of hostname + user. Not reversible
+  // to personal data and only useful for deduplicating submissions, not for
+  // identifying anyone.
   const anonId = crypto
     .createHash('sha256')
     .update(`${os.hostname()}::${os.userInfo().username}`)
@@ -375,11 +377,11 @@ function scan(options = {}) {
     anonId,
     platform: process.platform,
     scope: options.root ? 'custom' : 'cwd',
-    // Metadatos de entorno: SO/arquitectura/versión de Node (constantes de
-    // process.*, nunca leídas de fichero) y qué editores tiene instalados
-    // (booleanos de presencia, catálogo EDITOR_CANDIDATES arriba). Campo nuevo,
-    // no rompe `platform` (se mantiene como string por compatibilidad con
-    // share.js/render-html.js existentes).
+    // Environment metadata: OS/architecture/Node version (process.* constants,
+    // never read from a file) and which editors are installed (presence
+    // booleans, EDITOR_CANDIDATES catalog above). New field, doesn't break
+    // `platform` (kept as a string for compatibility with existing
+    // share.js/render-html.js).
     environment: {
       platform: process.platform,
       arch: process.arch,
