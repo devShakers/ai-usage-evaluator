@@ -2,7 +2,7 @@
 
 > **Status: proof of concept (PoC) — distribution only.** This repository
 > publishes only the CLI (PoC). The local report
-> works 100%. Enrollment (`--enroll`) and automatic sending are
+> works 100%. The consent/disclosure flow and automatic sending are
 > **inert**: there is no server deployed behind them. See the section
 > ["Sharing the report with the platform" ↓](#sharing-the-report-with-the-platform--not-available-in-this-poc-yet)
 > for details.
@@ -57,121 +57,132 @@ ai-footprint --no-save        # writes nothing to disk
 Without installing, from a copy of the repo, this is equivalent to
 `node bin/report.js [options]`.
 
+The **first time** you run the tool (and only then, unless you revoke your
+decision), it shows an explicit disclosure of what would be sent/never sent
+and asks once whether you accept sending your report to the platform. See
+below.
+
 ## Sharing the report with the platform — NOT AVAILABLE IN THIS POC YET
 
-> **Inert in this PoC.** The enrollment and sending mechanism exists in the
-> code and is documented below because it describes the full design, but
-> **there is no Shakers server deployed to production yet**. The enrollment
-> code (`--enroll=...`) is issued from a Shakers panel that **is not
-> running**, so there is no way to get a real one today. Without enrolling,
-> the tool sends nothing — there is no endpoint to connect to. **We don't
-> promise working delivery at this stage**, only the local report (which
-> does work 100%).
+> **Inert in this PoC.** The consent/disclosure and sending mechanism exists
+> in the code and is documented below because it describes the full design,
+> but **there is no Shakers server deployed to production yet**. The
+> ingestion endpoint is supplied via the `AI_FOOTPRINT_INGEST_ENDPOINT`
+> environment variable (never hardcoded, see `src/config.js`); without it
+> set, the tool sends nothing. **We don't promise working delivery at this
+> stage**, only the local report (which does work 100%).
 
-Design (for when the server exists): sending is **automatic** after
-enrolling, with no preview or per-run confirmation. It's controlled by a
-consent flag persisted in the local credential itself, **ON by default** —
-it can be turned off at any time without re-enrolling (see `--consent`
-below). The public repo **contains no endpoint or secret**: the destination
-URL arrives inside the credential obtained when enrolling.
+Design (talents-ai-score, ADR-007 — supersedes the earlier token/enrollment
+model, see git history): the first time you run `ai-footprint` with no
+consent decision persisted yet, it shows an explicit **disclosure** (what
+gets sent, what never does, the purpose, and a notice that the data is
+*indicative, not verified*) and asks once whether you accept. If you
+accept, it asks for your **email** and sends `{email, payload}` to the
+configured endpoint — no `Authorization` header, no token: the endpoint is
+public and identity travels in the body. If you decline, it persists that
+and never asks again (only local reports, forever, unless you change your
+mind). Once you've decided, a normal run never interrupts you with the
+disclosure again — accepted runs resend silently (max. once per hour).
 
 Expected talent flow (once the server is deployed):
 
 ```bash
-# 1) Enroll (the personal code would come from your Shakers panel)
-ai-footprint --enroll=YOUR_PANEL_CODE
+# 1) First run: you see the disclosure and answer once
+ai-footprint
+#   ...disclosure text...
+#   ¿Aceptas enviar este informe? (s/n): s
+#   Introduce tu correo: talent@example.com
 
 # 2) From here on, every normal run sends the report automatically
 #    (max. once per hour), with no preview or confirmation
 ai-footprint
 
-# 3) To turn off automatic sending at any time (or turn it back on)
-ai-footprint --consent=off
-ai-footprint --consent=on
+# 3) Manage your decision at any time, without re-running the disclosure
+ai-footprint --consent-status         # see decision / email / last send
+ai-footprint --consent-revoke         # revoke -> denied, no more sends
+ai-footprint --consent-email you@new-address.com   # change the email on file
 ```
 
 What would be sent: only derived data (level, score, tools detected
-yes/no, and per-tool counts). Never file contents, paths or credentials.
-Sending failures (network, rejected credential, submission limit) never
-break the local report. The credential would be stored at
-`~/.config/ai-footprint/credentials.json` (permissions 600), along with the
-consent flag and the timestamp of the last submission.
+yes/no, per-tool counts) plus the email you typed in. Never file contents,
+paths or credentials. Sending failures (network, rate limit, kill switch
+off) never break the local report. The decision is stored at
+`~/.config/ai-footprint/consent.json` (permissions 600): `{consent, email,
+lastSentAt}`.
+
+> **Legal notice (pending):** this repository intentionally does NOT ship
+> GDPR-specific legal copy — the disclosure includes an explicit
+> `[PENDING LEGAL REVIEW]` placeholder (see `src/i18n.js`, `consent`
+> catalog) instead of invented legal text. A legal/labor expert must review
+> and fill it in, and sign off, before this is activated against real
+> talents (ADR-007).
 
 ## Reference server (NOT deployed in this PoC)
 
 > Out of scope for this PoC (ADR-002, `active-work/talents-ai-score`): the
 > `reference-server/` code lives in the repo as contract documentation and
 > for review, but **it is not run nor deployed**. There is no instance
-> running at Shakers that this CLI connects to.
+> running at Shakers that this CLI connects to. The real server for this
+> contract is `shakers-hub-backend` (specs.md), not this stub.
 
 `reference-server/server.js` is a **dependency-free stub** that illustrates
-the contract: it exchanges a single-use enrollment code for a revocable
-token, and ingests reports validating the token, attributing them to the
-talent, and applying rate limiting. It's an in-memory example; your team
-reimplements it on real infrastructure (DB, hashed tokens, TLS at the
-gateway).
+the CURRENT contract (ADR-007): a public ingestion endpoint, no
+per-identity auth, rate-limited by email and by IP, gated by a kill switch
+that defaults OFF. It's an in-memory example with no Talent database (every
+report is stored as a "lead" keyed by email) — your team reimplements it on
+real infrastructure (Postgres, email↔Talent match, Redis-backed rate
+limiting, TLS at the gateway).
 
 ```bash
-node reference-server/server.js
-# prints a demo code and an --enroll string ready to test the client
+AI_FOOTPRINT_INGEST_ENABLED=true node reference-server/server.js
+# starts with the kill switch ON so you can test end to end locally
 ```
 
-Routes: `GET /health`, `POST /enroll {code}`, `POST /reports` (with
-`Bearer`). Access control: a stranger who clones the repo gets a scanner
-that shows them their local report but has no valid credential, so their
-submission is rejected with 401. Only the talents you enroll can send
-reports.
+Routes: `GET /health`, `POST /reports` (public, `{email, payload}`),
+`GET /admin/reports` (audit, requires `X-Admin-Key`). Access control moved
+from per-identity tokens to: (a) the kill switch (503 while OFF — the
+default, everywhere including prod), and (b) rate limiting by normalized
+email + by IP (429 past the ceiling). Anyone can call `/reports` once the
+switch is ON (the CLI itself is a public repo, so an embedded secret
+wouldn't be one) — what's controlled is volume and the local disclosure
+gate on the client, not who's technically allowed to POST.
 
-### Token control (administration)
-
-Tokens are stored **hashed** (never in plaintext) and have a full
-lifecycle. Admin routes require the `X-Admin-Key` header:
+### Audit and kill switch
 
 ```bash
-# Issue an enrollment code for a talent (returns the command to show on their panel)
-curl -X POST http://localhost:8787/admin/enroll-codes \
-  -H "X-Admin-Key: YOUR_KEY" -H "Content-Type: application/json" \
-  -d '{"talentId":"talent_123"}'
-
-# Audit: lists all tokens with talent, issuance, last use, expiry and status
-curl http://localhost:8787/admin/tokens -H "X-Admin-Key: YOUR_KEY"
-
-# Revoke a token by its public id (cuts off access; the next submission gets 401)
-curl -X POST http://localhost:8787/admin/revoke \
-  -H "X-Admin-Key: YOUR_KEY" -H "Content-Type: application/json" \
-  -d '{"id":"tok_abc123..."}'
+# Audit: lists reports received (no PII beyond the email itself)
+curl http://localhost:8787/admin/reports -H "X-Admin-Key: YOUR_KEY"
 ```
 
-How you control each phase:
-
-- **Issuance**: without a code issued by you (tied to a `talentId`) there is
-  no token.
-- **Expiry**: every token is born with an expiration (TTL); once it expires,
-  the talent re-enrolls.
-- **Revocation**: `/admin/revoke` cuts off access instantly.
-- **Storage**: only the token hash is stored; the secret is handed out once
-  at enrollment time and kept by the talent.
-- **Audit**: `/admin/tokens` shows who owns each token, when it was last
-  used, and whether it's still active.
+- **Kill switch**: `AI_FOOTPRINT_INGEST_ENABLED` (read once at startup in
+  this stub; specs.md's real backend reads it per-request so it can flip
+  without a redeploy). Defaults OFF — `POST /reports` returns 503 until
+  it's explicitly turned on.
+- **Rate limit**: per normalized email AND per IP, 5/hour each (in-memory
+  sliding window in this stub; per-replica ceiling in production until
+  moved to Redis, see specs.md).
+- **No token/enrollment lifecycle anymore** (ADR-007 retires it entirely):
+  there's nothing to issue, expire, or revoke per-talent. Revocation of
+  *sending* lives client-side (`ai-footprint --consent-revoke`).
 
 In production, this admin surface lives behind your real internal auth and
-on top of a database, not the stub's in-memory stores.
+on top of a database, not the stub's in-memory store.
 
 > Notice: sending data about how a person works involves processing personal
 > data (GDPR, consent). Validate it with a legal/labor expert before
-> enabling sending in production.
+> enabling sending in production — see the legal notice above.
 
 ## Usage (quick reference)
 
 ```bash
-ai-footprint                  # report in the terminal
-ai-footprint --html           # also generates and opens the visual dashboard
-ai-footprint --json           # report as JSON on stdout
-ai-footprint --root ../other  # scans another directory
-ai-footprint --no-save        # writes nothing to disk
-ai-footprint --enroll=CODE    # enrolls this machine
-ai-footprint --consent=on     # turns on automatic sending (already on by default)
-ai-footprint --consent=off    # turns off automatic sending
+ai-footprint                       # report in the terminal (asks for consent once, first run)
+ai-footprint --html                # also generates and opens the visual dashboard
+ai-footprint --json                # report as JSON on stdout
+ai-footprint --root ../other       # scans another directory
+ai-footprint --no-save             # writes nothing to disk
+ai-footprint --consent-status      # view consent decision / email / last send
+ai-footprint --consent-revoke      # revoke consent (-> denied), no more sends
+ai-footprint --consent-email E     # change the email on file
 ```
 
 Results are saved in `~/.config/ai-footprint/` (`latest.json`,
@@ -216,18 +227,22 @@ locally from what could be sent:
   keys**; no name or value is stored.
 - The `anonymous id` is a non-reversible hash of hostname + user, useful
   only for deduplication, not for identifying the person.
+- **Explicit opt-in disclosure, once** (ADR-007): the CLI never sends
+  anything without you having seen the disclosure and explicitly accepted
+  it, once, with an email you typed in yourself. The email is
+  self-affirmed and **not verified** in this iteration — treat any
+  identity claim it enables as indicative, not proof.
 - **There is no data sending in this PoC.** The sharing module
-  (`src/share.js`) exists in the code — automatic sending after enrolling,
-  with no preview or confirmation, with a consent flag persisted in the
-  local credential (on by default, can be turned off with
-  `--consent=off`) — but it's **inert** while no server is deployed: with
-  no credential, there's no one to send to.
+  (`src/share.js`) exists in the code — the disclosure/consent/email flow
+  and the resulting automatic, silent resend — but it's **inert** while no
+  endpoint is configured (`AI_FOOTPRINT_INGEST_ENDPOINT`): with nowhere to
+  send to, `autoShare` always skips.
 
 If you're going to deploy this among third parties (e.g. a platform's
 talents), remember that collecting data about how a person works has GDPR
 and consent implications: it's worth validating it with a legal/labor
 expert before deploying the server and distributing the CLI with sending
-turned on.
+turned on (see the legal notice above).
 
 ## How to add a new tool
 
@@ -259,9 +274,12 @@ src/maturity.js          Level and score calculation
 src/render-terminal.js   Terminal output
 src/render-html.js       Self-contained HTML dashboard
 src/store.js             Persistence in the user's home
-src/share.js             Enrollment, consent flag (ON by default) and automatic sending
+src/share.js             Consent state, email identity and automatic sending
+src/consent-flow.js      Interactive disclosure + consent + email prompt
+src/cli-args.js          CLI flag parsing
+src/config.js            Ingestion endpoint configuration (env var, no hardcode)
 src/locale.js            OS locale detection for report localization
-src/i18n.js              Report text catalogs (es/en)
-reference-server/server.js  Reference (stub) enrollment and ingestion server
+src/i18n.js              Report + consent/disclosure text catalogs (es/en)
+reference-server/server.js  Reference (stub) public ingestion server
 install.sh               Installer (curl | bash or local)
 ```
