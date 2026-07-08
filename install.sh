@@ -36,17 +36,16 @@ else
   C=''; G=''; Y=''; R=''; B=''; N=''
 fi
 
+# Fixed top-level files (outside src/). Everything under src/ is discovered
+# and copied as a whole below — NOT listed one by one here — precisely so a
+# new module added to src/ (like the i18n.js/locale.js pair that once broke
+# this installer by being left off a hardcoded list) never goes missing from
+# an install again. If a file is ever added to src/ that must NOT ship (none
+# today), exclude it explicitly at the discovery step below and say why.
 FILES=(
   "package.json"
   "README.md"
   "bin/report.js"
-  "src/detectors.js"
-  "src/scanner.js"
-  "src/maturity.js"
-  "src/render-terminal.js"
-  "src/render-html.js"
-  "src/store.js"
-  "src/share.js"
 )
 
 say()  { printf "  %b\n" "$1"; }
@@ -82,6 +81,39 @@ else
   say "${G}+${N} Instalando desde ${OWNER}/${REPO}@${BRANCH}"
 fi
 
+# ─── Discover src/ modules ──────────────────────────────────────────────────
+# Read live, never hardcoded: locally we list the actual directory; remotely
+# we ask the GitHub Contents API (Node, already a hard requirement, parses
+# the JSON — no jq dependency added). This is what makes adding a module to
+# src/ safe: nothing here needs to change for it to be picked up.
+SRC_FILES=()
+if [ "$LOCAL" -eq 1 ]; then
+  for f in "$SCRIPT_DIR"/src/*.js; do
+    [ -e "$f" ] && SRC_FILES+=("$(basename "$f")")
+  done
+else
+  API_URL="https://api.github.com/repos/${OWNER}/${REPO}/contents/src?ref=${BRANCH}"
+  SRC_JSON="$(curl -fsSL "$API_URL")" \
+    || die "No se pudo listar src/ vía la API de GitHub (${API_URL}).\n    Revisa tu conexión o la config OWNER/REPO/BRANCH del script."
+  while IFS= read -r name; do
+    SRC_FILES+=("$name")
+  done < <(printf '%s' "$SRC_JSON" | node -e '
+    let data = "";
+    process.stdin.on("data", (c) => { data += c; });
+    process.stdin.on("end", () => {
+      let items;
+      try { items = JSON.parse(data); } catch { items = []; }
+      if (!Array.isArray(items)) items = [];
+      for (const item of items) {
+        if (item && item.type === "file" && /\.js$/.test(item.name)) {
+          console.log(item.name);
+        }
+      }
+    });
+  ')
+fi
+[ "${#SRC_FILES[@]}" -gt 0 ] || die "No se encontraron módulos en src/.\n    Revisa OWNER/REPO/BRANCH en install.sh, o que el checkout local tenga la carpeta src/."
+
 # ─── Place the files ────────────────────────────────────────────────────────
 mkdir -p "$INSTALL_DIR/bin" "$INSTALL_DIR/src" "$BIN_DIR"
 say "\n  Copiando ficheros..."
@@ -94,6 +126,15 @@ for f in "${FILES[@]}"; do
     curl -fsSL "$RAW/$f" -o "$dest" || die "No se pudo descargar $f\n    Revisa tu conexión o la config OWNER/REPO/BRANCH del script."
   fi
   say "    ${G}+${N} $f"
+done
+for f in "${SRC_FILES[@]}"; do
+  dest="$INSTALL_DIR/src/$f"
+  if [ "$LOCAL" -eq 1 ]; then
+    cp "$SCRIPT_DIR/src/$f" "$dest" || die "No se pudo copiar src/$f"
+  else
+    curl -fsSL "$RAW/src/$f" -o "$dest" || die "No se pudo descargar src/$f\n    Revisa tu conexión o la config OWNER/REPO/BRANCH del script."
+  fi
+  say "    ${G}+${N} src/$f"
 done
 
 # ─── Create the `ai-footprint` launcher ─────────────────────────────────────
