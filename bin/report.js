@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 'use strict';
 
-const readline = require('readline');
 const { execFile } = require('child_process');
 const { scan } = require('../src/scanner');
 const { classify } = require('../src/maturity');
@@ -19,6 +18,7 @@ const {
   setEmail,
 } = require('../src/share');
 const { runDisclosureFlow } = require('../src/consent-flow');
+const { createStdinAsk } = require('../src/stdin-ask');
 
 function openInBrowser(file) {
   const cmd =
@@ -49,19 +49,6 @@ a la plataforma; puedes aceptar o rechazar, y solo se te pregunta una vez.
 Gestiona esa decisión con: --consent-status, --consent-revoke,
 --consent-email <correo>.
 `;
-}
-
-// Reads one line from real stdin. Injected as `ask` into
-// src/consent-flow.js's runDisclosureFlow so that module can be tested
-// without a TTY.
-function createStdinAsk() {
-  return (question) => new Promise((resolve) => {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    rl.question(`  ${question} `, (answer) => {
-      rl.close();
-      resolve(answer);
-    });
-  });
 }
 
 // One-shot consent management commands (issue 007). Mirror the retired
@@ -139,7 +126,12 @@ async function main() {
   // interrupts with this again.
   const state = loadConsentState();
   if (!getConsentDecision(state)) {
-    await runDisclosureFlow({ ask: createStdinAsk(), catalog });
+    const ask = createStdinAsk();
+    try {
+      await runDisclosureFlow({ ask, catalog });
+    } finally {
+      ask.close();
+    }
   }
 
   const report = scan({ root: opts.root });
