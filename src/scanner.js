@@ -8,6 +8,11 @@ const { execFileSync } = require('child_process');
 const { detectors } = require('./detectors');
 const { parseAgentOrgChart } = require('./agent-org-chart');
 const { detectTechnologies } = require('./tech-detector');
+const { detectMcpServers } = require('./mcp-detector');
+const { analyzeMemoryStructure } = require('./memory-structure-detector');
+const { detectAutomations } = require('./automations-detector');
+const { detectBrowserTools } = require('./browser-tools-detector');
+const { getHomeDir } = require('./env-paths');
 
 /* ---------- existence-check utilities (existence only, never content) ---------- */
 
@@ -307,18 +312,29 @@ const probes = {
 
 /* ---------- agent org chart counts (talents-ai-score, ADR-009) ---------- */
 /* Deterministic (no-LLM), structure+names only — see src/agent-org-chart.js. */
-/* PROJECT ROOT ONLY (not the developer's home directory), unlike the        */
-/* claude-code probe's skills/mcpServers above: the org chart itself is      */
-/* project-scoped (`<root>/.claude/agents`), so its counts stay scoped the   */
-/* same way, deliberately, rather than mixing in personal/home config.       */
+/* PROJECT ∪ HOME (talents-ai-score, ADR-014, closed decision #5): this used */
+/* to be project-root only, deliberately kept separate from the claude-code  */
+/* probe's own project+home skills/mcpServers above — that inconsistency is  */
+/* exactly what ADR-014 closes ("hoy agentes solo-proyecto → pasa a          */
+/* proyecto∪home como el resto, para coherencia del tier"), since the tier   */
+/* engine's T6 criterion (`agentCounts.agents >= 2`) needs the FULL picture. */
 
 function agentOrgChartCounts(root, agentsCount) {
+  const home = getHomeDir();
   return {
     agents: agentsCount,
-    skills: countDirEntries(path.join(root, '.claude', 'skills')),
-    commands: countFiles(path.join(root, '.claude', 'commands'), '.md'),
-    mcpServers: countJsonKeys(path.join(root, '.mcp.json'), 'mcpServers'),
-    hooks: countJsonKeys(path.join(root, '.claude', 'settings.json'), 'hooks'),
+    skills:
+      countDirEntries(path.join(root, '.claude', 'skills')) +
+      countDirEntries(path.join(home, '.claude', 'skills')),
+    commands:
+      countFiles(path.join(root, '.claude', 'commands'), '.md') +
+      countFiles(path.join(home, '.claude', 'commands'), '.md'),
+    mcpServers:
+      countJsonKeys(path.join(root, '.mcp.json'), 'mcpServers') ||
+      countJsonKeys(path.join(home, '.claude.json'), 'mcpServers'),
+    hooks:
+      countJsonKeys(path.join(root, '.claude', 'settings.json'), 'hooks') +
+      countJsonKeys(path.join(home, '.claude', 'settings.json'), 'hooks'),
   };
 }
 
@@ -392,6 +408,28 @@ function scan(options = {}) {
   // at persistence time (with consent).
   const technologies = detectTechnologies(root);
 
+  // Deterministic (no-LLM) MCP servers BY NAME (talents-ai-score, issue 015 /
+  // ADR-013-014): names + category (data/comms/dev/browser/other) from
+  // KNOWN MCP config locations (project ∪ home) — never the raw config.
+  const mcp = detectMcpServers(root);
+
+  // Deterministic (no-LLM) memory STRUCTURE (talents-ai-score, issue 016 /
+  // ADR-013-014): import count, nesting depth, sections, size — from known
+  // context files (project ∪ home). Never the file's text content.
+  const memory = analyzeMemoryStructure(root);
+
+  // Deterministic (no-LLM) automations (talents-ai-score, issue 017 /
+  // ADR-013-014): scripts invoking a known AI CLI, JSON-piping patterns,
+  // and scheduled tasks (cron/launchd/pm2/systemd) where safely
+  // inspectable. Never the script/config text, only derived counts.
+  const automations = detectAutomations(root);
+
+  // Deterministic (no-LLM) browser tools (talents-ai-score, issue 018 /
+  // ADR-013-014): pure composition over `technologies` (Playwright/
+  // Puppeteer as a dependency) and `mcp` (browser-category MCP servers) —
+  // no new file scanning, just a recombined view of already-derived signals.
+  const browserTools = detectBrowserTools(technologies, mcp);
+
   // Stable per-machine anonymous id: hash of hostname + user. Not reversible
   // to personal data and only useful for deduplicating submissions, not for
   // identifying anyone.
@@ -428,6 +466,14 @@ function scan(options = {}) {
     agentCounts: agentOrgChartCounts(root, agents.length),
     // Project technologies (ADR-012): dependency manifest names only.
     technologies,
+    // MCP servers by name/category (issue 015): never the raw config.
+    mcp,
+    // Memory structure (issue 016): imports/nesting/sections/size, never text.
+    memory,
+    // Automations (issue 017): script/scheduler signals, never raw content.
+    automations,
+    // Browser tools (issue 018): composition over technologies + mcp.
+    browserTools,
   };
 }
 

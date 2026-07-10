@@ -61,3 +61,15 @@ test('parseArgs: --consent-email (space and = forms)', () => {
   assert.equal(parseArgs(['--consent-email=a@b.com']).consentEmail, 'a@b.com');
   assert.equal(parseArgs([]).consentEmail, null);
 });
+
+// --- issue 021: "construir el siguiente nivel ahora" -------------------------
+
+test('parseArgs: --build-next-level (optional phase, does not scan on its own)', () => {
+  assert.equal(parseArgs(['--build-next-level']).buildNextLevel, true);
+  assert.equal(parseArgs([]).buildNextLevel, false);
+});
+
+test('parseArgs: --force (only meaningful alongside --build-next-level)', () => {
+  assert.equal(parseArgs(['--build-next-level', '--force']).force, true);
+  assert.equal(parseArgs([]).force, false);
+});

@@ -111,6 +111,20 @@ const catalogs = {
       // Project technologies (talents-ai-score, ADR-012)
       technologiesHeading: 'Tecnologías del proyecto',
       technologiesEmpty: 'No se detectaron manifiestos de dependencias (package.json, requirements.txt, go.mod, pyproject.toml).',
+      // Tier roadmap (talents-ai-score, issue 020): only short UI labels
+      // live here — the authored prose itself lives in
+      // src/roadmap-content.js (ported verbatim from the product-manager's
+      // content, ADR-013's "contenido autorado").
+      roadmapHeading: 'Tu próximo nivel',
+      roadmapUpgradeWhenLabel: 'Subes de tier cuando:',
+      roadmapUnlocksLabel: 'Qué desbloquea',
+      roadmapStepsLabel: 'Pasos',
+      roadmapSnippetLabel: 'Snippet copiable',
+      roadmapTipsLabel: 'Tips de comunidad',
+      roadmapMistakesLabel: 'Errores comunes',
+      roadmapConsolidationLabel: 'Pasos de consolidación',
+      roadmapHonestyLabel: 'Nota de honestidad',
+      roadmapPendingTranslation: 'Contenido en proceso de traducción — mostrando en español.',
       privacyNote:
         'Este informe se ha generado en local. Solo registra qué herramientas '
         + 'existen, cuántas configuraciones tienes y tu nivel: nunca el contenido '
@@ -124,17 +138,40 @@ const catalogs = {
       useHtmlHint: 'Usa --html para abrir el dashboard visual.',
       tempDashboard: (file) => `Dashboard temporal: ${file}`,
     },
+    // "Construir el siguiente nivel ahora" (talents-ai-score, issue 021):
+    // optional, explicit phase — writes the deterministic starter for the
+    // NEXT tier from the curated roadmap's own snippets, never LLM-generated.
+    buildNextLevel: {
+      heading: (tierKey) => `Generando el starter para subir a ${tierKey}...`,
+      created: (filename) => `+ creado ${filename}`,
+      overwritten: (filename) => `+ sobrescrito ${filename} (--force)`,
+      skippedExists: (filename) => `${filename} ya existe — no se sobrescribe (usa --force para sobrescribir)`,
+      maxTier: 'Ya estás en el tier máximo (T7): no hay siguiente nivel que construir.',
+      noFileTarget: 'El siguiente paso no es un fichero que este comando pueda crear — revisa el snippet del roadmap en el informe.',
+      unrecognizedTier: 'No se ha podido determinar tu tier actual.',
+    },
     consent: {
       // talents-ai-score, ADR-011: the disclosure wall (what's sent / never
       // sent, itemized) is RETIRED from the CLI — that content now lives in
       // the repo's README. The informe ALWAYS shows locally, unconditionally.
       // What's left is this short, one-time question about PERSISTING
       // (saving) the already-shown report in Shakers.
+      //
+      // talents-ai-score, issue 022 (ADR-013/014): updated for the level-up
+      // framework's expanded scope — persisting now also saves your tier/
+      // level and structured signals across every detected category (MCP
+      // type, memory structure, automations, browser tools, tech→Skill
+      // association), never raw content. Still short (no itemized wall,
+      // sin flags): the README covers the detail (ADR-011's disclosure
+      // model is unchanged).
       persistIntro:
         'Este informe se ha generado y mostrado en tu equipo, siempre. '
         + 'Guardarlo en Shakers es opcional y revocable en cualquier momento '
-        + '(ai-footprint --consent-revoke). Dato indicativo, no verificado. '
-        + 'Consulta el README de este repositorio para más detalle.',
+        + '(ai-footprint --consent-revoke): guarda tu nivel/tier y señales '
+        + 'estructuradas derivadas (herramientas, MCP, memoria, '
+        + 'automatizaciones, agentes, tecnologías) — nunca el contenido de '
+        + 'tus ficheros, prompts, rutas ni credenciales. Dato indicativo, no '
+        + 'verificado. Consulta el README de este repositorio para más detalle.',
       persistQuestion: '¿Guardar este informe en Shakers? (s/n):',
       invalidAnswer: 'Respuesta no reconocida. Responde "s" (sí) o "n" (no).',
       emailPrompt: 'Introduce tu correo:',
@@ -231,6 +268,19 @@ const catalogs = {
       // Project technologies (talents-ai-score, ADR-012)
       technologiesHeading: 'Project technologies',
       technologiesEmpty: 'No dependency manifests detected (package.json, requirements.txt, go.mod, pyproject.toml).',
+      // Tier roadmap (talents-ai-score, issue 020): only short UI labels
+      // live here — the authored prose is Spanish-only for now (no English
+      // translation authored yet), src/roadmap-content.js.
+      roadmapHeading: 'Your next level',
+      roadmapUpgradeWhenLabel: 'You level up when:',
+      roadmapUnlocksLabel: 'What it unlocks',
+      roadmapStepsLabel: 'Steps',
+      roadmapSnippetLabel: 'Copyable snippet',
+      roadmapTipsLabel: 'Community tips',
+      roadmapMistakesLabel: 'Common mistakes',
+      roadmapConsolidationLabel: 'Consolidation steps',
+      roadmapHonestyLabel: 'Honesty note',
+      roadmapPendingTranslation: 'Content pending translation — showing in Spanish.',
       privacyNote:
         'This report was generated locally. It only records which tools exist, '
         + 'how many configurations you have and your level: never the content of '
@@ -244,16 +294,32 @@ const catalogs = {
       useHtmlHint: 'Use --html to open the visual dashboard.',
       tempDashboard: (file) => `Temporary dashboard: ${file}`,
     },
+    buildNextLevel: {
+      heading: (tierKey) => `Generating the starter to reach ${tierKey}...`,
+      created: (filename) => `+ created ${filename}`,
+      overwritten: (filename) => `+ overwritten ${filename} (--force)`,
+      skippedExists: (filename) => `${filename} already exists — not overwriting (use --force to overwrite)`,
+      maxTier: "You're already at the max tier (T7): there's no next level to build.",
+      noFileTarget: "The next step isn't a file this command can create — check the roadmap snippet in the report.",
+      unrecognizedTier: "Couldn't determine your current tier.",
+    },
     consent: {
       // talents-ai-score, ADR-011: the disclosure wall (itemized sends /
       // never sends) is RETIRED from the CLI — that content now lives in
       // the repo's README. The report ALWAYS shows locally, unconditionally.
       // What's left is this short, one-time question about PERSISTING
       // (saving) the already-shown report in Shakers.
+      //
+      // talents-ai-score, issue 022 (ADR-013/014): updated for the level-up
+      // framework's expanded scope — see the Spanish catalog's comment for
+      // the full rationale (same content, same invariants).
       persistIntro:
         'This report has already been generated and shown on your machine, '
         + 'always. Saving it in Shakers is optional and revocable at any '
-        + 'time (ai-footprint --consent-revoke). Indicative data, not '
+        + "time (ai-footprint --consent-revoke): it saves your level/tier and "
+        + 'structured signals derived across categories (tools, MCP, memory, '
+        + 'automations, agents, technologies) — never the content of your '
+        + 'files, prompts, paths or credentials. Indicative data, not '
         + 'verified. See this repository\'s README for more detail.',
       persistQuestion: 'Save this report in Shakers? (y/n):',
       invalidAnswer: 'Answer not recognized. Reply "y" (yes) or "n" (no).',

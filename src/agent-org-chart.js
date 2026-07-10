@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { getHomeDir } = require('./env-paths');
 
 /*
  * Deterministic (no-LLM) parser of the talent's AI agent org chart
@@ -18,6 +19,13 @@ const path = require('path');
  * deliberately left OUT of this deterministic parser rather than guessed
  * at. Left for a human to add if/when such a format stabilizes (see
  * detectors.js's ageing-catalog note, ADR-001, same spirit).
+ *
+ * talents-ai-score, ADR-014 (closed decision #5): scope is PROJECT ∪ HOME —
+ * `.claude/agents/` is read from both the scanned project root AND the
+ * talent's home directory (personal/global subagents), applied uniformly
+ * with every other category for tier coherence (issue 019). On a name
+ * collision, the PROJECT-level agent wins (mirrors Claude Code's own
+ * documented precedence rule for project vs. personal subagents).
  *
  * What's extracted (structure + names ONLY): per agent -> name/role, wired
  * tools, model, and the parent it declares (if any) — the orchestrator ->
@@ -200,17 +208,28 @@ function parseAgentFile(filePath) {
   };
 }
 
-// Deterministic (no-LLM) agent org chart, scoped to `<root>/.claude/agents/`
-// (ADR-009). Never scans project/business code. Missing directory, empty
-// directory, or files without a valid `name` all resolve to an empty/
-// partial list — never throws.
+// Both `.claude/agents/` locations in scope order (project first, so it
+// wins on a name collision when the results are merged/deduped below).
+function agentDirs(root) {
+  return [path.join(root, '.claude', 'agents'), path.join(getHomeDir(), '.claude', 'agents')];
+}
+
+// Deterministic (no-LLM) agent org chart, scoped to `.claude/agents/` in
+// BOTH the project root and the home directory (ADR-014, project ∪ home).
+// Never scans project/business code. Missing directories, empty
+// directories, or files without a valid `name` all resolve to an empty/
+// partial list — never throws. Deduped by name: the project-level
+// definition wins over a personal one with the same name.
 function parseAgentOrgChart(root) {
-  const dir = path.join(root, '.claude', 'agents');
-  const files = listAgentMarkdownFiles(dir);
+  const seen = new Set();
   const agents = [];
-  for (const file of files) {
-    const agent = parseAgentFile(file);
-    if (agent) agents.push(agent);
+  for (const dir of agentDirs(root)) {
+    for (const file of listAgentMarkdownFiles(dir)) {
+      const agent = parseAgentFile(file);
+      if (!agent || seen.has(agent.name)) continue;
+      seen.add(agent.name);
+      agents.push(agent);
+    }
   }
   return agents;
 }
@@ -224,19 +243,21 @@ function parseAgentOrgChart(root) {
 // without a `description` are still included (empty string), so the caller
 // can still send their structural data to the synthesis endpoint.
 function parseAgentDescriptions(root) {
-  const dir = path.join(root, '.claude', 'agents');
-  const files = listAgentMarkdownFiles(dir);
+  const seen = new Set();
   const result = [];
-  for (const file of files) {
-    let content;
-    try {
-      content = fs.readFileSync(file, 'utf8');
-    } catch {
-      continue;
-    }
-    const fm = parseFrontmatter(content, { includeDescription: true });
-    if (fm && fm.name) {
-      result.push({ name: fm.name, description: typeof fm.description === 'string' ? fm.description : '' });
+  for (const dir of agentDirs(root)) {
+    for (const file of listAgentMarkdownFiles(dir)) {
+      let content;
+      try {
+        content = fs.readFileSync(file, 'utf8');
+      } catch {
+        continue;
+      }
+      const fm = parseFrontmatter(content, { includeDescription: true });
+      if (fm && fm.name && !seen.has(fm.name)) {
+        seen.add(fm.name);
+        result.push({ name: fm.name, description: typeof fm.description === 'string' ? fm.description : '' });
+      }
     }
   }
   return result;

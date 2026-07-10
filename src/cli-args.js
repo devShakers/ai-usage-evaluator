@@ -13,6 +13,13 @@
  *   --consent-status          view the current decision/email/last send
  *   --consent-revoke          revoke consent (-> denied), no more sends
  *   --consent-email <correo>  change the persisted email, decision untouched
+ *
+ * talents-ai-score, issue 021: `--build-next-level` is an OPTIONAL,
+ * explicitly-invoked phase (never runs during a normal scan) that writes
+ * the deterministic starter artifact(s) for the next tier
+ * (src/build-next-level.js). `--force` only matters alongside it, to
+ * authorize overwriting an existing file — a separate, deliberate flag,
+ * never implied by `--build-next-level` alone.
  */
 function parseArgs(argv) {
   const opts = {
@@ -24,6 +31,8 @@ function parseArgs(argv) {
     consentStatus: false,
     consentRevoke: false,
     consentEmail: null,
+    buildNextLevel: false,
+    force: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -35,6 +44,8 @@ function parseArgs(argv) {
     else if (a === '--consent-revoke') opts.consentRevoke = true;
     else if (a === '--consent-email') opts.consentEmail = argv[++i];
     else if (a.startsWith('--consent-email=')) opts.consentEmail = a.slice('--consent-email='.length);
+    else if (a === '--build-next-level') opts.buildNextLevel = true;
+    else if (a === '--force') opts.force = true;
     else if (a === '--help' || a === '-h') opts.help = true;
   }
   return opts;

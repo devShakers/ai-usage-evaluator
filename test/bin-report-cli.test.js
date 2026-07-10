@@ -119,3 +119,32 @@ test('bin/report.js: --json also always includes the full report regardless of c
   // never attached, never throws, `--json` still returns cleanly.
   assert.equal(parsed.report.agentSynthesis, undefined);
 });
+
+// --- issue 021: "construir el siguiente nivel ahora" -------------------------
+// Isolates AI_FOOTPRINT_HOME_DIR too (not just the project root) so the
+// tier computed here never depends on the real developer machine's own
+// ~/.claude/* setup — otherwise this end-to-end run would be nondeterministic.
+
+test('bin/report.js: --build-next-level runs without crashing and never overwrites what it just created on a second run', async () => {
+  const tmpHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-footprint-cli-home-'));
+  try {
+    const first = await runCli({
+      args: ['--no-save', '--root', tmpProjectDir, '--build-next-level'],
+      stdin: 'n\n',
+      env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_HOME_DIR: tmpHomeDir },
+    });
+    assert.equal(first.code, 0);
+    assert.match(first.stdout, /AI FOOTPRINT/); // report still always shown
+
+    // Second run: idempotent, whatever happened the first time (a file
+    // created, or "max tier"/"no file target") never breaks or throws.
+    const second = await runCli({
+      args: ['--no-save', '--root', tmpProjectDir, '--build-next-level'],
+      stdin: '',
+      env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_HOME_DIR: tmpHomeDir },
+    });
+    assert.equal(second.code, 0);
+  } finally {
+    fs.rmSync(tmpHomeDir, { recursive: true, force: true });
+  }
+});

@@ -278,6 +278,33 @@ function isThrottled(state, now = Date.now()) {
 // only if it actually reached this shape. Empty when synthesis failed and
 // the run fell back to the deterministic org chart (nothing to persist from
 // a call that never returned a result).
+//
+// talents-ai-score, issue 019/022 (ADR-014): adds `tier`/`tierKey`/`band` —
+// the tier engine's result (src/tier-engine.js via maturity.js#classify).
+// `band` duplicates `level` numerically but under the exact name the
+// level-model.md / backend issue 023 contract uses ("tier (T0-T7) + band
+// (0-4)"), so the persisted shape matches verbatim what the backend expects.
+//
+// talents-ai-score, issue 022 (ADR-013/014): adds the level-up framework's
+// new detector signals — EACH re-applied as its own explicit whitelist
+// (never spread), same invariant as agents/agentSynthesis above:
+//   - `mcp`: ONLY `{countsByCategory, total}` — individual MCP SERVER NAMES
+//     (`report.mcp.servers`) are deliberately dropped here; they stay local
+//     only (issue 015's names are for the local report, not persistence).
+//   - `memory`: ONLY `{totalImports, maxDepth, layered}` — per-file details
+//     (`report.memory.files`, which carries file ids/sizes) never persisted.
+//   - `automations`: counts/booleans + `inspected` per scheduler
+//     (src/automations-detector.js's shape already IS derived-only; still
+//     rebuilt field-by-field defensively, never spread).
+//   - `browserTools`: `{detected, count, via}` — `via`'s names were already
+//     whitelisted upstream by tech-detector.js/mcp-detector.js.
+function whitelistSchedulerProbe(probe) {
+  return {
+    inspected: !!(probe && probe.inspected),
+    matches: probe && typeof probe.matches === 'number' ? probe.matches : 0,
+  };
+}
+
 function derivePayload(report, maturity) {
   const agents = Array.isArray(report.agents) ? report.agents : [];
   const technologies = Array.isArray(report.technologies) ? report.technologies : [];
@@ -285,6 +312,15 @@ function derivePayload(report, maturity) {
     report.agentSynthesis && Array.isArray(report.agentSynthesis.agents)
       ? report.agentSynthesis.agents
       : [];
+
+  const mcp = report.mcp || {};
+  const memory = report.memory || {};
+  const automations = report.automations || {};
+  const automationsScripts = automations.scripts || {};
+  const automationsSchedulers = automations.schedulers || {};
+  const browserTools = report.browserTools || {};
+  const browserToolsVia = browserTools.via || {};
+
   return {
     schemaVersion: report.schemaVersion,
     generatedAt: report.generatedAt,
@@ -313,6 +349,48 @@ function derivePayload(report, maturity) {
       symbolicName: a.symbolicName || null,
       whatItDoes: a.whatItDoes || null,
     })),
+    // talents-ai-score, issue 022 follow-up (CLI<->backend contract
+    // reconciliation): `band` was dropped — it's redundant with `level`
+    // (already the 0-4 band, now tier-derived per issue 019); the backend
+    // uses `level`/`levelName` as the band. Only `tier`/`tierKey` (the
+    // finer T0-T7 axis) are new here.
+    tier: typeof maturity.tier === 'number' ? maturity.tier : null,
+    tierKey: maturity.tierKey || null,
+    mcp: {
+      countsByCategory: { ...(mcp.countsByCategory || { data: 0, comms: 0, dev: 0, browser: 0, other: 0 }) },
+      total: typeof mcp.total === 'number' ? mcp.total : 0,
+    },
+    memory: {
+      totalImports: typeof memory.totalImports === 'number' ? memory.totalImports : 0,
+      maxDepth: typeof memory.maxDepth === 'number' ? memory.maxDepth : 0,
+      layered: !!memory.layered,
+    },
+    automations: {
+      scripts: {
+        npm: typeof automationsScripts.npm === 'number' ? automationsScripts.npm : 0,
+        shell: typeof automationsScripts.shell === 'number' ? automationsScripts.shell : 0,
+      },
+      jsonPiping: typeof automations.jsonPiping === 'number' ? automations.jsonPiping : 0,
+      schedulers: {
+        cron: whitelistSchedulerProbe(automationsSchedulers.cron),
+        launchd: whitelistSchedulerProbe(automationsSchedulers.launchd),
+        pm2: whitelistSchedulerProbe(automationsSchedulers.pm2),
+        systemd: whitelistSchedulerProbe(automationsSchedulers.systemd),
+      },
+    },
+    // talents-ai-score, issue 022 follow-up: `via` is now ORIGIN FLAGS ONLY
+    // (booleans), not the package/MCP names — same "names stay local only"
+    // invariant already applied to `mcp.servers` (issue 015). The local
+    // report (report.browserTools.via) keeps the actual names; only whether
+    // each origin fired travels in the persistence payload.
+    browserTools: {
+      detected: !!browserTools.detected,
+      count: typeof browserTools.count === 'number' ? browserTools.count : 0,
+      via: {
+        dependency: Array.isArray(browserToolsVia.dependencies) && browserToolsVia.dependencies.length > 0,
+        mcp: Array.isArray(browserToolsVia.mcp) && browserToolsVia.mcp.length > 0,
+      },
+    },
   };
 }
 

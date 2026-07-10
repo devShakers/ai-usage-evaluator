@@ -14,21 +14,29 @@ const { scan } = require('../src/scanner');
  * (`report.agents`, `report.agentCounts`) — everything else about scan()
  * is out of scope for this issue and untouched.
  *
- * `agentCounts` (agents/skills/commands/mcpServers/hooks) is computed from
- * the scanned PROJECT ROOT only (never the developer's real home
- * directory), same scope as `.claude/agents` itself — this keeps the test
- * hermetic and deterministic across machines/CI, and matches the fact the
- * org chart itself is project-scoped, not personal/home-scoped.
+ * `agentCounts` (agents/skills/commands/mcpServers/hooks) is now PROJECT ∪
+ * HOME (talents-ai-score, ADR-014, closed decision #5 — this used to be
+ * project-root only; recalibrated for tier coherence, issue 019). Every
+ * test isolates the home directory to a throwaway dir (AI_FOOTPRINT_HOME_DIR)
+ * so these stay hermetic and deterministic across machines/CI.
  */
 
 let tmpDir;
+let tmpHome;
+let originalHomeOverride;
 
 test.beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-footprint-scanner-agents-test-'));
+  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-footprint-scanner-agents-home-'));
+  originalHomeOverride = process.env.AI_FOOTPRINT_HOME_DIR;
+  process.env.AI_FOOTPRINT_HOME_DIR = tmpHome;
 });
 
 test.afterEach(() => {
+  if (originalHomeOverride === undefined) delete process.env.AI_FOOTPRINT_HOME_DIR;
+  else process.env.AI_FOOTPRINT_HOME_DIR = originalHomeOverride;
   fs.rmSync(tmpDir, { recursive: true, force: true });
+  fs.rmSync(tmpHome, { recursive: true, force: true });
 });
 
 function write(root, relPath, content) {
@@ -86,4 +94,32 @@ test('scan: agentCounts reflects agents/skills/commands/mcpServers/hooks from th
     mcpServers: 2,
     hooks: 2,
   });
+});
+
+// --- project ∪ home scope (talents-ai-score, ADR-014, closed decision #5) ---
+
+test('scan: agentCounts ADDS home-level skills/commands/hooks on top of the project root ones', () => {
+  fs.mkdirSync(path.join(tmpDir, '.claude', 'skills', 'project-skill'), { recursive: true });
+  write(tmpDir, '.claude/commands/project-cmd.md', '# cmd');
+  write(tmpDir, '.claude/settings.json', JSON.stringify({ hooks: { PreToolUse: [] } }));
+
+  fs.mkdirSync(path.join(tmpHome, '.claude', 'skills', 'personal-skill'), { recursive: true });
+  write(tmpHome, '.claude/commands/personal-cmd.md', '# cmd');
+  write(tmpHome, '.claude/settings.json', JSON.stringify({ hooks: { PostToolUse: [] } }));
+
+  const report = scan({ root: tmpDir });
+  assert.equal(report.agentCounts.skills, 2); // 1 project + 1 home
+  assert.equal(report.agentCounts.commands, 2); // 1 project + 1 home
+  assert.equal(report.agentCounts.hooks, 2); // 1 project + 1 home
+});
+
+test('scan: report.agents merges project ∪ home agents (project wins on collision)', () => {
+  write(tmpDir, '.claude/agents/shared-name.md', ['---', 'name: shared-name', 'model: opus', '---', ''].join('\n'));
+  write(tmpHome, '.claude/agents/personal-only.md', ['---', 'name: personal-only', 'model: sonnet', '---', ''].join('\n'));
+  write(tmpHome, '.claude/agents/shared-name.md', ['---', 'name: shared-name', 'model: sonnet', '---', ''].join('\n'));
+
+  const report = scan({ root: tmpDir });
+  assert.deepEqual(report.agents.map((a) => a.name).sort(), ['personal-only', 'shared-name']);
+  const shared = report.agents.find((a) => a.name === 'shared-name');
+  assert.equal(shared.model, 'opus'); // project definition wins
 });

@@ -1,13 +1,31 @@
 'use strict';
 
+const { computeTierResult, AGENTIC_IDS } = require('./tier-engine');
+
 /*
  * AI usage maturity classification.
  *
- * Combines BREADTH (how many distinct tools) with DEPTH (how much they've
- * been configured: project instructions, rules, MCP servers, skills,
- * commands, hooks). Depth weighs more than breadth: having 5 freshly
- * installed, unconfigured tools is less mature than mastering a single one
- * in depth.
+ * talents-ai-score, issue 019 (ADR-014): the 0-4 BAND is now RECALIBRATED
+ * to derive from the T0-T7 tier engine (src/tier-engine.js) — single
+ * source of truth, level-model.md. `classify()` used to compute its own
+ * independent ad-hoc level rules (breadth/mcp/custom thresholds); those
+ * are RETIRED in favor of `computeTierResult()`'s ladder ("el tier más alto
+ * cuyos criterios cumples TODOS"). This DOES change the band for some
+ * setups that previously reached a level without also satisfying the
+ * ladder's lower-tier requirements — most notably breadth-only setups
+ * (several tools installed, none configured) that used to hit level 3 via
+ * `breadth >= 3` alone: the tier ladder requires T2's context (>=1
+ * instructions/config/rules) before anything past T1, so those setups now
+ * land at band 1 instead. This is the intended, documented consequence of
+ * the recalibration (level-model.md's "Documenta el cambio de banda para
+ * setups afectados"), not a regression.
+ *
+ * BREADTH and the 0-100 `score` (visual meter) are UNCHANGED — they still
+ * combine breadth with depth totals exactly as before; only the discrete
+ * 0-4 `level`/`key`/`name`/`emoji` classification is now tier-derived.
+ * `AGENTIC_IDS` (now including `amazon-q-developer`, ADR-014 closed
+ * decision #4) moved to tier-engine.js, which owns the tier ladder that
+ * consumes it — re-exported here unchanged for existing callers.
  */
 
 const LEVELS = [
@@ -17,14 +35,6 @@ const LEVELS = [
   { level: 3, key: 'power', name: 'Power user', emoji: '◕' },
   { level: 4, key: 'orchestrator', name: 'Orquestador', emoji: '●' },
 ];
-
-const AGENTIC_IDS = ['claude-code', 'aider', 'gemini-cli', 'codex-cli'];
-// OPEN DECISION (talents-ai-score, signal expansion): 'amazon-q-developer'
-// was added to the catalog (detectors.js) as an agentic CLI
-// (CATEGORIES.AGENTIC_CLI), but it has NOT been added to AGENTIC_IDS — that
-// would silently change what counts toward level 4 ("agentic CLI + MCP +
-// own customization", HANDOFF §4). Left out by default; adding it is an
-// explicit decision pending human review, not a routine tweak.
 
 // DECISION (talents-ai-score, signal expansion): the level definitions
 // (LEVELS, HANDOFF §4) and the `score` weights below have NOT been touched.
@@ -69,13 +79,10 @@ function classify(report) {
       (hasAgentic ? 6 : 0),
   );
 
-  // Level rules: the highest level whose criteria are satisfied applies.
-  let level = 0;
-  if (breadth >= 1) level = 1; // at least one tool
-  if (d.instructions >= 1) level = 2; // project config exists
-  if (d.mcp >= 1 || d.custom >= 1 || breadth >= 3) level = 3; // advanced usage
-  if (hasAgentic && d.mcp >= 1 && d.custom >= 1) level = 4; // deep automation
-
+  // Band 0-4 derived from the tier engine (issue 019, single source of
+  // truth) — replaces the old ad-hoc level rules entirely.
+  const tierResult = computeTierResult(report);
+  const level = tierResult.band;
   const meta = LEVELS[level];
 
   return {
@@ -88,6 +95,12 @@ function classify(report) {
     depth: d,
     hasAgentic,
     next: nextStep(level, { breadth, ...d, hasAgentic }),
+    // Tier (T0-T7, issue 019): the fine-grained axis the band is derived
+    // from. Exposed for the roadmap (issue 020) and for the persistence
+    // payload (share.js), not just an internal computation detail.
+    tier: tierResult.tier,
+    tierKey: tierResult.tierKey,
+    tierName: tierResult.tierName,
   };
 }
 
@@ -102,4 +115,4 @@ function nextStep(level) {
   return steps[level];
 }
 
-module.exports = { classify, LEVELS };
+module.exports = { classify, LEVELS, AGENTIC_IDS };
