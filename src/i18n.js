@@ -102,11 +102,15 @@ const catalogs = {
       orgChartHeading: 'Organigrama de agentes',
       orgChartEmpty: 'No se han detectado agentes de IA configurados (p. ej. .claude/agents/).',
       orgChartModelLabel: 'modelo',
-      // Agent diagram (talents-ai-score, ADR-010/ADR-011): rendered with
-      // Mermaid when the (ephemeral) synthesis call succeeds; falls back to
-      // the deterministic org chart above otherwise.
-      diagramHeading: 'Diagrama de agentes',
-      diagramFallbackNote: 'Síntesis no disponible en esta ejecución: mostrando el organigrama determinista.',
+      // Agent cards (talents-ai-score, ADR-010/ADR-011, replaces the earlier
+      // Mermaid attempt — illegible regardless of tuning): a role-card grid,
+      // enriched with the ephemeral synthesis result (symbolicName/
+      // whatItDoes) when it succeeded this run; the SAME grid renders with
+      // just the structural data (name/tools/model/hierarchy) otherwise.
+      diagramHeading: 'Agentes',
+      agentRealNameLabel: 'nombre real del agente',
+      orchestratorLabel: 'Orchestrator',
+      reportsToLabel: 'Reporta a:',
       // Project technologies (talents-ai-score, ADR-012)
       technologiesHeading: 'Tecnologías del proyecto',
       technologiesEmpty: 'No se detectaron manifiestos de dependencias (package.json, requirements.txt, go.mod, pyproject.toml).',
@@ -221,11 +225,15 @@ const catalogs = {
       orgChartHeading: 'Agent org chart',
       orgChartEmpty: 'No configured AI agents detected (e.g. .claude/agents/).',
       orgChartModelLabel: 'model',
-      // Agent diagram (talents-ai-score, ADR-010/ADR-011): rendered with
-      // Mermaid when the (ephemeral) synthesis call succeeds; falls back to
-      // the deterministic org chart above otherwise.
-      diagramHeading: 'Agent diagram',
-      diagramFallbackNote: 'Synthesis unavailable this run: showing the deterministic org chart instead.',
+      // Agent cards (talents-ai-score, ADR-010/ADR-011, replaces the earlier
+      // Mermaid attempt — illegible regardless of tuning): a role-card grid,
+      // enriched with the ephemeral synthesis result (symbolicName/
+      // whatItDoes) when it succeeded this run; the SAME grid renders with
+      // just the structural data (name/tools/model/hierarchy) otherwise.
+      diagramHeading: 'Agents',
+      agentRealNameLabel: "agent's real name",
+      orchestratorLabel: 'Orchestrator',
+      reportsToLabel: 'Reports to:',
       // Project technologies (talents-ai-score, ADR-012)
       technologiesHeading: 'Project technologies',
       technologiesEmpty: 'No dependency manifests detected (package.json, requirements.txt, go.mod, pyproject.toml).',
