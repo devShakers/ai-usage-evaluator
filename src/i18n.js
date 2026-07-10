@@ -138,6 +138,18 @@ const catalogs = {
       useHtmlHint: 'Usa --html para abrir el dashboard visual.',
       tempDashboard: (file) => `Dashboard temporal: ${file}`,
     },
+    // "Construir el siguiente nivel ahora" (talents-ai-score, issue 021):
+    // optional, explicit phase — writes the deterministic starter for the
+    // NEXT tier from the curated roadmap's own snippets, never LLM-generated.
+    buildNextLevel: {
+      heading: (tierKey) => `Generando el starter para subir a ${tierKey}...`,
+      created: (filename) => `+ creado ${filename}`,
+      overwritten: (filename) => `+ sobrescrito ${filename} (--force)`,
+      skippedExists: (filename) => `${filename} ya existe — no se sobrescribe (usa --force para sobrescribir)`,
+      maxTier: 'Ya estás en el tier máximo (T7): no hay siguiente nivel que construir.',
+      noFileTarget: 'El siguiente paso no es un fichero que este comando pueda crear — revisa el snippet del roadmap en el informe.',
+      unrecognizedTier: 'No se ha podido determinar tu tier actual.',
+    },
     consent: {
       // talents-ai-score, ADR-011: the disclosure wall (what's sent / never
       // sent, itemized) is RETIRED from the CLI — that content now lives in
@@ -270,6 +282,15 @@ const catalogs = {
       saved: (dir) => `Saved to ${dir}`,
       useHtmlHint: 'Use --html to open the visual dashboard.',
       tempDashboard: (file) => `Temporary dashboard: ${file}`,
+    },
+    buildNextLevel: {
+      heading: (tierKey) => `Generating the starter to reach ${tierKey}...`,
+      created: (filename) => `+ created ${filename}`,
+      overwritten: (filename) => `+ overwritten ${filename} (--force)`,
+      skippedExists: (filename) => `${filename} already exists — not overwriting (use --force to overwrite)`,
+      maxTier: "You're already at the max tier (T7): there's no next level to build.",
+      noFileTarget: "The next step isn't a file this command can create — check the roadmap snippet in the report.",
+      unrecognizedTier: "Couldn't determine your current tier.",
     },
     consent: {
       // talents-ai-score, ADR-011: the disclosure wall (itemized sends /

@@ -22,6 +22,7 @@ const { createStdinAsk } = require('../src/stdin-ask');
 const { parseAgentDescriptions } = require('../src/agent-org-chart');
 const { buildSynthesisRequest, requestAgentSynthesis } = require('../src/agent-synthesis');
 const { getSynthesisEndpoint } = require('../src/config');
+const { buildNextLevelStarter } = require('../src/build-next-level');
 
 function openInBrowser(file) {
   const cmd =
@@ -40,11 +41,13 @@ Uso:
   ai-footprint [opciones]
 
 Opciones:
-  -w, --html          Genera y abre el dashboard HTML en el navegador
-      --json          Imprime el informe en JSON por stdout
-      --no-save       No guarda nada en disco (solo muestra)
-      --root DIR      Escanea DIR en vez del directorio actual
-  -h, --help          Muestra esta ayuda
+  -w, --html            Genera y abre el dashboard HTML en el navegador
+      --json            Imprime el informe en JSON por stdout
+      --no-save         No guarda nada en disco (solo muestra)
+      --root DIR        Escanea DIR en vez del directorio actual
+      --build-next-level  Genera el starter determinista del siguiente tier (fase opcional, ver el roadmap del informe)
+      --force           Junto a --build-next-level, sobrescribe un fichero ya existente
+  -h, --help            Muestra esta ayuda
 
 El informe se genera y se muestra SIEMPRE en tu equipo, sin condición. La
 primera vez que ejecutas la herramienta, DESPUÉS de mostrarte el informe, se
@@ -83,6 +86,35 @@ function doConsentEmail(newEmail, catalog) {
     process.stdout.write(`\n  ${catalog.consent.emailInvalidCli}\n\n`);
     process.exitCode = 1;
   }
+}
+
+// "Construir el siguiente nivel ahora" (issue 021): optional, explicit
+// phase — never runs unless the talent asks for it via --build-next-level.
+// Deterministic (src/build-next-level.js, same snippets as the roadmap
+// section); never overwrites an existing file unless --force is ALSO
+// passed explicitly.
+function doBuildNextLevel(root, maturity, force, catalog) {
+  const b = catalog.buildNextLevel;
+  const result = buildNextLevelStarter(root || process.cwd(), maturity.tierKey, { force });
+
+  if (!result.ok) {
+    const message =
+      result.reason === 'max-tier' ? b.maxTier
+      : result.reason === 'no-file-target' ? b.noFileTarget
+      : b.unrecognizedTier;
+    process.stdout.write(`\n  ${message}\n\n`);
+    return;
+  }
+
+  process.stdout.write(`\n  ${b.heading(result.targetTierKey)}\n`);
+  for (const f of result.files) {
+    const line =
+      f.status === 'created' ? b.created(f.filename)
+      : f.status === 'overwritten' ? b.overwritten(f.filename)
+      : b.skippedExists(f.filename);
+    process.stdout.write(`    ${line}\n`);
+  }
+  process.stdout.write('\n');
 }
 
 // Automatic, silent PERSISTING once consent is `granted` (ADR-007, gating
@@ -180,6 +212,12 @@ async function main() {
     fs.writeFileSync(tmp, html);
     openInBrowser(tmp);
     process.stdout.write(`  ${catalog.cli.tempDashboard(tmp)}\n\n`);
+  }
+
+  // "Construir el siguiente nivel ahora" (issue 021): optional, only when
+  // explicitly requested — never part of a normal run otherwise.
+  if (opts.buildNextLevel) {
+    doBuildNextLevel(root, maturity, opts.force, catalog);
   }
 
   // Consent-to-PERSIST prompt: shown ONCE, AFTER the report is already on
