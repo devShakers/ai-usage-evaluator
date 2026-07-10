@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { detectors } = require('./detectors');
 const { parseAgentOrgChart } = require('./agent-org-chart');
-const { detectTechnologies } = require('./tech-detector');
+const { detectTechnologies, detectRawDependencyNames } = require('./tech-detector');
 const { detectMcpServers } = require('./mcp-detector');
 const { analyzeMemoryStructure } = require('./memory-structure-detector');
 const { detectAutomations } = require('./automations-detector');
@@ -403,10 +403,19 @@ function scan(options = {}) {
 
   // Deterministic (no-LLM) project technologies (ADR-012): dependency
   // manifest package/module NAMES only (package.json, requirements.txt,
-  // go.mod, pyproject.toml) — never business/application code. Always
-  // shown locally; associated with Shakers' Skill catalog server-side, only
-  // at persistence time (with consent).
+  // go.mod, pyproject.toml) — never business/application code. Refined to
+  // recognized FRAMEWORK/LIBRARY canonical names only (React, Next.js,
+  // Express...), never a raw dependency dump. Always shown locally;
+  // associated with Shakers' Skill catalog server-side, only at persistence
+  // time (with consent).
   const technologies = detectTechnologies(root);
+
+  // Raw dependency names (unfiltered), used ONLY as internal wiring for
+  // detectBrowserTools below (Playwright/Puppeteer aren't "frameworks" so
+  // they're intentionally absent from the canonical `technologies` list
+  // above, but browser-tools detection still needs to see them). Never
+  // exposed on the report itself.
+  const rawDependencyNames = detectRawDependencyNames(root);
 
   // Deterministic (no-LLM) MCP servers BY NAME (talents-ai-score, issue 015 /
   // ADR-013-014): names + category (data/comms/dev/browser/other) from
@@ -425,10 +434,12 @@ function scan(options = {}) {
   const automations = detectAutomations(root);
 
   // Deterministic (no-LLM) browser tools (talents-ai-score, issue 018 /
-  // ADR-013-014): pure composition over `technologies` (Playwright/
-  // Puppeteer as a dependency) and `mcp` (browser-category MCP servers) —
-  // no new file scanning, just a recombined view of already-derived signals.
-  const browserTools = detectBrowserTools(technologies, mcp);
+  // ADR-013-014): pure composition over raw dependency names (Playwright/
+  // Puppeteer as a dependency — NOT the canonical `technologies` list,
+  // since those tools aren't "frameworks") and `mcp` (browser-category MCP
+  // servers) — no new file scanning, just a recombined view of
+  // already-derived signals.
+  const browserTools = detectBrowserTools(rawDependencyNames, mcp);
 
   // Stable per-machine anonymous id: hash of hostname + user. Not reversible
   // to personal data and only useful for deduplicating submissions, not for

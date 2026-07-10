@@ -41,6 +41,16 @@ const catalogs = {
       COMPLETION: 'Autocompletado',
       AI_TERMINAL: 'Terminal con IA',
     },
+    // MCP server categories (talents-ai-score, issue 015's mcp-detector
+    // heuristic: data|comms|dev|browser|other) — a DIFFERENT catalog from
+    // `categories` above (tool categories), same idea.
+    mcpCategories: {
+      data: 'Datos',
+      comms: 'Comunicación',
+      dev: 'Desarrollo',
+      browser: 'Navegador',
+      other: 'Otro',
+    },
     levelNames: {
       none: 'Sin rastro de IA',
       exploring: 'Explorando',
@@ -108,9 +118,16 @@ const catalogs = {
       agentRealNameLabel: 'nombre real del agente',
       orchestratorLabel: 'Orchestrator',
       reportsToLabel: 'Reporta a:',
-      // Project technologies (talents-ai-score, ADR-012)
+      // Project technologies (talents-ai-score, ADR-012). Refined: shows
+      // recognized FRAMEWORKS/LIBRARIES only (React, Express...), not a raw
+      // dependency dump — the empty state also covers "manifest exists but
+      // recognizes nothing", not just "no manifest at all".
       technologiesHeading: 'Tecnologías del proyecto',
-      technologiesEmpty: 'No se detectaron manifiestos de dependencias (package.json, requirements.txt, go.mod, pyproject.toml).',
+      technologiesEmpty: 'No se reconoció ningún framework o librería en los manifiestos de dependencias (package.json, requirements.txt, go.mod, pyproject.toml).',
+      // MCP servers by name (talents-ai-score, issue 015). LOCAL ONLY — never
+      // persisted (see src/share.js's derivePayload, which only sends
+      // countsByCategory/total, never these names).
+      mcpHeading: 'Servidores MCP detectados',
       // Tier roadmap (talents-ai-score, issue 020): only short UI labels
       // live here — the authored prose itself lives in
       // src/roadmap-content.js (ported verbatim from the product-manager's
@@ -200,6 +217,13 @@ const catalogs = {
       COMPLETION: 'Autocomplete',
       AI_TERMINAL: 'AI terminal',
     },
+    mcpCategories: {
+      data: 'Data',
+      comms: 'Communication',
+      dev: 'Development',
+      browser: 'Browser',
+      other: 'Other',
+    },
     levelNames: {
       none: 'No AI footprint',
       exploring: 'Exploring',
@@ -265,9 +289,12 @@ const catalogs = {
       agentRealNameLabel: "agent's real name",
       orchestratorLabel: 'Orchestrator',
       reportsToLabel: 'Reports to:',
-      // Project technologies (talents-ai-score, ADR-012)
+      // Project technologies (talents-ai-score, ADR-012). Refined: shows
+      // recognized FRAMEWORKS/LIBRARIES only, not a raw dependency dump.
       technologiesHeading: 'Project technologies',
-      technologiesEmpty: 'No dependency manifests detected (package.json, requirements.txt, go.mod, pyproject.toml).',
+      technologiesEmpty: 'No recognized framework or library was found in the dependency manifests (package.json, requirements.txt, go.mod, pyproject.toml).',
+      // MCP servers by name (talents-ai-score, issue 015). LOCAL ONLY.
+      mcpHeading: 'Detected MCP servers',
       // Tier roadmap (talents-ai-score, issue 020): only short UI labels
       // live here — the authored prose is Spanish-only for now (no English
       // translation authored yet), src/roadmap-content.js.
