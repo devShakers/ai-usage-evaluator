@@ -10,6 +10,7 @@ const { parseAgentOrgChart } = require('./agent-org-chart');
 const { detectTechnologies } = require('./tech-detector');
 const { detectMcpServers } = require('./mcp-detector');
 const { analyzeMemoryStructure } = require('./memory-structure-detector');
+const { detectAutomations } = require('./automations-detector');
 
 /* ---------- existence-check utilities (existence only, never content) ---------- */
 
@@ -404,6 +405,12 @@ function scan(options = {}) {
   // context files (project ∪ home). Never the file's text content.
   const memory = analyzeMemoryStructure(root);
 
+  // Deterministic (no-LLM) automations (talents-ai-score, issue 017 /
+  // ADR-013-014): scripts invoking a known AI CLI, JSON-piping patterns,
+  // and scheduled tasks (cron/launchd/pm2/systemd) where safely
+  // inspectable. Never the script/config text, only derived counts.
+  const automations = detectAutomations(root);
+
   // Stable per-machine anonymous id: hash of hostname + user. Not reversible
   // to personal data and only useful for deduplicating submissions, not for
   // identifying anyone.
@@ -444,6 +451,8 @@ function scan(options = {}) {
     mcp,
     // Memory structure (issue 016): imports/nesting/sections/size, never text.
     memory,
+    // Automations (issue 017): script/scheduler signals, never raw content.
+    automations,
   };
 }
 
