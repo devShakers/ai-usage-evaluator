@@ -9,6 +9,7 @@ const { detectors } = require('./detectors');
 const { parseAgentOrgChart } = require('./agent-org-chart');
 const { detectTechnologies } = require('./tech-detector');
 const { detectMcpServers } = require('./mcp-detector');
+const { analyzeMemoryStructure } = require('./memory-structure-detector');
 
 /* ---------- existence-check utilities (existence only, never content) ---------- */
 
@@ -398,6 +399,11 @@ function scan(options = {}) {
   // KNOWN MCP config locations (project ∪ home) — never the raw config.
   const mcp = detectMcpServers(root);
 
+  // Deterministic (no-LLM) memory STRUCTURE (talents-ai-score, issue 016 /
+  // ADR-013-014): import count, nesting depth, sections, size — from known
+  // context files (project ∪ home). Never the file's text content.
+  const memory = analyzeMemoryStructure(root);
+
   // Stable per-machine anonymous id: hash of hostname + user. Not reversible
   // to personal data and only useful for deduplicating submissions, not for
   // identifying anyone.
@@ -436,6 +442,8 @@ function scan(options = {}) {
     technologies,
     // MCP servers by name/category (issue 015): never the raw config.
     mcp,
+    // Memory structure (issue 016): imports/nesting/sections/size, never text.
+    memory,
   };
 }
 
