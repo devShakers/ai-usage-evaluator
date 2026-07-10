@@ -8,6 +8,7 @@ const { execFileSync } = require('child_process');
 const { detectors } = require('./detectors');
 const { parseAgentOrgChart } = require('./agent-org-chart');
 const { detectTechnologies } = require('./tech-detector');
+const { detectMcpServers } = require('./mcp-detector');
 
 /* ---------- existence-check utilities (existence only, never content) ---------- */
 
@@ -392,6 +393,11 @@ function scan(options = {}) {
   // at persistence time (with consent).
   const technologies = detectTechnologies(root);
 
+  // Deterministic (no-LLM) MCP servers BY NAME (talents-ai-score, issue 015 /
+  // ADR-013-014): names + category (data/comms/dev/browser/other) from
+  // KNOWN MCP config locations (project ∪ home) — never the raw config.
+  const mcp = detectMcpServers(root);
+
   // Stable per-machine anonymous id: hash of hostname + user. Not reversible
   // to personal data and only useful for deduplicating submissions, not for
   // identifying anyone.
@@ -428,6 +434,8 @@ function scan(options = {}) {
     agentCounts: agentOrgChartCounts(root, agents.length),
     // Project technologies (ADR-012): dependency manifest names only.
     technologies,
+    // MCP servers by name/category (issue 015): never the raw config.
+    mcp,
   };
 }
 
