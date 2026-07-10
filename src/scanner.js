@@ -11,6 +11,7 @@ const { detectTechnologies } = require('./tech-detector');
 const { detectMcpServers } = require('./mcp-detector');
 const { analyzeMemoryStructure } = require('./memory-structure-detector');
 const { detectAutomations } = require('./automations-detector');
+const { detectBrowserTools } = require('./browser-tools-detector');
 
 /* ---------- existence-check utilities (existence only, never content) ---------- */
 
@@ -411,6 +412,12 @@ function scan(options = {}) {
   // inspectable. Never the script/config text, only derived counts.
   const automations = detectAutomations(root);
 
+  // Deterministic (no-LLM) browser tools (talents-ai-score, issue 018 /
+  // ADR-013-014): pure composition over `technologies` (Playwright/
+  // Puppeteer as a dependency) and `mcp` (browser-category MCP servers) —
+  // no new file scanning, just a recombined view of already-derived signals.
+  const browserTools = detectBrowserTools(technologies, mcp);
+
   // Stable per-machine anonymous id: hash of hostname + user. Not reversible
   // to personal data and only useful for deduplicating submissions, not for
   // identifying anyone.
@@ -453,6 +460,8 @@ function scan(options = {}) {
     memory,
     // Automations (issue 017): script/scheduler signals, never raw content.
     automations,
+    // Browser tools (issue 018): composition over technologies + mcp.
+    browserTools,
   };
 }
 
