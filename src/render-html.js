@@ -187,6 +187,23 @@ function technologiesSection(report, t) {
  * ZERO network calls — the same invariant every other part of this report
  * upholds. Deliberately only inlined when a diagram actually needs
  * rendering (fallback runs stay lightweight, no ~3.2MB payload for nothing).
+ *
+ * Legibility fix (talents-ai-score, post-ADR-010 follow-up): the first cut
+ * of this section rendered a flat, cramped, low-contrast row of nodes
+ * whenever the synthesis returned `edges: []` (every agent with
+ * `parent: null`) — Mermaid places disconnected nodes side by side at the
+ * same rank, and cramming `whatItDoes` (long prose) into each node box
+ * shrank the text further once Mermaid auto-scaled the whole diagram down
+ * to fit the container. Three changes fix this:
+ *   1. Implicit "Orchestrator" root (mirrors the deterministic org chart,
+ *      ADR-009) whenever no edges are declared — always a real tree.
+ *   2. Node label = symbolic name (bold) + the agent's real name only;
+ *      `whatItDoes` moves to a caption list below the diagram, keyed by
+ *      the same symbolic name (`diagramLegend`).
+ *   3. `useMaxWidth: false` + an explicit min/max-height + scroll on the
+ *      container, so Mermaid renders at a legible natural size instead of
+ *      shrinking everything to fit — and a theme picked from
+ *      `prefers-color-scheme` for correct contrast in dark mode.
  */
 
 let cachedMermaidLib = null;
@@ -207,23 +224,70 @@ function mermaidNodeId(name) {
   return 'agent_' + String(name).replace(/[^A-Za-z0-9_]/g, '_');
 }
 
+const IMPLICIT_ROOT_NODE_ID = 'agent__root';
+const IMPLICIT_ROOT_EDGE_SOURCE = '__root__'; // sentinel, never collides with a real agent name
+
+// Wraps text as a Mermaid "markdown string" node label (backtick-delimited,
+// Mermaid v9.4+): supports **bold** and auto-wraps long words, which is why
+// the symbolic name renders legibly even at natural (non-shrunk) size.
+function markdownLabel(lines) {
+  return '`' + lines.join('\n') + '`';
+}
+
 // Builds Mermaid flowchart SOURCE TEXT (not HTML) from the synthesis
 // result. This is embedded inside an `esc()`-escaped <pre class="mermaid">
 // element below — the browser's `.textContent` decodes it back to the raw
 // source Mermaid expects, the same pattern already used for the raw-JSON
 // debug dump in this file.
+//
+// Node label = symbolic name (bold) + the agent's real (structural) name.
+// `whatItDoes` NEVER goes in the node box (see diagramLegend below).
 function buildMermaidSource(synthesis) {
   const agents = Array.isArray(synthesis.agents) ? synthesis.agents : [];
-  const edges = Array.isArray(synthesis.edges) ? synthesis.edges : [];
-  const lines = ['flowchart TD'];
+  const rawEdges = Array.isArray(synthesis.edges) ? synthesis.edges : [];
+  // Heuristic (explicitly left open by the coordinator to "valorar"): with
+  // many agents, a left-to-right layout tends to fit this report's
+  // fixed-width card better than piling everyone up in one wide top-down
+  // rank — either way the container scrolls, this just picks the better
+  // default.
+  const direction = agents.length > 6 ? 'LR' : 'TD';
+  const lines = [`flowchart ${direction}`];
+
   for (const a of agents) {
-    const label = `${a.symbolicName || a.name}<br/>${(a.whatItDoes || '').replace(/"/g, "'")}`.replace(/"/g, "'");
+    const symbolic = String(a.symbolicName || a.name).replace(/`/g, "'");
+    const realName = String(a.name).replace(/`/g, "'");
+    const label = markdownLabel([`**${symbolic}**`, realName]);
     lines.push(`  ${mermaidNodeId(a.name)}["${label}"]`);
   }
-  for (const e of edges) {
-    lines.push(`  ${mermaidNodeId(e.from)} --> ${mermaidNodeId(e.to)}`);
+
+  let edges = rawEdges;
+  if (edges.length === 0 && agents.length > 0) {
+    // No hierarchy declared (every agent came back with parent: null) ->
+    // mirror the deterministic org chart (ADR-009): an implicit
+    // "Orchestrator" root connected to every agent, so there's always a
+    // real tree instead of a flat row of disconnected nodes.
+    lines.push(`  ${IMPLICIT_ROOT_NODE_ID}(["${markdownLabel(['**Orchestrator**'])}"])`);
+    edges = agents.map((a) => ({ from: IMPLICIT_ROOT_EDGE_SOURCE, to: a.name }));
   }
+
+  for (const e of edges) {
+    const fromId = e.from === IMPLICIT_ROOT_EDGE_SOURCE ? IMPLICIT_ROOT_NODE_ID : mermaidNodeId(e.from);
+    lines.push(`  ${fromId} --> ${mermaidNodeId(e.to)}`);
+  }
+
   return lines.join('\n');
+}
+
+// Caption list below the diagram: `whatItDoes` per agent, keyed by the same
+// symbolic name shown in the node — accessible and readable instead of
+// squeezed into a tiny node box.
+function diagramLegend(synthesis) {
+  const agents = Array.isArray(synthesis.agents) ? synthesis.agents : [];
+  if (!agents.length) return '';
+  const items = agents
+    .map((a) => `<li><b>${esc(a.symbolicName || a.name)}</b> <span class="legend-real">(${esc(a.name)})</span> — ${esc(a.whatItDoes || '')}</li>`)
+    .join('');
+  return `<ul class="diagram-legend">${items}</ul>`;
 }
 
 function diagramSection(report, t) {
@@ -243,11 +307,24 @@ function diagramSection(report, t) {
     <div class="h2">${esc(t.html.diagramHeading)}</div>
     <div class="card diagram-wrap">
       <pre class="mermaid">${esc(mermaidSource)}</pre>
+      ${diagramLegend(synthesis)}
     </div>
   </section>
   <script>${mermaidLib}</script>
   <script>
-    if (window.mermaid) { mermaid.initialize({ startOnLoad: true, securityLevel: 'strict' }); }
+    if (window.mermaid) {
+      var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      mermaid.initialize({
+        startOnLoad: true,
+        securityLevel: 'strict',
+        theme: prefersDark ? 'dark' : 'default',
+        themeVariables: { fontSize: '15px' },
+        // Natural size, not shrunk to fit the card — legibility over
+        // compactness; the container scrolls (see .diagram-wrap CSS) when
+        // the diagram is wider/taller than the card.
+        flowchart: { htmlLabels: true, useMaxWidth: false },
+      });
+    }
   </script>`;
 }
 
@@ -513,11 +590,24 @@ function renderHtml(report, maturity, lang) {
   .tech-empty{padding:18px 20px;color:var(--faint);font-size:13px}
   .chips-card{padding:16px 18px}
 
-  /* ---- Agent diagram: Mermaid (talents-ai-score, ADR-010/011) ---- */
+  /* ---- Agent diagram: Mermaid (talents-ai-score, ADR-010/011) ----
+   * Legible-by-default sizing (fixes the "tira de tarjetas minúsculas"
+   * issue): a real min-height so it never collapses, a generous max-height
+   * with scroll instead of forcing the SVG to shrink, and background/
+   * padding that keep contrast sane whichever Mermaid theme gets picked
+   * (light/dark, chosen at init time from prefers-color-scheme). */
   .diagram-fallback{padding:18px 20px;color:var(--faint);font-size:13px}
-  .diagram-wrap{padding:18px 20px;overflow:auto}
+  .diagram-wrap{padding:20px;overflow:auto;min-height:280px;max-height:70vh;
+    background:var(--surface)}
   pre.mermaid{background:transparent;border:0;padding:0;margin:0;
-    color:inherit;font-family:inherit;white-space:normal;max-height:none}
+    color:inherit;font-family:inherit;white-space:normal;max-height:none;
+    display:flex;justify-content:center;min-width:max-content}
+  pre.mermaid svg{max-width:none !important;height:auto !important}
+  .diagram-legend{list-style:none;margin:16px 0 0;padding:14px 0 0;
+    border-top:1px solid var(--border);display:flex;flex-direction:column;
+    gap:8px;font-size:13px;line-height:1.5;color:var(--muted)}
+  .diagram-legend b{color:var(--fg);font-weight:600}
+  .legend-real{color:var(--faint);font-family:var(--font-mono);font-size:11.5px}
 
   /* ---- Next step (lime accent = momentum) ---- */
   .next{padding:22px 24px;border-left:4px solid var(--accent-lime);
