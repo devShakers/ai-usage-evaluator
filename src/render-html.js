@@ -876,4 +876,9 @@ function renderHtml(report, maturity, lang) {
 </html>`;
 }
 
-module.exports = { renderHtml };
+// buildAgentCardTree is also exported (not just renderHtml): render-terminal.js
+// reuses it so the terminal's agent list/hierarchy is built from the EXACT
+// same merged (structural + synthesis) tree as the HTML card tree, instead
+// of a second, potentially-diverging implementation — "same information",
+// literally the same data structure, for both outputs.
+module.exports = { renderHtml, buildAgentCardTree };
