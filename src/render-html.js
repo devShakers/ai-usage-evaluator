@@ -270,10 +270,16 @@ function agentNodeHtml(card, childrenByParent, t, visited = new Set()) {
   const nextVisited = new Set(visited);
   nextVisited.add(card.name);
   const children = childrenByParent.get(card.name) || [];
-  const childrenHtml = children.length
+  const hasChildren = children.length > 0;
+  const childrenHtml = hasChildren
     ? `<div class="agent-children">${children.map((c) => agentNodeHtml(c, childrenByParent, t, nextVisited)).join('')}</div>`
     : '';
-  return `<div class="agent-node">
+  // `has-children` is the layout hook: at ROOT level (a direct child of
+  // .agent-cards-grid) it turns the node into the sole horizontal-scroll
+  // viewport for its own subtree, so deep nesting scrolls WITHOUT dragging
+  // the wrappable root siblings into a shared scroll canvas (which was
+  // clipping the second sibling — see the .agent-cards-grid CSS note).
+  return `<div class="agent-node${hasChildren ? ' has-children' : ''}">
     ${agentCardHtml(card, t)}
     ${childrenHtml}
   </div>`;
@@ -462,6 +468,18 @@ function renderHtml(report, maturity, lang) {
    * Shakers tokens (Nexia). Layer 1 (primitives) → Layer 2 (semantic).
    * Reimplemented inline: React components can't be imported into a static
    * HTML file, so we reincarnate the visual language, not the components.
+   * Values are copied VERBATIM from the design system's design-spec
+   * (tokens.css / DESIGN.md): teal/lime/zinc palette, radii 6/8/10/14px,
+   * shadcn shadow set, Inter type scale (12/14/16/18/20/24/30/36).
+   *
+   * Intentional deviations from Nexia (documented, not drift):
+   *  - lime is used as an "accent/momentum" role here. In Nexia, brand-lime
+   *    is a primitive, NOT a Layer-2 semantic alias. This report is a public
+   *    talent-facing artifact (not the Hub backoffice), and lime is a core
+   *    Shakers brand accent, so it is lifted to a local accent role on
+   *    purpose. Paired for WCAG AA in both themes (see --model-fg/--accent).
+   *  - dark-theme --emphasis is teal-300 (not the light teal-500) so the
+   *    brand green stays legible on the dark surface.
    * ========================================================= */
   :root{
     /* Layer 1 — brand primitives (subset used) */
@@ -471,7 +489,7 @@ function renderHtml(report, maturity, lang) {
     --ds-lime-200:#f5ff96; --ds-lime-500:#d8e637; --ds-lime-600:#b0bd2d;
     --ds-zinc-50:#fafafa; --ds-zinc-100:#f4f4f5; --ds-zinc-200:#e4e4e7;
     --ds-zinc-300:#d4d4d8; --ds-zinc-400:#a1a1aa; --ds-zinc-500:#71717a;
-    --ds-zinc-700:#3f3f46; --ds-zinc-800:#27272a; --ds-zinc-900:#18181b;
+    --ds-zinc-600:#52525b; --ds-zinc-700:#3f3f46; --ds-zinc-800:#27272a; --ds-zinc-900:#18181b;
     --ds-zinc-950:#09090b; --ds-white:#ffffff;
 
     /* Radii ("Border Radius" frame) */
@@ -494,7 +512,10 @@ function renderHtml(report, maturity, lang) {
     --surface:var(--ds-white);
     --fg:var(--ds-zinc-900);
     --muted:var(--ds-zinc-700);
-    --faint:var(--ds-zinc-500);
+    /* zinc-600, not zinc-500: caption/label text sits on the zinc-50 page bg,
+       where zinc-500 is 4.47:1 — just under WCAG AA (4.5:1). zinc-600 clears
+       AA (~7.4:1) on both the page bg and the white card surface. */
+    --faint:var(--ds-zinc-600);
     --border:var(--ds-zinc-200);
     --primary:var(--ds-teal-800);
     --primary-fg:var(--ds-zinc-50);
@@ -504,6 +525,11 @@ function renderHtml(report, maturity, lang) {
     --emphasis-strong:var(--ds-teal-600);
     --accent-lime:var(--ds-lime-500);
     --accent-lime-fg:var(--ds-teal-800);
+    /* Model chip: an opaque lime tint over the surface (not a transparent
+       overlay), paired with a theme-aware foreground so it clears contrast
+       in BOTH themes. In light, dark teal text on a pale lime tint. */
+    --model-bg:color-mix(in srgb,var(--ds-lime-500) 26%, var(--surface));
+    --model-fg:var(--ds-teal-800);
     --off:var(--ds-zinc-300);
     --track:var(--ds-zinc-100);
     --ring:var(--ds-teal-500);
@@ -525,6 +551,11 @@ function renderHtml(report, maturity, lang) {
       --emphasis-strong:var(--ds-teal-400);
       --accent-lime:var(--ds-lime-200);
       --accent-lime-fg:var(--ds-teal-900);
+      /* Dark: the light theme's dark-teal-on-pale-lime chip would be dark
+         text on a dark surface (illegible). Flip to a bright lime foreground
+         over a subtle lime tint of the dark surface. */
+      --model-bg:color-mix(in srgb,var(--ds-lime-500) 20%, var(--surface));
+      --model-fg:var(--ds-lime-200);
       --off:var(--ds-zinc-700);
       --track:var(--ds-zinc-800);
       --ring:var(--ds-teal-600);
@@ -550,7 +581,7 @@ function renderHtml(report, maturity, lang) {
   .badge .spark{width:7px;height:7px;border-radius:50%;background:var(--emphasis)}
   h1{font-size:clamp(28px,5vw,36px);font-weight:700;letter-spacing:-.02em;
     line-height:1.15;margin:16px 0 6px}
-  .sub{color:var(--muted);font-size:15px;margin:0}
+  .sub{color:var(--muted);font-size:16px;margin:0}
 
   /* ---- Hero card: level + meter ---- */
   .hero{padding:28px;margin:24px 0;display:flex;flex-wrap:wrap;
@@ -571,10 +602,10 @@ function renderHtml(report, maturity, lang) {
 
   .meter{flex:1;min-width:240px}
   .meter .top{display:flex;justify-content:space-between;align-items:baseline;
-    font-size:13px;color:var(--muted);margin-bottom:10px}
-  .meter .top .score{font-size:22px;font-weight:700;color:var(--fg);
+    font-size:14px;color:var(--muted);margin-bottom:10px}
+  .meter .top .score{font-size:24px;font-weight:700;color:var(--fg);
     font-variant-numeric:tabular-nums}
-  .meter .top .score span{font-size:13px;font-weight:500;color:var(--faint)}
+  .meter .top .score span{font-size:12px;font-weight:500;color:var(--faint)}
   .track{height:12px;background:var(--track);border-radius:var(--r-full);overflow:hidden}
   .fill{height:100%;width:0;border-radius:var(--r-full);
     background:linear-gradient(90deg,var(--emphasis-strong),var(--emphasis));
@@ -606,7 +637,7 @@ function renderHtml(report, maturity, lang) {
   .tool .sig i:nth-child(3){height:12px}
   .tool .sig i:nth-child(4){height:16px}
   .tool.on .sig i.on{background:var(--emphasis)}
-  .tool .meta{grid-column:2 / -1;font-size:12.5px;color:var(--faint);
+  .tool .meta{grid-column:2 / -1;font-size:12px;color:var(--faint);
     font-variant-numeric:tabular-nums;display:flex;flex-wrap:wrap;
     align-items:center;justify-content:space-between;gap:4px 10px}
   .tool .meta .left{min-width:0}
@@ -693,12 +724,28 @@ function renderHtml(report, maturity, lang) {
      flex-basis — indentation offsets the block sideways, it never resizes
      the card inside it. Both the root-level layout and the nested
      children layout are flex (not grid) precisely so this single fixed
-     basis applies uniformly at every depth; the tree container scrolls
-     horizontally instead of squeezing cards when it runs out of room. */
-  .agent-tree{overflow-x:auto;padding-bottom:6px}
+     basis applies uniformly at every depth.
+
+     Sibling-clip fix (talents-ai-score): the horizontal scroll used to live
+     on .agent-tree, i.e. it wrapped BOTH the root sibling grid AND every
+     nested subtree in one shared scroll canvas. A deep chain inflated that
+     canvas' width, so the flex-wrap grid stopped wrapping against the
+     VISIBLE width and the second root sibling clipped at the viewport edge
+     (never wrapped, never scrolled cleanly). Fix: .agent-tree no longer
+     scrolls — root siblings wrap freely and the page just grows taller.
+     The horizontal scroll is scoped DOWN to each root node that owns a
+     subtree (.agent-cards-grid>.agent-node.has-children): only genuinely
+     deep nesting scrolls, and only within its own block, never dragging the
+     wrappable siblings with it. */
+  .agent-tree{padding-bottom:2px}
   .agent-cards-grid{display:flex;flex-wrap:wrap;align-items:flex-start;gap:18px}
   .agent-node{display:flex;flex-direction:column;gap:16px;
     flex:0 0 328px;width:328px}
+  /* A root subtree owner spans its own row and is the ONLY horizontal-scroll
+     viewport in the tree; its card is still capped at the fixed card width
+     (see .agent-card max-width) so it doesn't stretch to the full row. */
+  .agent-cards-grid>.agent-node.has-children{flex-basis:100%;width:100%;
+    max-width:100%;overflow-x:auto;padding-bottom:6px}
   .agent-children{position:relative;margin-left:28px;padding-left:24px;
     border-left:2px dashed var(--border);display:flex;flex-direction:column;
     align-items:flex-start;gap:16px}
@@ -708,24 +755,23 @@ function renderHtml(report, maturity, lang) {
   .agent-card{background:var(--surface);border:1px solid var(--border);
     border-radius:var(--r-lg);box-shadow:var(--shadow-sm);
     padding:20px 22px;display:flex;flex-direction:column;gap:12px;
-    width:100%;box-sizing:border-box}
+    width:100%;max-width:328px;box-sizing:border-box}
   .agent-card-head{display:flex;align-items:flex-start;justify-content:space-between;
     gap:10px}
   .agent-title{font-size:18px;font-weight:700;letter-spacing:-.01em;line-height:1.3}
   .agent-badge{flex:none;font-size:11px;font-weight:600;letter-spacing:.02em;
     color:var(--faint);font-family:var(--font-mono);background:var(--track);
     padding:4px 10px;border-radius:var(--r-full);white-space:nowrap}
-  .agent-phrase{margin:0;font-size:14.5px;font-style:italic;line-height:1.5;
+  .agent-phrase{margin:0;font-size:14px;font-style:italic;line-height:1.5;
     color:var(--muted)}
   .agent-chips{display:flex;flex-wrap:wrap;gap:8px}
-  .chip.pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;
+  .chip.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;
     font-weight:500;color:var(--secondary-fg);background:var(--secondary);
     padding:5px 12px;border-radius:var(--r-full)}
   .chip.pill .dot{width:7px;height:7px;border-radius:50%;background:var(--emphasis);
     flex:none}
-  .chip.pill.model{color:var(--accent-lime-fg);
-    background:color-mix(in srgb,var(--accent-lime) 28%, transparent)}
-  .chip.pill.model .dot{background:var(--accent-lime-fg)}
+  .chip.pill.model{color:var(--model-fg);background:var(--model-bg)}
+  .chip.pill.model .dot{background:var(--model-fg)}
 
   /* ---- Next step (lime accent = momentum) ---- */
   .next{padding:22px 24px;border-left:4px solid var(--accent-lime);
@@ -741,21 +787,21 @@ function renderHtml(report, maturity, lang) {
   .roadmap-card{padding:26px 28px;display:flex;flex-direction:column;gap:18px;
     border-left:4px solid var(--accent-lime)}
   .roadmap-pending{margin:0;font-size:12.5px;font-style:italic;color:var(--faint)}
-  .roadmap-title{margin:0;font-size:19px;font-weight:700;letter-spacing:-.01em;color:var(--fg)}
-  .roadmap-upgrade-when{font-size:13.5px;color:var(--muted);line-height:1.5}
+  .roadmap-title{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;color:var(--fg)}
+  .roadmap-upgrade-when{font-size:14px;color:var(--muted);line-height:1.5}
   .roadmap-upgrade-when b{color:var(--fg)}
   .roadmap-block{display:flex;flex-direction:column;gap:8px}
   .roadmap-block-label{font-size:12px;font-weight:600;letter-spacing:.06em;
     text-transform:uppercase;color:var(--faint)}
   .roadmap-unlocks,.roadmap-intro,.roadmap-what-remains,.roadmap-honesty{
-    margin:0;font-size:14.5px;line-height:1.6;color:var(--fg)}
+    margin:0;font-size:14px;line-height:1.6;color:var(--fg)}
   .roadmap-list{margin:0;padding-left:20px;display:flex;flex-direction:column;
     gap:8px;font-size:14px;line-height:1.5;color:var(--muted)}
   .roadmap-steps li{display:flex;flex-wrap:wrap;align-items:baseline;
     justify-content:space-between;gap:4px 12px}
   .roadmap-step-estimate{flex:none;font-size:12px;font-family:var(--font-mono);
     color:var(--faint);white-space:nowrap}
-  .roadmap-snippet-desc{margin:0;font-size:13px;color:var(--muted)}
+  .roadmap-snippet-desc{margin:0;font-size:14px;color:var(--muted)}
   .roadmap-snippet-filename{font-size:12px;font-family:var(--font-mono);
     color:var(--faint);margin-top:6px}
   .roadmap-code{background:var(--bg);border:1px solid var(--border);
@@ -876,4 +922,9 @@ function renderHtml(report, maturity, lang) {
 </html>`;
 }
 
-module.exports = { renderHtml };
+// buildAgentCardTree is also exported (not just renderHtml): render-terminal.js
+// reuses it so the terminal's agent list/hierarchy is built from the EXACT
+// same merged (structural + synthesis) tree as the HTML card tree, instead
+// of a second, potentially-diverging implementation — "same information",
+// literally the same data structure, for both outputs.
+module.exports = { renderHtml, buildAgentCardTree };

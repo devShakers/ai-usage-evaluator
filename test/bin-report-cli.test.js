@@ -85,6 +85,30 @@ test('bin/report.js: declining persistence still shows the full report (denial o
   assert.equal(state.consent, 'denied');
 });
 
+// Regression coverage (talents-ai-score): a coordinator-relayed user report
+// claimed the consent-to-persist + email prompt had disappeared after the
+// 020-022 "report first" reorder. Manual verification against this exact
+// branch found the prompt still fires correctly (see the two tests above,
+// plus this one) — but there was no end-to-end test for the ACCEPT path
+// (only the decline path was covered), which is the gap this closes: full
+// "y" -> email -> granted, asserted at the real CLI process boundary.
+test('bin/report.js: accepting persistence and providing a valid email records a GRANTED decision with that email (full accept+email path)', async () => {
+  const { code, stdout } = await runCli({
+    args: ['--no-save', '--root', tmpProjectDir],
+    stdin: 'y\ntalent@example.com\n',
+    env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
+  });
+  assert.equal(code, 0);
+  assert.match(stdout, /AI FOOTPRINT/); // report still always shown first
+  assert.match(stdout, /Enter your email:|Introduce tu correo:/); // email prompt actually fired
+  assert.match(stdout, /talent@example\.com/); // the confirmation echoes the email back
+
+  const consentPath = path.join(tmpConfigDir, 'consent.json');
+  const state = JSON.parse(fs.readFileSync(consentPath, 'utf8'));
+  assert.equal(state.consent, 'granted');
+  assert.equal(state.email, 'talent@example.com');
+});
+
 test('bin/report.js: a second run with a decision already persisted never asks again, still always shows the report', async () => {
   await runCli({
     args: ['--no-save', '--root', tmpProjectDir],
@@ -118,6 +142,90 @@ test('bin/report.js: --json also always includes the full report regardless of c
   // Synthesis endpoint unreachable (closed port) -> falls back silently,
   // never attached, never throws, `--json` still returns cleanly.
   assert.equal(parsed.report.agentSynthesis, undefined);
+});
+
+// --- terminal parity + progress feedback (talents-ai-score) -----------------
+
+test('bin/report.js: the plain-text terminal report includes technologies, agents and the tier roadmap (parity with the HTML report)', async () => {
+  fs.writeFileSync(
+    path.join(tmpProjectDir, 'package.json'),
+    JSON.stringify({ dependencies: { '@nestjs/core': '^10.0.0', react: '^18.0.0' } }),
+  );
+  fs.mkdirSync(path.join(tmpProjectDir, '.claude', 'agents'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmpProjectDir, '.claude', 'agents', 'backend.md'),
+    '---\nname: backend-dev\ntools: [Read, Write]\nmodel: sonnet\n---\nbody',
+  );
+
+  const { code, stdout } = await runCli({
+    args: ['--no-save', '--root', tmpProjectDir],
+    stdin: 'n\n',
+    env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
+  });
+  assert.equal(code, 0);
+  // Recognized canonical framework names (issue: tech-detector refinement),
+  // never a raw dependency dump.
+  assert.match(stdout, /React/);
+  assert.match(stdout, /NestJS/);
+  // Agents section (structural org chart, always available even without a
+  // reachable synthesis endpoint).
+  assert.match(stdout, /backend-dev/);
+  // Some next-step framing is always shown, either the tier roadmap or the
+  // generic band fallback.
+  assert.match(stdout, /Tu próximo nivel|Your next level|Next step|Siguiente paso/);
+});
+
+test('bin/report.js: progress feedback (scanning/synthesis status) never leaks into --json\'s stdout, which stays pure, parseable JSON', async () => {
+  const { code, stdout } = await runCli({
+    args: ['--json', '--root', tmpProjectDir],
+    env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
+  });
+  assert.equal(code, 0);
+  assert.doesNotThrow(() => JSON.parse(stdout));
+  assert.equal(stdout.includes('Escaneando'), false);
+  assert.equal(stdout.includes('Scanning'), false);
+  assert.equal(stdout.includes('Sintetizando'), false);
+  assert.equal(stdout.includes('Synthesizing'), false);
+});
+
+test('bin/report.js: the scan/detectors status always appears on stderr (non-TTY -> a single plain line, no ANSI)', async () => {
+  const { code, stderr } = await runCli({
+    args: ['--no-save', '--root', tmpProjectDir],
+    stdin: 'n\n',
+    env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
+  });
+  assert.equal(code, 0);
+  assert.match(stderr, /Escaneando entorno y detectores|Scanning environment and detectors/);
+  // eslint-disable-next-line no-control-regex
+  assert.equal(/\x1b\[/.test(stderr), false); // non-TTY child process -> no ANSI/spinner frames
+});
+
+test('bin/report.js: the synthesis status is skipped on stderr when no synthesis endpoint is configured (nothing is actually attempted)', async () => {
+  const { stderr } = await runCli({
+    args: ['--no-save', '--root', tmpProjectDir],
+    stdin: 'n\n',
+    env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir }, // AI_FOOTPRINT_SYNTHESIS_ENDPOINT is '' (see runCli)
+  });
+  assert.equal(stderr.includes('Sintetizando'), false);
+  assert.equal(stderr.includes('Synthesizing'), false);
+});
+
+test('bin/report.js: the synthesis status appears on stderr when there ARE agents and a synthesis endpoint IS configured, even if unreachable', async () => {
+  fs.mkdirSync(path.join(tmpProjectDir, '.claude', 'agents'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmpProjectDir, '.claude', 'agents', 'backend.md'),
+    '---\nname: backend-dev\ntools: [Read]\nmodel: sonnet\n---\nbody',
+  );
+  const { code, stderr } = await runCli({
+    args: ['--no-save', '--root', tmpProjectDir],
+    stdin: 'n\n',
+    env: {
+      AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir,
+      AI_FOOTPRINT_SYNTHESIS_ENDPOINT: 'http://127.0.0.1:1/works/ai-footprint/agent-synthesis',
+    },
+  });
+  assert.equal(code, 0);
+  assert.match(stderr, /Sintetizando agentes con IA|Synthesizing agents with AI/);
 });
 
 // --- issue 021: "construir el siguiente nivel ahora" -------------------------

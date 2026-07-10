@@ -23,6 +23,7 @@ const { parseAgentDescriptions } = require('../src/agent-org-chart');
 const { buildSynthesisRequest, requestAgentSynthesis } = require('../src/agent-synthesis');
 const { getSynthesisEndpoint } = require('../src/config');
 const { buildNextLevelStarter } = require('../src/build-next-level');
+const { withStaticStatus, withSpinner } = require('../src/terminal-progress');
 
 function openInBrowser(file) {
   const cmd =
@@ -181,14 +182,29 @@ async function main() {
   // unconditionally — no gate, no disclosure wall before scanning. Consent
   // (asked further below, AFTER the report is on screen) governs ONLY
   // whether it gets persisted in Shakers.
+  // Terminal progress feedback (talents-ai-score): more detectors + the
+  // synthesis call made this run noticeably slower — stderr-only status so
+  // it never corrupts stdout (`--json`'s single parseable document, or the
+  // terminal report if ever piped/redirected). See src/terminal-progress.js
+  // for why scan+detectors gets a static line (synchronous, can't animate)
+  // while synthesis gets a real spinner (genuinely async).
   const root = opts.root;
-  const report = scan({ root });
+  const report = withStaticStatus(catalog.cli.scanningLabel, () => scan({ root }));
   const maturity = classify(report);
 
   // Ephemeral diagram synthesis (ADR-010/011): every run, independent of
   // consent. Attaches `report.agentSynthesis` only on success; on any
   // failure the render layer falls back to the deterministic org chart.
-  const synthesis = await maybeSynthesizeAgents(report, root || process.cwd());
+  // The spinner only fires when synthesis will actually be ATTEMPTED
+  // (agents exist AND an endpoint is configured) — otherwise
+  // maybeSynthesizeAgents returns instantly with nothing to wait for, and
+  // flashing a "Synthesizing..." message would be misleading, not honest
+  // progress feedback.
+  const willAttemptSynthesis =
+    Array.isArray(report.agents) && report.agents.length > 0 && !!getSynthesisEndpoint();
+  const synthesis = willAttemptSynthesis
+    ? await withSpinner(catalog.cli.synthesizingLabel, () => maybeSynthesizeAgents(report, root || process.cwd()))
+    : await maybeSynthesizeAgents(report, root || process.cwd());
   if (synthesis) report.agentSynthesis = synthesis;
 
   if (opts.json) {

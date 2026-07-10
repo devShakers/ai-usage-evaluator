@@ -154,6 +154,13 @@ const catalogs = {
       saved: (dir) => `Guardado en ${dir}`,
       useHtmlHint: 'Usa --html para abrir el dashboard visual.',
       tempDashboard: (file) => `Dashboard temporal: ${file}`,
+      // Terminal progress feedback (talents-ai-score): stderr-only status
+      // during the two slow phases (see src/terminal-progress.js).
+      scanningLabel: 'Escaneando entorno y detectores…',
+      synthesizingLabel: 'Sintetizando agentes con IA…',
+      // "Construir el siguiente nivel ahora" (issue 021): announced from the
+      // terminal roadmap section whenever there's a next tier to build.
+      buildNextLevelHint: 'Ejecuta `ai-footprint --build-next-level` para construir tu siguiente paso.',
     },
     // "Construir el siguiente nivel ahora" (talents-ai-score, issue 021):
     // optional, explicit phase — writes the deterministic starter for the
@@ -320,6 +327,9 @@ const catalogs = {
       saved: (dir) => `Saved to ${dir}`,
       useHtmlHint: 'Use --html to open the visual dashboard.',
       tempDashboard: (file) => `Temporary dashboard: ${file}`,
+      scanningLabel: 'Scanning environment and detectors…',
+      synthesizingLabel: 'Synthesizing agents with AI…',
+      buildNextLevelHint: 'Run `ai-footprint --build-next-level` to build your next step.',
     },
     buildNextLevel: {
       heading: (tierKey) => `Generating the starter to reach ${tierKey}...`,
