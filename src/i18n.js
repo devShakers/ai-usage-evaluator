@@ -97,17 +97,14 @@ const catalogs = {
       installedEditors: 'Editores instalados',
       noEditorsDetected: 'ninguno detectado',
       nextStep: 'Siguiente paso',
-      // Agent org chart (talents-ai-score, ADR-009): structure + names only
-      // (name, wired tools, model, hierarchy) — never descriptions/prompts.
-      orgChartHeading: 'Organigrama de agentes',
-      orgChartEmpty: 'No se han detectado agentes de IA configurados (p. ej. .claude/agents/).',
-      orgChartModelLabel: 'modelo',
-      // Agent cards (talents-ai-score, ADR-010/ADR-011, replaces the earlier
-      // Mermaid attempt — illegible regardless of tuning): a role-card grid,
+      // Agent cards (talents-ai-score): the SOLE agents view (consolidates
+      // and replaces the earlier separate deterministic org-chart tree,
+      // which duplicated this same data) — a hierarchical role-card tree,
       // enriched with the ephemeral synthesis result (symbolicName/
-      // whatItDoes) when it succeeded this run; the SAME grid renders with
+      // whatItDoes) when it succeeded this run; the SAME tree renders with
       // just the structural data (name/tools/model/hierarchy) otherwise.
       diagramHeading: 'Agentes',
+      agentsEmpty: 'No se han detectado agentes de IA configurados (p. ej. .claude/agents/).',
       agentRealNameLabel: 'nombre real del agente',
       orchestratorLabel: 'Orchestrator',
       reportsToLabel: 'Reporta a:',
@@ -220,17 +217,14 @@ const catalogs = {
       installedEditors: 'Installed editors',
       noEditorsDetected: 'none detected',
       nextStep: 'Next step',
-      // Agent org chart (talents-ai-score, ADR-009): structure + names only
-      // (name, wired tools, model, hierarchy) — never descriptions/prompts.
-      orgChartHeading: 'Agent org chart',
-      orgChartEmpty: 'No configured AI agents detected (e.g. .claude/agents/).',
-      orgChartModelLabel: 'model',
-      // Agent cards (talents-ai-score, ADR-010/ADR-011, replaces the earlier
-      // Mermaid attempt — illegible regardless of tuning): a role-card grid,
+      // Agent cards (talents-ai-score): the SOLE agents view (consolidates
+      // and replaces the earlier separate deterministic org-chart tree,
+      // which duplicated this same data) — a hierarchical role-card tree,
       // enriched with the ephemeral synthesis result (symbolicName/
-      // whatItDoes) when it succeeded this run; the SAME grid renders with
+      // whatItDoes) when it succeeded this run; the SAME tree renders with
       // just the structural data (name/tools/model/hierarchy) otherwise.
       diagramHeading: 'Agents',
+      agentsEmpty: 'No configured AI agents detected (e.g. .claude/agents/).',
       agentRealNameLabel: "agent's real name",
       orchestratorLabel: 'Orchestrator',
       reportsToLabel: 'Reports to:',

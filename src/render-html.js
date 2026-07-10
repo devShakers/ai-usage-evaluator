@@ -85,72 +85,6 @@ function versionLabel(tool) {
   return `<span class="ver">v${esc(tool.version)}</span>`;
 }
 
-/* ---------- agent org chart (talents-ai-score, ADR-009) ----------
- * Nodes = agents. Structure + names only (name, wired tools, model,
- * hierarchy) — the report never carries descriptions/prompts (see
- * src/agent-org-chart.js / src/share.js), so there's nothing here to
- * accidentally render beyond what the shape already whitelists.
- */
-
-// Groups agents by their declared parent. Agents with no `parent`, or whose
-// declared `parent` doesn't resolve to another known agent (defensive:
-// never crash on a dangling reference), are treated as children of the
-// implicit root orchestrator (bucket `null`).
-function groupAgentsByParent(agents) {
-  const byName = new Set(agents.map((a) => a.name));
-  const childrenByParent = new Map();
-  for (const agent of agents) {
-    const parentKey = agent.parent && byName.has(agent.parent) ? agent.parent : null;
-    if (!childrenByParent.has(parentKey)) childrenByParent.set(parentKey, []);
-    childrenByParent.get(parentKey).push(agent);
-  }
-  return childrenByParent;
-}
-
-function agentToolChips(agent) {
-  return (agent.tools || []).map((tool) => `<span class="chip">${esc(tool)}</span>`).join('');
-}
-
-function agentModelChip(agent, t) {
-  if (!agent.model) return '';
-  return `<span class="chip model" title="${esc(t.html.orgChartModelLabel)}">${esc(agent.model)}</span>`;
-}
-
-function agentNode(agent, childrenByParent, t) {
-  const children = childrenByParent.get(agent.name) || [];
-  const childrenHtml = children.length
-    ? `<ul class="org-children">${children.map((c) => agentNode(c, childrenByParent, t)).join('')}</ul>`
-    : '';
-  return `<li class="org-node">
-    <div class="org-card">
-      <span class="org-name">${esc(agent.name)}</span>
-      <div class="org-meta">${agentModelChip(agent, t)}${agentToolChips(agent)}</div>
-    </div>
-    ${childrenHtml}
-  </li>`;
-}
-
-// `report.agents` is optional for compatibility with reports generated
-// before ADR-009 (agents field absent) — renders the empty state instead of
-// throwing.
-function orgChartSection(report, t) {
-  const agents = Array.isArray(report.agents) ? report.agents : [];
-  if (!agents.length) {
-    return `<section>
-    <div class="h2">${esc(t.html.orgChartHeading)}</div>
-    <div class="card org-empty">${esc(t.html.orgChartEmpty)}</div>
-  </section>`;
-  }
-  const childrenByParent = groupAgentsByParent(agents);
-  const roots = childrenByParent.get(null) || [];
-  return `<section>
-    <div class="h2">${esc(t.html.orgChartHeading)}</div>
-    <ul class="org-tree">
-      ${roots.map((agent) => agentNode(agent, childrenByParent, t)).join('\n')}
-    </ul>
-  </section>`;
-}
-
 /* ---------- project technologies (talents-ai-score, ADR-012) ----------
  * Dependency manifest NAMES only (src/tech-detector.js) — always shown
  * locally, regardless of consent. Associated with Shakers' Skill catalog
@@ -172,12 +106,17 @@ function technologiesSection(report, t) {
   </section>`;
 }
 
-/* ---------- agent cards: role-card grid, pure HTML/CSS, zero-network ----------
- * talents-ai-score, post-ADR-010 pivot: Mermaid (a graph rendering) turned
- * out illegible even after the sizing/theme/hierarchy fixes — the user
- * doesn't want a graph, they want clear, LARGE role cards. This replaces
- * the Mermaid render entirely (no vendored library anymore: pure HTML/CSS
- * is zero-network by construction, no `<script>` payload needed at all).
+/* ---------- agent cards: hierarchical role-card tree, pure HTML/CSS ----------
+ * talents-ai-score: Mermaid (a graph rendering) turned out illegible even
+ * after tuning; a flat card grid (the step before this one) was clearer but
+ * only conveyed hierarchy as a text line ("Reports to: X") — the user wants
+ * to SEE parent/child relationships, not read them. This is the sole
+ * agents view now (consolidates and replaces the separate deterministic
+ * "org chart" tree section, which duplicated this same data): a visual
+ * tree of role cards — parent card on top, child cards nested/indented
+ * below it with a rail connector, recursively for however deep the
+ * `parent` chain goes. No vendored library, no `<script>`, zero-network by
+ * construction (still pure HTML/CSS, same as the flat-grid version before).
  *
  * Data mapping — only fields we actually have, nothing invented:
  *   - title (bold)      = agentSynthesis.symbolicName, if a synthesis
@@ -192,44 +131,67 @@ function technologiesSection(report, t) {
  *   - chips (pills)     = structural `tools[]` + one chip for `model`
  *                         (ADR-009 data, always available when there's an
  *                         agent at all — never depends on synthesis).
- *   - hierarchy         = "Reports to: <parent>", or "Reports to:
- *                         Orchestrator" when no `parent` is declared
- *                         (mirrors the deterministic org chart's implicit
- *                         root, ADR-009) — never invented, always derived
- *                         from the same `parent` field the org chart uses.
+ *   - hierarchy         = VISUAL nesting (indentation + rail connector), not
+ *                         a text line anymore. Agents with no `parent`
+ *                         nest under an implicit "Orchestrator" root header
+ *                         (mirrors ADR-009's implicit root — never a real
+ *                         agent, so it never gets a full card: no data
+ *                         backs tools/model/phrase for it). An `aria-label`
+ *                         keeps the relationship available to screen
+ *                         readers without a visible text line.
  *   - Deliberately OMITTED (no data to back it): L1/L2 maturity framing,
  *     "human judgment" narrative, "evidence" links, "edit ontology" — none
  *     of that exists in this report's data model; simulating it would
  *     violate the "never invent" invariant this whole CLI is built on.
  *
+ * Layout choice: the root's DIRECT children (the common case — most real
+ * `.claude/agents/` setups declare no `parent` at all) render in a
+ * responsive GRID, since that's the shape that scales best for "many
+ * siblings, no depth". Any card that itself has children (explicit,
+ * multi-level `parent` chains — the rarer case) gets them nested directly
+ * beneath it, indented, connected by a rail — the shape that scales best
+ * for "real depth". Cards never shrink to fit: the container just grows/
+ * scrolls.
+ *
  * Fallback (no agentSynthesis this run, or a given agent isn't in it): the
- * SAME grid renders with title = real name, no badge, no phrase — chips
- * and "reports to" stay identical either way (they never depended on
+ * SAME tree renders with title = real name, no badge, no phrase — chips
+ * and hierarchy stay identical either way (they never depended on
  * synthesis to begin with).
  */
 
 // Merges the structural org chart (ADR-009: name/tools/model/parent —
 // always available, deterministic) with the ephemeral synthesis result
-// (ADR-010: symbolicName/whatItDoes — optional, per-run), keyed by name.
-// Synthesis never contributes tools/model/parent; this module never reads
-// `description` from anywhere (it was never even sent here).
-function buildAgentCards(report) {
+// (ADR-010: symbolicName/whatItDoes — optional, per-run), keyed by name,
+// then groups by parent (dangling/self/missing parent references fall back
+// to the implicit root, same defensive rule the retired org-chart tree
+// used). This module never reads `description` from anywhere.
+function buildAgentCardTree(report) {
   const agents = Array.isArray(report.agents) ? report.agents : [];
   const synthesisAgents =
     report.agentSynthesis && Array.isArray(report.agentSynthesis.agents) ? report.agentSynthesis.agents : [];
   const synthesisByName = new Map(synthesisAgents.map((a) => [a.name, a]));
+  const byName = new Set(agents.map((a) => a.name));
 
-  return agents.map((a) => {
+  const cards = agents.map((a) => {
     const synth = synthesisByName.get(a.name);
+    const parentKey = a.parent && byName.has(a.parent) && a.parent !== a.name ? a.parent : null;
     return {
       name: a.name,
       symbolicName: synth && synth.symbolicName ? synth.symbolicName : null,
       whatItDoes: synth && synth.whatItDoes ? synth.whatItDoes : null,
       tools: Array.isArray(a.tools) ? a.tools : [],
       model: a.model || null,
-      parent: a.parent || null,
+      parent: parentKey,
     };
   });
+
+  const childrenByParent = new Map();
+  for (const card of cards) {
+    if (!childrenByParent.has(card.parent)) childrenByParent.set(card.parent, []);
+    childrenByParent.get(card.parent).push(card);
+  }
+
+  return { childrenByParent, roots: childrenByParent.get(null) || [] };
 }
 
 function agentCardHtml(card, t) {
@@ -248,31 +210,56 @@ function agentCardHtml(card, t) {
   const modelChip = card.model
     ? `<span class="chip pill model"><i class="dot" aria-hidden="true"></i>${esc(card.model)}</span>`
     : '';
-  const reportsTo = card.parent ? esc(card.parent) : esc(t.html.orchestratorLabel);
+  // Hierarchy is now visual (nesting + rail, see agentNodeHtml) — the
+  // `aria-label` is the accessible equivalent of the old "Reports to:"
+  // text line, not a duplicate of it.
+  const reportsTo = card.parent || t.html.orchestratorLabel;
+  const ariaLabel = `${hasSymbolicName ? card.symbolicName : card.name}. ${t.html.reportsToLabel} ${reportsTo}`;
 
-  return `<div class="agent-card">
+  return `<div class="agent-card" aria-label="${esc(ariaLabel)}">
     <div class="agent-card-head">
       <span class="agent-title">${title}</span>
       ${badge}
     </div>
     ${phrase}
     <div class="agent-chips">${toolChips}${modelChip}</div>
-    <div class="agent-reports">${esc(t.html.reportsToLabel)} ${reportsTo}</div>
+  </div>`;
+}
+
+// Recursive: renders a card plus its children, indented and rail-connected,
+// however deep the explicit `parent` chain goes. `visited` guards against a
+// malformed cycle in human-authored `parent` fields (e.g. A -> B -> A) —
+// defensive, never a product requirement, just never infinite-loop on bad
+// input.
+function agentNodeHtml(card, childrenByParent, t, visited = new Set()) {
+  if (visited.has(card.name)) return '';
+  const nextVisited = new Set(visited);
+  nextVisited.add(card.name);
+  const children = childrenByParent.get(card.name) || [];
+  const childrenHtml = children.length
+    ? `<div class="agent-children">${children.map((c) => agentNodeHtml(c, childrenByParent, t, nextVisited)).join('')}</div>`
+    : '';
+  return `<div class="agent-node">
+    ${agentCardHtml(card, t)}
+    ${childrenHtml}
   </div>`;
 }
 
 function agentCardsSection(report, t) {
-  const cards = buildAgentCards(report);
-  if (!cards.length) {
+  const { childrenByParent, roots } = buildAgentCardTree(report);
+  if (!roots.length) {
     return `<section>
     <div class="h2">${esc(t.html.diagramHeading)}</div>
-    <div class="card diagram-fallback">${esc(t.html.orgChartEmpty)}</div>
+    <div class="card diagram-fallback">${esc(t.html.agentsEmpty)}</div>
   </section>`;
   }
   return `<section>
     <div class="h2">${esc(t.html.diagramHeading)}</div>
-    <div class="agent-cards-grid">
-      ${cards.map((c) => agentCardHtml(c, t)).join('\n')}
+    <div class="agent-tree">
+      <div class="agent-root-header">${esc(t.html.orchestratorLabel)}</div>
+      <div class="agent-cards-grid">
+        ${roots.map((r) => agentNodeHtml(r, childrenByParent, t)).join('\n')}
+      </div>
     </div>
   </section>`;
 }
@@ -521,31 +508,34 @@ function renderHtml(report, maturity, lang) {
     background:var(--secondary);padding:3px 10px;border-radius:var(--r-full)}
   .chip.empty{background:transparent;color:var(--faint);padding-left:0}
 
-  /* ---- Agent org chart (talents-ai-score, ADR-009) ---- */
-  .org-empty{padding:18px 20px;color:var(--faint);font-size:13px}
-  ul.org-tree{list-style:none;margin:0;padding:0}
-  ul.org-children{list-style:none;margin:10px 0 0 22px;padding:12px 0 0 20px;
-    border-left:2px dashed var(--border);display:flex;flex-direction:column;gap:10px}
-  li.org-node{margin:0 0 10px}
-  li.org-node:last-child{margin-bottom:0}
-  .org-card{background:var(--surface);border:1px solid var(--border);
-    border-radius:var(--r-md);box-shadow:var(--shadow-sm);
-    padding:12px 16px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}
-  .org-name{font-weight:600;letter-spacing:-.01em;font-size:14px}
-  .org-meta{display:flex;flex-wrap:wrap;gap:6px}
-  .chip.model{background:var(--track);color:var(--muted);font-family:var(--font-mono)}
-
   /* ---- Project technologies (talents-ai-score, ADR-012) ---- */
   .tech-empty{padding:18px 20px;color:var(--faint);font-size:13px}
   .chips-card{padding:16px 18px}
 
-  /* ---- Agent cards: role-card grid (talents-ai-score) ----
-   * Plain HTML/CSS card grid: no vendored library, no <script>, zero-network
-   * by construction. Generous padding/font sizes throughout — legibility
-   * over compactness. */
+  /* ---- Agent cards: hierarchical role-card tree (talents-ai-score) ----
+   * Plain HTML/CSS: no vendored library, no script, zero-network by
+   * construction. Generous padding/font sizes throughout - legibility over
+   * compactness. Hierarchy is VISUAL (indentation + rail connector), not a
+   * text line: the root's direct children sit in a responsive grid (scales
+   * well for "many siblings, no depth" - the common case, since most real
+   * agent-config setups declare no parent); any card with its own
+   * children gets them nested directly beneath it, indented and rail-
+   * connected (scales well for real depth, the rarer explicit-parent
+   * case). Cards never shrink to fit - the container just grows/scrolls. */
   .diagram-fallback{padding:18px 20px;color:var(--faint);font-size:13px}
+  .agent-root-header{display:inline-flex;align-items:center;font-size:13px;
+    font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--secondary-fg);background:var(--secondary);
+    padding:8px 18px;border-radius:var(--r-full);margin-bottom:18px}
   .agent-cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
-    gap:18px}
+    gap:18px;align-items:start}
+  .agent-node{display:flex;flex-direction:column;gap:16px;min-width:0}
+  .agent-children{position:relative;margin-left:28px;padding-left:24px;
+    border-left:2px dashed var(--border);display:flex;flex-direction:column;
+    gap:16px}
+  .agent-children .agent-node{position:relative}
+  .agent-children .agent-node::before{content:'';position:absolute;
+    left:-24px;top:26px;width:24px;height:2px;background:var(--border)}
   .agent-card{background:var(--surface);border:1px solid var(--border);
     border-radius:var(--r-lg);box-shadow:var(--shadow-sm);
     padding:20px 22px;display:flex;flex-direction:column;gap:12px}
@@ -566,8 +556,6 @@ function renderHtml(report, maturity, lang) {
   .chip.pill.model{color:var(--accent-lime-fg);
     background:color-mix(in srgb,var(--accent-lime) 28%, transparent)}
   .chip.pill.model .dot{background:var(--accent-lime-fg)}
-  .agent-reports{font-size:12px;color:var(--faint);padding-top:4px;
-    border-top:1px solid var(--border)}
 
   /* ---- Next step (lime accent = momentum) ---- */
   .next{padding:22px 24px;border-left:4px solid var(--accent-lime);
@@ -661,8 +649,6 @@ function renderHtml(report, maturity, lang) {
   </section>
 
   ${technologiesSection(report, t)}
-
-  ${orgChartSection(report, t)}
 
   ${agentCardsSection(report, t)}
 
