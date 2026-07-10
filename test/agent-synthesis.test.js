@@ -8,17 +8,18 @@ const { scrubSecrets, requestAgentSynthesis } = require('../src/agent-synthesis'
 
 /*
  * talents-ai-score, ADR-010/ADR-011: the agent-synthesis client. Every run
- * (regardless of consent — the diagram is always SHOWN locally), the CLI
+ * (regardless of consent — the report is always SHOWN locally), the CLI
  * sends agent DESCRIPTIONS to a Shakers hub endpoint that returns a
- * symbolic-name + "what it does" synthesis, rendered as a Mermaid diagram.
- * This is EPHEMERAL: nothing here is persisted server-side by design, and
- * the raw description content never reaches src/share.js's payload.
+ * symbolic-name + "what it does" synthesis, used to enrich the agent role
+ * cards in the local HTML report (src/render-html.js). This is EPHEMERAL:
+ * nothing here is persisted server-side by design, and the raw description
+ * content never reaches src/share.js's payload.
  *
  * Mandatory mitigation (ADR-010): scrub obvious secrets/PII before anything
  * leaves the machine. Mandatory resilience (ADR-011's "always shown"):
  * network/timeout/invalid-JSON failures must resolve to `null` so the
- * caller falls back to the deterministic org chart (ADR-009), never break
- * the local report.
+ * caller falls back to the plain structural card (name/tools/model only),
+ * never break the local report.
  */
 
 // --- scrubSecrets ------------------------------------------------------------
