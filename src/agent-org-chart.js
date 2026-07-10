@@ -24,9 +24,17 @@ const path = require('path');
  * subagent hierarchy. Every other frontmatter key, and CRUCIALLY
  * `description` (which in practice is a long free-text prompt that can leak
  * project/business framing), is walked over structurally to keep the parser
- * in sync but its content is NEVER captured, stored, or returned. The
- * markdown body below the frontmatter (the system prompt itself) is never
- * read at all.
+ * in sync but its content is NEVER captured, stored, or returned by
+ * `parseAgentOrgChart` — this invariant (ADR-009) is unchanged. The markdown
+ * body below the frontmatter (the system prompt itself) is never read at
+ * all, by either function below.
+ *
+ * talents-ai-score, ADR-010 (deliberate, gated exception to the invariant
+ * above): `parseAgentDescriptions` is a SEPARATE, explicitly-named function
+ * that DOES return `description` content — the only place in this module
+ * that does. It exists solely to feed the ephemeral, server-side agent
+ * "synthesis" request (`src/agent-synthesis.js`), never `report.agents` /
+ * the deterministic org chart / the persistence payload.
  */
 
 // Safety caps mirror scanner.js's FOOTPRINT_MAX_* (avoid pathological scans,
@@ -77,15 +85,19 @@ function stripQuotes(value) {
 
 // Minimal, dependency-free frontmatter reader (zero-dependency invariant,
 // same as the rest of this repo). Only extracts scalar/list values for
-// WHITELISTED_KEYS; everything else — most importantly `description`, which
-// is typically a multi-line block scalar holding the agent's full prompt —
-// is walked over structurally (so line-parsing stays in sync with the file)
-// but its content is never assigned anywhere.
-function parseFrontmatter(content) {
+// WHITELISTED_KEYS (plus `description` when `includeDescription` is
+// explicitly passed — ADR-010's gated exception, used only by
+// `parseAgentDescriptions` below). Anything else is walked over
+// structurally (so line-parsing stays in sync with the file) but its
+// content is never assigned anywhere.
+function parseFrontmatter(content, { includeDescription = false } = {}) {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return null;
   const lines = match[1].split(/\r?\n/);
   const data = {};
+  const captureKeys = includeDescription
+    ? new Set([...WHITELISTED_KEYS, 'description'])
+    : WHITELISTED_KEYS;
   let i = 0;
 
   while (i < lines.length) {
@@ -101,14 +113,19 @@ function parseFrontmatter(content) {
 
     // Block scalar (`|`, `>`, `|-`, `>-`, `|+`, `>+`): this is how
     // `description` shows up in practice. Consume its indented/blank
-    // continuation lines to stay in sync with the rest of the file, but
-    // never store the content — regardless of whether the key is
-    // whitelisted (a whitelisted key is never expected to be a block
-    // scalar in practice; if it were, treating it as "no value" is the
-    // safe default, not a crash).
+    // continuation lines to stay in sync with the rest of the file. Its
+    // content is captured ONLY when `key` is `description` AND
+    // `includeDescription` was explicitly passed (ADR-010) — every other
+    // block scalar, whitelisted or not, is discarded, same as before.
     if (/^[|>][-+]?$/.test(rawValue)) {
+      const blockLines = [];
       while (i < lines.length && (lines[i].trim() === '' || /^\s+/.test(lines[i]))) {
+        blockLines.push(lines[i].trim() === '' ? '' : lines[i].replace(/^\s+/, ''));
         i += 1;
+      }
+      if (includeDescription && key === 'description') {
+        while (blockLines.length && blockLines[blockLines.length - 1] === '') blockLines.pop();
+        data[key] = blockLines.join('\n');
       }
       continue;
     }
@@ -121,11 +138,11 @@ function parseFrontmatter(content) {
         items.push(stripQuotes(lines[i].replace(/^\s*-\s+/, '')));
         i += 1;
       }
-      if (items.length && WHITELISTED_KEYS.has(key)) data[key] = items;
+      if (items.length && captureKeys.has(key)) data[key] = items;
       continue;
     }
 
-    if (!WHITELISTED_KEYS.has(key)) continue; // never captured (e.g. an inline description)
+    if (!captureKeys.has(key)) continue; // never captured (e.g. an inline description, unless explicitly requested)
 
     // Inline YAML list: `tools: [Read, Write]`
     if (/^\[.*\]$/.test(rawValue)) {
@@ -198,4 +215,31 @@ function parseAgentOrgChart(root) {
   return agents;
 }
 
-module.exports = { parseAgentOrgChart, parseFrontmatter, parseAgentFile };
+// talents-ai-score, ADR-010: returns `[{ name, description }]` — the ONLY
+// function in this module that ever returns description/prompt content.
+// Used exclusively to build the EPHEMERAL agent-synthesis request
+// (src/agent-synthesis.js), which scrubs obvious secrets/PII before it ever
+// leaves the machine and never persists this raw text (only the LLM's
+// structured synthesis result does, via src/share.js's whitelist). Agents
+// without a `description` are still included (empty string), so the caller
+// can still send their structural data to the synthesis endpoint.
+function parseAgentDescriptions(root) {
+  const dir = path.join(root, '.claude', 'agents');
+  const files = listAgentMarkdownFiles(dir);
+  const result = [];
+  for (const file of files) {
+    let content;
+    try {
+      content = fs.readFileSync(file, 'utf8');
+    } catch {
+      continue;
+    }
+    const fm = parseFrontmatter(content, { includeDescription: true });
+    if (fm && fm.name) {
+      result.push({ name: fm.name, description: typeof fm.description === 'string' ? fm.description : '' });
+    }
+  }
+  return result;
+}
+
+module.exports = { parseAgentOrgChart, parseFrontmatter, parseAgentFile, parseAgentDescriptions };

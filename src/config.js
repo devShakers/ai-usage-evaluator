@@ -25,4 +25,19 @@ function getIngestEndpoint(env = process.env) {
   return value && value.trim() ? value.trim() : null;
 }
 
-module.exports = { getIngestEndpoint };
+/*
+ * Agent-synthesis endpoint (talents-ai-score, ADR-010/ADR-011): same
+ * no-hardcode invariant as the ingestion endpoint above — supplied via
+ * `AI_FOOTPRINT_SYNTHESIS_ENDPOINT`, no compiled-in default, no secret (the
+ * synthesis call carries no per-identity auth either). ADR-011 explicitly
+ * retires the kill-switch model (`AI_FOOTPRINT_SYNTHESIS_ENABLED` never
+ * existed here, and never will): unset means "nothing to call" — the caller
+ * (src/agent-synthesis.js / bin/report.js) treats that as a normal fallback
+ * to the deterministic org chart (ADR-009), not an error.
+ */
+function getSynthesisEndpoint(env = process.env) {
+  const value = env.AI_FOOTPRINT_SYNTHESIS_ENDPOINT;
+  return value && value.trim() ? value.trim() : null;
+}
+
+module.exports = { getIngestEndpoint, getSynthesisEndpoint };

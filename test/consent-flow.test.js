@@ -6,14 +6,17 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { runDisclosureFlow, disclosureText } = require('../src/consent-flow');
+const { runConsentPrompt } = require('../src/consent-flow');
 const { loadConsentState, getConsentDecision } = require('../src/share');
 const { getCatalog } = require('../src/i18n');
 
 /*
- * talents-ai-score / ADR-007, issue 006: the interactive disclosure +
- * consent + email flow. `ask` is injected (never touches real stdin), so
- * these tests drive the whole conversation deterministically.
+ * talents-ai-score, ADR-011 (revises ADR-007 / issue 006): the disclosure
+ * WALL is retired — the local report is always shown, unconditionally,
+ * regardless of consent (that's asserted at the bin/report.js level, not
+ * here). What's left is a SHORT, one-time consent-to-PERSIST prompt.
+ * `ask` is injected (never touches real stdin), so these tests drive the
+ * whole conversation deterministically.
  */
 
 const catalogEs = getCatalog('es');
@@ -41,89 +44,92 @@ function scriptedAsk(answers) {
   };
 }
 
-test('disclosureText: mentions what is sent, what never is, purpose, indicative notice, revocable, and a legal placeholder', () => {
-  const text = disclosureText(catalogEs);
-  assert.match(text, /Nivel \(0-4\)/);
-  assert.match(text, /NUNCA se envía/);
-  assert.match(text, /contenido de tus ficheros/);
-  assert.match(text, /Propósito/);
-  assert.match(text, /indicativo, no verificado/);
-  assert.match(text, /revocable/i);
-  assert.match(text, /PENDIENTE DE REVISIÓN LEGAL/);
-});
-
-// talents-ai-score, ADR-009: the org chart is a NEW category of data sent,
-// so the "SÍ se envía" list must call it out explicitly, in both languages.
-test('disclosureText: mentions the agent org chart (names/roles, tools, model, hierarchy) and setup counts — es', () => {
-  const text = disclosureText(catalogEs);
-  assert.match(text, /organigrama de tus agentes/i);
-  assert.match(text, /herramientas.*modelo.*jerarqu[ií]a/is);
-  assert.match(text, /conteos de tu setup de IA/i);
-});
-
-test('disclosureText: mentions the agent org chart (names/roles, tools, model, hierarchy) and setup counts — en', () => {
-  const catalogEn = getCatalog('en');
-  const text = disclosureText(catalogEn);
-  assert.match(text, /org chart of your agents/i);
-  assert.match(text, /tools.*model.*hierarchy/is);
-  assert.match(text, /counts of your AI setup/i);
-});
-
-test('runDisclosureFlow: accept -> asks for email -> persists granted + email', async () => {
+test('runConsentPrompt: accept -> asks for email -> persists granted + email', async () => {
   const ask = scriptedAsk(['s', 'talent@example.com']);
-  const decision = await runDisclosureFlow({ ask, catalog: catalogEs });
+  const decision = await runConsentPrompt({ ask, catalog: catalogEs });
   assert.equal(decision, 'granted');
   const state = loadConsentState();
   assert.equal(getConsentDecision(state), 'granted');
   assert.equal(state.email, 'talent@example.com');
 });
 
-test('runDisclosureFlow: decline -> persists denied, never asks for an email', async () => {
+test('runConsentPrompt: decline -> persists denied, never asks for an email', async () => {
   let emailAsked = false;
   const ask = async (q) => {
     if (q === catalogEs.consent.emailPrompt) emailAsked = true;
     return 'n';
   };
-  const decision = await runDisclosureFlow({ ask, catalog: catalogEs });
+  const decision = await runConsentPrompt({ ask, catalog: catalogEs });
   assert.equal(decision, 'denied');
   assert.equal(emailAsked, false);
   assert.equal(getConsentDecision(loadConsentState()), 'denied');
 });
 
-test('runDisclosureFlow: malformed email re-prompts without persisting anything until a valid one arrives', async () => {
+test('runConsentPrompt: malformed email re-prompts without persisting anything until a valid one arrives', async () => {
   const ask = scriptedAsk(['s', 'not-an-email', 'still-bad', 'talent@example.com']);
-  const decision = await runDisclosureFlow({ ask, catalog: catalogEs });
+  const decision = await runConsentPrompt({ ask, catalog: catalogEs });
   assert.equal(decision, 'granted');
   assert.equal(loadConsentState().email, 'talent@example.com');
 });
 
-test('runDisclosureFlow: gives up after too many malformed emails WITHOUT persisting a decision (disclosure runs again next time)', async () => {
+test('runConsentPrompt: gives up after too many malformed emails WITHOUT persisting a decision (prompt runs again next time)', async () => {
   const ask = scriptedAsk(['s', 'bad1', 'bad2', 'bad3', 'bad4', 'bad5']);
-  const decision = await runDisclosureFlow({ ask, catalog: catalogEs });
+  const decision = await runConsentPrompt({ ask, catalog: catalogEs });
   assert.equal(decision, null);
   assert.equal(loadConsentState(), null);
 });
 
-test('runDisclosureFlow: gives up after too many unrecognized yes/no answers WITHOUT persisting anything', async () => {
+test('runConsentPrompt: gives up after too many unrecognized yes/no answers WITHOUT persisting anything', async () => {
   const ask = scriptedAsk(['maybe', 'dunno', 'x', 'y?', '???']);
-  const decision = await runDisclosureFlow({ ask, catalog: catalogEs });
+  const decision = await runConsentPrompt({ ask, catalog: catalogEs });
   assert.equal(decision, null);
   assert.equal(loadConsentState(), null);
 });
 
-test('runDisclosureFlow: accepts common yes/no variants in both languages', async () => {
+test('runConsentPrompt: accepts common yes/no variants in both languages', async () => {
   for (const yes of ['y', 'yes', 's', 'si', 'sí', 'S', 'YES']) {
     fs.rmSync(tmpDir, { recursive: true, force: true });
     fs.mkdirSync(tmpDir, { recursive: true });
     const ask = scriptedAsk([yes, 'talent@example.com']);
-    const decision = await runDisclosureFlow({ ask, catalog: catalogEs });
+    const decision = await runConsentPrompt({ ask, catalog: catalogEs });
     assert.equal(decision, 'granted', `expected "${yes}" to be accepted as yes`);
   }
   for (const no of ['n', 'no', 'N', 'NO']) {
     fs.rmSync(tmpDir, { recursive: true, force: true });
     fs.mkdirSync(tmpDir, { recursive: true });
     const ask = scriptedAsk([no]);
-    const decision = await runDisclosureFlow({ ask, catalog: catalogEs });
+    const decision = await runConsentPrompt({ ask, catalog: catalogEs });
     assert.equal(decision, 'denied', `expected "${no}" to be rejected as no`);
   }
+});
+
+// talents-ai-score, ADR-011: no more itemized "sends/never sends" disclosure
+// wall — that content lives in the README now. The prompt is short: an
+// intro line + the persist question, nothing else, in both languages.
+test('runConsentPrompt: shows the short persist-intro + question, no itemized disclosure wall — es', async () => {
+  let firstQuestion = null;
+  const ask = async (q) => {
+    if (firstQuestion === null) firstQuestion = q;
+    return 'n';
+  };
+  await runConsentPrompt({ ask, catalog: catalogEs });
+  assert.equal(firstQuestion, catalogEs.consent.persistQuestion);
+  assert.match(catalogEs.consent.persistIntro, /opcional/i);
+  assert.match(catalogEs.consent.persistIntro, /revocable/i);
+  assert.equal('sendsList' in catalogEs.consent, false);
+  assert.equal('disclosureTitle' in catalogEs.consent, false);
+});
+
+test('runConsentPrompt: shows the short persist-intro + question, no itemized disclosure wall — en', async () => {
+  const catalogEn = getCatalog('en');
+  let firstQuestion = null;
+  const ask = async (q) => {
+    if (firstQuestion === null) firstQuestion = q;
+    return 'n';
+  };
+  await runConsentPrompt({ ask, catalog: catalogEn });
+  assert.equal(firstQuestion, catalogEn.consent.persistQuestion);
+  assert.match(catalogEn.consent.persistIntro, /optional/i);
+  assert.match(catalogEn.consent.persistIntro, /revocable/i);
+  assert.equal('sendsList' in catalogEn.consent, false);
 });

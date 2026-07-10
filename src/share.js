@@ -9,23 +9,33 @@ const https = require('https');
 const { getIngestEndpoint } = require('./config');
 
 /*
- * Sharing layer.
+ * Sharing (= PERSISTENCE) layer.
  *
  * talents-ai-score / ADR-007 pivots the sending model away from token-based
  * enrollment to PER-RUN OPT-IN CONSENT + self-affirmed EMAIL IDENTITY
  * (supersedes ADR-005/006, which this file used to implement — see git
  * history for the retired `enroll()`/`decodeEnrollString()`/token model).
  *
- * Principles (ADR-007):
- *  - No decision persisted -> the CLI shows an explicit disclosure once and
- *    asks for consent (src/consent-flow.js drives that interaction; this
- *    module only PERSISTS the resulting decision and SENDS).
+ * talents-ai-score / ADR-011 (revises the gating half of ADR-007/008, keeps
+ * the rest): the LOCAL REPORT is now ALWAYS computed and shown, unconditionally
+ * — this module has nothing to do with that anymore. What this module still
+ * governs is exactly one thing: whether the report gets PERSISTED (saved) in
+ * Shakers. There is NO kill switch anymore (ADR-011 retires
+ * `AI_FOOTPRINT_INGEST_ENABLED` client-side awareness of it): consent is the
+ * only control.
+ *
+ * Principles (ADR-007, gating parts revised by ADR-011):
+ *  - No decision persisted -> a SHORT consent-to-persist question is asked
+ *    once (src/consent-flow.js drives that interaction; this module only
+ *    PERSISTS the resulting decision and SENDS). It is asked AFTER the local
+ *    report has already been shown, never as a wall blocking it.
  *  - ACCEPT -> ask for an email, send `{email, payload}`, persist
  *    `consent=granted` + the email. Every following run resends silently
  *    (same `autoShare` code path, first grant included).
  *  - DECLINE -> persist `consent=denied`. Local report only, never asks
  *    again (only an explicit revoke/re-consent command can change this).
- *  - Only a DERIVED payload is sent (booleans, counts, level) — never file
+ *  - Only a DERIVED payload is sent (booleans, counts, level, technologies,
+ *    the agent-synthesis RESULT — never raw descriptions) — never file
  *    contents, paths, or credentials. The email travels OUTSIDE the
  *    whitelisted payload, in the request body's `email` field.
  *  - The public code contains NO endpoint or secret: the destination URL
@@ -248,15 +258,33 @@ function isThrottled(state, now = Date.now()) {
 //
 // talents-ai-score, ADR-009 (matiza ADR-003): adds the deterministic (no-LLM)
 // agent org chart to the whitelist — structure + names only (name, wired
-// tools, model, hierarchy), covered by the disclosure (src/i18n.js's
-// `consent.sendsList`). EXCLUDED explicitly, by construction of
+// tools, model, hierarchy). EXCLUDED explicitly, by construction of
 // src/agent-org-chart.js and re-applied here per-agent: descriptions/
 // prompts/system-prompts, file content, paths, env vars, credentials. Every
 // agent object is rebuilt field-by-field (never spread) so an unexpected
 // extra key on the scanner's object (e.g. a `description` that slipped in)
 // can never reach the payload.
+//
+// talents-ai-score, ADR-012: adds `technologies` (dependency manifest names
+// only, src/tech-detector.js) — associated server-side with Shakers' Skill
+// catalog only at persistence time.
+//
+// talents-ai-score, ADR-010/ADR-011: adds `agentSynthesis` — the STRUCTURED
+// RESULT of the ephemeral agent-synthesis call (`{name, symbolicName,
+// whatItDoes}` per agent), read from `report.agentSynthesis.agents` if the
+// caller (bin/report.js) attached one this run. Rebuilt field-by-field
+// (never spread): the raw `description` text sent to the synthesis endpoint
+// is NEVER part of this whitelist — only the synthesized summary is, and
+// only if it actually reached this shape. Empty when synthesis failed and
+// the run fell back to the deterministic org chart (nothing to persist from
+// a call that never returned a result).
 function derivePayload(report, maturity) {
   const agents = Array.isArray(report.agents) ? report.agents : [];
+  const technologies = Array.isArray(report.technologies) ? report.technologies : [];
+  const synthesisAgents =
+    report.agentSynthesis && Array.isArray(report.agentSynthesis.agents)
+      ? report.agentSynthesis.agents
+      : [];
   return {
     schemaVersion: report.schemaVersion,
     generatedAt: report.generatedAt,
@@ -279,6 +307,12 @@ function derivePayload(report, maturity) {
       parent: a.parent || null,
     })),
     agentCounts: report.agentCounts || { agents: 0, skills: 0, commands: 0, mcpServers: 0, hooks: 0 },
+    technologies,
+    agentSynthesis: synthesisAgents.map((a) => ({
+      name: a.name,
+      symbolicName: a.symbolicName || null,
+      whatItDoes: a.whatItDoes || null,
+    })),
   };
 }
 
@@ -329,7 +363,8 @@ async function autoShare(report, maturity) {
     return { ok: false, skipped: false, reason: 'rate-limited' };
   }
   if (res.status === 503) {
-    // Server kill switch OFF (specs.md: default OFF at rest).
+    // Generic "service unavailable" from the server (ADR-011 retires the
+    // server-side kill switch that used to be the main 503 cause).
     return { ok: false, skipped: false, reason: 'service-unavailable' };
   }
   return { ok: false, skipped: false, reason: `http-${res.status}` };

@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { parseAgentOrgChart } = require('../src/agent-org-chart');
+const { parseAgentOrgChart, parseAgentDescriptions } = require('../src/agent-org-chart');
 
 /*
  * talents-ai-score, issue 009 (ADR-009): deterministic (no-LLM) parser of the
@@ -190,4 +190,56 @@ test('parseAgentOrgChart: quoted scalar values are unquoted', () => {
   const agents = parseAgentOrgChart(tmpDir);
   assert.equal(agents[0].name, 'quoted-agent');
   assert.equal(agents[0].model, 'opus');
+});
+
+// --- parseAgentDescriptions (talents-ai-score, ADR-010: gated exception) ---
+//
+// This is a DIFFERENT function from parseAgentOrgChart, used only to feed
+// the ephemeral agent-synthesis request (src/agent-synthesis.js). It's the
+// only place in this module that ever returns description content.
+
+test('parseAgentDescriptions: returns {name, description} pairs from block-scalar descriptions', () => {
+  writeAgentFile(
+    tmpDir,
+    'backend-developer.md',
+    [
+      '---',
+      'name: backend-developer',
+      'description: |',
+      '  Handles backend work for the project, including database access',
+      '  and API design.',
+      'tools: Read, Write',
+      'model: sonnet',
+      '---',
+      '',
+    ].join('\n'),
+  );
+
+  const descriptions = parseAgentDescriptions(tmpDir);
+  assert.equal(descriptions.length, 1);
+  assert.equal(descriptions[0].name, 'backend-developer');
+  assert.match(descriptions[0].description, /Handles backend work/);
+  assert.match(descriptions[0].description, /database access/);
+});
+
+test('parseAgentDescriptions: agent with no description -> empty string, not omitted', () => {
+  writeAgentFile(tmpDir, 'minimal.md', ['---', 'name: minimal', '---', ''].join('\n'));
+  const descriptions = parseAgentDescriptions(tmpDir);
+  assert.deepEqual(descriptions, [{ name: 'minimal', description: '' }]);
+});
+
+test('parseAgentDescriptions: does not affect parseAgentOrgChart — the structural chart still never carries description', () => {
+  writeAgentFile(
+    tmpDir,
+    'a.md',
+    ['---', 'name: agent-a', 'description: |', '  some prompt text here', 'tools: Read', '---', ''].join('\n'),
+  );
+  const structural = parseAgentOrgChart(tmpDir);
+  const withDescriptions = parseAgentDescriptions(tmpDir);
+  assert.equal('description' in structural[0], false);
+  assert.match(withDescriptions[0].description, /some prompt text here/);
+});
+
+test('parseAgentDescriptions: no .claude/agents directory -> empty array, never throws', () => {
+  assert.deepEqual(parseAgentDescriptions(tmpDir), []);
 });
