@@ -11,6 +11,9 @@ const { scan } = require('../src/scanner');
 /*
  * talents-ai-score, ADR-012: scanner.js wiring for the deterministic
  * technologies detector. Scoped to the NEW `report.technologies` field only.
+ * Refined: `report.technologies` holds recognized FRAMEWORK/LIBRARY
+ * canonical names only (React, Express...), not a raw dependency dump —
+ * see src/tech-detector.js.
  */
 
 let tmpDir;
@@ -28,11 +31,12 @@ test('scan: no manifests -> technologies is an empty array', () => {
   assert.deepEqual(report.technologies, []);
 });
 
-test('scan: populates report.technologies from package.json', () => {
+test('scan: populates report.technologies with recognized canonical framework names, excludes non-frameworks', () => {
   fs.writeFileSync(
     path.join(tmpDir, 'package.json'),
     JSON.stringify({ dependencies: { react: '^18.0.0' }, devDependencies: { typescript: '^5.0.0' } }),
   );
   const report = scan({ root: tmpDir });
-  assert.deepEqual(report.technologies.sort(), ['react', 'typescript'].sort());
+  assert.deepEqual(report.technologies, ['React']);
+  assert.equal(report.technologies.includes('typescript'), false);
 });

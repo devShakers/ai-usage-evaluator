@@ -5,8 +5,12 @@
  * 018 / ADR-013-014). Pure composition — does NOT scan any file itself,
  * only re-derives a signal from two already-computed, already-whitelisted
  * detectors:
- *   - Playwright/Puppeteer as a PROJECT DEPENDENCY (`report.technologies`,
- *     ADR-012's tech-detector — package/module names only).
+ *   - Playwright/Puppeteer as a PROJECT DEPENDENCY (tech-detector's raw
+ *     dependency names, ADR-012 — package/module names only). NOT the
+ *     canonical `report.technologies` list: Playwright/Puppeteer aren't
+ *     "frameworks/libraries" in the tech-stack sense, so they're
+ *     deliberately absent from that human-facing list, but this detector
+ *     still needs to see them as dependencies.
  *   - A browser-category MCP server BY NAME (`report.mcp`, issue 015's
  *     mcp-detector — server names + heuristic category only).
  * Re-exposing these names here is not a new leak surface: both are already
