@@ -6,6 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { detectors } = require('./detectors');
+const { parseAgentOrgChart } = require('./agent-org-chart');
 
 /* ---------- existence-check utilities (existence only, never content) ---------- */
 
@@ -303,6 +304,23 @@ const probes = {
   }),
 };
 
+/* ---------- agent org chart counts (talents-ai-score, ADR-009) ---------- */
+/* Deterministic (no-LLM), structure+names only — see src/agent-org-chart.js. */
+/* PROJECT ROOT ONLY (not the developer's home directory), unlike the        */
+/* claude-code probe's skills/mcpServers above: the org chart itself is      */
+/* project-scoped (`<root>/.claude/agents`), so its counts stay scoped the   */
+/* same way, deliberately, rather than mixing in personal/home config.       */
+
+function agentOrgChartCounts(root, agentsCount) {
+  return {
+    agents: agentsCount,
+    skills: countDirEntries(path.join(root, '.claude', 'skills')),
+    commands: countFiles(path.join(root, '.claude', 'commands'), '.md'),
+    mcpServers: countJsonKeys(path.join(root, '.mcp.json'), 'mcpServers'),
+    hooks: countJsonKeys(path.join(root, '.claude', 'settings.json'), 'hooks'),
+  };
+}
+
 /* ---------- main scan ---------- */
 
 function scan(options = {}) {
@@ -362,6 +380,10 @@ function scan(options = {}) {
 
   const detectedTools = tools.filter((t) => t.detected);
 
+  // Deterministic (no-LLM) agent org chart (ADR-009): structure + names
+  // only (name, wired tools, model, hierarchy). Never descriptions/prompts.
+  const agents = parseAgentOrgChart(root);
+
   // Stable per-machine anonymous id: hash of hostname + user. Not reversible
   // to personal data and only useful for deduplicating submissions, not for
   // identifying anyone.
@@ -393,6 +415,9 @@ function scan(options = {}) {
       categories: [...new Set(detectedTools.map((t) => t.category))],
     },
     tools,
+    // Agent org chart (ADR-009): structure + names only, never content.
+    agents,
+    agentCounts: agentOrgChartCounts(root, agents.length),
   };
 }
 

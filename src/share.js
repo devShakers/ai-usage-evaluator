@@ -245,7 +245,18 @@ function isThrottled(state, now = Date.now()) {
 // None of the above activates on its own: to include a field, add it here
 // explicitly after a human decision (and document it in decisions.md if
 // it's a cross-role decision, ADR).
+//
+// talents-ai-score, ADR-009 (matiza ADR-003): adds the deterministic (no-LLM)
+// agent org chart to the whitelist — structure + names only (name, wired
+// tools, model, hierarchy), covered by the disclosure (src/i18n.js's
+// `consent.sendsList`). EXCLUDED explicitly, by construction of
+// src/agent-org-chart.js and re-applied here per-agent: descriptions/
+// prompts/system-prompts, file content, paths, env vars, credentials. Every
+// agent object is rebuilt field-by-field (never spread) so an unexpected
+// extra key on the scanner's object (e.g. a `description` that slipped in)
+// can never reach the payload.
 function derivePayload(report, maturity) {
+  const agents = Array.isArray(report.agents) ? report.agents : [];
   return {
     schemaVersion: report.schemaVersion,
     generatedAt: report.generatedAt,
@@ -261,6 +272,13 @@ function derivePayload(report, maturity) {
       detected: t.detected,
       depth: t.depth || {},
     })),
+    agents: agents.map((a) => ({
+      name: a.name,
+      tools: Array.isArray(a.tools) ? a.tools : [],
+      model: a.model || null,
+      parent: a.parent || null,
+    })),
+    agentCounts: report.agentCounts || { agents: 0, skills: 0, commands: 0, mcpServers: 0, hooks: 0 },
   };
 }
 
