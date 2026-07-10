@@ -107,6 +107,39 @@ function technologiesSection(report, t) {
   </section>`;
 }
 
+/* ---------- MCP servers by name (talents-ai-score, issue 015) ----------
+ * `report.mcp.servers` (name + heuristic category, src/mcp-detector.js) is
+ * already computed and already local-only-by-contract: it feeds the
+ * browser-tools detector and countsByCategory/total in the persistence
+ * payload (src/share.js), but the individual SERVER NAMES themselves are
+ * never sent — see derivePayload's mcp field (countsByCategory/total only).
+ * Rendered here for the first time: a plain list, name + category badge,
+ * shown only when there's at least one server; omitted entirely when there
+ * are none (never a misleading "no MCP" card where a manifest-driven
+ * section would show one).
+ */
+
+function mcpCategoryLabel(t, category) {
+  return (t.mcpCategories && t.mcpCategories[category]) || category;
+}
+
+function mcpSection(report, t) {
+  const servers = report.mcp && Array.isArray(report.mcp.servers) ? report.mcp.servers : [];
+  if (!servers.length) return '';
+  const rows = servers
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((s) => `<li class="mcp-row">
+      <span class="mcp-name">${esc(s.name)}</span>
+      <span class="mcp-category">${esc(mcpCategoryLabel(t, s.category))}</span>
+    </li>`)
+    .join('');
+  return `<section>
+    <div class="h2">${esc(t.html.mcpHeading)}</div>
+    <ul class="mcp-list">${rows}</ul>
+  </section>`;
+}
+
 /* ---------- agent cards: hierarchical role-card tree, pure HTML/CSS ----------
  * talents-ai-score: Mermaid (a graph rendering) turned out illegible even
  * after tuning; a flat card grid (the step before this one) was clearer but
@@ -602,14 +635,39 @@ function renderHtml(report, maturity, lang) {
   .env-editors{display:flex;flex-direction:column;gap:8px;flex:1;min-width:200px}
   .env-editors .k{font-size:11px;font-weight:600;letter-spacing:.05em;
     text-transform:uppercase;color:var(--faint)}
+  /* Layout-audit fix (talents-ai-score): chips must never shrink to fit —
+     without flex:none + white-space:nowrap, a flex row squeezed for space
+     would shrink each chip below its content's width and wrap its text
+     onto two lines inside the pill ("descuadre"). The row itself already
+     wraps as whole units via .chips{flex-wrap:wrap}; individual chips
+     just don't get squashed anymore. Same principle as the agent-card
+     width-stability fix (flex:0 0 <fixed>) applied at the chip level. */
   .chips{display:flex;flex-wrap:wrap;gap:6px}
   .chip{font-size:11px;font-weight:500;letter-spacing:.02em;color:var(--secondary-fg);
-    background:var(--secondary);padding:3px 10px;border-radius:var(--r-full)}
+    background:var(--secondary);padding:3px 10px;border-radius:var(--r-full);
+    flex:none;white-space:nowrap}
   .chip.empty{background:transparent;color:var(--faint);padding-left:0}
 
   /* ---- Project technologies (talents-ai-score, ADR-012) ---- */
   .tech-empty{padding:18px 20px;color:var(--faint);font-size:13px}
   .chips-card{padding:16px 18px}
+
+  /* ---- MCP servers by name (talents-ai-score, issue 015) ----
+   * Same list-card pattern as ul.tools below (fixed non-shrinking badge +
+   * a flexible, wrappable name), not a card grid — a flat list has no
+   * nesting-depth to fight over width, so no dedicated fixed-width rule
+   * is needed here (unlike .agent-node). */
+  ul.mcp-list{list-style:none;margin:0;padding:0;overflow:hidden;
+    border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);
+    box-shadow:var(--shadow-sm)}
+  .mcp-row{display:flex;align-items:center;justify-content:space-between;
+    flex-wrap:wrap;gap:8px 14px;padding:14px 18px;font-size:14px;
+    border-top:1px solid var(--border)}
+  .mcp-row:first-child{border-top:0}
+  .mcp-name{font-weight:600;letter-spacing:-.01em;min-width:0;word-break:break-word}
+  .mcp-category{flex:none;white-space:nowrap;font-size:11px;font-weight:500;
+    letter-spacing:.04em;text-transform:uppercase;color:var(--secondary-fg);
+    background:var(--secondary);padding:3px 9px;border-radius:var(--r-full)}
 
   /* ---- Agent cards: hierarchical role-card tree (talents-ai-score) ----
    * Plain HTML/CSS: no vendored library, no script, zero-network by
@@ -787,6 +845,8 @@ function renderHtml(report, maturity, lang) {
   </section>
 
   ${technologiesSection(report, t)}
+
+  ${mcpSection(report, t)}
 
   ${agentCardsSection(report, t)}
 
