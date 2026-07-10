@@ -194,9 +194,41 @@ test('CSS: .agent-node has a fixed width/flex-basis, decoupled from nesting dept
   assert.equal(/\.agent-node\{[^}]*min-width:0/.test(html), false);
 });
 
-test('CSS: the tree container scrolls horizontally instead of squeezing cards when it runs out of room', () => {
+// Sibling-clip fix (talents-ai-score): root siblings must WRAP, never clip.
+// The horizontal scroll no longer lives on .agent-tree (which used to drag
+// the wrappable root grid into a shared scroll canvas inflated by any deep
+// chain, clipping the second sibling). It is scoped down to each root subtree
+// owner instead.
+test('CSS: root siblings wrap and are NOT in a horizontal-scroll canvas (never clip)', () => {
   const html = renderHtml({ ...BASE_REPORT, agents: [{ name: 'a', tools: [], model: null, parent: null }] }, MATURITY, 'es');
-  assert.match(html, /\.agent-tree\{[^}]*overflow-x:auto/);
+  // The root sibling grid wraps.
+  assert.match(html, /\.agent-cards-grid\{[^}]*flex-wrap:wrap/);
+  // The tree container no longer establishes a horizontal-scroll context for
+  // the siblings — so they can never be clipped by an off-screen scroll canvas.
+  assert.doesNotMatch(html, /\.agent-tree\{[^}]*overflow-x:auto/);
+});
+
+test('CSS: horizontal scroll is scoped to a root subtree owner, so ONLY deep nesting scrolls', () => {
+  const html = renderHtml({ ...BASE_REPORT, agents: [{ name: 'a', tools: [], model: null, parent: null }] }, MATURITY, 'es');
+  // A root node that owns children (.has-children, a direct child of the
+  // grid) is the sole horizontal-scroll viewport, spanning its own row.
+  assert.match(html, /\.agent-cards-grid>\.agent-node\.has-children\{[^}]*overflow-x:auto/);
+  assert.match(html, /\.agent-cards-grid>\.agent-node\.has-children\{[^}]*flex-basis:100%/);
+});
+
+test('renderHtml: a root node WITH children carries the has-children scroll hook; a leaf does NOT', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [
+      { name: 'lead', tools: [], model: 'opus', parent: null },
+      { name: 'child', tools: [], model: 'sonnet', parent: 'lead' },
+      { name: 'loner', tools: [], model: 'sonnet', parent: null },
+    ],
+  };
+  const section = treeSectionOf(renderHtml(report, MATURITY, 'es'));
+  // The parent gets the hook; the standalone leaf never does.
+  assert.match(section, /class="agent-node has-children"[\s\S]*agent-title">lead</);
+  assert.match(section, /class="agent-node"[\s\S]*agent-title">loner</);
 });
 
 test('CSS: chips wrap onto multiple lines (never one-per-line) inside a stable-width card', () => {
@@ -228,7 +260,9 @@ test('renderHtml: card width is IDENTICAL at every nesting depth (root, mid, lea
   // so there is exactly one place a width could come from: the shared
   // `.agent-node` CSS rule (asserted above), applied uniformly regardless
   // of how many `.agent-children` wrappers the node is nested inside.
-  const nodeCount = (section.match(/class="agent-node"/g) || []).length;
+  // `agent-node` may carry the ` has-children` modifier now, so match the
+  // class token with a trailing boundary (quote or space), not a bare quote.
+  const nodeCount = (section.match(/class="agent-node[ "]/g) || []).length;
   assert.equal(nodeCount, 3);
   // The width-bearing rule (`.agent-node{display:flex...width:328px}`) is
   // declared exactly once — distinct from the unrelated positioning rule
