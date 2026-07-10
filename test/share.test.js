@@ -159,19 +159,24 @@ test('derivePayload: whitelist, email is never part of the payload', () => {
     'anonId', 'categories', 'generatedAt', 'level', 'levelName',
     'platform', 'schemaVersion', 'score', 'tools', 'totalDetected',
     'agents', 'agentCounts', 'technologies', 'agentSynthesis',
-    'tier', 'tierKey', 'band', 'mcp', 'memory', 'automations', 'browserTools',
+    'tier', 'tierKey', 'mcp', 'memory', 'automations', 'browserTools',
   ].sort());
   assert.equal('email' in payload, false);
+  // talents-ai-score, issue 022 follow-up (CLI<->backend contract
+  // reconciliation): `band` is NOT sent — redundant with `level` (already
+  // the 0-4 band). The backend uses level/levelName as the band.
+  assert.equal('band' in payload, false);
 });
 
-// --- tier/band (talents-ai-score, issue 019/022) -----------------------------
+// --- tier (talents-ai-score, issue 019/022) -----------------------------
 
-test('derivePayload: includes tier, tierKey and band from maturity', () => {
+test('derivePayload: includes tier and tierKey from maturity (band is NOT sent, redundant with level)', () => {
   const maturityWithTier = { ...MATURITY, tier: 5, tierKey: 'T5' };
   const payload = derivePayload(REPORT, maturityWithTier);
   assert.equal(payload.tier, 5);
   assert.equal(payload.tierKey, 'T5');
-  assert.equal(payload.band, maturityWithTier.level); // band === the 0-4 band (level)
+  assert.equal('band' in payload, false);
+  assert.equal(payload.level, maturityWithTier.level); // level IS the band, already sent
 });
 
 test('derivePayload: missing tier/tierKey on maturity (older shape) defaults gracefully, never throws', () => {
@@ -253,19 +258,32 @@ test('derivePayload: missing report.automations defaults to a well-shaped zeroed
 
 // --- browserTools: detected/count/via -----------------------------------------
 
-test('derivePayload: browserTools payload mirrors detected/count/via (names already whitelisted upstream)', () => {
+test('derivePayload: browserTools.via is ORIGIN FLAGS ONLY (booleans) — never the package/MCP names (issue 022 follow-up)', () => {
   const reportWithBrowser = {
     ...REPORT,
     browserTools: { detected: true, count: 2, via: { dependencies: ['playwright'], mcp: ['browserbase'] } },
   };
   const payload = derivePayload(reportWithBrowser, MATURITY);
-  assert.deepEqual(payload.browserTools, reportWithBrowser.browserTools);
+  assert.equal(payload.browserTools.detected, true);
+  assert.equal(payload.browserTools.count, 2);
+  assert.deepEqual(payload.browserTools.via, { dependency: true, mcp: true });
+  assert.equal(JSON.stringify(payload).includes('playwright'), false);
+  assert.equal(JSON.stringify(payload).includes('browserbase'), false);
+});
+
+test('derivePayload: browserTools.via flags are false when that origin found nothing', () => {
+  const reportWithPartialBrowser = {
+    ...REPORT,
+    browserTools: { detected: true, count: 1, via: { dependencies: ['playwright'], mcp: [] } },
+  };
+  const payload = derivePayload(reportWithPartialBrowser, MATURITY);
+  assert.deepEqual(payload.browserTools.via, { dependency: true, mcp: false });
 });
 
 test('derivePayload: missing report.browserTools defaults gracefully, never throws', () => {
   const payload = derivePayload(REPORT, MATURITY);
   assert.equal(payload.browserTools.detected, false);
-  assert.deepEqual(payload.browserTools.via, { dependencies: [], mcp: [] });
+  assert.deepEqual(payload.browserTools.via, { dependency: false, mcp: false });
 });
 
 // --- never raw content anywhere in the new fields ----------------------------

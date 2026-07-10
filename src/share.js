@@ -349,9 +349,13 @@ function derivePayload(report, maturity) {
       symbolicName: a.symbolicName || null,
       whatItDoes: a.whatItDoes || null,
     })),
+    // talents-ai-score, issue 022 follow-up (CLI<->backend contract
+    // reconciliation): `band` was dropped — it's redundant with `level`
+    // (already the 0-4 band, now tier-derived per issue 019); the backend
+    // uses `level`/`levelName` as the band. Only `tier`/`tierKey` (the
+    // finer T0-T7 axis) are new here.
     tier: typeof maturity.tier === 'number' ? maturity.tier : null,
     tierKey: maturity.tierKey || null,
-    band: maturity.level,
     mcp: {
       countsByCategory: { ...(mcp.countsByCategory || { data: 0, comms: 0, dev: 0, browser: 0, other: 0 }) },
       total: typeof mcp.total === 'number' ? mcp.total : 0,
@@ -374,12 +378,17 @@ function derivePayload(report, maturity) {
         systemd: whitelistSchedulerProbe(automationsSchedulers.systemd),
       },
     },
+    // talents-ai-score, issue 022 follow-up: `via` is now ORIGIN FLAGS ONLY
+    // (booleans), not the package/MCP names — same "names stay local only"
+    // invariant already applied to `mcp.servers` (issue 015). The local
+    // report (report.browserTools.via) keeps the actual names; only whether
+    // each origin fired travels in the persistence payload.
     browserTools: {
       detected: !!browserTools.detected,
       count: typeof browserTools.count === 'number' ? browserTools.count : 0,
       via: {
-        dependencies: Array.isArray(browserToolsVia.dependencies) ? browserToolsVia.dependencies : [],
-        mcp: Array.isArray(browserToolsVia.mcp) ? browserToolsVia.mcp : [],
+        dependency: Array.isArray(browserToolsVia.dependencies) && browserToolsVia.dependencies.length > 0,
+        mcp: Array.isArray(browserToolsVia.mcp) && browserToolsVia.mcp.length > 0,
       },
     },
   };
