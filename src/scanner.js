@@ -12,6 +12,7 @@ const { detectMcpServers } = require('./mcp-detector');
 const { analyzeMemoryStructure } = require('./memory-structure-detector');
 const { detectAutomations } = require('./automations-detector');
 const { detectBrowserTools } = require('./browser-tools-detector');
+const { getHomeDir } = require('./env-paths');
 
 /* ---------- existence-check utilities (existence only, never content) ---------- */
 
@@ -311,18 +312,29 @@ const probes = {
 
 /* ---------- agent org chart counts (talents-ai-score, ADR-009) ---------- */
 /* Deterministic (no-LLM), structure+names only — see src/agent-org-chart.js. */
-/* PROJECT ROOT ONLY (not the developer's home directory), unlike the        */
-/* claude-code probe's skills/mcpServers above: the org chart itself is      */
-/* project-scoped (`<root>/.claude/agents`), so its counts stay scoped the   */
-/* same way, deliberately, rather than mixing in personal/home config.       */
+/* PROJECT ∪ HOME (talents-ai-score, ADR-014, closed decision #5): this used */
+/* to be project-root only, deliberately kept separate from the claude-code  */
+/* probe's own project+home skills/mcpServers above — that inconsistency is  */
+/* exactly what ADR-014 closes ("hoy agentes solo-proyecto → pasa a          */
+/* proyecto∪home como el resto, para coherencia del tier"), since the tier   */
+/* engine's T6 criterion (`agentCounts.agents >= 2`) needs the FULL picture. */
 
 function agentOrgChartCounts(root, agentsCount) {
+  const home = getHomeDir();
   return {
     agents: agentsCount,
-    skills: countDirEntries(path.join(root, '.claude', 'skills')),
-    commands: countFiles(path.join(root, '.claude', 'commands'), '.md'),
-    mcpServers: countJsonKeys(path.join(root, '.mcp.json'), 'mcpServers'),
-    hooks: countJsonKeys(path.join(root, '.claude', 'settings.json'), 'hooks'),
+    skills:
+      countDirEntries(path.join(root, '.claude', 'skills')) +
+      countDirEntries(path.join(home, '.claude', 'skills')),
+    commands:
+      countFiles(path.join(root, '.claude', 'commands'), '.md') +
+      countFiles(path.join(home, '.claude', 'commands'), '.md'),
+    mcpServers:
+      countJsonKeys(path.join(root, '.mcp.json'), 'mcpServers') ||
+      countJsonKeys(path.join(home, '.claude.json'), 'mcpServers'),
+    hooks:
+      countJsonKeys(path.join(root, '.claude', 'settings.json'), 'hooks') +
+      countJsonKeys(path.join(home, '.claude', 'settings.json'), 'hooks'),
   };
 }
 

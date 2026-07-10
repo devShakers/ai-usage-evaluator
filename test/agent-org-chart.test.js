@@ -21,14 +21,32 @@ const { parseAgentOrgChart, parseAgentDescriptions } = require('../src/agent-org
  */
 
 let tmpDir;
+let tmpHome;
+let originalHomeOverride;
 
 test.beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-footprint-agents-test-'));
+  // talents-ai-score, ADR-014: parseAgentOrgChart/parseAgentDescriptions now
+  // also read `.claude/agents/` from the home directory (project ∪ home).
+  // Isolated to a throwaway dir so these tests never depend on — or leak
+  // into — the real developer machine's personal agents.
+  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-footprint-agents-home-'));
+  originalHomeOverride = process.env.AI_FOOTPRINT_HOME_DIR;
+  process.env.AI_FOOTPRINT_HOME_DIR = tmpHome;
 });
 
 test.afterEach(() => {
+  if (originalHomeOverride === undefined) delete process.env.AI_FOOTPRINT_HOME_DIR;
+  else process.env.AI_FOOTPRINT_HOME_DIR = originalHomeOverride;
   fs.rmSync(tmpDir, { recursive: true, force: true });
+  fs.rmSync(tmpHome, { recursive: true, force: true });
 });
+
+function writeHomeAgentFile(relPath, content) {
+  const full = path.join(tmpHome, '.claude', 'agents', relPath);
+  fs.mkdirSync(path.dirname(full), { recursive: true });
+  fs.writeFileSync(full, content);
+}
 
 function writeAgentFile(root, relPath, content) {
   const full = path.join(root, '.claude', 'agents', relPath);
@@ -242,4 +260,35 @@ test('parseAgentDescriptions: does not affect parseAgentOrgChart — the structu
 
 test('parseAgentDescriptions: no .claude/agents directory -> empty array, never throws', () => {
   assert.deepEqual(parseAgentDescriptions(tmpDir), []);
+});
+
+// --- project ∪ home scope (talents-ai-score, ADR-014, closed decision #5) ---
+
+test('parseAgentOrgChart: includes agents from the HOME .claude/agents/ directory too', () => {
+  writeHomeAgentFile('personal-helper.md', ['---', 'name: personal-helper', 'model: sonnet', '---', ''].join('\n'));
+  const agents = parseAgentOrgChart(tmpDir);
+  assert.equal(agents.length, 1);
+  assert.equal(agents[0].name, 'personal-helper');
+});
+
+test('parseAgentOrgChart: merges project AND home agents together', () => {
+  writeAgentFile(tmpDir, 'project-agent.md', ['---', 'name: project-agent', '---', ''].join('\n'));
+  writeHomeAgentFile('personal-agent.md', ['---', 'name: personal-agent', '---', ''].join('\n'));
+  const agents = parseAgentOrgChart(tmpDir);
+  assert.deepEqual(agents.map((a) => a.name).sort(), ['personal-agent', 'project-agent']);
+});
+
+test('parseAgentOrgChart: on a name collision, the PROJECT-level agent wins over the personal one', () => {
+  writeAgentFile(tmpDir, 'reviewer.md', ['---', 'name: reviewer', 'model: opus', '---', ''].join('\n'));
+  writeHomeAgentFile('reviewer.md', ['---', 'name: reviewer', 'model: sonnet', '---', ''].join('\n'));
+  const agents = parseAgentOrgChart(tmpDir);
+  assert.equal(agents.length, 1);
+  assert.equal(agents[0].model, 'opus'); // the project definition, not the personal one
+});
+
+test('parseAgentDescriptions: also merges project ∪ home, project wins on collision', () => {
+  writeAgentFile(tmpDir, 'reviewer.md', ['---', 'name: reviewer', 'description: project version'].join('\n') + '\n---\n');
+  writeHomeAgentFile('reviewer.md', ['---', 'name: reviewer', 'description: personal version'].join('\n') + '\n---\n');
+  const descriptions = parseAgentDescriptions(tmpDir);
+  assert.equal(descriptions.length, 1);
 });
