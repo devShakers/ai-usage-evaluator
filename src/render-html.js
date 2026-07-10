@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const { getCatalog, categoryLabel } = require('./i18n');
 
 /*
@@ -149,6 +151,104 @@ function orgChartSection(report, t) {
       ${roots.map((agent) => agentNode(agent, childrenByParent, t)).join('\n')}
     </ul>
   </section>`;
+}
+
+/* ---------- project technologies (talents-ai-score, ADR-012) ----------
+ * Dependency manifest NAMES only (src/tech-detector.js) — always shown
+ * locally, regardless of consent. Associated with Shakers' Skill catalog
+ * only server-side, at persistence time.
+ */
+
+function technologiesSection(report, t) {
+  const technologies = Array.isArray(report.technologies) ? report.technologies : [];
+  if (!technologies.length) {
+    return `<section>
+    <div class="h2">${esc(t.html.technologiesHeading)}</div>
+    <div class="card tech-empty">${esc(t.html.technologiesEmpty)}</div>
+  </section>`;
+  }
+  const chips = technologies.map((tech) => `<span class="chip">${esc(tech)}</span>`).join('');
+  return `<section>
+    <div class="h2">${esc(t.html.technologiesHeading)}</div>
+    <div class="card chips-card"><div class="chips">${chips}</div></div>
+  </section>`;
+}
+
+/* ---------- agent diagram: Mermaid, inline, zero-network (ADR-010/011) ----------
+ * Rendered ONLY when the ephemeral agent-synthesis call succeeded this run
+ * (`report.agentSynthesis`, attached by bin/report.js — never computed
+ * here). On failure/timeout/invalid response, bin/report.js simply doesn't
+ * attach it and this section shows a short fallback note instead — the
+ * deterministic org chart (ADR-009) is already its own section above, so
+ * the fallback doesn't duplicate it.
+ *
+ * mermaid.js is vendored (vendor/mermaid.min.js, see vendor/README.md) and
+ * inlined VERBATIM into a <script> tag so the resulting report.html makes
+ * ZERO network calls — the same invariant every other part of this report
+ * upholds. Deliberately only inlined when a diagram actually needs
+ * rendering (fallback runs stay lightweight, no ~3.2MB payload for nothing).
+ */
+
+let cachedMermaidLib = null;
+function readMermaidVendorLib() {
+  if (cachedMermaidLib !== null) return cachedMermaidLib;
+  try {
+    cachedMermaidLib = fs.readFileSync(path.join(__dirname, '..', 'vendor', 'mermaid.min.js'), 'utf8');
+  } catch {
+    cachedMermaidLib = ''; // vendor file missing (e.g. a stripped install) — degrade, never throw
+  }
+  return cachedMermaidLib;
+}
+
+// Mermaid node ids must be valid identifiers; agent `name` is free-ish text
+// (kebab-case in practice, but not guaranteed), so it's sanitized into a
+// safe id and the human-readable text goes in the node's label instead.
+function mermaidNodeId(name) {
+  return 'agent_' + String(name).replace(/[^A-Za-z0-9_]/g, '_');
+}
+
+// Builds Mermaid flowchart SOURCE TEXT (not HTML) from the synthesis
+// result. This is embedded inside an `esc()`-escaped <pre class="mermaid">
+// element below — the browser's `.textContent` decodes it back to the raw
+// source Mermaid expects, the same pattern already used for the raw-JSON
+// debug dump in this file.
+function buildMermaidSource(synthesis) {
+  const agents = Array.isArray(synthesis.agents) ? synthesis.agents : [];
+  const edges = Array.isArray(synthesis.edges) ? synthesis.edges : [];
+  const lines = ['flowchart TD'];
+  for (const a of agents) {
+    const label = `${a.symbolicName || a.name}<br/>${(a.whatItDoes || '').replace(/"/g, "'")}`.replace(/"/g, "'");
+    lines.push(`  ${mermaidNodeId(a.name)}["${label}"]`);
+  }
+  for (const e of edges) {
+    lines.push(`  ${mermaidNodeId(e.from)} --> ${mermaidNodeId(e.to)}`);
+  }
+  return lines.join('\n');
+}
+
+function diagramSection(report, t) {
+  const synthesis = report.agentSynthesis;
+  const hasSynthesis = synthesis && Array.isArray(synthesis.agents) && synthesis.agents.length > 0;
+
+  if (!hasSynthesis) {
+    return `<section>
+    <div class="h2">${esc(t.html.diagramHeading)}</div>
+    <div class="card diagram-fallback">${esc(t.html.diagramFallbackNote)}</div>
+  </section>`;
+  }
+
+  const mermaidSource = buildMermaidSource(synthesis);
+  const mermaidLib = readMermaidVendorLib();
+  return `<section>
+    <div class="h2">${esc(t.html.diagramHeading)}</div>
+    <div class="card diagram-wrap">
+      <pre class="mermaid">${esc(mermaidSource)}</pre>
+    </div>
+  </section>
+  <script>${mermaidLib}</script>
+  <script>
+    if (window.mermaid) { mermaid.initialize({ startOnLoad: true, securityLevel: 'strict' }); }
+  </script>`;
 }
 
 function toolRow(tool, t, lang) {
@@ -409,6 +509,16 @@ function renderHtml(report, maturity, lang) {
   .org-meta{display:flex;flex-wrap:wrap;gap:6px}
   .chip.model{background:var(--track);color:var(--muted);font-family:var(--font-mono)}
 
+  /* ---- Project technologies (talents-ai-score, ADR-012) ---- */
+  .tech-empty{padding:18px 20px;color:var(--faint);font-size:13px}
+  .chips-card{padding:16px 18px}
+
+  /* ---- Agent diagram: Mermaid (talents-ai-score, ADR-010/011) ---- */
+  .diagram-fallback{padding:18px 20px;color:var(--faint);font-size:13px}
+  .diagram-wrap{padding:18px 20px;overflow:auto}
+  pre.mermaid{background:transparent;border:0;padding:0;margin:0;
+    color:inherit;font-family:inherit;white-space:normal;max-height:none}
+
   /* ---- Next step (lime accent = momentum) ---- */
   .next{padding:22px 24px;border-left:4px solid var(--accent-lime);
     display:flex;gap:16px;align-items:flex-start}
@@ -500,7 +610,11 @@ function renderHtml(report, maturity, lang) {
     </div>
   </section>
 
+  ${technologiesSection(report, t)}
+
   ${orgChartSection(report, t)}
+
+  ${diagramSection(report, t)}
 
   <section>
     <div class="card next">

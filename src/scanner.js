@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { detectors } = require('./detectors');
 const { parseAgentOrgChart } = require('./agent-org-chart');
+const { detectTechnologies } = require('./tech-detector');
 
 /* ---------- existence-check utilities (existence only, never content) ---------- */
 
@@ -384,6 +385,13 @@ function scan(options = {}) {
   // only (name, wired tools, model, hierarchy). Never descriptions/prompts.
   const agents = parseAgentOrgChart(root);
 
+  // Deterministic (no-LLM) project technologies (ADR-012): dependency
+  // manifest package/module NAMES only (package.json, requirements.txt,
+  // go.mod, pyproject.toml) — never business/application code. Always
+  // shown locally; associated with Shakers' Skill catalog server-side, only
+  // at persistence time (with consent).
+  const technologies = detectTechnologies(root);
+
   // Stable per-machine anonymous id: hash of hostname + user. Not reversible
   // to personal data and only useful for deduplicating submissions, not for
   // identifying anyone.
@@ -418,6 +426,8 @@ function scan(options = {}) {
     // Agent org chart (ADR-009): structure + names only, never content.
     agents,
     agentCounts: agentOrgChartCounts(root, agents.length),
+    // Project technologies (ADR-012): dependency manifest names only.
+    technologies,
   };
 }
 

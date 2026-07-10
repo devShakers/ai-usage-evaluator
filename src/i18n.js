@@ -102,6 +102,14 @@ const catalogs = {
       orgChartHeading: 'Organigrama de agentes',
       orgChartEmpty: 'No se han detectado agentes de IA configurados (p. ej. .claude/agents/).',
       orgChartModelLabel: 'modelo',
+      // Agent diagram (talents-ai-score, ADR-010/ADR-011): rendered with
+      // Mermaid when the (ephemeral) synthesis call succeeds; falls back to
+      // the deterministic org chart above otherwise.
+      diagramHeading: 'Diagrama de agentes',
+      diagramFallbackNote: 'Síntesis no disponible en esta ejecución: mostrando el organigrama determinista.',
+      // Project technologies (talents-ai-score, ADR-012)
+      technologiesHeading: 'Tecnologías del proyecto',
+      technologiesEmpty: 'No se detectaron manifiestos de dependencias (package.json, requirements.txt, go.mod, pyproject.toml).',
       privacyNote:
         'Este informe se ha generado en local. Solo registra qué herramientas '
         + 'existen, cuántas configuraciones tienes y tu nivel: nunca el contenido '
@@ -116,44 +124,33 @@ const catalogs = {
       tempDashboard: (file) => `Dashboard temporal: ${file}`,
     },
     consent: {
-      disclosureTitle: 'Antes de continuar: qué pasa con tu informe',
-      sendsHeading: 'SI ACEPTAS, esto se envía:',
-      sendsList: [
-        'Nivel (0-4) y puntuación (0-100)',
-        'Categorías y lista de herramientas detectadas',
-        'Conteos y booleanos derivados (profundidad de configuración)',
-        'Recencia de configuración (fecha de última modificación de ficheros de setup, no de tu actividad)',
-        'El organigrama de tus agentes (nombres/roles, herramientas cableadas, modelo y jerarquía) y conteos de tu setup de IA',
-        'El correo que introduzcas (para vincular el informe a tu perfil de Talent, si existe)',
-      ],
-      neverSendsHeading: 'NUNCA se envía:',
-      neverSendsList: [
-        'El contenido de tus ficheros',
-        'Rutas absolutas de tu sistema',
-        'Variables de entorno ni credenciales',
-        'Historiales de shell ni logs de herramientas',
-      ],
-      purpose: 'Propósito: entender la adopción de IA en el pool de talento de Shakers.',
-      indicativeNotice: 'Este dato es indicativo, no verificado (el correo no se comprueba).',
-      revocableNotice: 'Es revocable en cualquier momento con: ai-footprint --consent-revoke',
-      legalPlaceholder: '[PENDIENTE DE REVISIÓN LEGAL: texto de aviso RGPD a redactar por un experto legal/laboral antes de activar el envío contra talentos reales — ADR-007]',
-      consentQuestion: '¿Aceptas enviar este informe? (s/n):',
+      // talents-ai-score, ADR-011: the disclosure wall (what's sent / never
+      // sent, itemized) is RETIRED from the CLI — that content now lives in
+      // the repo's README. The informe ALWAYS shows locally, unconditionally.
+      // What's left is this short, one-time question about PERSISTING
+      // (saving) the already-shown report in Shakers.
+      persistIntro:
+        'Este informe se ha generado y mostrado en tu equipo, siempre. '
+        + 'Guardarlo en Shakers es opcional y revocable en cualquier momento '
+        + '(ai-footprint --consent-revoke). Dato indicativo, no verificado. '
+        + 'Consulta el README de este repositorio para más detalle.',
+      persistQuestion: '¿Guardar este informe en Shakers? (s/n):',
       invalidAnswer: 'Respuesta no reconocida. Responde "s" (sí) o "n" (no).',
       emailPrompt: 'Introduce tu correo:',
       invalidEmail: 'Correo no válido, inténtalo de nuevo.',
       notObtained: 'No se ha podido registrar tu respuesta; se te volverá a preguntar la próxima vez.',
-      deniedSaved: 'Entendido, no se enviará nada. Puedes cambiar de opinión más adelante volviendo a ejecutar el comando.',
-      grantedSaved: (email) => `Gracias. A partir de ahora tu informe se enviará automáticamente (correo: ${email}, máx. 1 vez por hora).`,
+      deniedSaved: 'Entendido, no se guardará nada. Puedes cambiar de opinión más adelante volviendo a ejecutar el comando.',
+      grantedSaved: (email) => `Gracias. A partir de ahora este informe se guardará automáticamente en Shakers (correo: ${email}, máx. 1 vez por hora).`,
       status: {
-        heading: 'Estado del consentimiento',
+        heading: 'Estado del consentimiento (guardado en Shakers)',
         decisionGranted: 'Decisión: concedido (granted)',
         decisionDenied: 'Decisión: rechazado (denied)',
         decisionNone: 'Decisión: sin decisión todavía',
         email: (value) => `Correo: ${value || '(sin correo)'}`,
-        lastSentAt: (value) => `Último envío: ${value || '(nunca)'}`,
+        lastSentAt: (value) => `Último guardado: ${value || '(nunca)'}`,
       },
-      revoked: 'Consentimiento revocado. No se enviarán más informes automáticamente.',
-      emailChanged: (email) => `Correo actualizado a ${email}. Se usará en el próximo envío.`,
+      revoked: 'Consentimiento revocado. No se guardará nada más automáticamente.',
+      emailChanged: (email) => `Correo actualizado a ${email}. Se usará en el próximo guardado.`,
       emailInvalidCli: 'Correo no válido. Uso: ai-footprint --consent-email tu@correo.com',
     },
   },
@@ -224,6 +221,14 @@ const catalogs = {
       orgChartHeading: 'Agent org chart',
       orgChartEmpty: 'No configured AI agents detected (e.g. .claude/agents/).',
       orgChartModelLabel: 'model',
+      // Agent diagram (talents-ai-score, ADR-010/ADR-011): rendered with
+      // Mermaid when the (ephemeral) synthesis call succeeds; falls back to
+      // the deterministic org chart above otherwise.
+      diagramHeading: 'Agent diagram',
+      diagramFallbackNote: 'Synthesis unavailable this run: showing the deterministic org chart instead.',
+      // Project technologies (talents-ai-score, ADR-012)
+      technologiesHeading: 'Project technologies',
+      technologiesEmpty: 'No dependency manifests detected (package.json, requirements.txt, go.mod, pyproject.toml).',
       privacyNote:
         'This report was generated locally. It only records which tools exist, '
         + 'how many configurations you have and your level: never the content of '
@@ -238,44 +243,33 @@ const catalogs = {
       tempDashboard: (file) => `Temporary dashboard: ${file}`,
     },
     consent: {
-      disclosureTitle: 'Before continuing: what happens with your report',
-      sendsHeading: 'IF YOU ACCEPT, this is sent:',
-      sendsList: [
-        'Level (0-4) and score (0-100)',
-        'Categories and the list of detected tools',
-        'Derived counts and booleans (configuration depth)',
-        'Setup recency (last-modified date of setup config files, not of your activity)',
-        'The org chart of your agents (names/roles, wired tools, model and hierarchy) and counts of your AI setup',
-        'The email you type in (to link the report to your Talent profile, if one exists)',
-      ],
-      neverSendsHeading: 'NEVER sent:',
-      neverSendsList: [
-        'The content of your files',
-        'Absolute paths on your system',
-        'Environment variables or credentials',
-        'Shell history or tool logs',
-      ],
-      purpose: 'Purpose: understand AI adoption across the Shakers talent pool.',
-      indicativeNotice: 'This data is indicative, not verified (the email is not checked).',
-      revocableNotice: 'It is revocable at any time with: ai-footprint --consent-revoke',
-      legalPlaceholder: '[PENDING LEGAL REVIEW: GDPR notice text to be drafted by a legal/labor expert before enabling sending against real talents — ADR-007]',
-      consentQuestion: 'Do you accept sending this report? (y/n):',
+      // talents-ai-score, ADR-011: the disclosure wall (itemized sends /
+      // never sends) is RETIRED from the CLI — that content now lives in
+      // the repo's README. The report ALWAYS shows locally, unconditionally.
+      // What's left is this short, one-time question about PERSISTING
+      // (saving) the already-shown report in Shakers.
+      persistIntro:
+        'This report has already been generated and shown on your machine, '
+        + 'always. Saving it in Shakers is optional and revocable at any '
+        + 'time (ai-footprint --consent-revoke). Indicative data, not '
+        + 'verified. See this repository\'s README for more detail.',
+      persistQuestion: 'Save this report in Shakers? (y/n):',
       invalidAnswer: 'Answer not recognized. Reply "y" (yes) or "n" (no).',
       emailPrompt: 'Enter your email:',
       invalidEmail: 'Invalid email, try again.',
       notObtained: "Couldn't record your answer; you'll be asked again next time.",
-      deniedSaved: 'Understood, nothing will be sent. You can change your mind later by running the command again.',
-      grantedSaved: (email) => `Thanks. From now on your report will be sent automatically (email: ${email}, max. once per hour).`,
+      deniedSaved: 'Understood, nothing will be saved. You can change your mind later by running the command again.',
+      grantedSaved: (email) => `Thanks. From now on this report will be saved in Shakers automatically (email: ${email}, max. once per hour).`,
       status: {
-        heading: 'Consent status',
+        heading: 'Consent status (saved in Shakers)',
         decisionGranted: 'Decision: granted',
         decisionDenied: 'Decision: denied',
         decisionNone: 'Decision: no decision yet',
         email: (value) => `Email: ${value || '(none)'}`,
-        lastSentAt: (value) => `Last sent: ${value || '(never)'}`,
+        lastSentAt: (value) => `Last saved: ${value || '(never)'}`,
       },
-      revoked: 'Consent revoked. No more reports will be sent automatically.',
-      emailChanged: (email) => `Email updated to ${email}. It will be used on the next send.`,
+      revoked: 'Consent revoked. Nothing will be saved automatically anymore.',
+      emailChanged: (email) => `Email updated to ${email}. It will be used on the next save.`,
       emailInvalidCli: 'Invalid email. Usage: ai-footprint --consent-email you@example.com',
     },
   },

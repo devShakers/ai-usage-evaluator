@@ -158,9 +158,62 @@ test('derivePayload: whitelist, email is never part of the payload', () => {
   assert.deepEqual(Object.keys(payload).sort(), [
     'anonId', 'categories', 'generatedAt', 'level', 'levelName',
     'platform', 'schemaVersion', 'score', 'tools', 'totalDetected',
-    'agents', 'agentCounts',
+    'agents', 'agentCounts', 'technologies', 'agentSynthesis',
   ].sort());
   assert.equal('email' in payload, false);
+});
+
+// --- technologies (talents-ai-score, ADR-012) --------------------------------
+
+test('derivePayload: includes technologies detected from dependency manifests', () => {
+  const reportWithTech = { ...REPORT, technologies: ['react', 'typescript'] };
+  const payload = derivePayload(reportWithTech, MATURITY);
+  assert.deepEqual(payload.technologies, ['react', 'typescript']);
+});
+
+test('derivePayload: missing report.technologies (older report) defaults to [], never throws', () => {
+  const payload = derivePayload(REPORT, MATURITY);
+  assert.deepEqual(payload.technologies, []);
+});
+
+// --- agentSynthesis (talents-ai-score, ADR-010/ADR-011) ----------------------
+
+test('derivePayload: includes the agent-synthesis RESULT, never the raw description sent to the endpoint', () => {
+  const reportWithSynthesis = {
+    ...REPORT,
+    agentSynthesis: {
+      agents: [{ name: 'backend-developer', symbolicName: 'The Builder', whatItDoes: 'Writes backend code' }],
+      edges: [{ from: 'orchestrator', to: 'backend-developer' }],
+    },
+  };
+  const payload = derivePayload(reportWithSynthesis, MATURITY);
+  assert.deepEqual(payload.agentSynthesis, [
+    { name: 'backend-developer', symbolicName: 'The Builder', whatItDoes: 'Writes backend code' },
+  ]);
+  // Edges are a rendering concern only — never persisted.
+  assert.equal('edges' in payload, false);
+});
+
+test('derivePayload: re-applies the whitelist per synthesized agent — an unexpected extra field (e.g. raw description) never reaches the payload', () => {
+  const reportWithLeakySynthesis = {
+    ...REPORT,
+    agentSynthesis: {
+      agents: [{
+        name: 'leaky-agent',
+        symbolicName: 'X',
+        whatItDoes: 'Y',
+        description: 'raw prompt text that must never be persisted',
+      }],
+    },
+  };
+  const payload = derivePayload(reportWithLeakySynthesis, MATURITY);
+  assert.deepEqual(Object.keys(payload.agentSynthesis[0]).sort(), ['name', 'symbolicName', 'whatItDoes'].sort());
+  assert.equal(JSON.stringify(payload).includes('raw prompt text'), false);
+});
+
+test('derivePayload: no agentSynthesis attached (fallback run, synthesis failed) -> empty array', () => {
+  const payload = derivePayload(REPORT, MATURITY);
+  assert.deepEqual(payload.agentSynthesis, []);
 });
 
 // --- agent org chart (talents-ai-score, ADR-009) -----------------------------

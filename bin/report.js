@@ -17,8 +17,11 @@ const {
   revokeConsent,
   setEmail,
 } = require('../src/share');
-const { runDisclosureFlow } = require('../src/consent-flow');
+const { runConsentPrompt } = require('../src/consent-flow');
 const { createStdinAsk } = require('../src/stdin-ask');
+const { parseAgentDescriptions } = require('../src/agent-org-chart');
+const { buildSynthesisRequest, requestAgentSynthesis } = require('../src/agent-synthesis');
+const { getSynthesisEndpoint } = require('../src/config');
 
 function openInBrowser(file) {
   const cmd =
@@ -43,11 +46,11 @@ Opciones:
       --root DIR      Escanea DIR en vez del directorio actual
   -h, --help          Muestra esta ayuda
 
-El informe se genera y se muestra SIEMPRE en tu equipo. La primera vez que
-ejecutas la herramienta se te pregunta si aceptas enviarlo (con tu correo)
-a la plataforma; puedes aceptar o rechazar, y solo se te pregunta una vez.
-Gestiona esa decisión con: --consent-status, --consent-revoke,
---consent-email <correo>.
+El informe se genera y se muestra SIEMPRE en tu equipo, sin condición. La
+primera vez que ejecutas la herramienta, DESPUÉS de mostrarte el informe, se
+te pregunta si quieres GUARDARLO en Shakers (con tu correo); puedes aceptar
+o rechazar, y solo se te pregunta una vez. Gestiona esa decisión con:
+--consent-status, --consent-revoke, --consent-email <correo>.
 `;
 }
 
@@ -82,8 +85,9 @@ function doConsentEmail(newEmail, catalog) {
   }
 }
 
-// Automatic, silent sending once consent is `granted` (ADR-007). Must never
-// break the local run, no matter what.
+// Automatic, silent PERSISTING once consent is `granted` (ADR-007, gating
+// revised by ADR-011: consent controls persistence only, never what's
+// shown). Must never break the local run, no matter what.
 async function maybeAutoShare(report, maturity) {
   try {
     await autoShare(report, maturity);
@@ -93,6 +97,27 @@ async function maybeAutoShare(report, maturity) {
     // errors of the local run.
   } catch {
     // Must never break the local report.
+  }
+}
+
+// Ephemeral agent-synthesis call (talents-ai-score, ADR-010/ADR-011): runs
+// EVERY execution, regardless of consent — it's what makes "always show the
+// diagram" possible. Never throws, never hangs the run: any failure
+// (no endpoint configured, network error, timeout, invalid response) is
+// treated as "no synthesis this run" and the report/render layer falls back
+// to the deterministic org chart (ADR-009). Descriptions are scrubbed
+// before they ever leave the machine (src/agent-synthesis.js#scrubSecrets).
+async function maybeSynthesizeAgents(report, root) {
+  if (!Array.isArray(report.agents) || report.agents.length === 0) return null;
+  const endpoint = getSynthesisEndpoint();
+  if (!endpoint) return null;
+
+  try {
+    const descriptions = parseAgentDescriptions(root);
+    const requestBody = buildSynthesisRequest(report.agents, descriptions);
+    return await requestAgentSynthesis(requestBody, { endpoint });
+  } catch {
+    return null; // never breaks the local report — falls back to the org chart
   }
 }
 
@@ -120,22 +145,19 @@ async function main() {
     return;
   }
 
-  // Disclosure + consent + email: shown ONCE, before any scanning, only if
-  // there's no decision persisted yet (talents-ai-score, ADR-007, issue
-  // 006). Once a decision exists (granted or denied), a normal run never
-  // interrupts with this again.
-  const state = loadConsentState();
-  if (!getConsentDecision(state)) {
-    const ask = createStdinAsk();
-    try {
-      await runDisclosureFlow({ ask, catalog });
-    } finally {
-      ask.close();
-    }
-  }
-
-  const report = scan({ root: opts.root });
+  // talents-ai-score, ADR-011: the report is ALWAYS computed and shown,
+  // unconditionally — no gate, no disclosure wall before scanning. Consent
+  // (asked further below, AFTER the report is on screen) governs ONLY
+  // whether it gets persisted in Shakers.
+  const root = opts.root;
+  const report = scan({ root });
   const maturity = classify(report);
+
+  // Ephemeral diagram synthesis (ADR-010/011): every run, independent of
+  // consent. Attaches `report.agentSynthesis` only on success; on any
+  // failure the render layer falls back to the deterministic org chart.
+  const synthesis = await maybeSynthesizeAgents(report, root || process.cwd());
+  if (synthesis) report.agentSynthesis = synthesis;
 
   if (opts.json) {
     process.stdout.write(JSON.stringify({ report, maturity }, null, 2) + '\n');
@@ -158,6 +180,21 @@ async function main() {
     fs.writeFileSync(tmp, html);
     openInBrowser(tmp);
     process.stdout.write(`  ${catalog.cli.tempDashboard(tmp)}\n\n`);
+  }
+
+  // Consent-to-PERSIST prompt: shown ONCE, AFTER the report is already on
+  // screen, only if there's no decision persisted yet (talents-ai-score,
+  // ADR-011 — revises ADR-007/issue 006's pre-scan disclosure wall). Once a
+  // decision exists (granted or denied), a normal run never interrupts with
+  // this again.
+  const state = loadConsentState();
+  if (!getConsentDecision(state)) {
+    const ask = createStdinAsk();
+    try {
+      await runConsentPrompt({ ask, catalog });
+    } finally {
+      ask.close();
+    }
   }
 
   // Automatic sending, always at the end and after seeing the local report.

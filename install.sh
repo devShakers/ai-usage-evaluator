@@ -46,6 +46,13 @@ FILES=(
   "package.json"
   "README.md"
   "bin/report.js"
+  # talents-ai-score, ADR-010/011: vendored, verbatim-inlined-into-report.html
+  # Mermaid build (vendor/README.md). NOT under src/, so the discovery loop
+  # below never picks it up on its own — listed explicitly here, same reason
+  # every FILES entry is: miss it and the installed CLI silently renders
+  # agent diagrams with no Mermaid loaded (readMermaidVendorLib() degrades
+  # to '' rather than throwing, so this would be a silent bug, not a crash).
+  "vendor/mermaid.min.js"
 )
 
 say()  { printf "  %b\n" "$1"; }
