@@ -159,8 +159,128 @@ test('derivePayload: whitelist, email is never part of the payload', () => {
     'anonId', 'categories', 'generatedAt', 'level', 'levelName',
     'platform', 'schemaVersion', 'score', 'tools', 'totalDetected',
     'agents', 'agentCounts', 'technologies', 'agentSynthesis',
+    'tier', 'tierKey', 'band', 'mcp', 'memory', 'automations', 'browserTools',
   ].sort());
   assert.equal('email' in payload, false);
+});
+
+// --- tier/band (talents-ai-score, issue 019/022) -----------------------------
+
+test('derivePayload: includes tier, tierKey and band from maturity', () => {
+  const maturityWithTier = { ...MATURITY, tier: 5, tierKey: 'T5' };
+  const payload = derivePayload(REPORT, maturityWithTier);
+  assert.equal(payload.tier, 5);
+  assert.equal(payload.tierKey, 'T5');
+  assert.equal(payload.band, maturityWithTier.level); // band === the 0-4 band (level)
+});
+
+test('derivePayload: missing tier/tierKey on maturity (older shape) defaults gracefully, never throws', () => {
+  const payload = derivePayload(REPORT, MATURITY); // MATURITY fixture has no tier/tierKey
+  assert.equal(payload.tier, null);
+  assert.equal(payload.tierKey, null);
+});
+
+// --- mcp: countsByCategory + total ONLY, never individual server names ------
+
+test('derivePayload: mcp payload has ONLY countsByCategory + total — never the individual server names', () => {
+  const reportWithMcp = {
+    ...REPORT,
+    mcp: {
+      servers: [{ name: 'postgres', category: 'data' }, { name: 'slack', category: 'comms' }],
+      countsByCategory: { data: 1, comms: 1, dev: 0, browser: 0, other: 0 },
+      total: 2,
+    },
+  };
+  const payload = derivePayload(reportWithMcp, MATURITY);
+  assert.deepEqual(Object.keys(payload.mcp).sort(), ['countsByCategory', 'total'].sort());
+  assert.deepEqual(payload.mcp.countsByCategory, { data: 1, comms: 1, dev: 0, browser: 0, other: 0 });
+  assert.equal(payload.mcp.total, 2);
+  assert.equal(JSON.stringify(payload).includes('postgres'), false);
+  assert.equal(JSON.stringify(payload).includes('slack'), false);
+});
+
+test('derivePayload: missing report.mcp defaults to zeroed counts, never throws', () => {
+  const payload = derivePayload(REPORT, MATURITY);
+  assert.deepEqual(payload.mcp.countsByCategory, { data: 0, comms: 0, dev: 0, browser: 0, other: 0 });
+  assert.equal(payload.mcp.total, 0);
+});
+
+// --- memory: totalImports/maxDepth/layered ONLY, never per-file details -----
+
+test('derivePayload: memory payload has ONLY totalImports/maxDepth/layered — never file ids or sizes', () => {
+  const reportWithMemory = {
+    ...REPORT,
+    memory: {
+      files: [{ id: 'CLAUDE.md', sizeBytes: 1234, sections: 3, imports: 2, depth: 2 }],
+      totalImports: 2,
+      maxDepth: 2,
+      layered: false,
+    },
+  };
+  const payload = derivePayload(reportWithMemory, MATURITY);
+  assert.deepEqual(Object.keys(payload.memory).sort(), ['totalImports', 'maxDepth', 'layered'].sort());
+  assert.equal(payload.memory.totalImports, 2);
+  assert.equal(payload.memory.layered, false);
+  assert.equal(JSON.stringify(payload).includes('CLAUDE.md'), false);
+  assert.equal(JSON.stringify(payload).includes('sizeBytes'), false);
+});
+
+// --- automations: counts/booleans + inspected per scheduler -----------------
+
+test('derivePayload: automations payload mirrors scripts/jsonPiping/schedulers as derived counts+booleans only', () => {
+  const reportWithAutomations = {
+    ...REPORT,
+    automations: {
+      scripts: { npm: 2, shell: 1 },
+      jsonPiping: 1,
+      schedulers: {
+        cron: { inspected: true, matches: 1 },
+        launchd: { inspected: false, matches: 0 },
+        pm2: { inspected: true, matches: 0 },
+        systemd: { inspected: false, matches: 0 },
+      },
+    },
+  };
+  const payload = derivePayload(reportWithAutomations, MATURITY);
+  assert.deepEqual(payload.automations, reportWithAutomations.automations);
+});
+
+test('derivePayload: missing report.automations defaults to a well-shaped zeroed object, never throws', () => {
+  const payload = derivePayload(REPORT, MATURITY);
+  assert.equal(payload.automations.scripts.npm, 0);
+  assert.equal(payload.automations.schedulers.cron.inspected, false);
+});
+
+// --- browserTools: detected/count/via -----------------------------------------
+
+test('derivePayload: browserTools payload mirrors detected/count/via (names already whitelisted upstream)', () => {
+  const reportWithBrowser = {
+    ...REPORT,
+    browserTools: { detected: true, count: 2, via: { dependencies: ['playwright'], mcp: ['browserbase'] } },
+  };
+  const payload = derivePayload(reportWithBrowser, MATURITY);
+  assert.deepEqual(payload.browserTools, reportWithBrowser.browserTools);
+});
+
+test('derivePayload: missing report.browserTools defaults gracefully, never throws', () => {
+  const payload = derivePayload(REPORT, MATURITY);
+  assert.equal(payload.browserTools.detected, false);
+  assert.deepEqual(payload.browserTools.via, { dependencies: [], mcp: [] });
+});
+
+// --- never raw content anywhere in the new fields ----------------------------
+
+test('derivePayload: never leaks raw content across any of the new fields, even if the report carries extra data', () => {
+  const secretMarker = 'PROJECT-CODENAME-DO-NOT-LEAK';
+  const reportWithEverything = {
+    ...REPORT,
+    mcp: { servers: [{ name: secretMarker, category: 'other' }], countsByCategory: { data: 0, comms: 0, dev: 0, browser: 0, other: 1 }, total: 1 },
+    memory: { files: [{ id: secretMarker, sizeBytes: 1, sections: 1, imports: 0, depth: 1 }], totalImports: 0, maxDepth: 1, layered: false },
+    automations: { scripts: { npm: 0, shell: 0 }, jsonPiping: 0, schedulers: { cron: { inspected: false, matches: 0 }, launchd: { inspected: false, matches: 0 }, pm2: { inspected: false, matches: 0 }, systemd: { inspected: false, matches: 0 } } },
+    browserTools: { detected: false, count: 0, via: { dependencies: [], mcp: [] } },
+  };
+  const payload = derivePayload(reportWithEverything, MATURITY);
+  assert.equal(JSON.stringify(payload).includes(secretMarker), false);
 });
 
 // --- technologies (talents-ai-score, ADR-012) --------------------------------

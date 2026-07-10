@@ -133,3 +133,34 @@ test('runConsentPrompt: shows the short persist-intro + question, no itemized di
   assert.match(catalogEn.consent.persistIntro, /revocable/i);
   assert.equal('sendsList' in catalogEn.consent, false);
 });
+
+// --- issue 022: consent text reflects the level-up framework's expanded scope ---
+// (tier/band + the new detector signals), still short (no wall), and
+// explicit that only DERIVED signals are saved, never raw content — model
+// ADR-011 unchanged (show always / persist only with consent).
+
+test('persistIntro (es): mentions the expanded scope (tier/level + structured signals) and explicitly never raw content', () => {
+  const text = catalogEs.consent.persistIntro;
+  assert.match(text, /nivel|tier/i);
+  assert.match(text, /señales (estructuradas|derivadas)/i);
+  assert.match(text, /nunca.*(contenido|ficheros|prompts)/i);
+  // Still short: not an itemized wall (issue 022: "sin muralla ni flags").
+  assert.ok(text.length < 700, `expected a short intro, got ${text.length} chars`);
+});
+
+test('persistIntro (en): mentions the expanded scope (tier/level + structured signals) and explicitly never raw content', () => {
+  const catalogEn = getCatalog('en');
+  const text = catalogEn.consent.persistIntro;
+  assert.match(text, /level|tier/i);
+  assert.match(text, /structured signals/i);
+  assert.match(text, /never.*(content|files|prompts)/i);
+  assert.ok(text.length < 700, `expected a short intro, got ${text.length} chars`);
+});
+
+test('persistIntro: still opt-in/optional and revocable in both languages (ADR-011 model unchanged)', () => {
+  assert.match(catalogEs.consent.persistIntro, /opcional/i);
+  assert.match(catalogEs.consent.persistIntro, /revocable/i);
+  const catalogEn = getCatalog('en');
+  assert.match(catalogEn.consent.persistIntro, /optional/i);
+  assert.match(catalogEn.consent.persistIntro, /revocable/i);
+});

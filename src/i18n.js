@@ -156,11 +156,22 @@ const catalogs = {
       // the repo's README. The informe ALWAYS shows locally, unconditionally.
       // What's left is this short, one-time question about PERSISTING
       // (saving) the already-shown report in Shakers.
+      //
+      // talents-ai-score, issue 022 (ADR-013/014): updated for the level-up
+      // framework's expanded scope — persisting now also saves your tier/
+      // level and structured signals across every detected category (MCP
+      // type, memory structure, automations, browser tools, tech→Skill
+      // association), never raw content. Still short (no itemized wall,
+      // sin flags): the README covers the detail (ADR-011's disclosure
+      // model is unchanged).
       persistIntro:
         'Este informe se ha generado y mostrado en tu equipo, siempre. '
         + 'Guardarlo en Shakers es opcional y revocable en cualquier momento '
-        + '(ai-footprint --consent-revoke). Dato indicativo, no verificado. '
-        + 'Consulta el README de este repositorio para más detalle.',
+        + '(ai-footprint --consent-revoke): guarda tu nivel/tier y señales '
+        + 'estructuradas derivadas (herramientas, MCP, memoria, '
+        + 'automatizaciones, agentes, tecnologías) — nunca el contenido de '
+        + 'tus ficheros, prompts, rutas ni credenciales. Dato indicativo, no '
+        + 'verificado. Consulta el README de este repositorio para más detalle.',
       persistQuestion: '¿Guardar este informe en Shakers? (s/n):',
       invalidAnswer: 'Respuesta no reconocida. Responde "s" (sí) o "n" (no).',
       emailPrompt: 'Introduce tu correo:',
@@ -298,10 +309,17 @@ const catalogs = {
       // the repo's README. The report ALWAYS shows locally, unconditionally.
       // What's left is this short, one-time question about PERSISTING
       // (saving) the already-shown report in Shakers.
+      //
+      // talents-ai-score, issue 022 (ADR-013/014): updated for the level-up
+      // framework's expanded scope — see the Spanish catalog's comment for
+      // the full rationale (same content, same invariants).
       persistIntro:
         'This report has already been generated and shown on your machine, '
         + 'always. Saving it in Shakers is optional and revocable at any '
-        + 'time (ai-footprint --consent-revoke). Indicative data, not '
+        + "time (ai-footprint --consent-revoke): it saves your level/tier and "
+        + 'structured signals derived across categories (tools, MCP, memory, '
+        + 'automations, agents, technologies) — never the content of your '
+        + 'files, prompts, paths or credentials. Indicative data, not '
         + 'verified. See this repository\'s README for more detail.',
       persistQuestion: 'Save this report in Shakers? (y/n):',
       invalidAnswer: 'Answer not recognized. Reply "y" (yes) or "n" (no).',
