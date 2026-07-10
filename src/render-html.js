@@ -527,18 +527,31 @@ function renderHtml(report, maturity, lang) {
     font-weight:600;letter-spacing:.04em;text-transform:uppercase;
     color:var(--secondary-fg);background:var(--secondary);
     padding:8px 18px;border-radius:var(--r-full);margin-bottom:18px}
-  .agent-cards-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
-    gap:18px;align-items:start}
-  .agent-node{display:flex;flex-direction:column;gap:16px;min-width:0}
+  /* Width/depth decoupling fix: cards were collapsing (title wrapping,
+     one-word-per-line text, chips stacking) the deeper they nested, because
+     each level's indentation (.agent-children's margin/padding-left) ate
+     into a card width that had no floor of its own (.agent-node had
+     min-width:0 and no explicit size, so it just shrank to whatever space
+     indentation left behind). Fix: every .agent-node gets a FIXED width/
+     flex-basis — indentation offsets the block sideways, it never resizes
+     the card inside it. Both the root-level layout and the nested
+     children layout are flex (not grid) precisely so this single fixed
+     basis applies uniformly at every depth; the tree container scrolls
+     horizontally instead of squeezing cards when it runs out of room. */
+  .agent-tree{overflow-x:auto;padding-bottom:6px}
+  .agent-cards-grid{display:flex;flex-wrap:wrap;align-items:flex-start;gap:18px}
+  .agent-node{display:flex;flex-direction:column;gap:16px;
+    flex:0 0 328px;width:328px}
   .agent-children{position:relative;margin-left:28px;padding-left:24px;
     border-left:2px dashed var(--border);display:flex;flex-direction:column;
-    gap:16px}
+    align-items:flex-start;gap:16px}
   .agent-children .agent-node{position:relative}
   .agent-children .agent-node::before{content:'';position:absolute;
     left:-24px;top:26px;width:24px;height:2px;background:var(--border)}
   .agent-card{background:var(--surface);border:1px solid var(--border);
     border-radius:var(--r-lg);box-shadow:var(--shadow-sm);
-    padding:20px 22px;display:flex;flex-direction:column;gap:12px}
+    padding:20px 22px;display:flex;flex-direction:column;gap:12px;
+    width:100%;box-sizing:border-box}
   .agent-card-head{display:flex;align-items:flex-start;justify-content:space-between;
     gap:10px}
   .agent-title{font-size:18px;font-weight:700;letter-spacing:-.01em;line-height:1.3}

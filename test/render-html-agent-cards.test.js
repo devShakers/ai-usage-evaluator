@@ -178,6 +178,66 @@ test('renderHtml: multi-level explicit nesting (3 levels deep) recurses correctl
   assert.equal(childrenWraps, 2);
 });
 
+// --- card width stays stable regardless of nesting depth ---------------------
+// The bug: deeper cards kept shrinking because .agent-children's indentation
+// (margin/padding-left) ate into a card that had no width floor of its own,
+// so title/phrase/chips got squeezed into a narrower and narrower box the
+// deeper the tree went. Fix: every .agent-node gets a fixed width/flex-basis
+// (indentation offsets the block, never resizes it), and the tree container
+// scrolls horizontally instead of squeezing cards when it runs out of room.
+
+test('CSS: .agent-node has a fixed width/flex-basis, decoupled from nesting depth', () => {
+  const html = renderHtml({ ...BASE_REPORT, agents: [{ name: 'a', tools: [], model: null, parent: null }] }, MATURITY, 'es');
+  assert.match(html, /\.agent-node\{[^}]*flex:0 0 328px/);
+  assert.match(html, /\.agent-node\{[^}]*width:328px/);
+  // Not shrinkable to 0 (the old bug's root cause).
+  assert.equal(/\.agent-node\{[^}]*min-width:0/.test(html), false);
+});
+
+test('CSS: the tree container scrolls horizontally instead of squeezing cards when it runs out of room', () => {
+  const html = renderHtml({ ...BASE_REPORT, agents: [{ name: 'a', tools: [], model: null, parent: null }] }, MATURITY, 'es');
+  assert.match(html, /\.agent-tree\{[^}]*overflow-x:auto/);
+});
+
+test('CSS: chips wrap onto multiple lines (never one-per-line) inside a stable-width card', () => {
+  const html = renderHtml({ ...BASE_REPORT, agents: [{ name: 'a', tools: [], model: null, parent: null }] }, MATURITY, 'es');
+  assert.match(html, /\.agent-chips\{[^}]*flex-wrap:wrap/);
+});
+
+test('renderHtml: card width is IDENTICAL at every nesting depth (root, mid, leaf) — the actual bug from the screenshot', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [
+      { name: 'root-agent', tools: ['Read', 'Write', 'Bash'], model: 'opus', parent: null },
+      { name: 'mid-agent', tools: ['Read', 'Write'], model: 'sonnet', parent: 'root-agent' },
+      { name: 'leaf-agent', tools: ['Read'], model: 'sonnet', parent: 'mid-agent' },
+    ],
+    agentSynthesis: {
+      agents: [
+        { name: 'root-agent', symbolicName: 'The Conductor', whatItDoes: 'Delegates work to specialists' },
+        { name: 'mid-agent', symbolicName: 'The Builder', whatItDoes: 'Implements backend endpoints' },
+        { name: 'leaf-agent', symbolicName: 'The Cartographer', whatItDoes: 'Diffs schema changes against production before they land' },
+      ],
+      edges: [],
+    },
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  // Every .agent-node in the whole tree — root, mid, leaf alike — renders
+  // from the exact same markup (no per-depth width override anywhere),
+  // so there is exactly one place a width could come from: the shared
+  // `.agent-node` CSS rule (asserted above), applied uniformly regardless
+  // of how many `.agent-children` wrappers the node is nested inside.
+  const nodeCount = (section.match(/class="agent-node"/g) || []).length;
+  assert.equal(nodeCount, 3);
+  // The width-bearing rule (`.agent-node{display:flex...width:328px}`) is
+  // declared exactly once — distinct from the unrelated positioning rule
+  // for nested rail connectors (`.agent-children .agent-node{...}`, which
+  // never touches width). No depth-specific override exists anywhere.
+  const widthRuleCount = (html.match(/\.agent-node\{display:flex[^}]*width:328px/g) || []).length;
+  assert.equal(widthRuleCount, 1, 'expected a single, depth-independent .agent-node width rule');
+});
+
 test('renderHtml: dangling/self parent reference falls back to the implicit root, defensively, never throws', () => {
   const report = {
     ...BASE_REPORT,
