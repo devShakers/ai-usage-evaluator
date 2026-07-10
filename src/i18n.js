@@ -111,6 +111,20 @@ const catalogs = {
       // Project technologies (talents-ai-score, ADR-012)
       technologiesHeading: 'Tecnologías del proyecto',
       technologiesEmpty: 'No se detectaron manifiestos de dependencias (package.json, requirements.txt, go.mod, pyproject.toml).',
+      // Tier roadmap (talents-ai-score, issue 020): only short UI labels
+      // live here — the authored prose itself lives in
+      // src/roadmap-content.js (ported verbatim from the product-manager's
+      // content, ADR-013's "contenido autorado").
+      roadmapHeading: 'Tu próximo nivel',
+      roadmapUpgradeWhenLabel: 'Subes de tier cuando:',
+      roadmapUnlocksLabel: 'Qué desbloquea',
+      roadmapStepsLabel: 'Pasos',
+      roadmapSnippetLabel: 'Snippet copiable',
+      roadmapTipsLabel: 'Tips de comunidad',
+      roadmapMistakesLabel: 'Errores comunes',
+      roadmapConsolidationLabel: 'Pasos de consolidación',
+      roadmapHonestyLabel: 'Nota de honestidad',
+      roadmapPendingTranslation: 'Contenido en proceso de traducción — mostrando en español.',
       privacyNote:
         'Este informe se ha generado en local. Solo registra qué herramientas '
         + 'existen, cuántas configuraciones tienes y tu nivel: nunca el contenido '
@@ -231,6 +245,19 @@ const catalogs = {
       // Project technologies (talents-ai-score, ADR-012)
       technologiesHeading: 'Project technologies',
       technologiesEmpty: 'No dependency manifests detected (package.json, requirements.txt, go.mod, pyproject.toml).',
+      // Tier roadmap (talents-ai-score, issue 020): only short UI labels
+      // live here — the authored prose is Spanish-only for now (no English
+      // translation authored yet), src/roadmap-content.js.
+      roadmapHeading: 'Your next level',
+      roadmapUpgradeWhenLabel: 'You level up when:',
+      roadmapUnlocksLabel: 'What it unlocks',
+      roadmapStepsLabel: 'Steps',
+      roadmapSnippetLabel: 'Copyable snippet',
+      roadmapTipsLabel: 'Community tips',
+      roadmapMistakesLabel: 'Common mistakes',
+      roadmapConsolidationLabel: 'Consolidation steps',
+      roadmapHonestyLabel: 'Honesty note',
+      roadmapPendingTranslation: 'Content pending translation — showing in Spanish.',
       privacyNote:
         'This report was generated locally. It only records which tools exist, '
         + 'how many configurations you have and your level: never the content of '

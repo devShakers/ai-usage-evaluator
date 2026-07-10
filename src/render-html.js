@@ -1,6 +1,7 @@
 'use strict';
 
 const { getCatalog, categoryLabel } = require('./i18n');
+const { getRoadmapEntry } = require('./roadmap-content');
 
 /*
  * Generates a SELF-CONTAINED HTML dashboard: all the CSS and data are
@@ -264,6 +265,105 @@ function agentCardsSection(report, t) {
   </section>`;
 }
 
+/* ---------- tier roadmap: current -> next (talents-ai-score, issue 020) ----------
+ * Shows ONLY the entry for `maturity.tierKey` — never the whole T0-T7
+ * ladder at once (source doc: "El informe muestra solo el salto actual →
+ * siguiente"). Replaces the old generic band-keyed "next step" card:
+ * this is strictly richer (upgrade criterion, unlocks, steps, a literal
+ * copyable snippet, community tips, common mistakes) for the SAME slot,
+ * rather than showing both and duplicating the message.
+ *
+ * Content is authored (src/roadmap-content.js, ported verbatim from the
+ * product-manager's roadmap-content.md) — this function only renders it,
+ * never generates prose. Snippets are LITERAL code, escaped for safe HTML
+ * embedding but never translated.
+ */
+
+function roadmapStepsHtml(steps) {
+  return steps
+    .map((s) => `<li><span class="roadmap-step-text">${esc(s.text)}</span><span class="roadmap-step-estimate">${esc(s.estimate)}</span></li>`)
+    .join('');
+}
+
+function roadmapSnippetHtml(snippet, t) {
+  const label = snippet.label ? `<p class="roadmap-snippet-desc">${esc(snippet.label)}</p>` : '';
+  const filename = snippet.filename ? `<div class="roadmap-snippet-filename">${esc(snippet.filename)}</div>` : '';
+  const second = snippet.secondFile
+    ? `<div class="roadmap-snippet-filename">${esc(snippet.secondFile.filename)}</div><pre class="roadmap-code"><code>${esc(snippet.secondFile.code)}</code></pre>`
+    : '';
+  return `<div class="roadmap-block">
+    <div class="roadmap-block-label">${esc(t.html.roadmapSnippetLabel)}</div>
+    ${label}
+    ${filename}
+    <pre class="roadmap-code"><code>${esc(snippet.code)}</code></pre>
+    ${second}
+  </div>`;
+}
+
+function roadmapPendingNotice(entry, t) {
+  return entry.pendingTranslation
+    ? `<p class="roadmap-pending">${esc(t.html.roadmapPendingTranslation)}</p>`
+    : '';
+}
+
+function roadmapTerminalHtml(entry, t) {
+  return `<div class="card roadmap-card">
+    ${roadmapPendingNotice(entry, t)}
+    <h3 class="roadmap-title">${esc(entry.title)}</h3>
+    <p class="roadmap-intro">${esc(entry.intro)}</p>
+    <p class="roadmap-what-remains">${esc(entry.whatRemains)}</p>
+    <div class="roadmap-block">
+      <div class="roadmap-block-label">${esc(t.html.roadmapConsolidationLabel)}</div>
+      <ul class="roadmap-list">${entry.consolidationSteps.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>
+    </div>
+    <div class="roadmap-block">
+      <div class="roadmap-block-label">${esc(t.html.roadmapHonestyLabel)}</div>
+      <p class="roadmap-honesty">${esc(entry.honestyNote)}</p>
+    </div>
+  </div>`;
+}
+
+function roadmapJumpHtml(entry, t) {
+  return `<div class="card roadmap-card">
+    ${roadmapPendingNotice(entry, t)}
+    <h3 class="roadmap-title">${esc(entry.title)}</h3>
+    <div class="roadmap-upgrade-when"><b>${esc(t.html.roadmapUpgradeWhenLabel)}</b> ${esc(entry.upgradeWhen)}</div>
+    <div class="roadmap-block">
+      <div class="roadmap-block-label">${esc(t.html.roadmapUnlocksLabel)}</div>
+      <p class="roadmap-unlocks">${esc(entry.unlocks)}</p>
+    </div>
+    <div class="roadmap-block">
+      <div class="roadmap-block-label">${esc(t.html.roadmapStepsLabel)}</div>
+      <ol class="roadmap-list roadmap-steps">${roadmapStepsHtml(entry.steps)}</ol>
+    </div>
+    ${roadmapSnippetHtml(entry.snippet, t)}
+    <div class="roadmap-block">
+      <div class="roadmap-block-label">${esc(t.html.roadmapTipsLabel)}</div>
+      <ul class="roadmap-list">${entry.tips.map((tip) => `<li>${esc(tip)}</li>`).join('')}</ul>
+    </div>
+    <div class="roadmap-block">
+      <div class="roadmap-block-label">${esc(t.html.roadmapMistakesLabel)}</div>
+      <ul class="roadmap-list">${entry.commonMistakes.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>
+    </div>
+  </div>`;
+}
+
+// `maturity.tierKey` may be absent (an older maturity shape, pre-issue-019)
+// or unrecognized — degrades to nothing rendered rather than throwing or
+// inventing a tier.
+function roadmapSection(maturity, t, lang) {
+  const tierKey = maturity && maturity.tierKey;
+  if (!tierKey) return '';
+  const entry = getRoadmapEntry(tierKey, lang);
+  if (!entry) return '';
+
+  const body = entry.maxTier ? roadmapTerminalHtml(entry, t) : roadmapJumpHtml(entry, t);
+  return `<section>
+    <div class="h2">${esc(t.html.roadmapHeading)}</div>
+    ${body}
+  </section>`;
+}
+
 function toolRow(tool, t, lang) {
   const category = categoryLabel(lang, tool.category);
   if (!tool.detected) {
@@ -303,7 +403,6 @@ function renderHtml(report, maturity, lang) {
   const dataJson = esc(JSON.stringify({ report, maturity }, null, 2));
 
   const levelName = t.levelNames[maturity.key] || maturity.name;
-  const nextStep = t.nextSteps[maturity.level] || maturity.next;
 
   // Environment block: new scanner field, optional for compatibility with
   // reports generated before this field existed (report.environment absent).
@@ -580,6 +679,32 @@ function renderHtml(report, maturity, lang) {
     color:var(--faint);margin-bottom:6px}
   .next .t{font-size:16px;line-height:1.5;color:var(--fg)}
 
+  /* ---- Tier roadmap: current -> next (talents-ai-score, issue 020) ---- */
+  .roadmap-card{padding:26px 28px;display:flex;flex-direction:column;gap:18px;
+    border-left:4px solid var(--accent-lime)}
+  .roadmap-pending{margin:0;font-size:12.5px;font-style:italic;color:var(--faint)}
+  .roadmap-title{margin:0;font-size:19px;font-weight:700;letter-spacing:-.01em;color:var(--fg)}
+  .roadmap-upgrade-when{font-size:13.5px;color:var(--muted);line-height:1.5}
+  .roadmap-upgrade-when b{color:var(--fg)}
+  .roadmap-block{display:flex;flex-direction:column;gap:8px}
+  .roadmap-block-label{font-size:12px;font-weight:600;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--faint)}
+  .roadmap-unlocks,.roadmap-intro,.roadmap-what-remains,.roadmap-honesty{
+    margin:0;font-size:14.5px;line-height:1.6;color:var(--fg)}
+  .roadmap-list{margin:0;padding-left:20px;display:flex;flex-direction:column;
+    gap:8px;font-size:14px;line-height:1.5;color:var(--muted)}
+  .roadmap-steps li{display:flex;flex-wrap:wrap;align-items:baseline;
+    justify-content:space-between;gap:4px 12px}
+  .roadmap-step-estimate{flex:none;font-size:12px;font-family:var(--font-mono);
+    color:var(--faint);white-space:nowrap}
+  .roadmap-snippet-desc{margin:0;font-size:13px;color:var(--muted)}
+  .roadmap-snippet-filename{font-size:12px;font-family:var(--font-mono);
+    color:var(--faint);margin-top:6px}
+  .roadmap-code{background:var(--bg);border:1px solid var(--border);
+    border-radius:var(--r-md);padding:14px;overflow:auto;
+    font-family:var(--font-mono);font-size:12.5px;line-height:1.5;
+    color:var(--muted);margin:4px 0 0}
+
   /* ---- Footer ---- */
   footer{margin-top:28px;color:var(--faint);font-size:12.5px;line-height:1.55}
   .priv{display:flex;gap:12px;padding:16px 18px;border-radius:var(--r-lg);
@@ -665,15 +790,7 @@ function renderHtml(report, maturity, lang) {
 
   ${agentCardsSection(report, t)}
 
-  <section>
-    <div class="card next">
-      <div class="icon" aria-hidden="true">→</div>
-      <div>
-        <div class="k">${esc(t.html.nextStep)}</div>
-        <div class="t">${esc(nextStep)}</div>
-      </div>
-    </div>
-  </section>
+  ${roadmapSection(maturity, t, lang)}
 
   <footer>
     <div class="priv">
