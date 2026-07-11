@@ -1,19 +1,36 @@
 # AI Footprint
 
-> **Status: proof of concept (PoC) — distribution only.** This repository
-> publishes only the CLI (PoC). The local report
-> works 100%. The consent/disclosure flow and automatic sending are
-> **inert**: there is no server deployed behind them. See the section
-> ["Sharing the report with the platform" ↓](#sharing-the-report-with-the-platform--not-available-in-this-poc-yet)
-> for details.
+Command-line tool that builds, **locally**, a deterministic profile of a
+developer's AI tool setup: which copilots/agents they have configured, how
+deep that configuration goes, and what "level-up" **tier** (T0-T7) they're
+at — plus a curated roadmap of what unlocks the next tier.
 
-Command-line tool that generates, **locally**, a profile of a developer's AI
-tool usage: which copilots and agents they have configured, how deep that
-configuration goes, and what maturity level they're at (0–4).
+Inspired by the mechanism in `darnoux/claude-code-level-up` (scan local
+signals and classify by level), extended to cover the main AI tools on the
+market (not just Claude) and to a full 8-tier ladder with per-tier roadmap
+content.
 
-Inspired by the mechanism in `claude-code-level-up` (scan local signals and
-classify by level), but extended to cover the main AI tools on the market,
-not just Claude.
+## What it does
+
+1. **Scans** the current project (and relevant parts of your home
+   directory) for known AI-tool configuration.
+2. **Classifies** the setup into a tier, `T0` to `T7` ("empty bench" to
+   "orchestrated workshop"), computed deterministically — no LLM involved
+   in the level itself.
+3. **Shows a "why this tier" analysis**: exactly which criteria you meet,
+   with the signal behind each one, and the single next criterion blocking
+   progression to the next tier.
+4. **Shows a roadmap**: current tier → next tier, with what it unlocks,
+   steps, a copyable code snippet, community tips and common mistakes —
+   curated, authored content, not generated per run.
+5. **Gives you a ready-to-paste implementation prompt** for your own AI
+   tool of choice, assembled from the roadmap entry plus your own detected
+   stack (frameworks, tools, tier) — this is the primary "how do I do this"
+   path.
+
+Everything above runs **always, locally, unconditionally** — nothing is
+gated behind a decision. See [Privacy & consent](#privacy--consent-model)
+for what happens if you choose to save your report to Shakers.
 
 ## Installation
 
@@ -23,22 +40,22 @@ One line:
 curl -fsSL https://raw.githubusercontent.com/devShakers/ai-usage-evaluator/main/install.sh | bash
 ```
 
-> Note (PoC): the one-liner points at the `main` branch, the only one
-> published on the remote — check `install.sh` for the current version if
-> this README is out of date.
+The installer:
+- Requires **Node 18+** (checks and fails clearly if missing/too old).
+- Discovers the CLI's own `src/*.js` modules dynamically (via a local copy
+  or the GitHub API) rather than hardcoding a file list.
+- Places the tool in `~/.ai-footprint/` and drops the `ai-footprint`
+  command in `~/.local/bin`. **Zero dependencies** — no `npm install`, no
+  third-party packages fetched.
+- All installer output is in English, unconditionally (it runs before
+  Node/the CLI's own i18n layer is available).
 
-The installer checks that you have Node 18+, places the tool in
-`~/.ai-footprint/` and drops the `ai-footprint` command in `~/.local/bin`.
-Zero dependencies: it doesn't run `npm install` or download third-party
-packages.
-
-Alternative by cloning the repo (same result, but you can review the code
-before installing, which is recommended):
+Alternative, cloning the repo first (same result, lets you review the code
+before installing):
 
 ```bash
 git clone https://github.com/devShakers/ai-usage-evaluator
 cd ai-usage-evaluator
-git checkout main
 ./install.sh
 ```
 
@@ -47,202 +64,181 @@ Uninstall: `./install.sh --uninstall`.
 ## Usage
 
 ```bash
-ai-footprint                  # report in the terminal
-ai-footprint --html           # also generates and opens the visual dashboard
-ai-footprint --json           # report as JSON on stdout
-ai-footprint --root ../other  # scans another directory
-ai-footprint --no-save        # writes nothing to disk
+ai-footprint                       # report in the terminal
+ai-footprint --html                # also generates and opens the HTML dashboard
+ai-footprint --json                # report as JSON on stdout
+ai-footprint --root ../other       # scans another directory instead of the current one
+ai-footprint --no-save             # writes nothing to disk (report only, on screen)
+ai-footprint --build-next-level    # secondary path: writes deterministic starter file(s) for the next tier
+ai-footprint --force               # with --build-next-level, overwrite an existing file
+ai-footprint --lang es|en          # force the report's language instead of detecting it from the OS locale
+ai-footprint --consent-status      # view your save decision / email / last send
+ai-footprint --consent-revoke      # revoke consent to save (-> denied), no more sends
+ai-footprint --consent-email E     # change the email on file, without touching the decision
 ```
 
 Without installing, from a copy of the repo, this is equivalent to
 `node bin/report.js [options]`.
 
-The **first time** you run the tool (and only then, unless you revoke your
-decision), it shows an explicit disclosure of what would be sent/never sent
-and asks once whether you accept sending your report to the platform. See
-below.
-
-## Sharing the report with the platform — NOT AVAILABLE IN THIS POC YET
-
-> **Inert in this PoC.** The consent/disclosure and sending mechanism exists
-> in the code and is documented below because it describes the full design,
-> but **there is no Shakers server deployed to production yet**. The
-> ingestion endpoint is supplied via the `AI_FOOTPRINT_INGEST_ENDPOINT`
-> environment variable (never hardcoded, see `src/config.js`); without it
-> set, the tool sends nothing. **We don't promise working delivery at this
-> stage**, only the local report (which does work 100%).
-
-Design (talents-ai-score, ADR-007 — supersedes the earlier token/enrollment
-model, see git history): the first time you run `ai-footprint` with no
-consent decision persisted yet, it shows an explicit **disclosure** (what
-gets sent, what never does, the purpose, and a notice that the data is
-*indicative, not verified*) and asks once whether you accept. If you
-accept, it asks for your **email** and sends `{email, payload}` to the
-configured endpoint — no `Authorization` header, no token: the endpoint is
-public and identity travels in the body. If you decline, it persists that
-and never asks again (only local reports, forever, unless you change your
-mind). Once you've decided, a normal run never interrupts you with the
-disclosure again — accepted runs resend silently (max. once per hour).
-
-Expected talent flow (once the server is deployed):
-
-```bash
-# 1) First run: you see the disclosure and answer once
-ai-footprint
-#   ...disclosure text...
-#   ¿Aceptas enviar este informe? (s/n): s
-#   Introduce tu correo: talent@example.com
-
-# 2) From here on, every normal run sends the report automatically
-#    (max. once per hour), with no preview or confirmation
-ai-footprint
-
-# 3) Manage your decision at any time, without re-running the disclosure
-ai-footprint --consent-status         # see decision / email / last send
-ai-footprint --consent-revoke         # revoke -> denied, no more sends
-ai-footprint --consent-email you@new-address.com   # change the email on file
-```
-
-What would be sent: only derived data (level, score, tools detected
-yes/no, per-tool counts) plus the email you typed in. Never file contents,
-paths or credentials. Sending failures (network, rate limit, kill switch
-off) never break the local report. The decision is stored at
-`~/.config/ai-footprint/consent.json` (permissions 600): `{consent, email,
-lastSentAt}`.
-
-> **Legal notice (pending):** this repository intentionally does NOT ship
-> GDPR-specific legal copy — the disclosure includes an explicit
-> `[PENDING LEGAL REVIEW]` placeholder (see `src/i18n.js`, `consent`
-> catalog) instead of invented legal text. A legal/labor expert must review
-> and fill it in, and sign off, before this is activated against real
-> talents (ADR-007).
-
-## Reference server (NOT deployed in this PoC)
-
-> Out of scope for this PoC (ADR-002, `active-work/talents-ai-score`): the
-> `reference-server/` code lives in the repo as contract documentation and
-> for review, but **it is not run nor deployed**. There is no instance
-> running at Shakers that this CLI connects to. The real server for this
-> contract is `shakers-hub-backend` (specs.md), not this stub.
-
-`reference-server/server.js` is a **dependency-free stub** that illustrates
-the CURRENT contract (ADR-007): a public ingestion endpoint, no
-per-identity auth, rate-limited by email and by IP, gated by a kill switch
-that defaults OFF. It's an in-memory example with no Talent database (every
-report is stored as a "lead" keyed by email) — your team reimplements it on
-real infrastructure (Postgres, email↔Talent match, Redis-backed rate
-limiting, TLS at the gateway).
-
-```bash
-AI_FOOTPRINT_INGEST_ENABLED=true node reference-server/server.js
-# starts with the kill switch ON so you can test end to end locally
-```
-
-Routes: `GET /health`, `POST /reports` (public, `{email, payload}`),
-`GET /admin/reports` (audit, requires `X-Admin-Key`). Access control moved
-from per-identity tokens to: (a) the kill switch (503 while OFF — the
-default, everywhere including prod), and (b) rate limiting by normalized
-email + by IP (429 past the ceiling). Anyone can call `/reports` once the
-switch is ON (the CLI itself is a public repo, so an embedded secret
-wouldn't be one) — what's controlled is volume and the local disclosure
-gate on the client, not who's technically allowed to POST.
-
-### Audit and kill switch
-
-```bash
-# Audit: lists reports received (no PII beyond the email itself)
-curl http://localhost:8787/admin/reports -H "X-Admin-Key: YOUR_KEY"
-```
-
-- **Kill switch**: `AI_FOOTPRINT_INGEST_ENABLED` (read once at startup in
-  this stub; specs.md's real backend reads it per-request so it can flip
-  without a redeploy). Defaults OFF — `POST /reports` returns 503 until
-  it's explicitly turned on.
-- **Rate limit**: per normalized email AND per IP, 5/hour each (in-memory
-  sliding window in this stub; per-replica ceiling in production until
-  moved to Redis, see specs.md).
-- **No token/enrollment lifecycle anymore** (ADR-007 retires it entirely):
-  there's nothing to issue, expire, or revoke per-talent. Revocation of
-  *sending* lives client-side (`ai-footprint --consent-revoke`).
-
-In production, this admin surface lives behind your real internal auth and
-on top of a database, not the stub's in-memory store.
-
-> Notice: sending data about how a person works involves processing personal
-> data (GDPR, consent). Validate it with a legal/labor expert before
-> enabling sending in production — see the legal notice above.
-
-## Usage (quick reference)
-
-```bash
-ai-footprint                       # report in the terminal (asks for consent once, first run)
-ai-footprint --html                # also generates and opens the visual dashboard
-ai-footprint --json                # report as JSON on stdout
-ai-footprint --root ../other       # scans another directory
-ai-footprint --no-save             # writes nothing to disk
-ai-footprint --consent-status      # view consent decision / email / last send
-ai-footprint --consent-revoke      # revoke consent (-> denied), no more sends
-ai-footprint --consent-email E     # change the email on file
-```
-
 Results are saved in `~/.config/ai-footprint/` (`latest.json`,
-`report.html`, and a dated history under `history/`). **Never** is anything
-written to the scanned project, so the report can't end up in a commit by
-mistake.
+`report.html`, and a dated history under `history/`). **Nothing is ever
+written to the scanned project** — the report can't slip into a commit by
+accident.
 
-## Tools it detects
+## The report
 
-Claude Code, Cursor, GitHub Copilot, Windsurf, Aider, Continue, Cline,
-Gemini CLI, Codex CLI, Cody, Zed and Tabnine.
+- **Terminal output** and a **self-contained HTML dashboard** (Shakers
+  branding, responsive, zero network calls — no CDN, no external script, no
+  fetch) show the same information.
+- **Localized to your OS locale**: a locale starting with `es` shows
+  Spanish; anything else shows English (`src/locale.js` / `src/i18n.js`).
+  `--lang` overrides this for a single run, including the copyable
+  implementation prompt.
+- Sections: detected tools, environment, technologies (frameworks/libraries
+  detected from dependency manifests), MCP servers (name + category), your
+  agent org chart (cards + hierarchy), the tier analysis, and the
+  current→next roadmap with its implementation prompt.
 
-Detection is based on the existence of config files/directories, binaries
-on `PATH`, and installed editor extensions. "Depth" measures how much each
-tool has been configured (project instructions, rules, MCP servers, skills,
-commands, hooks).
+## What it detects
 
-## Maturity levels
+All detection is **deterministic** (no LLM) and reads only known AI-tool
+configuration — never your project's business logic or source code:
 
-| Level | Name | Criteria |
-|------|--------|----------|
-| 0 | No AI footprint | no tool detected |
-| 1 | Exploring | tools exist, but no project configuration |
-| 2 | Integrated | at least one project instructions/rules file exists |
-| 3 | Power user | MCP, own skills/commands/rules, or 3+ tools |
-| 4 | Orchestrator | agentic CLI + MCP + own customization (deep automation) |
+- **Tools**: Claude Code, Cursor, GitHub Copilot, Windsurf, Aider,
+  Continue, Cline, Gemini CLI, Codex CLI, Amazon Q Developer, Cody, Zed,
+  Tabnine — existence of config files/directories, binaries on `PATH`,
+  installed editor extensions.
+- **Depth per tool**: project instructions/rules, MCP servers configured,
+  own skills/commands, hooks.
+- **MCP servers**: names and a heuristic category (data/comms/dev/browser/
+  other) from known config locations (`.mcp.json`, `.cursor/mcp.json`,
+  Windsurf/Gemini config, etc.) — only the top-level server-name keys are
+  read, never the values (which can carry commands, URLs or env vars).
+- **Memory structure**: `@file` import count and nesting depth, section
+  count and byte size of context files (`CLAUDE.md`, `AGENTS.md`,
+  `GEMINI.md`) — structure only, never the file's actual text is stored.
+- **Automations**: npm/shell scripts that invoke a known AI CLI, JSON-piping
+  patterns, and scheduled tasks (cron/launchd/pm2/systemd) — counts and
+  booleans only.
+- **Browser tools**: Playwright/Puppeteer as a project dependency, or a
+  browser-category MCP server.
+- **Agents**: your `.claude/agents/*.md` org chart (name, wired tools,
+  model, hierarchy) — deterministic; an optional server-side LLM step can
+  synthesize a short description per agent for nicer cards (see below).
+- **Technologies**: frameworks/libraries actually used in the project
+  (React, Next.js, Express, Django...), parsed from dependency manifests
+  (`package.json`, `requirements.txt`, `go.mod`, etc.) and filtered through
+  a curated name map — never a raw dependency dump.
+- **Hooks**: hook-based automation configured for a tool.
 
-(These are the English names; the report itself is localized to the
-talent's OS locale — Spanish or English — see `src/i18n.js`.)
+**Never** read, stored or sent: file *contents* beyond what's needed to
+compute a count, absolute paths, environment variables, or credentials.
 
-## Privacy design (important)
+## Tier ladder (T0-T7)
 
-This tool is meant to be able to, in a second phase, share the profile with
-the platform. That's why the design carefully separates what's seen
-locally from what could be sent:
+The tier is "the highest tier whose criteria you ALL meet, checked strictly
+bottom-up". The 0-4 band used elsewhere (e.g. Shakers direction views) is
+derived from the tier — the tier is the single source of truth.
 
-- **Only derived signals are recorded**: booleans (detected yes/no),
-  counts (how many MCP servers, how many skills) and categories. **Never**
-  is the *content* of your files, absolute paths, environment variables, or
-  credentials read or stored.
-- The only file that gets parsed (`.mcp.json`) is opened **only to count
-  keys**; no name or value is stored.
-- The `anonymous id` is a non-reversible hash of hostname + user, useful
-  only for deduplication, not for identifying the person.
-- **Explicit opt-in disclosure, once** (ADR-007): the CLI never sends
-  anything without you having seen the disclosure and explicitly accepted
-  it, once, with an email you typed in yourself. The email is
-  self-affirmed and **not verified** in this iteration — treat any
-  identity claim it enables as indicative, not proof.
-- **There is no data sending in this PoC.** The sharing module
-  (`src/share.js`) exists in the code — the disclosure/consent/email flow
-  and the resulting automatic, silent resend — but it's **inert** while no
-  endpoint is configured (`AI_FOOTPRINT_INGEST_ENDPOINT`): with nowhere to
-  send to, `autoShare` always skips.
+| Tier | Name | Criterion |
+|------|------|-----------|
+| T0 | Empty bench | no tool detected |
+| T1 | First tool | at least one tool detected |
+| T2 | Bench with notes | T1 + project instructions/rules/config exist |
+| T3 | Connected bench | T2 + at least one MCP server configured |
+| T4 | Own tooling | T3 + own skills/commands/rules |
+| T5 | Agentic operator | agentic CLI + MCP + own tooling together |
+| T6 | Multi-agent | T5 + 2 or more agents defined |
+| T7 | Orchestrated workshop | T6 + at least one hook configured |
 
-If you're going to deploy this among third parties (e.g. a platform's
-talents), remember that collecting data about how a person works has GDPR
-and consent implications: it's worth validating it with a legal/labor
-expert before deploying the server and distributing the CLI with sending
-turned on (see the legal notice above).
+File recency (`mtime`) is informative only — it is never a gating signal
+for any tier.
+
+## Optional server-side LLM layers
+
+Two capabilities are ephemeral, optional, server-side LLM calls — both run
+independently of the save/consent decision (they never touch the
+persistence payload) and both degrade to a fully deterministic fallback if
+no endpoint is configured or the call fails for any reason:
+
+- **Agent-card synthesis** (`AI_FOOTPRINT_SYNTHESIS_ENDPOINT`): sends your
+  agents' description text to synthesize a short symbolic name + "what it
+  does" per agent, for nicer cards. Falls back to the deterministic org
+  chart if unavailable — and, per agent, to your own raw `.claude/agents/`
+  description (cleaned up and excerpted for card display) or a minimal
+  name-derived line if that's missing too, so a card's description is
+  never blank.
+- **Roadmap personalization** (`AI_FOOTPRINT_ROADMAP_ENDPOINT`): asks the
+  hub to rewrite the current tier jump's prose (what it unlocks, steps,
+  tips, mistakes) adapted to your detected stack. The tier, the band, and
+  the "when to upgrade" criterion are **never** touched by this call — only
+  the curated roadmap's fallback prose can ever change. Only derived
+  signals are sent (frameworks, tool/MCP categories, tier), never raw file
+  content or agent descriptions.
+
+Both send only derived signals — never raw file content — and a scrub pass
+runs before anything leaves the machine.
+
+## Privacy & consent model
+
+- **The report is always generated and shown locally, unconditionally.**
+  There is no gate, no wall, no preview step before you see your own data.
+- **Saving (persisting) it to Shakers is opt-in, asked once.** The first
+  time you run the tool, right **after** the report is already on screen,
+  you're asked a short yes/no question: do you want this report saved in
+  Shakers? Accepting asks for an email; declining persists that choice and
+  you're never asked again. Manage the decision any time with
+  `--consent-status` / `--consent-revoke` / `--consent-email`, without
+  re-running the scan.
+- **Only derived signals are ever sent for saving** — booleans, counts,
+  categories, tier/band, the detected technology names, and (if it ran) the
+  synthesized agent summaries. **Never** file contents, absolute paths,
+  environment variables, or credentials. The email you typed travels
+  outside this whitelisted payload, in the request body.
+- **The two optional LLM layers above are a separate, ephemeral flow**:
+  they run on every scan (independent of your save decision) so the diagram
+  and the roadmap can "always show", and they only ever see derived
+  signals or agent description text, never your save decision or your
+  email.
+- The consent decision lives in `~/.config/ai-footprint/consent.json`
+  (permissions `600`).
+- **Legal**: sending data about how a person works involves personal-data
+  processing (GDPR). This model has legal/labor sign-off reported for the
+  current design (see `active-work/talents-ai-score/decisions.md`,
+  ADR-011/013). **Activating sending against real Shakers talents in
+  production is a separate deployment decision that still requires its own
+  legal/labor go-ahead** for that rollout — this repo doesn't ship a
+  production endpoint by default (see below).
+
+## Configuration (environment variables)
+
+None of these have a compiled-in default — the public repo carries no
+endpoint or secret. Unset means "nothing to call", and every code path that
+depends on one degrades gracefully (no send / deterministic fallback), it
+never breaks the local report.
+
+| Variable | Purpose |
+|---|---|
+| `AI_FOOTPRINT_INGEST_ENDPOINT` | Where a saved report is sent, if consent is granted. |
+| `AI_FOOTPRINT_SYNTHESIS_ENDPOINT` | Agent-card synthesis endpoint (optional). |
+| `AI_FOOTPRINT_ROADMAP_ENDPOINT` | Roadmap personalization endpoint (optional). |
+| `AI_FOOTPRINT_CONFIG_DIR` | Override `~/.config/ai-footprint/` (mainly for tests). |
+
+## Reference server (not deployed)
+
+`reference-server/server.js` is a dependency-free **stub** that illustrates
+the current ingestion contract: a public endpoint, no per-identity auth,
+rate-limited by email and by IP. It exists as contract documentation and
+for local testing — **it is not run nor deployed anywhere**. The real
+implementation of this contract lives in `shakers-hub-backend`.
+
+```bash
+node reference-server/server.js
+```
+
+Routes: `GET /health`, `POST /reports` (`{email, payload}`),
+`POST /works/ai-footprint/agent-synthesis` (deterministic placeholder, not
+a real LLM), `GET /admin/reports` (`X-Admin-Key`, audit).
 
 ## How to add a new tool
 
@@ -267,19 +263,31 @@ If you want to measure depth, add a probe in `src/scanner.js` inside
 ## Structure
 
 ```
-bin/report.js            CLI orchestrator
-src/detectors.js         Catalog of tools and signals
-src/scanner.js           Scan engine (produces the report object)
-src/maturity.js          Level and score calculation
-src/render-terminal.js   Terminal output
-src/render-html.js       Self-contained HTML dashboard
-src/store.js             Persistence in the user's home
-src/share.js             Consent state, email identity and automatic sending
-src/consent-flow.js      Interactive disclosure + consent + email prompt
-src/cli-args.js          CLI flag parsing
-src/config.js            Ingestion endpoint configuration (env var, no hardcode)
-src/locale.js            OS locale detection for report localization
-src/i18n.js              Report + consent/disclosure text catalogs (es/en)
-reference-server/server.js  Reference (stub) public ingestion server
-install.sh               Installer (curl | bash or local)
+bin/report.js                    CLI orchestrator
+src/detectors.js                 Catalog of tools and signals
+src/scanner.js                   Scan engine -> report object
+src/maturity.js                  0-4 band (derived from the tier)
+src/tier-engine.js               T0-T7 ladder computation
+src/tier-analysis.js             "Why this tier" deterministic breakdown
+src/roadmap-content.js           Curated per-tier roadmap content (es/en)
+src/roadmap-prompt.js            Ready-to-paste implementation prompt
+src/roadmap-personalization.js   Optional LLM roadmap-prose personalization client
+src/build-next-level.js          Secondary: writes deterministic starter files
+src/agent-org-chart.js           Deterministic agent org chart parser
+src/agent-synthesis.js           Optional LLM agent-card synthesis client
+src/mcp-detector.js              MCP server name/category detector
+src/memory-structure-detector.js Context-file import/structure detector
+src/automations-detector.js      Scripts/scheduler automation detector
+src/browser-tools-detector.js    Browser-automation tooling detector
+src/tech-detector.js             Project technologies (frameworks) detector
+src/render-terminal.js           Terminal output
+src/render-html.js               Self-contained HTML dashboard
+src/store.js                     Persistence in the user's home
+src/share.js                     Consent state + derived-payload whitelist + sending
+src/consent-flow.js              Short, one-time "save to Shakers?" prompt
+src/config.js                    Endpoint configuration from env vars, never hardcoded
+src/locale.js                    OS locale detection
+src/i18n.js                      Report text catalogs (es/en)
+reference-server/server.js       Reference (stub) ingestion server, not deployed
+install.sh                       Installer (curl | bash, or local)
 ```
