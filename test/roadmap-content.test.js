@@ -52,23 +52,89 @@ test('getRoadmapEntry: unrecognized tier key -> null, never throws', () => {
   assert.doesNotThrow(() => getRoadmapEntry(undefined));
 });
 
-test('getRoadmapEntry: snippets are LITERAL code, never translated regardless of lang', () => {
-  const es = getRoadmapEntry('T1', 'es');
-  const en = getRoadmapEntry('T1', 'en');
+// talents-ai-score, i18n audit note: "snippets are never translated" (both
+// source docs' own header) means this CLI never runs a translation over a
+// snippet's CODE at render time — it just ports whatever each authored
+// source .md provides, verbatim, per language. Where a snippet's code has
+// genuine human-facing text baked in (a bash `#` comment, a frontmatter
+// `description:` field, file body prose), the AUTHORED source for each
+// language legitimately differs — that's per-language authored content,
+// not a runtime translation. T2's `.mcp.json` snippet has no such prose
+// (pure technical JSON), so it's the case that stays byte-identical.
+test('getRoadmapEntry: filename stays identical across languages (same file target, regardless of prose inside it)', () => {
+  for (const tierKey of ['T0', 'T1', 'T2', 'T3', 'T4', 'T6']) {
+    const es = getRoadmapEntry(tierKey, 'es');
+    const en = getRoadmapEntry(tierKey, 'en');
+    assert.equal(es.snippet.filename, en.snippet.filename, `${tierKey}: filename should match across languages`);
+    assert.equal(es.snippet.language, en.snippet.language, `${tierKey}: snippet language (bash/json/markdown) should match`);
+  }
+});
+
+test('getRoadmapEntry: T2 snippet (pure technical JSON, no human-facing prose) is byte-identical across languages', () => {
+  const es = getRoadmapEntry('T2', 'es');
+  const en = getRoadmapEntry('T2', 'en');
   assert.equal(es.snippet.code, en.snippet.code);
-  assert.equal(es.snippet.filename, en.snippet.filename);
 });
 
-test('getRoadmapEntry: unauthored language (en) falls back to Spanish content with pendingTranslation: true', () => {
-  const entry = getRoadmapEntry('T2', 'en');
-  assert.equal(entry.lang, 'es');
-  assert.equal(entry.pendingTranslation, true);
-  assert.match(entry.unlocks, /[áéíóúñ]/i); // still Spanish prose, not fabricated English
+// talents-ai-score, i18n audit: English is now a GENUINE, fully-authored
+// translation (active-work/talents-ai-score/build/roadmap-content.en.md),
+// not a Spanish fallback — the old `pendingTranslation` mechanism is
+// retired. `lang` must reflect the language actually served, and English
+// content must be reachable and genuinely in English (never Spanish
+// prose under an English request).
+
+test('getRoadmapEntry: en is now a REAL, complete translation — every T0-T6 jump entry is fully populated in English too', () => {
+  const ALL = ['T0', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6'];
+  for (const tierKey of ALL) {
+    const entry = getRoadmapEntry(tierKey, 'en');
+    assert.equal(entry.lang, 'en');
+    assert.equal(entry.contentUnavailable, undefined);
+    assert.ok(entry.title, `${tierKey}: missing English title`);
+    assert.ok(entry.upgradeWhen, `${tierKey}: missing English upgradeWhen`);
+    assert.ok(entry.unlocks, `${tierKey}: missing English unlocks`);
+    assert.ok(Array.isArray(entry.steps) && entry.steps.length > 0, `${tierKey}: missing English steps`);
+    assert.ok(Array.isArray(entry.tips) && entry.tips.length > 0, `${tierKey}: missing English tips`);
+    assert.ok(Array.isArray(entry.commonMistakes) && entry.commonMistakes.length > 0, `${tierKey}: missing English commonMistakes`);
+    // Never Spanish prose under an English request.
+    assert.equal(/[áéíóúñ¿¡]/i.test(entry.unlocks), false, `${tierKey}: English unlocks contains Spanish characters`);
+  }
 });
 
-test('getRoadmapEntry: authored language (es) never reports pendingTranslation', () => {
-  const entry = getRoadmapEntry('T2', 'es');
-  assert.equal(entry.pendingTranslation, false);
+test('getRoadmapEntry: T7 terminal entry is also a real English translation', () => {
+  const entry = getRoadmapEntry('T7', 'en');
+  assert.equal(entry.lang, 'en');
+  assert.equal(entry.maxTier, true);
+  assert.equal(entry.contentUnavailable, undefined);
+  assert.ok(entry.intro);
+  assert.ok(entry.whatRemains);
+  assert.ok(entry.honestyNote);
+  assert.equal(/[áéíóúñ¿¡]/i.test(entry.intro), false);
+});
+
+test('getRoadmapEntry: Spanish requests are unaffected — never reports contentUnavailable', () => {
+  for (const tierKey of ['T0', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']) {
+    const entry = getRoadmapEntry(tierKey, 'es');
+    assert.equal(entry.lang, 'es');
+    assert.equal(entry.contentUnavailable, undefined);
+  }
+});
+
+// Defensive fallback (never fires against the current, fully-translated
+// T0-T7 set — see src/roadmap-content.js's own header note): a tier that
+// exists in Spanish but is missing from the English catalog degrades to
+// `contentUnavailable: true`, NEVER to Spanish prose under English.
+test('getRoadmapEntry: a tier missing from the English catalog (simulated) degrades to contentUnavailable, never Spanish prose', () => {
+  const { TIER_JUMPS_EN } = require('../src/roadmap-content');
+  const originalT2 = TIER_JUMPS_EN.T2;
+  delete TIER_JUMPS_EN.T2;
+  try {
+    const entry = getRoadmapEntry('T2', 'en');
+    assert.equal(entry.contentUnavailable, true);
+    assert.equal(entry.lang, 'en');
+    assert.equal('unlocks' in entry, false); // no Spanish (or any) prose leaked through
+  } finally {
+    TIER_JUMPS_EN.T2 = originalT2; // restore — this module's state is shared across tests
+  }
 });
 
 test('getRoadmapEntry: T5 (multi-agent jump) carries a second snippet file (two agent definitions needed for the T6 criterion)', () => {

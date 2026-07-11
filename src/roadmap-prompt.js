@@ -1,5 +1,7 @@
 'use strict';
 
+const { tierName: getTierName } = require('./i18n');
+
 /*
  * Deterministic, ready-to-paste "implementation prompt" (talents-ai-score:
  * "next steps -> prompt"). The talent copies this into THEIR OWN AI tool
@@ -70,7 +72,13 @@ function buildImplementationPrompt(entry, report, maturity, lang) {
   const frameworks = Array.isArray(r.technologies) ? r.technologies : [];
   const toolNames = Array.isArray(r.tools) ? r.tools.filter((x) => x && x.detected).map((x) => x.name) : [];
   const tierKey = (maturity && maturity.tierKey) || entry.tierKey || '';
-  const tierName = (maturity && maturity.tierName) || '';
+  // talents-ai-score, i18n audit: NEVER maturity.tierName directly — that
+  // field comes straight from tier-engine.js and is Spanish-only by
+  // design (domain logic, not i18n). Localized via the SAME `tierKey` +
+  // this prompt's own `lang` (independent of the report's locale, per its
+  // own --lang choice), so the embedded tier name always matches the
+  // prompt's language even when the report itself is in a different one.
+  const tierName = getTierName(tierKey, lang);
 
   const lines = [];
   lines.push(T.intro(frameworks.join(', ')));

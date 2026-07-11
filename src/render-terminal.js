@@ -124,7 +124,7 @@ function printAgents(report, t, p) {
  */
 
 function printTierAnalysis(report, t, p) {
-  const analysis = analyzeTier(report, t.tierAnalysis);
+  const analysis = analyzeTier(report, t);
   const tt = t.tierAnalysis;
 
   p(`  ${c.bold}${tt.heading}${c.reset}`);
@@ -173,11 +173,24 @@ function printRoadmap(report, maturity, t, lang, p) {
     return;
   }
 
+  p(`  ${c.bold}${c.yellow}${t.html.roadmapHeading}${c.reset}`);
+
+  // talents-ai-score, i18n audit: both es/en roadmap content is fully
+  // authored today (src/roadmap-content.js) — this defensive branch only
+  // fires for a FUTURE tier added to Spanish before English catches up,
+  // never against the current T0-T7 set. Never falls back to Spanish
+  // prose: shows a short, all-English notice instead.
+  if (curatedEntry.contentUnavailable) {
+    p(`  ${c.white}${t.html.roadmapContentUnavailable}${c.reset}`);
+    if (!curatedEntry.maxTier) p(`  ${c.dim}${t.cli.buildNextLevelHint}${c.reset}`);
+    p();
+    return;
+  }
+
   const personalization = report && report.roadmapPersonalization;
   const entry = mergeRoadmapPersonalization(curatedEntry, personalization);
   const wasPersonalized = !curatedEntry.maxTier && !!personalization;
 
-  p(`  ${c.bold}${c.yellow}${t.html.roadmapHeading}${c.reset}`);
   p(`  ${c.white}${c.bold}${entry.title}${c.reset}`);
 
   if (entry.maxTier) {
@@ -190,7 +203,6 @@ function printRoadmap(report, maturity, t, lang, p) {
       entry.steps.forEach((s, i) => p(`    ${i + 1}. ${s.text} ${c.dim}(${s.estimate})${c.reset}`));
     }
   }
-  if (entry.pendingTranslation) p(`  ${c.dim}${t.html.roadmapPendingTranslation}${c.reset}`);
   if (wasPersonalized) p(`  ${c.dim}${t.html.roadmapPersonalizedNotice}${c.reset}`);
 
   // talents-ai-score, "next steps -> prompt": the PRIMARY "how do I

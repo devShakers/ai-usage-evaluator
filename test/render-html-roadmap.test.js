@@ -79,16 +79,25 @@ test('renderHtml: missing/unrecognized tierKey never throws, degrades gracefully
   assert.doesNotThrow(() => renderHtml(BASE_REPORT, { level: 0 }, 'es')); // no tierKey at all (older maturity shape)
 });
 
-test('renderHtml: English render shows the pending-translation notice (no authored English roadmap yet)', () => {
+// talents-ai-score, i18n audit: English roadmap content is now fully
+// authored (src/roadmap-content.js's TIER_JUMPS_EN) — the old "pending
+// translation, showing in Spanish" fallback is retired. English render
+// shows genuine English prose, never a translation notice, never Spanish.
+test('renderHtml: English render shows real English roadmap prose, no pending-translation notice, no Spanish text', () => {
   const html = renderHtml(BASE_REPORT, maturityAt('T1'), 'en');
   const section = roadmapSectionOf(html);
-  assert.match(section, /pending translation|translat/i);
+  assert.equal(/pending translation/i.test(section), false);
+  assert.equal(section.includes('roadmap-unavailable'), false);
+  assert.match(section, /First tool/); // English tier title (T1 → T2 · First tool → ...)
+  assert.equal(/[áéíóúñ¿¡]/i.test(section.replace(/<pre[\s\S]*?<\/pre>/g, '')), false); // excluding literal code snippets
 });
 
-test('renderHtml: works in Spanish without a pending-translation notice', () => {
+test('renderHtml: works in Spanish exactly as before, no unavailable/translation notices', () => {
   const html = renderHtml(BASE_REPORT, maturityAt('T1'), 'es');
   const section = roadmapSectionOf(html);
   assert.equal(/pending translation/i.test(section), false);
+  assert.equal(section.includes('roadmap-unavailable'), false);
+  assert.match(section, /Primera herramienta/);
 });
 
 // --- implementation prompt (talents-ai-score, "next steps -> prompt") -------
@@ -97,8 +106,20 @@ test('renderHtml: a jump entry (not max tier) renders the copyable implementatio
   const html = renderHtml(BASE_REPORT, maturityAt('T1'), 'es');
   const section = roadmapSectionOf(html);
   assert.match(section, /Prompt para implementar/);
-  assert.match(section, /<pre class="roadmap-prompt-code">/);
+  assert.match(section, /<pre class="roadmap-prompt-code" id="implementation-prompt-code">/);
   assert.match(section, /Ayúdame a implementar/);
+});
+
+test('renderHtml: the prompt block includes a Copy button wired to the prompt code element via data-copy-target', () => {
+  const html = renderHtml(BASE_REPORT, maturityAt('T1'), 'es');
+  const section = roadmapSectionOf(html);
+  assert.match(section, /<button type="button" class="roadmap-prompt-copy" data-copy-target="implementation-prompt-code" data-copied-label="Copiado ✓">Copiar<\/button>/);
+});
+
+test('renderHtml (en): the Copy button label follows the report locale', () => {
+  const html = renderHtml(BASE_REPORT, maturityAt('T1'), 'en');
+  const section = roadmapSectionOf(html);
+  assert.match(section, /data-copied-label="Copied ✓">Copy<\/button>/);
 });
 
 test('renderHtml: T7 (max tier) does NOT render an implementation prompt (nothing to implement)', () => {
@@ -120,4 +141,29 @@ test('renderHtml: the implementation prompt is HTML-escaped safely (never a raw 
   const html = renderHtml(report, maturityAt('T1'), 'es');
   const section = roadmapSectionOf(html);
   assert.equal(section.includes('<script>alert(1)</script>'), false);
+});
+
+// --- copy-to-clipboard script (talents-ai-score) ----------------------------
+// Zero-network invariant check: the copy button's own JS lives in the
+// existing inline <script> at the bottom of the document (no CDN, no
+// fetch/XHR) and reads the prompt text back from the DOM element's own
+// textContent rather than re-embedding it as a second JS string — so
+// there's never an escaping mismatch between what's shown and what gets
+// copied.
+
+test('renderHtml: the copy-to-clipboard script is present, inline, and reads from data-copy-target (zero-network)', () => {
+  const html = renderHtml(BASE_REPORT, maturityAt('T1'), 'es');
+  assert.match(html, /navigator\.clipboard/);
+  assert.match(html, /document\.execCommand\('copy'\)/);
+  assert.match(html, /data-copy-target/);
+  assert.match(html, /target\.textContent/);
+  // No new network surface introduced: still no external <script src="...">.
+  assert.equal(/<script[^>]+src=/.test(html), false);
+});
+
+test('renderHtml: no copy-to-clipboard script/button rendered when there is no prompt (e.g. T7 max tier)', () => {
+  const html = renderHtml(BASE_REPORT, maturityAt('T7'), 'es');
+  const section = roadmapSectionOf(html);
+  assert.equal(section.includes('roadmap-prompt-copy'), false);
+  assert.equal(section.includes('data-copy-target'), false);
 });
