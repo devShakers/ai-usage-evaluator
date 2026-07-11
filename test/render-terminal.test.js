@@ -83,11 +83,13 @@ test('renderTerminal: agent synthesis symbolic name + phrase are shown when pres
   assert.match(html, /Coordina el trabajo\./);
 });
 
-// talents-ai-score: no synthesized whatItDoes -> NO filler phrase at all (a
-// first pass showed the same templated sentence on every card, which read
-// as noise since the tools/model chips already carry that information
-// distinctly per agent).
-test('renderTerminal: agents without synthesis show no filler description line, only name/tools/model', () => {
+// talents-ai-score: description is ALWAYS present now (real-browser user
+// feedback rejected "no phrase at all" too — see render-html.js's
+// buildAgentCardTree header for the full history of approaches tried).
+// Without synthesis, priority is: raw frontmatter description, then a
+// minimal name-derived last resort — never the old repetitive filler
+// sentence, and never a blank card.
+test('renderTerminal: agents without synthesis but WITH raw descriptions show those descriptions, not identical filler text', () => {
   const report = {
     ...BASE_REPORT,
     agents: [
@@ -95,13 +97,28 @@ test('renderTerminal: agents without synthesis show no filler description line, 
       { name: 'hub-mr-reviewer', tools: [], model: 'opus', parent: null },
       { name: 'test-writer', tools: [], model: 'sonnet', parent: null },
     ],
+    agentDescriptions: [
+      { name: 'ddd-enforcer', description: 'Scans a module directory for DDD pattern violations.' },
+      { name: 'hub-mr-reviewer', description: 'Revisor experto de Merge Requests.' },
+      { name: 'test-writer', description: 'Creates comprehensive unit tests.' },
+    ],
   };
   const html = strip(renderTerminal(report, MATURITY_NO_TIER, 'es'));
   assert.match(html, /ddd-enforcer/);
-  assert.match(html, /hub-mr-reviewer/);
-  assert.match(html, /test-writer/);
+  assert.match(html, /Scans a module directory for DDD pattern violations\./);
+  assert.match(html, /Revisor experto de Merge Requests\./);
+  assert.match(html, /Creates comprehensive unit tests\./);
   assert.equal(html.includes('sin descripción sintetizada'), false);
   assert.equal(html.includes('Sin descripción disponible'), false);
+});
+
+test('renderTerminal: an agent with neither synthesis nor a declared description gets the minimal name-derived last-resort line, never blank', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'bare-agent', tools: [], model: null, parent: null }],
+  };
+  const html = strip(renderTerminal(report, MATURITY_NO_TIER, 'es'));
+  assert.match(html, /Bare agent/i);
 });
 
 test('renderTerminal: with maturity.tierKey, shows the tier roadmap (current -> next) instead of the generic band next-step', () => {
@@ -115,6 +132,31 @@ test('renderTerminal: --build-next-level is announced when there is a next tier 
   const maturity = { level: 3, key: 'power', name: 'Power user', score: 70, emoji: 'x', next: 'x', tier: 5, tierKey: 'T5' };
   const html = strip(renderTerminal(BASE_REPORT, maturity, 'es'));
   assert.match(html, /ai-footprint --build-next-level/);
+  // Now framed as a SECONDARY alternative — the prompt below is primary.
+  assert.match(html, /Alternativamente/);
+});
+
+// --- implementation prompt (talents-ai-score, "next steps -> prompt") -------
+
+test('renderTerminal: a jump entry (not max tier) shows the copyable implementation prompt in a clearly delimited block', () => {
+  const maturity = { level: 3, key: 'power', name: 'Power user', score: 70, emoji: 'x', next: 'x', tier: 5, tierKey: 'T5' };
+  const html = strip(renderTerminal(BASE_REPORT, maturity, 'es'));
+  assert.match(html, /Prompt para implementar/);
+  assert.match(html, /Ayúdame a implementar/);
+});
+
+test('renderTerminal: T7 (max tier) does NOT show an implementation prompt', () => {
+  const maturity = { level: 4, key: 'orchestrator', name: 'Orquestador', score: 100, emoji: 'x', next: 'x', tier: 7, tierKey: 'T7' };
+  const html = strip(renderTerminal(BASE_REPORT, maturity, 'es'));
+  assert.equal(html.includes('Prompt para implementar'), false);
+});
+
+test('renderTerminal: the implementation prompt reflects detected frameworks from the report', () => {
+  const maturity = { level: 3, key: 'power', name: 'Power user', score: 70, emoji: 'x', next: 'x', tier: 5, tierKey: 'T5' };
+  const report = { ...BASE_REPORT, technologies: ['React', 'NestJS'] };
+  const html = strip(renderTerminal(report, maturity, 'es'));
+  assert.match(html, /React/);
+  assert.match(html, /NestJS/);
 });
 
 test('renderTerminal: at the max tier (T7), does NOT announce --build-next-level (nothing left to build)', () => {

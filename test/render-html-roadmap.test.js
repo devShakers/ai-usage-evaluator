@@ -90,3 +90,34 @@ test('renderHtml: works in Spanish without a pending-translation notice', () => 
   const section = roadmapSectionOf(html);
   assert.equal(/pending translation/i.test(section), false);
 });
+
+// --- implementation prompt (talents-ai-score, "next steps -> prompt") -------
+
+test('renderHtml: a jump entry (not max tier) renders the copyable implementation prompt block', () => {
+  const html = renderHtml(BASE_REPORT, maturityAt('T1'), 'es');
+  const section = roadmapSectionOf(html);
+  assert.match(section, /Prompt para implementar/);
+  assert.match(section, /<pre class="roadmap-prompt-code">/);
+  assert.match(section, /Ayúdame a implementar/);
+});
+
+test('renderHtml: T7 (max tier) does NOT render an implementation prompt (nothing to implement)', () => {
+  const html = renderHtml(BASE_REPORT, maturityAt('T7'), 'es');
+  const section = roadmapSectionOf(html);
+  assert.equal(section.includes('roadmap-prompt-code'), false);
+});
+
+test('renderHtml: the implementation prompt reflects detected frameworks from the report', () => {
+  const report = { ...BASE_REPORT, technologies: ['React', 'NestJS'] };
+  const html = renderHtml(report, maturityAt('T1'), 'es');
+  const section = roadmapSectionOf(html);
+  assert.match(section, /React/);
+  assert.match(section, /NestJS/);
+});
+
+test('renderHtml: the implementation prompt is HTML-escaped safely (never a raw injection)', () => {
+  const report = { ...BASE_REPORT, technologies: ['<script>alert(1)</script>'] };
+  const html = renderHtml(report, maturityAt('T1'), 'es');
+  const section = roadmapSectionOf(html);
+  assert.equal(section.includes('<script>alert(1)</script>'), false);
+});

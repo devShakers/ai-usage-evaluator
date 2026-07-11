@@ -51,8 +51,9 @@ Opciones:
       --json            Imprime el informe en JSON por stdout
       --no-save         No guarda nada en disco (solo muestra)
       --root DIR        Escanea DIR en vez del directorio actual
-      --build-next-level  Genera el starter determinista del siguiente tier (fase opcional, ver el roadmap del informe)
+      --build-next-level  Alternativa secundaria: genera el starter determinista del siguiente tier (ver el prompt copiable del roadmap para la vía principal)
       --force           Junto a --build-next-level, sobrescribe un fichero ya existente
+      --lang es|en      Fuerza el idioma del informe (y del prompt de implementación), en vez de detectarlo del sistema
   -h, --help            Muestra esta ayuda
 
 El informe se genera y se muestra SIEMPRE en tu equipo, sin condición. La
@@ -151,7 +152,12 @@ async function maybeSynthesizeAgents(report, root) {
   if (!endpoint) return null;
 
   try {
-    const descriptions = parseAgentDescriptions(root);
+    // Reuses `report.agentDescriptions` (already attached, unconditionally,
+    // right after the scan) instead of re-parsing the same files a second
+    // time — falls back to a fresh parse only if it's somehow missing.
+    const descriptions = Array.isArray(report.agentDescriptions)
+      ? report.agentDescriptions
+      : parseAgentDescriptions(root);
     const requestBody = buildSynthesisRequest(report.agents, descriptions);
     return await requestAgentSynthesis(requestBody, { endpoint });
   } catch {
@@ -197,7 +203,11 @@ async function main() {
     return;
   }
 
-  const lang = detectReportLang();
+  // talents-ai-score (implementation-prompt item): `--lang` overrides the
+  // auto-detected report language — the whole report, the copyable
+  // implementation prompt included, so there's ONE language axis, not a
+  // second independent choice just for the prompt.
+  const lang = opts.lang || detectReportLang();
   const catalog = getCatalog(lang);
 
   // Consent management commands: one-shot, don't scan (issue 007).
@@ -227,6 +237,20 @@ async function main() {
   const root = opts.root;
   const report = withStaticStatus(catalog.cli.scanningLabel, () => scan({ root }));
   const maturity = classify(report);
+
+  // talents-ai-score, description-always-present (real-browser user
+  // feedback): raw per-agent descriptions, straight from
+  // `.claude/agents/*.md` frontmatter, attached UNCONDITIONALLY (no
+  // network, no endpoint needed) — the render layer's fallback source for
+  // an agent card's description when synthesis doesn't run or doesn't
+  // cover that agent (src/render-html.js's buildAgentCardTree). Reuses
+  // ADR-010's gated parseAgentDescriptions, previously only called when
+  // synthesis was attempted; local-only display is a strictly LESS
+  // exposed use than sending it to the synthesis endpoint, so no new
+  // privacy boundary is crossed. Never touches the persistence payload.
+  if (Array.isArray(report.agents) && report.agents.length > 0) {
+    report.agentDescriptions = parseAgentDescriptions(root || process.cwd());
+  }
 
   // Ephemeral diagram synthesis (ADR-010/011): every run, independent of
   // consent. Attaches `report.agentSynthesis` only on success; on any

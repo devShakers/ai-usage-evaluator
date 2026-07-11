@@ -4,6 +4,7 @@ const { getCatalog, categoryLabel } = require('./i18n');
 const { getRoadmapEntry } = require('./roadmap-content');
 const { analyzeTier } = require('./tier-analysis');
 const { mergeRoadmapPersonalization } = require('./roadmap-personalization');
+const { buildImplementationPrompt } = require('./roadmap-prompt');
 
 /*
  * Generates a SELF-CONTAINED HTML dashboard: all the CSS and data are
@@ -209,49 +210,90 @@ function normalizeAgentName(name) {
   return String(name || '').trim().toLowerCase().replace(/^[`'"*]+|[`'"*]+$/g, '');
 }
 
-// talents-ai-score: an EARLIER fix forced a deterministic filler phrase
-// (derived from tools/model) whenever synthesis didn't cover an agent, so
-// "every card always has a description". In practice that backfired: every
-// agent without synthesis got the SAME templated sentence ("Structural
-// agent with no synthesized description: runs on the X model..."), so
-// every card looked near-identical and read as noise, not information —
-// the user's own reaction, verbatim: "molesta". REVERTED: with no
-// synthesized `whatItDoes`, there is simply NO phrase — only the chips
-// (name/tools/model), which are the actually distinctive per-agent data
-// and already render below the title regardless of synthesis. When
-// synthesis DOES cover an agent, nothing changes: its real `whatItDoes`
-// still renders as the phrase.
+// talents-ai-score, description-always-present (real-browser user
+// feedback): TWO earlier approaches were tried and rejected before this
+// one. First, a deterministic FILLER phrase (derived from tools/model)
+// whenever synthesis didn't cover an agent — every card got the SAME
+// templated sentence, read as noise ("molesta"). That was reverted to "no
+// phrase at all" when there's no synthesis. The user then rejected THAT
+// too, in real-browser testing: a card with only name+model, no
+// description whatsoever, is not acceptable either. Final behavior, in
+// priority order — NEVER a blank phrase:
+//   1. The synthesis result's `whatItDoes` (unchanged, richest option).
+//   2. The agent's OWN raw `description`, straight from its
+//      `.claude/agents/*.md` frontmatter (`report.agentDescriptions`,
+//      attached by bin/report.js via agent-org-chart.js's
+//      parseAgentDescriptions — ADR-010's gated function, now ALSO reused
+//      for this local-only display, not just the ephemeral synthesis
+//      request). Deterministic, local, from the talent's own file — a
+//      legitimate "description based on your own files".
+//
+//      Deliberately NOT run through `scrubSecrets` here (unlike the
+//      synthesis request, which sends this text to an external endpoint):
+//      that heuristic redaction is tuned for "about to leave the machine"
+//      and its path-matching rule turned out to mangle ordinary example
+//      file paths a talent legitimately writes in their own description
+//      ("Add test coverage for src/modules/.../foo.service.ts" ->
+//      "[REDACTED]"), actively harming legibility for content that never
+//      leaves the machine and offers no corresponding safety benefit
+//      here — the talent is looking at their OWN file, on their OWN
+//      machine, in a report Claude Code (or equivalent) already reads in
+//      full every session. Still HTML-escaped (`esc()`, applied uniformly
+//      to every rendered field) so it can never break out of the markup.
+//   3. Only when NEITHER of the above exists: a minimal, name-derived
+//      last-resort line (`agentDescriptionFromName`) — deliberately SHORT
+//      and NOT a full templated sentence, so it doesn't reproduce the
+//      "every card looks identical" problem from approach #1: it differs
+//      per agent because the name differs, and it only ever fires for an
+//      agent that genuinely declares nothing else.
 //
 // Merges the structural org chart (ADR-009: name/tools/model/parent —
 // always available, deterministic) with the ephemeral synthesis result
-// (ADR-010: symbolicName/whatItDoes — optional, per-run), keyed by
-// NORMALIZED name (see normalizeAgentName above), then groups by parent
+// (ADR-010: symbolicName/whatItDoes — optional, per-run) and the raw
+// per-agent descriptions, all keyed by NORMALIZED name (see
+// normalizeAgentName above — the raw-description matching gets the exact
+// same tolerance as synthesis matching, since both are free-text sources
+// that could format a name slightly differently), then groups by parent
 // (dangling/self/missing parent references fall back to the implicit
-// root, same defensive rule the retired org-chart tree used). This module
-// never reads `description` from anywhere.
+// root, same defensive rule the retired org-chart tree used).
 //
 // Guarantees:
 //   - `name`: always the structural agent's name — parseAgentFile already
 //     guarantees this is never blank (falls back to the filename there).
-//   - `whatItDoes`: the synthesis phrase when this agent was covered by
-//     it, otherwise `null` (no phrase rendered — see the note above this
-//     function for why a filler fallback was tried and reverted).
-function buildAgentCardTree(report) {
+//   - `whatItDoes`: NEVER null or blank — always one of the 3 sources
+//     above, in that priority order.
+function humanizeAgentName(name) {
+  const spaced = String(name || '').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return spaced.replace(/^\S/, (c) => c.toUpperCase());
+}
+
+function buildAgentCardTree(report, t) {
   const agents = Array.isArray(report.agents) ? report.agents : [];
   const synthesisAgents =
     report.agentSynthesis && Array.isArray(report.agentSynthesis.agents) ? report.agentSynthesis.agents : [];
   const synthesisByName = new Map(synthesisAgents.map((a) => [normalizeAgentName(a.name), a]));
+  const rawDescriptions = Array.isArray(report.agentDescriptions) ? report.agentDescriptions : [];
+  const rawDescByName = new Map(rawDescriptions.map((d) => [normalizeAgentName(d.name), d.description]));
   const byName = new Set(agents.map((a) => a.name));
 
   const cards = agents.map((a) => {
-    const synth = synthesisByName.get(normalizeAgentName(a.name));
+    const key = normalizeAgentName(a.name);
+    const synth = synthesisByName.get(key);
     const parentKey = a.parent && byName.has(a.parent) && a.parent !== a.name ? a.parent : null;
     const tools = Array.isArray(a.tools) ? a.tools : [];
     const model = a.model || null;
+
+    const synthPhrase =
+      synth && typeof synth.whatItDoes === 'string' && synth.whatItDoes.trim() ? synth.whatItDoes.trim() : null;
+    const rawRaw = rawDescByName.get(key);
+    const rawPhrase = typeof rawRaw === 'string' && rawRaw.trim() ? rawRaw.trim() : null;
+    const fallbackPhrase = t && t.html.agentDescriptionFromName ? t.html.agentDescriptionFromName(humanizeAgentName(a.name)) : null;
+    const whatItDoes = synthPhrase || rawPhrase || fallbackPhrase;
+
     return {
       name: a.name,
       symbolicName: synth && synth.symbolicName ? synth.symbolicName : null,
-      whatItDoes: synth && synth.whatItDoes ? synth.whatItDoes : null,
+      whatItDoes,
       tools,
       model,
       parent: parentKey,
@@ -325,7 +367,7 @@ function agentNodeHtml(card, childrenByParent, t, visited = new Set()) {
 }
 
 function agentCardsSection(report, t) {
-  const { childrenByParent, roots } = buildAgentCardTree(report);
+  const { childrenByParent, roots } = buildAgentCardTree(report, t);
   if (!roots.length) {
     return `<section>
     <div class="h2">${esc(t.html.diagramHeading)}</div>
@@ -413,7 +455,24 @@ function roadmapTerminalHtml(entry, t) {
   </div>`;
 }
 
-function roadmapJumpHtml(entry, t, personalized) {
+// talents-ai-score, "next steps -> prompt": a deterministic, ready-to-paste
+// implementation prompt (src/roadmap-prompt.js) — the PRIMARY "how do I
+// implement this" path now, replacing --build-next-level's file-writing as
+// the main route (that stays available as a secondary, opt-in
+// alternative — see its updated hint text). A plain `<pre>` block, same
+// pattern already used for the roadmap's own copyable code snippet
+// (roadmapSnippetHtml above): no click-to-copy JS button, just legible,
+// manually-selectable text — consistent with the existing snippet UX.
+function implementationPromptBlock(promptText, t) {
+  if (!promptText) return '';
+  return `<div class="roadmap-block roadmap-prompt-block">
+    <div class="roadmap-block-label">${esc(t.html.implementationPromptHeading)}</div>
+    <p class="roadmap-prompt-hint">${esc(t.html.implementationPromptHint)}</p>
+    <pre class="roadmap-prompt-code"><code>${esc(promptText)}</code></pre>
+  </div>`;
+}
+
+function roadmapJumpHtml(entry, t, personalized, promptText) {
   return `<div class="card roadmap-card">
     ${roadmapPendingNotice(entry, t)}
     ${roadmapPersonalizedNotice(personalized, t)}
@@ -436,6 +495,7 @@ function roadmapJumpHtml(entry, t, personalized) {
       <div class="roadmap-block-label">${esc(t.html.roadmapMistakesLabel)}</div>
       <ul class="roadmap-list">${entry.commonMistakes.map((m) => `<li>${esc(m)}</li>`).join('')}</ul>
     </div>
+    ${implementationPromptBlock(promptText, t)}
   </div>`;
 }
 
@@ -492,9 +552,10 @@ function roadmapSection(report, maturity, t, lang) {
   const personalization = report && report.roadmapPersonalization;
   const finalEntry = mergeRoadmapPersonalization(entry, personalization);
   const wasPersonalized = !entry.maxTier && !!personalization;
+  const promptText = finalEntry.maxTier ? null : buildImplementationPrompt(finalEntry, report, maturity, lang);
   const body = finalEntry.maxTier
     ? roadmapTerminalHtml(finalEntry, t)
-    : roadmapJumpHtml(finalEntry, t, wasPersonalized);
+    : roadmapJumpHtml(finalEntry, t, wasPersonalized, promptText);
   return `<section>
     <div class="h2">${esc(t.html.roadmapHeading)}</div>
     ${body}
@@ -843,22 +904,22 @@ function renderHtml(report, maturity, lang) {
      wrappable siblings with it. */
   .agent-tree{padding-bottom:2px}
   .agent-cards-grid{display:flex;flex-wrap:wrap;align-items:flex-start;gap:18px}
-  /* Base node width (used by NESTED nodes inside a subtree): fixed 328 so a
+  /* Base node width (used by NESTED nodes inside a subtree): fixed 400 so a
      deep chain keeps a stable, legible card width and scrolls sideways
      inside its owner's block rather than collapsing. */
   .agent-node{display:flex;flex-direction:column;gap:16px;
-    flex:0 0 328px;width:328px}
+    flex:0 0 400px;width:400px}
   /* Narrow-viewport hardening (talents-ai-score responsive audit): ROOT
      cards (direct children of the grid — the common flat case, since most
      real agent setups declare no parent) must shrink to fit a narrow
-     viewport instead of holding a fixed 328px that would spill past the
+     viewport instead of holding a fixed 400px that would spill past the
      right edge (and eat into the page padding) once the viewport drops
-     toward ~360px and below. width:min(328px,100%) caps them at 328 on wide
+     toward ~400px and below. width:min(400px,100%) caps them at 400 on wide
      screens (they wrap, never stretch — grow:0) and lets them shrink to the
      available width on a phone. Nested nodes keep the fixed base above.
      Verified by real headless render at 320/360/375/520/780/1200px: no page
      overflow at any width. */
-  .agent-cards-grid>.agent-node{flex:0 1 328px;width:min(328px,100%)}
+  .agent-cards-grid>.agent-node{flex:0 1 400px;width:min(400px,100%)}
   /* A root subtree owner spans its own row and is the ONLY horizontal-scroll
      viewport in the tree; its card is still capped at the fixed card width
      (see .agent-card max-width) so it doesn't stretch to the full row.
@@ -877,7 +938,7 @@ function renderHtml(report, maturity, lang) {
   .agent-card{background:var(--surface);border:1px solid var(--border);
     border-radius:var(--r-lg);box-shadow:var(--shadow-sm);
     padding:20px 22px;display:flex;flex-direction:column;gap:12px;
-    width:100%;max-width:328px;box-sizing:border-box}
+    width:100%;max-width:400px;box-sizing:border-box}
   .agent-card-head{display:flex;align-items:flex-start;justify-content:space-between;
     gap:10px}
   .agent-title{font-size:18px;font-weight:700;letter-spacing:-.01em;line-height:1.3}
@@ -951,6 +1012,18 @@ function renderHtml(report, maturity, lang) {
     border-radius:var(--r-md);padding:14px;overflow:auto;
     font-family:var(--font-mono);font-size:12.5px;line-height:1.5;
     color:var(--muted);margin:4px 0 0}
+
+  /* ---- Copyable implementation prompt (talents-ai-score) ----
+   * Same pre-tag pattern as .roadmap-code above (manually selectable,
+   * no JS copy button - consistent with the existing snippet UX), just a
+   * distinct border accent so it reads as its own, primary call to
+   * action rather than another curated-content block. */
+  .roadmap-prompt-block{border-top:1px dashed var(--border);padding-top:16px}
+  .roadmap-prompt-hint{margin:0 0 8px;font-size:13px;color:var(--muted)}
+  .roadmap-prompt-code{background:var(--bg);border:1px solid var(--emphasis);
+    border-radius:var(--r-md);padding:14px;overflow:auto;white-space:pre-wrap;
+    word-break:break-word;font-family:var(--font-mono);font-size:12.5px;
+    line-height:1.55;color:var(--fg);margin:0}
 
   /* ---- Footer ---- */
   footer{margin-top:28px;color:var(--faint);font-size:12.5px;line-height:1.55}

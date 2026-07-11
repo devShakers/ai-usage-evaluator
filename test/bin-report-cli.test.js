@@ -215,6 +215,103 @@ test('bin/report.js: the plain-text terminal report includes technologies, agent
   assert.match(stdout, /Tu próximo nivel|Your next level|Next step|Siguiente paso/);
 });
 
+// talents-ai-score, description-always-present: real-shaped agent files
+// (mirroring shakers-hub-backend/.claude/agents/'s own style — a `name` +
+// a long free-text `description`, no explicit `tools:`) must show that
+// raw description in the terminal report even with no synthesis endpoint
+// configured at all.
+test('bin/report.js: an agent\'s raw frontmatter description shows in the terminal report with no synthesis endpoint configured', async () => {
+  fs.mkdirSync(path.join(tmpProjectDir, '.claude', 'agents'), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmpProjectDir, '.claude', 'agents', 'ddd-enforcer.md'),
+    [
+      '---',
+      'name: ddd-enforcer',
+      'description: "Scans a module directory for DDD pattern violations and fixes them."',
+      'model: opus',
+      '---',
+      '',
+      'You are a DDD pattern enforcer.',
+    ].join('\n'),
+  );
+
+  const { code, stdout } = await runCli({
+    args: ['--no-save', '--root', tmpProjectDir],
+    stdin: 'n\n',
+    env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
+  });
+  assert.equal(code, 0);
+  assert.match(stdout, /ddd-enforcer/);
+  assert.match(stdout, /Scans a module directory for DDD pattern violations and fixes them\./);
+});
+
+// --- --lang override + implementation prompt (talents-ai-score) -----------
+// Isolates AI_FOOTPRINT_HOME_DIR too (not just the project root) so the
+// tier computed here is deterministic-enough across machines (empty root
+// + no home context files reliably lands at T1 — a real jump entry).
+
+test('bin/report.js: --lang es forces the report (and the implementation prompt) into Spanish regardless of OS locale', async () => {
+  const tmpHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-footprint-cli-home-'));
+  try {
+    const { code, stdout } = await runCli({
+      args: ['--no-save', '--root', tmpProjectDir, '--lang', 'es'],
+      stdin: 'n\n',
+      env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_HOME_DIR: tmpHomeDir },
+    });
+    assert.equal(code, 0);
+    assert.match(stdout, /Tu próximo nivel/);
+    assert.match(stdout, /Prompt para implementar/);
+    assert.match(stdout, /Ayúdame a implementar/);
+  } finally {
+    fs.rmSync(tmpHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('bin/report.js: --lang en forces the report (and the implementation prompt) into English regardless of OS locale', async () => {
+  const tmpHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-footprint-cli-home-'));
+  try {
+    const { code, stdout } = await runCli({
+      args: ['--no-save', '--root', tmpProjectDir, '--lang', 'en'],
+      stdin: 'n\n',
+      env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_HOME_DIR: tmpHomeDir },
+    });
+    assert.equal(code, 0);
+    assert.match(stdout, /Your next level/);
+    assert.match(stdout, /Implementation prompt/);
+    assert.match(stdout, /Help me implement/);
+  } finally {
+    fs.rmSync(tmpHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('bin/report.js: an unrecognized --lang value is ignored, falling back to auto-detection, never crashes', async () => {
+  const { code, stdout } = await runCli({
+    args: ['--no-save', '--root', tmpProjectDir, '--lang', 'fr'],
+    stdin: 'n\n',
+    env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
+  });
+  assert.equal(code, 0);
+  assert.match(stdout, /AI FOOTPRINT/);
+});
+
+test('bin/report.js: the implementation prompt is the primary "next steps" path, --build-next-level is now announced as a secondary alternative', async () => {
+  const tmpHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-footprint-cli-home-'));
+  try {
+    const { stdout } = await runCli({
+      args: ['--no-save', '--root', tmpProjectDir, '--lang', 'es'],
+      stdin: 'n\n',
+      env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_HOME_DIR: tmpHomeDir },
+    });
+    const promptIdx = stdout.indexOf('Prompt para implementar');
+    const buildNextIdx = stdout.indexOf('ai-footprint --build-next-level');
+    assert.ok(promptIdx !== -1 && buildNextIdx !== -1);
+    assert.ok(promptIdx < buildNextIdx, 'the prompt (primary) should appear before the --build-next-level hint (secondary)');
+    assert.match(stdout, /Alternativamente/);
+  } finally {
+    fs.rmSync(tmpHomeDir, { recursive: true, force: true });
+  }
+});
+
 test('bin/report.js: progress feedback (scanning/synthesis status) never leaks into --json\'s stdout, which stays pure, parseable JSON', async () => {
   const { code, stdout } = await runCli({
     args: ['--json', '--root', tmpProjectDir],

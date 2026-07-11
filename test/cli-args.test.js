@@ -73,3 +73,23 @@ test('parseArgs: --force (only meaningful alongside --build-next-level)', () => 
   assert.equal(parseArgs(['--build-next-level', '--force']).force, true);
   assert.equal(parseArgs([]).force, false);
 });
+
+// --- report/prompt language override (talents-ai-score, item 3: the
+// implementation prompt needs an explicit, choosable language, decoupled
+// from OS-locale auto-detection; --lang overrides the WHOLE report's
+// language, the prompt included, for one clean, single language axis) ---
+
+test('parseArgs: --lang es|en overrides the auto-detected report language; unset -> null (auto-detect stays default)', () => {
+  assert.equal(parseArgs(['--lang', 'es']).lang, 'es');
+  assert.equal(parseArgs(['--lang', 'en']).lang, 'en');
+  assert.equal(parseArgs([]).lang, null);
+});
+
+test('parseArgs: --lang= form also works', () => {
+  assert.equal(parseArgs(['--lang=en']).lang, 'en');
+});
+
+test('parseArgs: an unrecognized --lang value is ignored (null), never a made-up language', () => {
+  assert.equal(parseArgs(['--lang', 'fr']).lang, null);
+  assert.equal(parseArgs(['--lang=de']).lang, null);
+});

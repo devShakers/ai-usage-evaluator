@@ -5,6 +5,7 @@ const { buildAgentCardTree } = require('./render-html');
 const { getRoadmapEntry } = require('./roadmap-content');
 const { analyzeTier } = require('./tier-analysis');
 const { mergeRoadmapPersonalization } = require('./roadmap-personalization');
+const { buildImplementationPrompt } = require('./roadmap-prompt');
 
 /*
  * talents-ai-score: terminal parity with the HTML report. The HTML report
@@ -94,7 +95,7 @@ function agentLine(card, depth, t) {
 }
 
 function printAgents(report, t, p) {
-  const { childrenByParent, roots } = buildAgentCardTree(report);
+  const { childrenByParent, roots } = buildAgentCardTree(report, t);
   p(`  ${c.bold}${t.html.diagramHeading}${c.reset}`);
   if (!roots.length) {
     p(`  ${c.gray}  ${t.html.agentsEmpty}${c.reset}`);
@@ -192,9 +193,27 @@ function printRoadmap(report, maturity, t, lang, p) {
   if (entry.pendingTranslation) p(`  ${c.dim}${t.html.roadmapPendingTranslation}${c.reset}`);
   if (wasPersonalized) p(`  ${c.dim}${t.html.roadmapPersonalizedNotice}${c.reset}`);
 
-  // Announce --build-next-level (issue 021) whenever there's an actual next
-  // tier to build for — never when already at the terminal T7 entry (there
-  // is nothing left to build).
+  // talents-ai-score, "next steps -> prompt": the PRIMARY "how do I
+  // implement this" path now — a deterministic, ready-to-paste prompt
+  // (src/roadmap-prompt.js), shown as a clearly delimited block so it's
+  // easy to select+copy straight from the terminal. Never shown for the
+  // T7 terminal entry (nothing to implement).
+  if (!entry.maxTier) {
+    const promptText = buildImplementationPrompt(entry, report, maturity, lang);
+    if (promptText) {
+      p();
+      p(`  ${c.bold}${t.html.implementationPromptHeading}${c.reset}`);
+      p(`  ${c.dim}${t.html.implementationPromptHint}${c.reset}`);
+      const rule = '─'.repeat(48);
+      p(`  ${c.gray}${rule}${c.reset}`);
+      for (const line of promptText.split('\n')) p(`  ${line}`);
+      p(`  ${c.gray}${rule}${c.reset}`);
+    }
+  }
+
+  // --build-next-level (issue 021) is now a SECONDARY, opt-in alternative
+  // to the prompt above — never when already at the terminal T7 entry
+  // (there is nothing left to build).
   if (!entry.maxTier) p(`  ${c.dim}${t.cli.buildNextLevelHint}${c.reset}`);
 
   p();
