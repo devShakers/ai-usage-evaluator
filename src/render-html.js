@@ -641,7 +641,15 @@ function renderHtml(report, maturity, lang) {
     font-family:var(--font-sans);line-height:1.45;
     -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
     padding:40px 20px 64px;}
-  .wrap{max-width:840px;margin:0 auto}
+  /* overflow-x:clip is a page-level guard: the report must NEVER produce a
+     horizontal page scrollbar at any width. Nothing legitimately overflows
+     the wrap (the one deep-nesting case scrolls inside its OWN
+     overflow-x:auto block — see .agent-node.has-children), so clip here has
+     no visible effect today; it only prevents a future stray wide child
+     (a long unbreakable token, a new section) from widening the page.
+     clip (not hidden/auto) leaves the vertical axis untouched and creates no
+     scroll container. */
+  .wrap{max-width:840px;margin:0 auto;overflow-x:clip}
   .card{background:var(--surface);border:1px solid var(--border);
     border-radius:var(--r-lg);box-shadow:var(--shadow-sm)}
 
@@ -812,13 +820,31 @@ function renderHtml(report, maturity, lang) {
      wrappable siblings with it. */
   .agent-tree{padding-bottom:2px}
   .agent-cards-grid{display:flex;flex-wrap:wrap;align-items:flex-start;gap:18px}
+  /* Base node width (used by NESTED nodes inside a subtree): fixed 328 so a
+     deep chain keeps a stable, legible card width and scrolls sideways
+     inside its owner's block rather than collapsing. */
   .agent-node{display:flex;flex-direction:column;gap:16px;
     flex:0 0 328px;width:328px}
+  /* Narrow-viewport hardening (talents-ai-score responsive audit): ROOT
+     cards (direct children of the grid — the common flat case, since most
+     real agent setups declare no parent) must shrink to fit a narrow
+     viewport instead of holding a fixed 328px that would spill past the
+     right edge (and eat into the page padding) once the viewport drops
+     toward ~360px and below. width:min(328px,100%) caps them at 328 on wide
+     screens (they wrap, never stretch — grow:0) and lets them shrink to the
+     available width on a phone. Nested nodes keep the fixed base above.
+     Verified by real headless render at 320/360/375/520/780/1200px: no page
+     overflow at any width. */
+  .agent-cards-grid>.agent-node{flex:0 1 328px;width:min(328px,100%)}
   /* A root subtree owner spans its own row and is the ONLY horizontal-scroll
      viewport in the tree; its card is still capped at the fixed card width
-     (see .agent-card max-width) so it doesn't stretch to the full row. */
+     (see .agent-card max-width) so it doesn't stretch to the full row.
+     min-width:0 makes the flex containment bulletproof: without it a flex
+     item's automatic minimum size could let a very long unbreakable token
+     inside the subtree push this scroll viewport (and thus the page) wider
+     than 100%. */
   .agent-cards-grid>.agent-node.has-children{flex-basis:100%;width:100%;
-    max-width:100%;overflow-x:auto;padding-bottom:6px}
+    max-width:100%;min-width:0;overflow-x:auto;padding-bottom:6px}
   .agent-children{position:relative;margin-left:28px;padding-left:24px;
     border-left:2px dashed var(--border);display:flex;flex-direction:column;
     align-items:flex-start;gap:16px}

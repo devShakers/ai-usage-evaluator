@@ -296,6 +296,36 @@ test('renderHtml: a root node WITH children carries the has-children scroll hook
   assert.match(section, /class="agent-node"[\s\S]*agent-title">loner</);
 });
 
+// Responsive audit (talents-ai-score): the page must NEVER produce a
+// horizontal page scrollbar at any viewport width. The one deep-nesting case
+// scrolls inside its OWN block. Three narrow-viewport guards, verified by
+// real headless render at 320/360/375/520/780/1200px (body.scrollWidth ===
+// viewport at every width):
+//   1. ROOT cards shrink to fit a narrow viewport (width:min(328px,100%))
+//      instead of holding a fixed 328px that spills past ~360px and below.
+//   2. The subtree scroll owner is bulletproof (min-width:0) so a long
+//      unbreakable token can't push it — and thus the page — past 100%.
+//   3. A page-level overflow-x:clip guard on .wrap as a final safety net.
+test('CSS: ROOT agent cards are responsive (min(328px,100%)) so they never overflow a narrow viewport', () => {
+  const html = renderHtml({ ...BASE_REPORT, agents: [{ name: 'a', tools: [], model: null, parent: null }] }, MATURITY, 'es');
+  assert.match(html, /\.agent-cards-grid>\.agent-node\{[^}]*width:min\(328px,100%\)/);
+  // Still capped at 328 (grow:0) so on wide screens they wrap, never stretch.
+  assert.match(html, /\.agent-cards-grid>\.agent-node\{[^}]*flex:0 1 328px/);
+  // NESTED nodes keep the fixed base width (stable, legible deep cards).
+  assert.match(html, /\.agent-node\{[^}]*width:328px/);
+});
+
+test('CSS: the subtree scroll owner has min-width:0 so it (and the page) can never be widened past 100%', () => {
+  const html = renderHtml({ ...BASE_REPORT, agents: [{ name: 'a', tools: [], model: null, parent: null }] }, MATURITY, 'es');
+  assert.match(html, /\.agent-cards-grid>\.agent-node\.has-children\{[^}]*min-width:0/);
+  assert.match(html, /\.agent-cards-grid>\.agent-node\.has-children\{[^}]*max-width:100%/);
+});
+
+test('CSS: the report wrap carries an overflow-x:clip page-level guard (no horizontal page scrollbar, ever)', () => {
+  const html = renderHtml(BASE_REPORT, MATURITY, 'es');
+  assert.match(html, /\.wrap\{[^}]*overflow-x:clip/);
+});
+
 test('CSS: chips wrap onto multiple lines (never one-per-line) inside a stable-width card', () => {
   const html = renderHtml({ ...BASE_REPORT, agents: [{ name: 'a', tools: [], model: null, parent: null }] }, MATURITY, 'es');
   assert.match(html, /\.agent-chips\{[^}]*flex-wrap:wrap/);
