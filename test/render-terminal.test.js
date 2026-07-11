@@ -112,6 +112,27 @@ test('renderTerminal: agents without synthesis but WITH raw descriptions show th
   assert.equal(html.includes('Sin descripción disponible'), false);
 });
 
+// talents-ai-score: raw description cleanup + truncation (shared
+// buildAgentCardTree, exercised in full in test/render-html-agent-
+// cards.test.js) must apply in the terminal report too — a raw
+// description with YAML escape artifacts and a long multi-sentence
+// system-prompt body must render as a clean, short excerpt here as well.
+test('renderTerminal: a raw description with YAML escape artifacts and a long multi-sentence body is cleaned AND cut down to only its first sentence', () => {
+  const longDescription =
+    'Revisor experto de Merge Requests del repo shakers-hub-backend.\\n\\n'
+    + 'Ejemplos:\\n- User: "Revisa la MR !1234"\\n  Assistant: "Lanzo hub-mr-reviewer..."';
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'hub-mr-reviewer', tools: [], model: 'opus', parent: null }],
+    agentDescriptions: [{ name: 'hub-mr-reviewer', description: longDescription }],
+  };
+  const html = strip(renderTerminal(report, MATURITY_NO_TIER, 'es'));
+  assert.match(html, /Revisor experto de Merge Requests del repo shakers-hub-backend\./);
+  assert.equal(html.includes('\\n'), false);
+  assert.equal(html.includes('Ejemplos'), false);
+  assert.equal(html.includes('Assistant'), false);
+});
+
 test('renderTerminal: an agent with neither synthesis nor a declared description gets the minimal name-derived last-resort line, never blank', () => {
   const report = {
     ...BASE_REPORT,

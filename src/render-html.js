@@ -267,6 +267,51 @@ function humanizeAgentName(name) {
   return spaced.replace(/^\S/, (c) => c.toUpperCase());
 }
 
+// talents-ai-score bugfix (real-browser testing against shakers-hub-backend):
+// the raw frontmatter description showed literal YAML escape artifacts —
+// this repo's minimal frontmatter parser (src/agent-org-chart.js) never
+// interprets YAML string escapes, so a description authored with `\n`/`\r`/
+// `\t` as literal 2-character escape sequences (or produced as a `|` block
+// scalar, which our parser DOES join with real newline characters) leaked
+// those artifacts straight into the rendered card. Strips both forms, any
+// stray `|` characters (another YAML block-scalar artifact), and collapses
+// the resulting whitespace — turning "YAML-escaped" text into plain prose.
+// ONLY applied to the raw-frontmatter source (see buildAgentCardTree below)
+// — never to the synthesis whatItDoes (already short/polished) or the
+// last-resort name-derived line (already short and never came from YAML).
+function cleanRawDescription(text) {
+  return String(text || '')
+    .replace(/\\[nrt]/g, ' ') // literal 2-char escape sequences, as typed in the source frontmatter
+    .replace(/[\n\r\t]/g, ' ') // real control characters (e.g. from a `|` block scalar)
+    .replace(/\|/g, ' ') // stray YAML block-scalar/table-like pipe artifacts
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// talents-ai-score bugfix: a real agent's `description` is often its FULL
+// system-prompt text (multi-paragraph, "Examples:"/"Ejemplos:" sections
+// included) — showing it whole made cards wildly uneven in height and
+// unreadable. Extracts a short card excerpt: the first sentence (up to
+// the first `.`/`!`/`?` that's followed by whitespace or the end of the
+// string — a period immediately followed by another letter, like the one
+// inside "bar.service.ts", is NOT treated as a sentence end) or ~160
+// characters, WHICHEVER IS SHORTER. An ellipsis is appended only when the
+// text was actually cut off mid-thought (never after a real, complete
+// sentence — "sentence.…" would look broken).
+const CARD_EXCERPT_MAX_LEN = 160;
+
+function excerptForCard(text, maxLen = CARD_EXCERPT_MAX_LEN) {
+  if (!text) return text;
+  const sentenceMatch = text.match(/[.!?](?=\s|$)/);
+  const sentenceEndIdx = sentenceMatch ? sentenceMatch.index + 1 : null;
+
+  if (sentenceEndIdx !== null && sentenceEndIdx <= maxLen) {
+    return text.slice(0, sentenceEndIdx).trim();
+  }
+  if (text.length <= maxLen) return text;
+  return `${text.slice(0, maxLen).trim()}…`;
+}
+
 function buildAgentCardTree(report, t) {
   const agents = Array.isArray(report.agents) ? report.agents : [];
   const synthesisAgents =
@@ -286,7 +331,8 @@ function buildAgentCardTree(report, t) {
     const synthPhrase =
       synth && typeof synth.whatItDoes === 'string' && synth.whatItDoes.trim() ? synth.whatItDoes.trim() : null;
     const rawRaw = rawDescByName.get(key);
-    const rawPhrase = typeof rawRaw === 'string' && rawRaw.trim() ? rawRaw.trim() : null;
+    const rawPhrase =
+      typeof rawRaw === 'string' && rawRaw.trim() ? excerptForCard(cleanRawDescription(rawRaw)) : null;
     const fallbackPhrase = t && t.html.agentDescriptionFromName ? t.html.agentDescriptionFromName(humanizeAgentName(a.name)) : null;
     const whatItDoes = synthPhrase || rawPhrase || fallbackPhrase;
 

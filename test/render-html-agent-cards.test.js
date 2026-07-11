@@ -188,6 +188,156 @@ test('renderHtml: raw description is HTML-escaped before display (never a raw ma
   assert.equal(section.includes('<script>alert(1)</script>'), false);
 });
 
+// --- raw description cleanup + truncation to a card excerpt -----------------
+// talents-ai-score: real-browser testing against shakers-hub-backend found
+// the raw description showing literal YAML escape artifacts (\n, \r, \t as
+// 2-char sequences typed in the source frontmatter, since this repo's
+// minimal frontmatter parser doesn't interpret YAML string escapes) and,
+// since a real agent's `description` is often its full multi-paragraph
+// system-prompt text (complete with "Ejemplos:"/"Examples:" sections), a
+// wall of text rather than a short card excerpt. Fixed by (1) cleaning the
+// escape/pipe artifacts and collapsing whitespace, then (2) extracting a
+// short excerpt: the first sentence (up to the first . ! or ?) OR ~160
+// chars, whichever is SHORTER, with an ellipsis only when actually cut off
+// mid-thought (never after a real sentence-ending punctuation).
+
+test('renderHtml: raw description with literal \\n/\\r/\\t escape sequences is cleaned to plain prose, no visible escape artifacts', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'agent-a', tools: [], model: null, parent: null }],
+    agentDescriptions: [{ name: 'agent-a', description: 'Reviews merge requests for the repo.\\n\\nExamples:\\n- User: "Review !123"' }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /Reviews merge requests for the repo\./);
+  assert.equal(section.includes('\\n'), false);
+});
+
+test('renderHtml: raw description with a real embedded newline (e.g. from a YAML block-scalar description) is cleaned too', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'agent-b', tools: [], model: null, parent: null }],
+    agentDescriptions: [{ name: 'agent-b', description: 'Handles backend work.\nSecond paragraph should not leak into the excerpt.' }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /Handles backend work\./);
+  assert.equal(section.includes('Second paragraph'), false);
+});
+
+test('renderHtml: stray YAML block-scalar pipe artifacts are stripped from the description', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'agent-c', tools: [], model: null, parent: null }],
+    agentDescriptions: [{ name: 'agent-c', description: 'Writes tests | for services.' }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.equal(section.includes('|'), false);
+  assert.match(section, /Writes tests {1,2}for services\./);
+});
+
+test('renderHtml: multiple collapsed spaces (from artifact removal) become a single space', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'agent-d', tools: [], model: null, parent: null }],
+    agentDescriptions: [{ name: 'agent-d', description: 'Handles    backend\\n\\nwork.' }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /Handles backend work\./);
+});
+
+test('renderHtml: a short description with a natural sentence end (< 160 chars) is shown as the FULL first sentence, no ellipsis', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'ddd-enforcer', tools: [], model: 'opus', parent: null }],
+    agentDescriptions: [{ name: 'ddd-enforcer', description: 'Scans a module directory for DDD pattern violations and fixes them.' }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /class="agent-phrase">Scans a module directory for DDD pattern violations and fixes them\.</);
+  assert.equal(section.includes('…'), false);
+});
+
+test('renderHtml: a long multi-sentence description is cut down to ONLY its first sentence — the rest never appears, no wall of text', () => {
+  const longDescription =
+    'Revisor experto de Merge Requests del repo shakers-hub-backend. '
+    + 'Aplica las reglas obligatorias del proyecto y detecta fallos de Clean Code.\\n\\n'
+    + 'Ejemplos:\\n- User: "Revisa la MR !1234"\\n  Assistant: "Lanzo hub-mr-reviewer..."';
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'hub-mr-reviewer', tools: [], model: 'opus', parent: null }],
+    agentDescriptions: [{ name: 'hub-mr-reviewer', description: longDescription }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /class="agent-phrase">Revisor experto de Merge Requests del repo shakers-hub-backend\.</);
+  assert.equal(section.includes('Ejemplos'), false);
+  assert.equal(section.includes('Assistant'), false);
+});
+
+test('renderHtml: a description with NO early sentence-ending punctuation (first sentence would exceed 160 chars) is hard-truncated at ~160 chars with an ellipsis', () => {
+  const noPeriodUntilFar = 'A'.repeat(200) + '.'; // first period is at index 200, past the 160-char cap
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'agent-e', tools: [], model: null, parent: null }],
+    agentDescriptions: [{ name: 'agent-e', description: noPeriodUntilFar }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /A{160}…/);
+  assert.equal(section.includes('A'.repeat(200)), false);
+});
+
+test('renderHtml: a description with NO sentence-ending punctuation at all is hard-truncated at ~160 chars with an ellipsis', () => {
+  const noPunctuation = 'B'.repeat(300);
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'agent-f', tools: [], model: null, parent: null }],
+    agentDescriptions: [{ name: 'agent-f', description: noPunctuation }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /B{160}…/);
+});
+
+test('renderHtml: a description already shorter than 160 chars with NO punctuation at all is shown in full, no ellipsis', () => {
+  const shortNoPunctuation = 'Reviews pull requests for the team';
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'agent-g', tools: [], model: null, parent: null }],
+    agentDescriptions: [{ name: 'agent-g', description: shortNoPunctuation }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /class="agent-phrase">Reviews pull requests for the team</);
+  assert.equal(section.includes('…'), false);
+});
+
+test('renderHtml: cleanup+truncation NEVER applies to the synthesis whatItDoes (already short/polished, passes through untouched)', () => {
+  const longSynthesized = 'X'.repeat(300); // deliberately longer than the 160-char cap used for raw descriptions
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'agent-h', tools: [], model: null, parent: null }],
+    agentSynthesis: { agents: [{ name: 'agent-h', symbolicName: 'X', whatItDoes: longSynthesized }] },
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, new RegExp(`X{300}`));
+  assert.equal(section.includes('…'), false);
+});
+
+test('renderHtml: cleanup+truncation never applies to the last-resort name-derived phrase (already short)', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'bare-agent', tools: [], model: null, parent: null }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /Agente &quot;Bare agent&quot; \(sin descripción declarada en su fichero\)\./);
+});
+
 // --- enriched: agents + synthesis --------------------------------------------
 
 test('renderHtml: agent with a synthesis match -> title is symbolicName, badge is the real name, phrase is whatItDoes', () => {
