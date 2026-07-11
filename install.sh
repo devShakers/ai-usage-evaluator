@@ -52,33 +52,33 @@ say()  { printf "  %b\n" "$1"; }
 die()  { printf "  ${R}✗ %b${N}\n" "$1" >&2; exit 1; }
 
 uninstall() {
-  printf "\n  ${B}${C}AI Footprint — desinstalar${N}\n\n"
-  rm -rf "$INSTALL_DIR" && say "${G}+${N} eliminado $INSTALL_DIR"
-  rm -f "$BIN_DIR/ai-footprint" && say "${G}+${N} eliminado $BIN_DIR/ai-footprint"
-  say "\n  ${G}${B}Hecho.${N} (Tus informes en ~/.config/ai-footprint/ se conservan.)\n"
+  printf "\n  ${B}${C}AI Footprint — uninstall${N}\n\n"
+  rm -rf "$INSTALL_DIR" && say "${G}+${N} removed $INSTALL_DIR"
+  rm -f "$BIN_DIR/ai-footprint" && say "${G}+${N} removed $BIN_DIR/ai-footprint"
+  say "\n  ${G}${B}Done.${N} (Your reports in ~/.config/ai-footprint/ are kept.)\n"
   exit 0
 }
 
 [ "${1:-}" = "--uninstall" ] && uninstall
 
-printf "\n  ${B}${C}AI Footprint — instalador v${VERSION}${N}\n"
-say  "${C}perfil local de uso de IA · 12 herramientas${N}\n"
+printf "\n  ${B}${C}AI Footprint — installer v${VERSION}${N}\n"
+say  "${C}local AI usage profile · 12 tools${N}\n"
 
 # ─── Requirements ───────────────────────────────────────────────────────────
-command -v node >/dev/null 2>&1 || die "Node.js es necesario y no está instalado.\n    Instálalo desde https://nodejs.org (v18 o superior)."
+command -v node >/dev/null 2>&1 || die "Node.js is required and not installed.\n    Install it from https://nodejs.org (v18 or higher)."
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
-[ "$NODE_MAJOR" -ge 18 ] || die "Se requiere Node 18+. Tienes $(node -v)."
-say "${G}+${N} Node $(node -v) detectado"
+[ "$NODE_MAJOR" -ge 18 ] || die "Node 18+ is required. You have $(node -v)."
+say "${G}+${N} Node $(node -v) detected"
 
 # Local install (cloned repo) or remote (curl)?
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo '')"
 LOCAL=0
 if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/bin/report.js" ]; then
   LOCAL=1
-  say "${G}+${N} Ficheros encontrados en local — instalando por copia"
+  say "${G}+${N} Files found locally — installing by copy"
 else
-  command -v curl >/dev/null 2>&1 || die "curl es necesario para la instalación remota."
-  say "${G}+${N} Instalando desde ${OWNER}/${REPO}@${BRANCH}"
+  command -v curl >/dev/null 2>&1 || die "curl is required for remote installation."
+  say "${G}+${N} Installing from ${OWNER}/${REPO}@${BRANCH}"
 fi
 
 # ─── Discover src/ modules ──────────────────────────────────────────────────
@@ -94,7 +94,7 @@ if [ "$LOCAL" -eq 1 ]; then
 else
   API_URL="https://api.github.com/repos/${OWNER}/${REPO}/contents/src?ref=${BRANCH}"
   SRC_JSON="$(curl -fsSL "$API_URL")" \
-    || die "No se pudo listar src/ vía la API de GitHub (${API_URL}).\n    Revisa tu conexión o la config OWNER/REPO/BRANCH del script."
+    || die "Could not list src/ via the GitHub API (${API_URL}).\n    Check your connection or the script's OWNER/REPO/BRANCH config."
   while IFS= read -r name; do
     SRC_FILES+=("$name")
   done < <(printf '%s' "$SRC_JSON" | node -e '
@@ -112,27 +112,27 @@ else
     });
   ')
 fi
-[ "${#SRC_FILES[@]}" -gt 0 ] || die "No se encontraron módulos en src/.\n    Revisa OWNER/REPO/BRANCH en install.sh, o que el checkout local tenga la carpeta src/."
+[ "${#SRC_FILES[@]}" -gt 0 ] || die "No modules found in src/.\n    Check OWNER/REPO/BRANCH in install.sh, or that the local checkout has the src/ folder."
 
 # ─── Place the files ────────────────────────────────────────────────────────
 mkdir -p "$INSTALL_DIR/bin" "$INSTALL_DIR/src" "$BIN_DIR"
-say "\n  Copiando ficheros..."
+say "\n  Copying files..."
 for f in "${FILES[@]}"; do
   dest="$INSTALL_DIR/$f"
   mkdir -p "$(dirname "$dest")"
   if [ "$LOCAL" -eq 1 ]; then
-    cp "$SCRIPT_DIR/$f" "$dest" || die "No se pudo copiar $f"
+    cp "$SCRIPT_DIR/$f" "$dest" || die "Could not copy $f"
   else
-    curl -fsSL "$RAW/$f" -o "$dest" || die "No se pudo descargar $f\n    Revisa tu conexión o la config OWNER/REPO/BRANCH del script."
+    curl -fsSL "$RAW/$f" -o "$dest" || die "Could not download $f\n    Check your connection or the script's OWNER/REPO/BRANCH config."
   fi
   say "    ${G}+${N} $f"
 done
 for f in "${SRC_FILES[@]}"; do
   dest="$INSTALL_DIR/src/$f"
   if [ "$LOCAL" -eq 1 ]; then
-    cp "$SCRIPT_DIR/src/$f" "$dest" || die "No se pudo copiar src/$f"
+    cp "$SCRIPT_DIR/src/$f" "$dest" || die "Could not copy src/$f"
   else
-    curl -fsSL "$RAW/src/$f" -o "$dest" || die "No se pudo descargar src/$f\n    Revisa tu conexión o la config OWNER/REPO/BRANCH del script."
+    curl -fsSL "$RAW/src/$f" -o "$dest" || die "Could not download src/$f\n    Check your connection or the script's OWNER/REPO/BRANCH config."
   fi
   say "    ${G}+${N} src/$f"
 done
@@ -144,27 +144,27 @@ cat > "$SHIM" <<EOF
 exec node "$INSTALL_DIR/bin/report.js" "\$@"
 EOF
 chmod +x "$SHIM"
-say "\n  ${G}+${N} Comando creado en $SHIM"
+say "\n  ${G}+${N} Command created at $SHIM"
 
 # ─── Verification ───────────────────────────────────────────────────────────
 node "$INSTALL_DIR/bin/report.js" --help >/dev/null 2>&1 \
-  && say "  ${G}+${N} Verificación OK" \
-  || die "La verificación falló al ejecutar la herramienta."
+  && say "  ${G}+${N} Verification OK" \
+  || die "Verification failed while running the tool."
 
 # ─── Final message ──────────────────────────────────────────────────────────
-printf "\n  ${G}${B}Instalado correctamente.${N}\n\n"
-say "  ${B}Uso:${N}"
-say "    ${C}ai-footprint${N}          Informe en la terminal"
-say "    ${C}ai-footprint --html${N}   + abre el dashboard visual"
-say "    ${C}ai-footprint --json${N}   Salida en JSON"
+printf "\n  ${G}${B}Installed successfully.${N}\n\n"
+say "  ${B}Usage:${N}"
+say "    ${C}ai-footprint${N}          Report in the terminal"
+say "    ${C}ai-footprint --html${N}   + opens the visual dashboard"
+say "    ${C}ai-footprint --json${N}   JSON output"
 printf "\n"
 
 # Notice if ~/.local/bin is not in the PATH
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
   *)
-    say "  ${Y}Nota:${N} $BIN_DIR no está en tu PATH. Añádelo con:"
+    say "  ${Y}Note:${N} $BIN_DIR is not in your PATH. Add it with:"
     say "    ${C}echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc && source ~/.bashrc${N}"
-    say "  (o usa zsh: ~/.zshrc). Mientras tanto puedes ejecutar: ${C}$SHIM${N}\n"
+    say "  (or zsh: ~/.zshrc). Meanwhile you can run: ${C}$SHIM${N}\n"
     ;;
 esac
