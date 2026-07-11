@@ -51,6 +51,26 @@ const catalogs = {
       browser: 'Navegador',
       other: 'Otro',
     },
+    // talents-ai-score, i18n audit: the T0-T7 tier NAMES (as opposed to the
+    // 0-4 band names in `levelNames` below) live in src/tier-engine.js's
+    // `TIERS` array — Spanish-only there by design, since tier-engine.js is
+    // domain logic, not i18n (same isolation rule as `levelNames`'s own
+    // header note: nothing is added or changed in the engine itself).
+    // Whenever a tier NAME is actually displayed to the talent (the tier-
+    // analysis intro, the implementation prompt's context line), it's
+    // resolved through this catalog by the stable `tierKey` — never through
+    // tier-engine.js's raw (Spanish) `name` field — so it's translated
+    // regardless of locale. See `tierName()` below.
+    tierNames: {
+      T0: 'Banco vacío',
+      T1: 'Primera herramienta',
+      T2: 'Banco con notas',
+      T3: 'Banco conectado',
+      T4: 'Herramienta propia',
+      T5: 'Operador agéntico',
+      T6: 'Multi-agente',
+      T7: 'Taller orquestado',
+    },
     // Deterministic "why this tier" analysis (talents-ai-score,
     // src/tier-analysis.js): mechanical, formula-driven copy — every
     // sentence is a direct readout of tier-engine.js's own ladder rule plus
@@ -192,7 +212,14 @@ const catalogs = {
       roadmapMistakesLabel: 'Errores comunes',
       roadmapConsolidationLabel: 'Pasos de consolidación',
       roadmapHonestyLabel: 'Nota de honestidad',
-      roadmapPendingTranslation: 'Contenido en proceso de traducción — mostrando en español.',
+      // talents-ai-score, i18n audit: both es/en roadmap content is fully
+      // authored (src/roadmap-content.js) — this defensive notice only
+      // shows for a FUTURE tier added to Spanish before English catches
+      // up; never fires against the current T0-T7 set. Deliberately does
+      // NOT mention Spanish (unlike the retired `roadmapPendingTranslation`
+      // it replaces): under an English locale, nothing Spanish is ever
+      // shown, not even as a "coming soon" caveat.
+      roadmapContentUnavailable: 'El contenido detallado de este nivel aún no está disponible en este idioma.',
       // ADR-015: shown only when the 4 prose gaps below were actually
       // replaced by a validated, project-adapted response — never on
       // fallback to the curated content.
@@ -203,6 +230,11 @@ const catalogs = {
       // prompt (src/roadmap-prompt.js) for the talent's own AI tool.
       implementationPromptHeading: 'Prompt para implementar',
       implementationPromptHint: 'Copia este prompt y pégalo en tu IA de confianza (Claude Code, Cursor, ChatGPT...) para que lo implemente en tu proyecto.',
+      // Copy-to-clipboard button (HTML report only — talents-ai-score):
+      // navigator.clipboard with a document.execCommand fallback, both
+      // inline, zero-network. copiedLabel is the transient feedback state.
+      implementationPromptCopyLabel: 'Copiar',
+      implementationPromptCopiedLabel: 'Copiado ✓',
       privacyNote:
         'Este informe se ha generado en local. Solo registra qué herramientas '
         + 'existen, cuántas configuraciones tienes y tu nivel: nunca el contenido '
@@ -306,6 +338,16 @@ const catalogs = {
       dev: 'Development',
       browser: 'Browser',
       other: 'Other',
+    },
+    tierNames: {
+      T0: 'Empty bench',
+      T1: 'First tool',
+      T2: 'Bench with notes',
+      T3: 'Connected bench',
+      T4: 'Own tooling',
+      T5: 'Agentic operator',
+      T6: 'Multi-agent',
+      T7: 'Orchestrated workshop',
     },
     tierAnalysis: {
       heading: 'Tier analysis: why this level',
@@ -423,10 +465,12 @@ const catalogs = {
       roadmapMistakesLabel: 'Common mistakes',
       roadmapConsolidationLabel: 'Consolidation steps',
       roadmapHonestyLabel: 'Honesty note',
-      roadmapPendingTranslation: 'Content pending translation — showing in Spanish.',
+      roadmapContentUnavailable: "This level's detailed content isn't available in this language yet.",
       roadmapPersonalizedNotice: 'Content adapted to your project.',
       implementationPromptHeading: 'Implementation prompt',
       implementationPromptHint: 'Copy this prompt and paste it into your AI tool of choice (Claude Code, Cursor, ChatGPT...) so it implements this in your project.',
+      implementationPromptCopyLabel: 'Copy',
+      implementationPromptCopiedLabel: 'Copied ✓',
       privacyNote:
         'This report was generated locally. It only records which tools exist, '
         + 'how many configurations you have and your level: never the content of '
@@ -541,4 +585,16 @@ function getCatalog(lang) {
   return catalogs[getResolvedLang(lang)];
 }
 
-module.exports = { detectReportLang, resolveLang, getCatalog, categoryLabel };
+// talents-ai-score, i18n audit: translates a T0-T7 tier KEY to its
+// localized display name via the `tierNames` catalog above — the single
+// place tier-engine.js's own (Spanish-only) `name` field should ever be
+// bypassed for anything shown to the talent. Degrades to the bare
+// `tierKey` (never tier-engine.js's raw Spanish name) if the key is
+// somehow unrecognized, so a locale mismatch is visible/debuggable rather
+// than silently leaking Spanish text.
+function tierName(tierKey, lang) {
+  const names = getCatalog(lang).tierNames;
+  return (names && names[tierKey]) || tierKey;
+}
+
+module.exports = { detectReportLang, resolveLang, getCatalog, categoryLabel, tierName };

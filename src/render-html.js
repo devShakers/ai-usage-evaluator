@@ -466,10 +466,18 @@ function roadmapSnippetHtml(snippet, t) {
   </div>`;
 }
 
-function roadmapPendingNotice(entry, t) {
-  return entry.pendingTranslation
-    ? `<p class="roadmap-pending">${esc(t.html.roadmapPendingTranslation)}</p>`
-    : '';
+// talents-ai-score, i18n audit: both es/en roadmap content is now fully
+// authored (src/roadmap-content.js) — this only fires as a DEFENSIVE
+// fallback for a future tier added to Spanish before its English
+// translation lands, never against today's complete T0-T7 set. Never
+// falls back to Spanish prose (the old, retired `pendingTranslation`
+// behavior): the i18n audit's hard rule is "an English locale never shows
+// Spanish text", so this renders a short, all-English notice instead.
+function roadmapUnavailableCard(entry, t) {
+  return `<div class="card roadmap-card">
+    <h3 class="roadmap-title">${esc(entry.tierKey)}</h3>
+    <p class="roadmap-unavailable">${esc(t.html.roadmapContentUnavailable)}</p>
+  </div>`;
 }
 
 // talents-ai-score, ADR-015: shown only when the 4 prose gaps were
@@ -486,7 +494,6 @@ function roadmapPersonalizedNotice(personalized, t) {
 
 function roadmapTerminalHtml(entry, t) {
   return `<div class="card roadmap-card">
-    ${roadmapPendingNotice(entry, t)}
     <h3 class="roadmap-title">${esc(entry.title)}</h3>
     <p class="roadmap-intro">${esc(entry.intro)}</p>
     <p class="roadmap-what-remains">${esc(entry.whatRemains)}</p>
@@ -509,18 +516,29 @@ function roadmapTerminalHtml(entry, t) {
 // pattern already used for the roadmap's own copyable code snippet
 // (roadmapSnippetHtml above): no click-to-copy JS button, just legible,
 // manually-selectable text — consistent with the existing snippet UX.
+// Copy-to-clipboard button (talents-ai-score): reads the prompt text back
+// from the DOM (`target.textContent`) instead of re-embedding it into a
+// second JS string literal — sidesteps escaping a multi-line, quote-and-
+// backtick-heavy prompt into an inline attribute entirely. The button's
+// own click handling lives in the single generic script at the bottom of
+// the document (data-copy-target/data-copied-label attributes, not a
+// per-button inline handler) — inline JS only, no network, matching the
+// zero-network invariant this report is already built on. Label follows
+// the report's own locale (t.html), same as everything else in this card.
 function implementationPromptBlock(promptText, t) {
   if (!promptText) return '';
   return `<div class="roadmap-block roadmap-prompt-block">
-    <div class="roadmap-block-label">${esc(t.html.implementationPromptHeading)}</div>
+    <div class="roadmap-prompt-head">
+      <div class="roadmap-block-label">${esc(t.html.implementationPromptHeading)}</div>
+      <button type="button" class="roadmap-prompt-copy" data-copy-target="implementation-prompt-code" data-copied-label="${esc(t.html.implementationPromptCopiedLabel)}">${esc(t.html.implementationPromptCopyLabel)}</button>
+    </div>
     <p class="roadmap-prompt-hint">${esc(t.html.implementationPromptHint)}</p>
-    <pre class="roadmap-prompt-code"><code>${esc(promptText)}</code></pre>
+    <pre class="roadmap-prompt-code" id="implementation-prompt-code"><code>${esc(promptText)}</code></pre>
   </div>`;
 }
 
 function roadmapJumpHtml(entry, t, personalized, promptText) {
   return `<div class="card roadmap-card">
-    ${roadmapPendingNotice(entry, t)}
     ${roadmapPersonalizedNotice(personalized, t)}
     <h3 class="roadmap-title">${esc(entry.title)}</h3>
     <div class="roadmap-upgrade-when"><b>${esc(t.html.roadmapUpgradeWhenLabel)}</b> ${esc(entry.upgradeWhen)}</div>
@@ -553,7 +571,7 @@ function roadmapJumpHtml(entry, t, personalized, promptText) {
  */
 
 function tierAnalysisSection(report, t) {
-  const analysis = analyzeTier(report, t.tierAnalysis);
+  const analysis = analyzeTier(report, t);
   const tt = t.tierAnalysis;
   const metItems = analysis.metCriteria
     .map((c) => `<li>${esc(c.text)}</li>`)
@@ -594,6 +612,13 @@ function roadmapSection(report, maturity, t, lang) {
   if (!tierKey) return '';
   const entry = getRoadmapEntry(tierKey, lang);
   if (!entry) return '';
+
+  if (entry.contentUnavailable) {
+    return `<section>
+    <div class="h2">${esc(t.html.roadmapHeading)}</div>
+    ${roadmapUnavailableCard(entry, t)}
+  </section>`;
+  }
 
   const personalization = report && report.roadmapPersonalization;
   const finalEntry = mergeRoadmapPersonalization(entry, personalization);
@@ -1035,7 +1060,7 @@ function renderHtml(report, maturity, lang) {
   /* ---- Tier roadmap: current -> next (talents-ai-score, issue 020) ---- */
   .roadmap-card{padding:26px 28px;display:flex;flex-direction:column;gap:18px;
     border-left:4px solid var(--accent-lime)}
-  .roadmap-pending{margin:0;font-size:12.5px;font-style:italic;color:var(--faint)}
+  .roadmap-unavailable{margin:0;font-size:14px;line-height:1.6;color:var(--muted)}
   .roadmap-personalized{margin:0;font-size:12.5px;font-style:italic;color:var(--emphasis-strong)}
   .roadmap-title{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;color:var(--fg)}
   .roadmap-upgrade-when{font-size:14px;color:var(--muted);line-height:1.5}
@@ -1060,11 +1085,22 @@ function renderHtml(report, maturity, lang) {
     color:var(--muted);margin:4px 0 0}
 
   /* ---- Copyable implementation prompt (talents-ai-score) ----
-   * Same pre-tag pattern as .roadmap-code above (manually selectable,
-   * no JS copy button - consistent with the existing snippet UX), just a
-   * distinct border accent so it reads as its own, primary call to
-   * action rather than another curated-content block. */
+   * Same pre-tag pattern as .roadmap-code above (legible, monospace,
+   * manually selectable), plus a Copy button (inline JS, zero-network —
+   * see the bottom <script>) for one-click copying, with a distinct
+   * border accent so this card reads as its own, primary call to action
+   * rather than another curated-content block. */
   .roadmap-prompt-block{border-top:1px dashed var(--border);padding-top:16px}
+  .roadmap-prompt-head{display:flex;align-items:center;justify-content:space-between;
+    gap:12px;margin-bottom:2px}
+  .roadmap-prompt-head .roadmap-block-label{margin:0}
+  .roadmap-prompt-copy{flex:none;font-family:var(--font-sans);font-size:12px;
+    font-weight:600;letter-spacing:.02em;color:var(--secondary-fg);
+    background:var(--secondary);border:1px solid transparent;
+    padding:5px 12px;border-radius:var(--r-full);cursor:pointer}
+  .roadmap-prompt-copy:hover{background:var(--track)}
+  .roadmap-prompt-copy.copied{color:var(--accent-lime-fg);
+    background:color-mix(in srgb,var(--accent-lime) 28%, transparent)}
   .roadmap-prompt-hint{margin:0 0 8px;font-size:13px;color:var(--muted)}
   .roadmap-prompt-code{background:var(--bg);border:1px solid var(--emphasis);
     border-radius:var(--r-md);padding:14px;overflow:auto;white-space:pre-wrap;
@@ -1182,6 +1218,50 @@ function renderHtml(report, maturity, lang) {
     if (f) f.classList.add('go');
     var rows = document.querySelectorAll('ul.tools .tool');
     rows.forEach(function(el,i){ el.style.animationDelay = (i*40)+'ms'; });
+  });
+
+  // Copy-to-clipboard (talents-ai-score): navigator.clipboard with a
+  // document.execCommand fallback, both inline, zero-network (no CDN, no
+  // fetch). Reads the text straight from the target element's own
+  // textContent, never a second copy of the prompt re-embedded as a JS
+  // string literal, so there's no escaping concern for a multi-line
+  // prompt full of quotes/backticks. Works for any current/future
+  // data-copy-target button generically.
+  function afReportFallbackCopy(text){
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) { /* best effort */ }
+    document.body.removeChild(ta);
+  }
+  document.querySelectorAll('[data-copy-target]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var target = document.getElementById(btn.getAttribute('data-copy-target'));
+      if (!target) return;
+      var text = target.textContent;
+      var showCopied = function(){
+        var original = btn.getAttribute('data-original-label') || btn.textContent;
+        btn.setAttribute('data-original-label', original);
+        var copiedLabel = btn.getAttribute('data-copied-label') || original;
+        btn.textContent = copiedLabel;
+        btn.classList.add('copied');
+        setTimeout(function(){
+          btn.textContent = original;
+          btn.classList.remove('copied');
+        }, 1800);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(showCopied, function(){ afReportFallbackCopy(text); showCopied(); });
+      } else {
+        afReportFallbackCopy(text);
+        showCopied();
+      }
+    });
   });
 </script>
 </body>

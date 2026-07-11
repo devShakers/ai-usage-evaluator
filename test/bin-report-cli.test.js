@@ -496,3 +496,69 @@ test('bin/report.js: roadmap personalization status never leaks into --json\'s s
   assert.equal(stdout.includes('Personalizando'), false);
   assert.equal(stdout.includes('Personalizing'), false);
 });
+
+// --- i18n audit (talents-ai-score, [IMPORTANTE]): a non-Spanish OS locale ---
+// must NEVER show Spanish text anywhere in the report. Forces LANG (and
+// clears LC_ALL/LANGUAGE, which would otherwise take precedence per
+// src/locale.js's own resolution order) to a real end-to-end check, not
+// just a unit-level one — isolates AI_FOOTPRINT_HOME_DIR too so the tier
+// computed is deterministic-enough across machines.
+
+const KNOWN_SPANISH_STRINGS = [
+  'Herramientas', 'Entorno', 'Tecnologías', 'Agentes', 'Servidores MCP',
+  'Tu próximo nivel', 'Análisis de tier', 'Criterios que cumples',
+  'Banco vacío', 'Primera herramienta', 'Banco con notas',
+];
+
+test('bin/report.js: LANG=en_US.UTF-8 (non-Spanish OS locale) never shows Spanish text anywhere in the report', async () => {
+  const tmpHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-footprint-cli-home-'));
+  try {
+    fs.writeFileSync(
+      path.join(tmpProjectDir, 'package.json'),
+      JSON.stringify({ dependencies: { '@nestjs/core': '^10.0.0', react: '^18.0.0' } }),
+    );
+    fs.mkdirSync(path.join(tmpProjectDir, '.claude', 'agents'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpProjectDir, '.claude', 'agents', 'backend.md'),
+      '---\nname: backend-dev\ntools: [Read, Write]\nmodel: sonnet\n---\nbody',
+    );
+
+    const { code, stdout } = await runCli({
+      args: ['--no-save', '--root', tmpProjectDir],
+      stdin: 'n\n',
+      env: {
+        AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir,
+        AI_FOOTPRINT_HOME_DIR: tmpHomeDir,
+        LANG: 'en_US.UTF-8',
+        LC_ALL: '',
+        LANGUAGE: '',
+      },
+    });
+    assert.equal(code, 0);
+    assert.match(stdout, /AI FOOTPRINT/);
+    // Positive check: it really did resolve to English.
+    assert.match(stdout, /Your next level|Next step/);
+    // The actual audit: no Spanish anywhere.
+    assert.equal(/[áéíóúñÁÉÍÓÚÑ¡¿]/.test(stdout), false, 'found an accented/Spanish-punctuation character');
+    for (const spanish of KNOWN_SPANISH_STRINGS) {
+      assert.equal(stdout.includes(spanish), false, `found the Spanish string "${spanish}"`);
+    }
+  } finally {
+    fs.rmSync(tmpHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('bin/report.js: LANG=es_ES.UTF-8 (Spanish OS locale) is unaffected — Spanish headings still show', async () => {
+  const { code, stdout } = await runCli({
+    args: ['--no-save', '--root', tmpProjectDir],
+    stdin: 'n\n',
+    env: {
+      AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir,
+      LANG: 'es_ES.UTF-8',
+      LC_ALL: '',
+      LANGUAGE: '',
+    },
+  });
+  assert.equal(code, 0);
+  assert.match(stdout, /Guardar este informe en Shakers/);
+});

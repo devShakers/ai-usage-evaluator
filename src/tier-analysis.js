@@ -78,9 +78,20 @@ const CRITERIA = [
 // condition happens to hold in isolation, mirroring computeTier()'s gating
 // on the PREVIOUS tier exactly). `blockingCriterion` is the tier+1
 // boundary's text, or `null` at the max tier (T7) — nothing left to block.
-function analyzeTier(report, tt) {
+//
+// `t` is the FULL i18n catalog (src/i18n.js's `getCatalog(lang)`), not
+// just `t.tierAnalysis` — talents-ai-score, i18n audit: tier-engine.js's
+// own `tierName` field is Spanish-only (domain logic, not i18n, by
+// design), so it's overridden here with the localized name from `t.tierNames`
+// (keyed by the stable `tierKey`, never the raw Spanish string) before
+// this ever reaches the render layer. Falls back to the raw name only if
+// `t.tierNames` is somehow missing the key (defensive, never expected).
+function analyzeTier(report, t) {
+  const tt = t.tierAnalysis;
   const result = computeTierResult(report || {});
   const { signals, tier } = result;
+
+  const tierName = (t.tierNames && t.tierNames[result.tierKey]) || result.tierName;
 
   const metCriteria = CRITERIA.filter((c) => c.toTier <= tier).map((c) => ({
     toTier: c.toTier,
@@ -90,7 +101,7 @@ function analyzeTier(report, tt) {
   const blockingEntry = tier < 7 ? CRITERIA.find((c) => c.toTier === tier + 1) : null;
   const blockingCriterion = blockingEntry ? blockingEntry.blockingText(signals, tt) : null;
 
-  return { ...result, metCriteria, blockingCriterion };
+  return { ...result, tierName, metCriteria, blockingCriterion };
 }
 
 module.exports = { analyzeTier, CRITERIA };
