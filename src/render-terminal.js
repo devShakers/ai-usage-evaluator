@@ -3,6 +3,7 @@
 const { getCatalog, categoryLabel } = require('./i18n');
 const { buildAgentCardTree } = require('./render-html');
 const { getRoadmapEntry } = require('./roadmap-content');
+const { analyzeTier } = require('./tier-analysis');
 
 /*
  * talents-ai-score: terminal parity with the HTML report. The HTML report
@@ -92,7 +93,7 @@ function agentLine(card, depth, t) {
 }
 
 function printAgents(report, t, p) {
-  const { childrenByParent, roots } = buildAgentCardTree(report);
+  const { childrenByParent, roots } = buildAgentCardTree(report, t);
   p(`  ${c.bold}${t.html.diagramHeading}${c.reset}`);
   if (!roots.length) {
     p(`  ${c.gray}  ${t.html.agentsEmpty}${c.reset}`);
@@ -109,6 +110,35 @@ function printAgents(report, t, p) {
     for (const child of children) walk(child, depth + 1);
   };
   for (const root of roots) walk(root, 0);
+  p();
+}
+
+/* ---------- tier analysis: why this tier (parity with render-html.js) ----------
+ * Same deterministic source (src/tier-analysis.js) as the HTML report —
+ * defends the already-computed tier with the criteria met + the exact
+ * blocking criterion, both backed by the actual signal values. Never LLM
+ * content, formula-driven, so it's rendered identically (same text) in
+ * both outputs.
+ */
+
+function printTierAnalysis(report, t, p) {
+  const analysis = analyzeTier(report, t.tierAnalysis);
+  const tt = t.tierAnalysis;
+
+  p(`  ${c.bold}${tt.heading}${c.reset}`);
+  p(`  ${c.gray}${tt.intro(analysis.tierKey, analysis.tierName)}${c.reset}`);
+  if (analysis.metCriteria.length) {
+    p(`  ${c.dim}${tt.metHeading}${c.reset}`);
+    for (const criterion of analysis.metCriteria) {
+      p(`    ${c.green}✓${c.reset} ${criterion.text}`);
+    }
+  }
+  if (analysis.blockingCriterion) {
+    p(`  ${c.bold}${c.yellow}${tt.blockingLabel}${c.reset}`);
+    p(`  ${c.white}${analysis.blockingCriterion}${c.reset}`);
+  } else {
+    p(`  ${c.white}${tt.maxTierNote}${c.reset}`);
+  }
   p();
 }
 
@@ -206,12 +236,10 @@ function renderTerminal(report, maturity, lang) {
   }
   p();
 
-  // Not detected
-  const missing = report.tools.filter((tool) => !tool.detected);
-  if (missing.length) {
-    p(`  ${c.gray}${t.terminal.notDetected(missing.map((tool) => tool.name).join(', '))}${c.reset}`);
-    p();
-  }
+  // talents-ai-score: the "Not detected: ..." line is intentionally
+  // removed — undetected tools added noise without signal, and a relevant
+  // next step is already covered by the tier roadmap section below, never
+  // silently dropped, just not repeated here as a name list.
 
   // Environment
   if (report.environment) {
@@ -229,6 +257,11 @@ function renderTerminal(report, maturity, lang) {
 
   // Agents (parity with render-html.js's agentCardsSection)
   printAgents(report, t, p);
+
+  // Tier analysis: why this tier (parity with render-html.js's
+  // tierAnalysisSection) — defends the already-computed tier before the
+  // roadmap covers what's next.
+  printTierAnalysis(report, t, p);
 
   // Tier roadmap: current -> next (parity with render-html.js's
   // roadmapSection), falls back to the old generic band next-step text

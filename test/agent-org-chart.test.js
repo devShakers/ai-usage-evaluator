@@ -149,13 +149,44 @@ test('parseAgentOrgChart: EXCLUDES description content entirely — never presen
   assert.equal(serialized.toLowerCase().includes('description'), false);
 });
 
-test('parseAgentOrgChart: file without a `name` field is skipped (not a valid agent definition)', () => {
+// talents-ai-score bugfix: agents used to be silently DROPPED from the
+// whole org chart when frontmatter had no `name` — worse than showing one,
+// since the agent simply vanished. Every agent must show a name: falls
+// back to the file's own basename (extension stripped) rather than being
+// excluded.
+test('parseAgentOrgChart: file with frontmatter but no `name` field falls back to the filename, never dropped', () => {
   writeAgentFile(tmpDir, 'no-name.md', ['---', 'tools: Read', 'model: sonnet', '---', ''].join('\n'));
   writeAgentFile(tmpDir, 'valid.md', ['---', 'name: valid-agent', '---', ''].join('\n'));
 
   const agents = parseAgentOrgChart(tmpDir);
+  assert.equal(agents.length, 2);
+  const byName = Object.fromEntries(agents.map((a) => [a.name, a]));
+  assert.ok(byName['no-name']);
+  assert.equal(byName['no-name'].model, 'sonnet');
+  assert.ok(byName['valid-agent']);
+});
+
+// Real-world frontmatter edge case found while investigating the "agents
+// show up without a name" report: `name:` present as a KEY but with an
+// EMPTY value (as opposed to the key being fully absent) hits a different
+// code path in parseFrontmatter (the YAML block-list-continuation branch,
+// since the value is '') and never populates `fm.name` at all — same
+// fallback applies.
+test('parseAgentOrgChart: an empty `name:` value in frontmatter (present key, no value) also falls back to the filename', () => {
+  writeAgentFile(tmpDir, 'empty-name.md', ['---', 'name:', 'model: opus', '---', ''].join('\n'));
+  const agents = parseAgentOrgChart(tmpDir);
   assert.equal(agents.length, 1);
-  assert.equal(agents[0].name, 'valid-agent');
+  assert.equal(agents[0].name, 'empty-name');
+  assert.equal(agents[0].model, 'opus'); // confirms the line after the empty `name:` still parses correctly
+});
+
+// Only a file with NO frontmatter block at all remains excluded — that one
+// genuinely isn't a valid agent definition Claude Code itself would
+// recognize either.
+test('parseAgentOrgChart: a file with no frontmatter block at all is still excluded (not a valid agent definition)', () => {
+  writeAgentFile(tmpDir, 'plain-doc.md', '# Just a markdown file, no frontmatter\n');
+  const agents = parseAgentOrgChart(tmpDir);
+  assert.deepEqual(agents, []);
 });
 
 test('parseAgentOrgChart: file with no frontmatter at all is skipped, never throws', () => {

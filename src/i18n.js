@@ -51,6 +51,46 @@ const catalogs = {
       browser: 'Navegador',
       other: 'Otro',
     },
+    // Deterministic "why this tier" analysis (talents-ai-score,
+    // src/tier-analysis.js): mechanical, formula-driven copy — every
+    // sentence is a direct readout of tier-engine.js's own ladder rule plus
+    // the exact signal value backing it, not authored/curated prose (unlike
+    // roadmap-content.js), so it's fully translated here, no
+    // pendingTranslation flag needed.
+    tierAnalysis: {
+      heading: 'Análisis de tier: por qué este nivel',
+      intro: (tierKey, tierName) =>
+        `Tu tier actual es ${tierKey} (${tierName}). El motor de tiers es determinista: certifica un nivel `
+        + 'solo cuando se cumplen TODOS los criterios de ese nivel y de todos los anteriores, verificado '
+        + 'estrictamente de abajo hacia arriba (nunca se salta un tier inferior por tener una señal de uno '
+        + 'superior). A continuación se detalla, criterio por criterio, qué se ha comprobado y con qué señal '
+        + 'concreta de tu entorno queda respaldado.',
+      metHeading: 'Criterios que cumples:',
+      blockingLabel: 'Criterio exacto que te impide subir de tier:',
+      maxTierNote: 'Cumples todos los criterios de la escalera T0-T7: no hay un criterio adicional bloqueando tu progreso.',
+      criterion: {
+        t1Met: (n) => `Tienes al menos una herramienta de IA detectada y configurada en tu entorno (\`totalDetected = ${n}\`).`,
+        t2Met: (n) => `Dispones de al menos un fichero de contexto persistente — instrucciones, configuración o reglas — para alguna herramienta (\`context = ${n}\`).`,
+        t3Met: (n) => `Tienes al menos un servidor MCP conectado, dando a la IA acceso a datos o herramientas externas (\`mcpServers = ${n}\`).`,
+        t4Met: (n) => `Has creado activos propios — skills, comandos o reglas personalizadas — más allá de la configuración por defecto (\`custom = ${n}\`).`,
+        t5Met: (hasAgentic, mcp, custom) => `Operas con una CLI agéntica (Claude Code, Aider, Gemini CLI, Codex CLI o Amazon Q Developer) combinada con MCP y activos propios (\`hasAgentic = ${hasAgentic}\`, \`mcpServers = ${mcp}\`, \`custom = ${custom}\`).`,
+        t6Met: (n) => `Tienes un equipo de al menos 2 agentes especializados definidos (\`agentCounts.agents = ${n}\`).`,
+        t7Met: (n) => `Tienes automatización basada en hooks configurada (\`hooks = ${n}\`).`,
+        t1Blocking: (n) => `Para subir a T1 (Primera herramienta) necesitas al menos una herramienta de IA detectada — actualmente \`totalDetected = ${n}\`.`,
+        t2Blocking: (n) => `Para subir a T2 (Banco con notas) necesitas al menos un fichero de contexto persistente (instrucciones, configuración o reglas) — actualmente \`context = ${n}\`.`,
+        t3Blocking: (n) => `Para subir a T3 (Banco conectado) necesitas conectar al menos un servidor MCP — actualmente \`mcpServers = ${n}\`.`,
+        t4Blocking: (n) => `Para subir a T4 (Herramienta propia) necesitas crear al menos un activo propio — skill, comando o regla — más allá de la configuración por defecto — actualmente \`custom = ${n}\`.`,
+        t5Blocking: (hasAgentic, mcp, custom) => {
+          const missing = [];
+          if (!hasAgentic) missing.push('una CLI agéntica (Claude Code, Aider, Gemini CLI, Codex CLI o Amazon Q Developer)');
+          if (mcp < 1) missing.push('al menos 1 servidor MCP');
+          if (custom < 1) missing.push('al menos 1 activo propio (skill, comando o regla)');
+          return `Para subir a T5 (Operador agéntico) te falta: ${missing.join('; ')} (\`hasAgentic = ${hasAgentic}\`, \`mcpServers = ${mcp}\`, \`custom = ${custom}\`).`;
+        },
+        t6Blocking: (n) => `Para subir a T6 (Multi-agente) necesitas al menos 2 agentes especializados definidos en \`.claude/agents/\` — actualmente tienes ${n}.`,
+        t7Blocking: (n) => `Para subir a T7 (Taller orquestado) necesitas al menos un hook de automatización configurado — actualmente \`hooks = ${n}\`.`,
+      },
+    },
     levelNames: {
       none: 'Sin rastro de IA',
       exploring: 'Explorando',
@@ -78,7 +118,6 @@ const catalogs = {
       level: (level, name) => `Nivel ${level} · ${name}`,
       detectedHeading: 'Detectadas',
       none: '(ninguna)',
-      notDetected: (names) => `No detectadas: ${names}`,
       environment: 'Entorno',
       editors: 'editores',
       noEditorsDetected: 'ninguno detectado',
@@ -97,7 +136,11 @@ const catalogs = {
       detectedSuffix: (total) => `de ${total} herramientas detectadas`,
       maturity: 'Madurez',
       tools: 'Herramientas',
-      notDetected: 'no detectada',
+      // talents-ai-score: only DETECTED tools are listed now (undetected
+      // ones were pure noise — any relevant next step already lives in the
+      // tier roadmap section). Empty state covers the "nothing detected at
+      // all" case, replacing the old per-row "not detected" label.
+      toolsEmpty: 'No se ha detectado ninguna herramienta de IA en tu entorno.',
       configIntensity: 'intensidad de configuración',
       files: (n) => `${n}&nbsp;${n === 1 ? 'fichero' : 'ficheros'}`,
       lastModified: (dateStr) => `última modificación: ${dateStr}`,
@@ -118,6 +161,18 @@ const catalogs = {
       agentRealNameLabel: 'nombre real del agente',
       orchestratorLabel: 'Orchestrator',
       reportsToLabel: 'Reporta a:',
+      // Deterministic description fallback (talents-ai-score bugfix): used
+      // whenever synthesis didn't run, or didn't cover this agent — never
+      // leaves a card with no description. Derived only from already-
+      // available structural data (tools/model), never invented.
+      agentDescriptionFallbackWithToolsAndModel: (model, tools) =>
+        `Agente estructural sin descripción sintetizada: opera con el modelo ${model} y tiene acceso a ${tools.join(', ')}.`,
+      agentDescriptionFallbackWithTools: (tools) =>
+        `Agente estructural sin descripción sintetizada: tiene acceso a ${tools.join(', ')}.`,
+      agentDescriptionFallbackWithModel: (model) =>
+        `Agente estructural sin descripción sintetizada: opera con el modelo ${model}.`,
+      agentDescriptionFallbackBare:
+        'Sin descripción disponible: no se ha sintetizado ninguna y no hay metadatos estructurales adicionales (herramientas o modelo) que permitan derivar una.',
       // Project technologies (talents-ai-score, ADR-012). Refined: shows
       // recognized FRAMEWORKS/LIBRARIES only (React, Express...), not a raw
       // dependency dump — the empty state also covers "manifest exists but
@@ -231,6 +286,39 @@ const catalogs = {
       browser: 'Browser',
       other: 'Other',
     },
+    tierAnalysis: {
+      heading: 'Tier analysis: why this level',
+      intro: (tierKey, tierName) =>
+        `Your current tier is ${tierKey} (${tierName}). The tier engine is deterministic: it certifies a `
+        + 'level only when ALL criteria for that level and every level below it are met, checked strictly '
+        + 'bottom-up (a signal for a higher tier never lets you skip a lower one). Below is a criterion-by-'
+        + 'criterion breakdown of what was checked and the exact signal from your environment backing it.',
+      metHeading: 'Criteria you meet:',
+      blockingLabel: 'Exact criterion blocking your next tier:',
+      maxTierNote: "You meet every criterion in the T0-T7 ladder: there's no additional criterion blocking your progress.",
+      criterion: {
+        t1Met: (n) => `You have at least one AI tool detected and configured in your environment (\`totalDetected = ${n}\`).`,
+        t2Met: (n) => `You have at least one persistent context file — instructions, config or rules — for some tool (\`context = ${n}\`).`,
+        t3Met: (n) => `You have at least one connected MCP server, giving the AI access to external data or tools (\`mcpServers = ${n}\`).`,
+        t4Met: (n) => `You've created your own assets — skills, commands or custom rules — beyond the default configuration (\`custom = ${n}\`).`,
+        t5Met: (hasAgentic, mcp, custom) => `You operate an agentic CLI (Claude Code, Aider, Gemini CLI, Codex CLI or Amazon Q Developer) combined with MCP and your own assets (\`hasAgentic = ${hasAgentic}\`, \`mcpServers = ${mcp}\`, \`custom = ${custom}\`).`,
+        t6Met: (n) => `You have a team of at least 2 specialized agents defined (\`agentCounts.agents = ${n}\`).`,
+        t7Met: (n) => `You have hook-based automation configured (\`hooks = ${n}\`).`,
+        t1Blocking: (n) => `To reach T1 (First tool) you need at least one detected AI tool — currently \`totalDetected = ${n}\`.`,
+        t2Blocking: (n) => `To reach T2 (Notebook bench) you need at least one persistent context file (instructions, config or rules) — currently \`context = ${n}\`.`,
+        t3Blocking: (n) => `To reach T3 (Connected bench) you need to connect at least one MCP server — currently \`mcpServers = ${n}\`.`,
+        t4Blocking: (n) => `To reach T4 (Own tooling) you need to create at least one asset of your own — skill, command or rule — currently \`custom = ${n}\`.`,
+        t5Blocking: (hasAgentic, mcp, custom) => {
+          const missing = [];
+          if (!hasAgentic) missing.push('an agentic CLI (Claude Code, Aider, Gemini CLI, Codex CLI or Amazon Q Developer)');
+          if (mcp < 1) missing.push('at least 1 MCP server');
+          if (custom < 1) missing.push('at least 1 asset of your own (skill, command or rule)');
+          return `To reach T5 (Agentic operator) you're missing: ${missing.join('; ')} (\`hasAgentic = ${hasAgentic}\`, \`mcpServers = ${mcp}\`, \`custom = ${custom}\`).`;
+        },
+        t6Blocking: (n) => `To reach T6 (Multi-agent) you need at least 2 specialized agents defined under \`.claude/agents/\` — currently you have ${n}.`,
+        t7Blocking: (n) => `To reach T7 (Orchestrated workshop) you need at least one automation hook configured — currently \`hooks = ${n}\`.`,
+      },
+    },
     levelNames: {
       none: 'No AI footprint',
       exploring: 'Exploring',
@@ -258,7 +346,6 @@ const catalogs = {
       level: (level, name) => `Level ${level} · ${name}`,
       detectedHeading: 'Detected',
       none: '(none)',
-      notDetected: (names) => `Not detected: ${names}`,
       environment: 'Environment',
       editors: 'editors',
       noEditorsDetected: 'none detected',
@@ -275,7 +362,7 @@ const catalogs = {
       detectedSuffix: (total) => `of ${total} tools detected`,
       maturity: 'Maturity',
       tools: 'Tools',
-      notDetected: 'not detected',
+      toolsEmpty: 'No AI tool was detected in your environment.',
       configIntensity: 'configuration intensity',
       files: (n) => `${n}&nbsp;${n === 1 ? 'file' : 'files'}`,
       lastModified: (dateStr) => `last modified: ${dateStr}`,
@@ -296,6 +383,14 @@ const catalogs = {
       agentRealNameLabel: "agent's real name",
       orchestratorLabel: 'Orchestrator',
       reportsToLabel: 'Reports to:',
+      agentDescriptionFallbackWithToolsAndModel: (model, tools) =>
+        `Structural agent with no synthesized description: runs on the ${model} model and has access to ${tools.join(', ')}.`,
+      agentDescriptionFallbackWithTools: (tools) =>
+        `Structural agent with no synthesized description: has access to ${tools.join(', ')}.`,
+      agentDescriptionFallbackWithModel: (model) =>
+        `Structural agent with no synthesized description: runs on the ${model} model.`,
+      agentDescriptionFallbackBare:
+        'No description available: none was synthesized and there is no additional structural metadata (tools or model) to derive one from.',
       // Project technologies (talents-ai-score, ADR-012). Refined: shows
       // recognized FRAMEWORKS/LIBRARIES only, not a raw dependency dump.
       technologiesHeading: 'Project technologies',

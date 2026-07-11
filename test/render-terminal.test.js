@@ -127,3 +127,28 @@ test('renderTerminal: never throws on a malformed/cyclical agent parent chain', 
   };
   assert.doesNotThrow(() => renderTerminal(report, MATURITY_NO_TIER, 'es'));
 });
+
+// --- tier analysis: why this tier (parity with render-html.js) -------------
+
+test('renderTerminal: tier analysis section always present, lists met criteria with signal values', () => {
+  const html = strip(renderTerminal(BASE_REPORT, MATURITY_NO_TIER, 'es'));
+  assert.match(html, /An[aá]lisis de tier/);
+  assert.match(html, /totalDetected = 1/);
+});
+
+test('renderTerminal: shows the exact blocking criterion for the next tier', () => {
+  const html = strip(renderTerminal(BASE_REPORT, MATURITY_NO_TIER, 'es'));
+  assert.match(html, /Criterio exacto que te impide subir de tier/);
+  assert.match(html, /T2/); // BASE_REPORT has one detected tool, no context yet -> blocked at T2
+});
+
+test('renderTerminal: at the max tier, shows the "meets every criterion" note instead of a blocking one', () => {
+  const report = {
+    ...BASE_REPORT,
+    tools: [{ id: 'claude-code', detected: true, depth: { instructions: 1, mcpServers: 1, skills: 1, hooks: 1 } }],
+    agentCounts: { agents: 2 },
+  };
+  const html = strip(renderTerminal(report, MATURITY_NO_TIER, 'es'));
+  assert.match(html, /Cumples todos los criterios de la escalera/);
+  assert.equal(html.includes('Criterio exacto que te impide subir de tier'), false);
+});
