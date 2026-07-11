@@ -161,6 +161,14 @@ const catalogs = {
       agentRealNameLabel: 'nombre real del agente',
       orchestratorLabel: 'Orchestrator',
       reportsToLabel: 'Reporta a:',
+      // Last-resort description fallback (talents-ai-score, real-browser
+      // user feedback: a card must NEVER show only name+model, no
+      // description at all). Used ONLY when there's neither a synthesis
+      // result nor a declared frontmatter `description` for this agent —
+      // deliberately short and derived purely from the name, never a full
+      // templated sentence (that repetitive-filler approach was already
+      // tried and rejected).
+      agentDescriptionFromName: (name) => `Agente "${name}" (sin descripción declarada en su fichero).`,
       // Project technologies (talents-ai-score, ADR-012). Refined: shows
       // recognized FRAMEWORKS/LIBRARIES only (React, Express...), not a raw
       // dependency dump — the empty state also covers "manifest exists but
@@ -189,6 +197,12 @@ const catalogs = {
       // replaced by a validated, project-adapted response — never on
       // fallback to the curated content.
       roadmapPersonalizedNotice: 'Contenido adaptado a tu proyecto.',
+      // Copyable implementation prompt (talents-ai-score): the PRIMARY
+      // "how do I implement this" path, replacing --build-next-level's
+      // file-writing as the main route — a deterministic, ready-to-paste
+      // prompt (src/roadmap-prompt.js) for the talent's own AI tool.
+      implementationPromptHeading: 'Prompt para implementar',
+      implementationPromptHint: 'Copia este prompt y pégalo en tu IA de confianza (Claude Code, Cursor, ChatGPT...) para que lo implemente en tu proyecto.',
       privacyNote:
         'Este informe se ha generado en local. Solo registra qué herramientas '
         + 'existen, cuántas configuraciones tienes y tu nivel: nunca el contenido '
@@ -208,9 +222,10 @@ const catalogs = {
       // Roadmap personalization (talents-ai-score, ADR-015): reuses the
       // same spinner mechanism as synthesizingLabel above.
       personalizingRoadmapLabel: 'Personalizando roadmap…',
-      // "Construir el siguiente nivel ahora" (issue 021): announced from the
-      // terminal roadmap section whenever there's a next tier to build.
-      buildNextLevelHint: 'Ejecuta `ai-footprint --build-next-level` para construir tu siguiente paso.',
+      // "Construir el siguiente nivel ahora" (issue 021): now a SECONDARY,
+      // opt-in alternative — the copyable implementation prompt (below) is
+      // the PRIMARY "how do I implement this" path.
+      buildNextLevelHint: 'Alternativamente, ejecuta `ai-footprint --build-next-level` para generar el fichero de partida directamente en tu proyecto.',
     },
     // "Construir el siguiente nivel ahora" (talents-ai-score, issue 021):
     // optional, explicit phase — writes the deterministic starter for the
@@ -389,6 +404,7 @@ const catalogs = {
       agentRealNameLabel: "agent's real name",
       orchestratorLabel: 'Orchestrator',
       reportsToLabel: 'Reports to:',
+      agentDescriptionFromName: (name) => `"${name}" agent (no description declared in its file).`,
       // Project technologies (talents-ai-score, ADR-012). Refined: shows
       // recognized FRAMEWORKS/LIBRARIES only, not a raw dependency dump.
       technologiesHeading: 'Project technologies',
@@ -409,6 +425,8 @@ const catalogs = {
       roadmapHonestyLabel: 'Honesty note',
       roadmapPendingTranslation: 'Content pending translation — showing in Spanish.',
       roadmapPersonalizedNotice: 'Content adapted to your project.',
+      implementationPromptHeading: 'Implementation prompt',
+      implementationPromptHint: 'Copy this prompt and paste it into your AI tool of choice (Claude Code, Cursor, ChatGPT...) so it implements this in your project.',
       privacyNote:
         'This report was generated locally. It only records which tools exist, '
         + 'how many configurations you have and your level: never the content of '
@@ -424,7 +442,7 @@ const catalogs = {
       scanningLabel: 'Scanning environment and detectors…',
       synthesizingLabel: 'Synthesizing agents with AI…',
       personalizingRoadmapLabel: 'Personalizing roadmap…',
-      buildNextLevelHint: 'Run `ai-footprint --build-next-level` to build your next step.',
+      buildNextLevelHint: 'Alternatively, run `ai-footprint --build-next-level` to generate the starter file directly in your project.',
     },
     buildNextLevel: {
       heading: (tierKey) => `Generating the starter to reach ${tierKey}...`,

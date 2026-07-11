@@ -20,7 +20,16 @@
  * (src/build-next-level.js). `--force` only matters alongside it, to
  * authorize overwriting an existing file — a separate, deliberate flag,
  * never implied by `--build-next-level` alone.
+ *
+ * talents-ai-score (implementation-prompt item): `--lang es|en` overrides
+ * the auto-detected report language (src/i18n.js's detectReportLang) —
+ * ONE language axis for the whole report, the copyable implementation
+ * prompt included, rather than a second independent choice just for the
+ * prompt. Unrecognized values are ignored (null), never guessed at or
+ * silently coerced to a made-up language.
  */
+const VALID_LANGS = new Set(['es', 'en']);
+
 function parseArgs(argv) {
   const opts = {
     html: false,
@@ -33,6 +42,7 @@ function parseArgs(argv) {
     consentEmail: null,
     buildNextLevel: false,
     force: false,
+    lang: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -46,6 +56,11 @@ function parseArgs(argv) {
     else if (a.startsWith('--consent-email=')) opts.consentEmail = a.slice('--consent-email='.length);
     else if (a === '--build-next-level') opts.buildNextLevel = true;
     else if (a === '--force') opts.force = true;
+    else if (a === '--lang') opts.lang = VALID_LANGS.has(argv[++i]) ? argv[i] : null;
+    else if (a.startsWith('--lang=')) {
+      const value = a.slice('--lang='.length);
+      opts.lang = VALID_LANGS.has(value) ? value : null;
+    }
     else if (a === '--help' || a === '-h') opts.help = true;
   }
   return opts;

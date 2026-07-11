@@ -83,28 +83,34 @@ test('renderHtml: agents without synthesis -> title is the real name, chips are 
   assert.match(section, /sonnet/);
 });
 
-// talents-ai-score: the earlier "always show a phrase" fix backfired in
-// practice — every agent without synthesis got the SAME templated filler
-// sentence, so every card looked identical and it read as noise, not
-// information (the user's own words: "molesta"). Reverted to: no
-// synthesized whatItDoes -> NO phrase at all, only the chips (name/tools/
-// model), which already differ per agent and are the actually-distinctive
-// data. When synthesis DOES cover an agent, nothing changes — its real
-// whatItDoes still renders as the phrase.
-test('renderHtml: agents without synthesis get NO phrase at all (no filler text) — only the chips', () => {
+// talents-ai-score: an earlier fix forced a deterministic FILLER phrase
+// (derived from tools/model) whenever synthesis didn't cover an agent —
+// every card got the SAME templated sentence, read as noise ("molesta").
+// That was reverted to "no phrase at all". Real-browser user testing then
+// rejected THAT too: the user does not accept a card with only name+model,
+// no description whatsoever. Current, final behavior — a description is
+// ALWAYS present, in priority order:
+//   1. The synthesis result's whatItDoes (unchanged, richest option).
+//   2. The agent's OWN raw `description` from its `.claude/agents/*.md`
+//      frontmatter (report.agentDescriptions, bin/report.js) — this is
+//      deterministic, local, straight from the file the talent wrote
+//      themselves: a legitimate "description based on your own files".
+//   3. Only as a LAST RESORT (no synthesis, no declared description at
+//      all): a minimal, name-derived line — never a full templated
+//      sentence repeated verbatim across cards.
+
+test('renderHtml: agents without synthesis but WITH a raw frontmatter description -> phrase shows that description verbatim', () => {
   const report = {
     ...BASE_REPORT,
-    agents: [{ name: 'backend-developer', tools: ['Read', 'Write'], model: 'sonnet', parent: null }],
+    agents: [{ name: 'ddd-enforcer', tools: [], model: 'opus', parent: null }],
+    agentDescriptions: [{ name: 'ddd-enforcer', description: 'Scans a module directory for DDD pattern violations and fixes them.' }],
   };
   const html = renderHtml(report, MATURITY, 'es');
   const section = treeSectionOf(html);
-  assert.equal(section.includes('class="agent-phrase"'), false);
-  assert.match(section, /sonnet/); // still present as a chip
-  assert.match(section, /Read/);
-  assert.match(section, /Write/);
+  assert.match(section, /class="agent-phrase">Scans a module directory for DDD pattern violations and fixes them\.</);
 });
 
-test('renderHtml: multiple agents without synthesis are NOT rendered with identical filler text — each card differs by its own chips only', () => {
+test('renderHtml: multiple agents without synthesis, each with its OWN raw description -> distinct phrases, never identical filler', () => {
   const report = {
     ...BASE_REPORT,
     agents: [
@@ -112,24 +118,224 @@ test('renderHtml: multiple agents without synthesis are NOT rendered with identi
       { name: 'hub-mr-reviewer', tools: [], model: 'opus', parent: null },
       { name: 'test-writer', tools: [], model: 'sonnet', parent: null },
     ],
+    agentDescriptions: [
+      { name: 'ddd-enforcer', description: 'Scans a module directory for DDD pattern violations.' },
+      { name: 'hub-mr-reviewer', description: 'Revisor experto de Merge Requests del repo shakers-hub-backend.' },
+      { name: 'test-writer', description: 'Use this agent to create tests, write tests, add test coverage.' },
+    ],
   };
   const html = renderHtml(report, MATURITY, 'es');
   const section = treeSectionOf(html);
-  assert.equal(section.includes('class="agent-phrase"'), false);
-  assert.match(section, /agent-title">ddd-enforcer</);
-  assert.match(section, /agent-title">hub-mr-reviewer</);
-  assert.match(section, /agent-title">test-writer</);
+  assert.match(section, /Scans a module directory for DDD pattern violations\./);
+  assert.match(section, /Revisor experto de Merge Requests/);
+  assert.match(section, /Use this agent to create tests/);
 });
 
-test('renderHtml: an agent with no tools and no model (nothing to show beyond its name) simply has no chips and no phrase — never a fabricated one', () => {
+test('renderHtml: an agent with NEITHER synthesis NOR a declared description gets a minimal, name-derived last-resort phrase — never blank, never a repeated filler sentence', () => {
   const report = {
     ...BASE_REPORT,
     agents: [{ name: 'bare-agent', tools: [], model: null, parent: null }],
   };
   const html = renderHtml(report, MATURITY, 'es');
   const section = treeSectionOf(html);
-  assert.equal(section.includes('class="agent-phrase"'), false);
-  assert.match(section, /agent-title">bare-agent</);
+  assert.match(section, /class="agent-phrase"/); // a phrase IS present — never a blank card
+  assert.match(section, /Bare agent/i); // derived from the name, not a canned sentence
+});
+
+test('renderHtml: an EMPTY declared description (blank/whitespace-only frontmatter) still falls through to the last-resort name-derived phrase, not a blank one', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'quiet-agent', tools: [], model: null, parent: null }],
+    agentDescriptions: [{ name: 'quiet-agent', description: '   ' }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /class="agent-phrase"/);
+  assert.match(section, /Quiet agent/i);
+});
+
+test('renderHtml: raw description matching tolerates the same name-formatting differences as synthesis matching (case/whitespace)', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'backend-developer', tools: [], model: 'sonnet', parent: null }],
+    agentDescriptions: [{ name: '  Backend-Developer  ', description: 'Handles backend work end to end.' }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /Handles backend work end to end\./);
+});
+
+// Deliberately NOT scrubbed for secrets here (unlike the ephemeral
+// synthesis request): that heuristic redaction turned out to mangle
+// ordinary example file paths a talent legitimately writes in their own
+// description text (real-world example found live-testing against
+// shakers-hub-backend's actual agents: "...for src/modules/.../foo.ts"
+// became "[REDACTED]"), for content that never leaves the machine and
+// gains no safety benefit from it — the talent is looking at their OWN
+// file, on their OWN machine. Still always HTML-escaped so it can never
+// break out of the markup (XSS via a maliciously crafted description).
+test('renderHtml: raw description is HTML-escaped before display (never a raw markup injection), but NOT secret-scrubbed (local-only, would mangle legitimate content)', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'leaky', tools: [], model: null, parent: null }],
+    agentDescriptions: [{ name: 'leaky', description: 'Add test coverage for src/modules/foo/bar.service.ts <script>alert(1)</script>' }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  // The example path survives verbatim — not redacted into noise.
+  assert.match(section, /src\/modules\/foo\/bar\.service\.ts/);
+  // But real markup injection is neutralized via HTML-escaping.
+  assert.equal(section.includes('<script>alert(1)</script>'), false);
+});
+
+// --- raw description cleanup + truncation to a card excerpt -----------------
+// talents-ai-score: real-browser testing against shakers-hub-backend found
+// the raw description showing literal YAML escape artifacts (\n, \r, \t as
+// 2-char sequences typed in the source frontmatter, since this repo's
+// minimal frontmatter parser doesn't interpret YAML string escapes) and,
+// since a real agent's `description` is often its full multi-paragraph
+// system-prompt text (complete with "Ejemplos:"/"Examples:" sections), a
+// wall of text rather than a short card excerpt. Fixed by (1) cleaning the
+// escape/pipe artifacts and collapsing whitespace, then (2) extracting a
+// short excerpt: the first sentence (up to the first . ! or ?) OR ~160
+// chars, whichever is SHORTER, with an ellipsis only when actually cut off
+// mid-thought (never after a real sentence-ending punctuation).
+
+test('renderHtml: raw description with literal \\n/\\r/\\t escape sequences is cleaned to plain prose, no visible escape artifacts', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'agent-a', tools: [], model: null, parent: null }],
+    agentDescriptions: [{ name: 'agent-a', description: 'Reviews merge requests for the repo.\\n\\nExamples:\\n- User: "Review !123"' }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /Reviews merge requests for the repo\./);
+  assert.equal(section.includes('\\n'), false);
+});
+
+test('renderHtml: raw description with a real embedded newline (e.g. from a YAML block-scalar description) is cleaned too', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'agent-b', tools: [], model: null, parent: null }],
+    agentDescriptions: [{ name: 'agent-b', description: 'Handles backend work.\nSecond paragraph should not leak into the excerpt.' }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /Handles backend work\./);
+  assert.equal(section.includes('Second paragraph'), false);
+});
+
+test('renderHtml: stray YAML block-scalar pipe artifacts are stripped from the description', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'agent-c', tools: [], model: null, parent: null }],
+    agentDescriptions: [{ name: 'agent-c', description: 'Writes tests | for services.' }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.equal(section.includes('|'), false);
+  assert.match(section, /Writes tests {1,2}for services\./);
+});
+
+test('renderHtml: multiple collapsed spaces (from artifact removal) become a single space', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'agent-d', tools: [], model: null, parent: null }],
+    agentDescriptions: [{ name: 'agent-d', description: 'Handles    backend\\n\\nwork.' }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /Handles backend work\./);
+});
+
+test('renderHtml: a short description with a natural sentence end (< 160 chars) is shown as the FULL first sentence, no ellipsis', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'ddd-enforcer', tools: [], model: 'opus', parent: null }],
+    agentDescriptions: [{ name: 'ddd-enforcer', description: 'Scans a module directory for DDD pattern violations and fixes them.' }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /class="agent-phrase">Scans a module directory for DDD pattern violations and fixes them\.</);
+  assert.equal(section.includes('…'), false);
+});
+
+test('renderHtml: a long multi-sentence description is cut down to ONLY its first sentence — the rest never appears, no wall of text', () => {
+  const longDescription =
+    'Revisor experto de Merge Requests del repo shakers-hub-backend. '
+    + 'Aplica las reglas obligatorias del proyecto y detecta fallos de Clean Code.\\n\\n'
+    + 'Ejemplos:\\n- User: "Revisa la MR !1234"\\n  Assistant: "Lanzo hub-mr-reviewer..."';
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'hub-mr-reviewer', tools: [], model: 'opus', parent: null }],
+    agentDescriptions: [{ name: 'hub-mr-reviewer', description: longDescription }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /class="agent-phrase">Revisor experto de Merge Requests del repo shakers-hub-backend\.</);
+  assert.equal(section.includes('Ejemplos'), false);
+  assert.equal(section.includes('Assistant'), false);
+});
+
+test('renderHtml: a description with NO early sentence-ending punctuation (first sentence would exceed 160 chars) is hard-truncated at ~160 chars with an ellipsis', () => {
+  const noPeriodUntilFar = 'A'.repeat(200) + '.'; // first period is at index 200, past the 160-char cap
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'agent-e', tools: [], model: null, parent: null }],
+    agentDescriptions: [{ name: 'agent-e', description: noPeriodUntilFar }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /A{160}…/);
+  assert.equal(section.includes('A'.repeat(200)), false);
+});
+
+test('renderHtml: a description with NO sentence-ending punctuation at all is hard-truncated at ~160 chars with an ellipsis', () => {
+  const noPunctuation = 'B'.repeat(300);
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'agent-f', tools: [], model: null, parent: null }],
+    agentDescriptions: [{ name: 'agent-f', description: noPunctuation }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /B{160}…/);
+});
+
+test('renderHtml: a description already shorter than 160 chars with NO punctuation at all is shown in full, no ellipsis', () => {
+  const shortNoPunctuation = 'Reviews pull requests for the team';
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'agent-g', tools: [], model: null, parent: null }],
+    agentDescriptions: [{ name: 'agent-g', description: shortNoPunctuation }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /class="agent-phrase">Reviews pull requests for the team</);
+  assert.equal(section.includes('…'), false);
+});
+
+test('renderHtml: cleanup+truncation NEVER applies to the synthesis whatItDoes (already short/polished, passes through untouched)', () => {
+  const longSynthesized = 'X'.repeat(300); // deliberately longer than the 160-char cap used for raw descriptions
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'agent-h', tools: [], model: null, parent: null }],
+    agentSynthesis: { agents: [{ name: 'agent-h', symbolicName: 'X', whatItDoes: longSynthesized }] },
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, new RegExp(`X{300}`));
+  assert.equal(section.includes('…'), false);
+});
+
+test('renderHtml: cleanup+truncation never applies to the last-resort name-derived phrase (already short)', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'bare-agent', tools: [], model: null, parent: null }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /Agente &quot;Bare agent&quot; \(sin descripción declarada en su fichero\)\./);
 });
 
 // --- enriched: agents + synthesis --------------------------------------------
@@ -166,6 +372,22 @@ test('renderHtml: only SOME agents have a synthesis match -> the rest fall back 
   const section = treeSectionOf(html);
   assert.match(section, /The Builder/);
   assert.match(section, /agent-title">reviewer</); // no synthesis match -> falls back to real name
+});
+
+test('renderHtml: when BOTH synthesis and a raw description exist for the same agent, synthesis wins (richer, still takes priority)', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'backend-developer', tools: ['Read'], model: 'sonnet', parent: null }],
+    agentDescriptions: [{ name: 'backend-developer', description: 'RAW frontmatter description text.' }],
+    agentSynthesis: {
+      agents: [{ name: 'backend-developer', symbolicName: 'The Builder', whatItDoes: 'SYNTHESIZED polished description.' }],
+      edges: [],
+    },
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /SYNTHESIZED polished description\./);
+  assert.equal(section.includes('RAW frontmatter description text.'), false);
 });
 
 // talents-ai-score bugfix: matching used to be exact-string-equality, which
@@ -276,8 +498,8 @@ test('renderHtml: multi-level explicit nesting (3 levels deep) recurses correctl
 
 test('CSS: .agent-node has a fixed width/flex-basis, decoupled from nesting depth', () => {
   const html = renderHtml({ ...BASE_REPORT, agents: [{ name: 'a', tools: [], model: null, parent: null }] }, MATURITY, 'es');
-  assert.match(html, /\.agent-node\{[^}]*flex:0 0 328px/);
-  assert.match(html, /\.agent-node\{[^}]*width:328px/);
+  assert.match(html, /\.agent-node\{[^}]*flex:0 0 400px/);
+  assert.match(html, /\.agent-node\{[^}]*width:400px/);
   // Not shrinkable to 0 (the old bug's root cause).
   assert.equal(/\.agent-node\{[^}]*min-width:0/.test(html), false);
 });
@@ -324,18 +546,18 @@ test('renderHtml: a root node WITH children carries the has-children scroll hook
 // scrolls inside its OWN block. Three narrow-viewport guards, verified by
 // real headless render at 320/360/375/520/780/1200px (body.scrollWidth ===
 // viewport at every width):
-//   1. ROOT cards shrink to fit a narrow viewport (width:min(328px,100%))
-//      instead of holding a fixed 328px that spills past ~360px and below.
+//   1. ROOT cards shrink to fit a narrow viewport (width:min(400px,100%))
+//      instead of holding a fixed 400px that spills past ~400px and below.
 //   2. The subtree scroll owner is bulletproof (min-width:0) so a long
 //      unbreakable token can't push it — and thus the page — past 100%.
 //   3. A page-level overflow-x:clip guard on .wrap as a final safety net.
-test('CSS: ROOT agent cards are responsive (min(328px,100%)) so they never overflow a narrow viewport', () => {
+test('CSS: ROOT agent cards are responsive (min(400px,100%)) so they never overflow a narrow viewport', () => {
   const html = renderHtml({ ...BASE_REPORT, agents: [{ name: 'a', tools: [], model: null, parent: null }] }, MATURITY, 'es');
-  assert.match(html, /\.agent-cards-grid>\.agent-node\{[^}]*width:min\(328px,100%\)/);
-  // Still capped at 328 (grow:0) so on wide screens they wrap, never stretch.
-  assert.match(html, /\.agent-cards-grid>\.agent-node\{[^}]*flex:0 1 328px/);
+  assert.match(html, /\.agent-cards-grid>\.agent-node\{[^}]*width:min\(400px,100%\)/);
+  // Still capped at 400 (grow:0) so on wide screens they wrap, never stretch.
+  assert.match(html, /\.agent-cards-grid>\.agent-node\{[^}]*flex:0 1 400px/);
   // NESTED nodes keep the fixed base width (stable, legible deep cards).
-  assert.match(html, /\.agent-node\{[^}]*width:328px/);
+  assert.match(html, /\.agent-node\{[^}]*width:400px/);
 });
 
 test('CSS: the subtree scroll owner has min-width:0 so it (and the page) can never be widened past 100%', () => {
@@ -382,11 +604,11 @@ test('renderHtml: card width is IDENTICAL at every nesting depth (root, mid, lea
   // class token with a trailing boundary (quote or space), not a bare quote.
   const nodeCount = (section.match(/class="agent-node[ "]/g) || []).length;
   assert.equal(nodeCount, 3);
-  // The width-bearing rule (`.agent-node{display:flex...width:328px}`) is
+  // The width-bearing rule (`.agent-node{display:flex...width:400px}`) is
   // declared exactly once — distinct from the unrelated positioning rule
   // for nested rail connectors (`.agent-children .agent-node{...}`, which
   // never touches width). No depth-specific override exists anywhere.
-  const widthRuleCount = (html.match(/\.agent-node\{display:flex[^}]*width:328px/g) || []).length;
+  const widthRuleCount = (html.match(/\.agent-node\{display:flex[^}]*width:400px/g) || []).length;
   assert.equal(widthRuleCount, 1, 'expected a single, depth-independent .agent-node width rule');
 });
 

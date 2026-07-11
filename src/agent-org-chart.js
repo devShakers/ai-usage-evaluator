@@ -250,12 +250,25 @@ function parseAgentOrgChart(root) {
 
 // talents-ai-score, ADR-010: returns `[{ name, description }]` — the ONLY
 // function in this module that ever returns description/prompt content.
-// Used exclusively to build the EPHEMERAL agent-synthesis request
-// (src/agent-synthesis.js), which scrubs obvious secrets/PII before it ever
-// leaves the machine and never persists this raw text (only the LLM's
-// structured synthesis result does, via src/share.js's whitelist). Agents
-// without a `description` are still included (empty string), so the caller
-// can still send their structural data to the synthesis endpoint.
+// Originally used exclusively to build the EPHEMERAL agent-synthesis
+// request (src/agent-synthesis.js), which scrubs obvious secrets/PII
+// before it ever leaves the machine and never persists this raw text
+// (only the LLM's structured synthesis result does, via src/share.js's
+// whitelist). Agents without a `description` are still included (empty
+// string), so the caller can still send their structural data to the
+// synthesis endpoint.
+//
+// talents-ai-score (user feedback, real-browser testing): ALSO reused now
+// as the fallback source for the agent card's own displayed description
+// when synthesis doesn't run or doesn't cover an agent — bin/report.js
+// attaches this to `report.agentDescriptions`, read by
+// render-html.js/render-terminal.js's shared buildAgentCardTree. This is
+// a LOCAL-ONLY display use (the report is always shown locally,
+// unconditionally, per ADR-011) — strictly LESS exposure than what
+// already happens for synthesis (sending it to an external endpoint), so
+// no new privacy boundary is crossed. Still never touches the
+// persistence payload (src/share.js's derivePayload never reads this
+// field — see its own header comment).
 function parseAgentDescriptions(root) {
   const seen = new Set();
   const result = [];

@@ -386,6 +386,23 @@ test('derivePayload: never leaks extra agent fields (e.g. a description slipped 
   assert.equal(JSON.stringify(payload).includes('this must never leave the machine'), false);
 });
 
+// talents-ai-score, description-always-present: `report.agentDescriptions`
+// (raw per-agent frontmatter descriptions, bin/report.js, now also used as
+// a LOCAL-ONLY fallback for the agent card's displayed description) must
+// NEVER reach the persistence payload — derivePayload never references
+// this field at all (rebuilt field-by-field elsewhere), so this locks that
+// in explicitly rather than relying on it merely being unreferenced today.
+test('derivePayload: report.agentDescriptions (raw frontmatter text, local-display-only) never reaches the persistence payload', () => {
+  const reportWithRawDescriptions = {
+    ...REPORT,
+    agents: [{ name: 'leaky-agent', tools: ['Read'], model: 'sonnet', parent: null }],
+    agentDescriptions: [{ name: 'leaky-agent', description: 'CONFIDENTIAL raw frontmatter text that must never be persisted' }],
+  };
+  const payload = derivePayload(reportWithRawDescriptions, MATURITY);
+  assert.equal('agentDescriptions' in payload, false);
+  assert.equal(JSON.stringify(payload).includes('CONFIDENTIAL raw frontmatter text'), false);
+});
+
 test('derivePayload: missing agents/agentCounts (report predating ADR-009) defaults gracefully, never throws', () => {
   const payload = derivePayload(REPORT, MATURITY);
   assert.deepEqual(payload.agents, []);
