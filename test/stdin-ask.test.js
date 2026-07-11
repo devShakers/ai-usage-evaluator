@@ -52,3 +52,34 @@ test('createLineQueueAsk: interleaved arrival (some before, some after) still re
   pushLine('second');
   assert.equal(await p2, 'second');
 });
+
+// talents-ai-score, DX fix: previously, if stdin ended (EOF) with no more
+// lines ever arriving — non-interactive input with nothing to give, e.g.
+// piped from an already-closed source or `< /dev/null` — a pending ask()
+// call hung FOREVER (no 'line' event ever fires again after the stream
+// closes). From the talent's point of view this looked exactly like a
+// frozen CLI, indistinguishable from a crash. markEnded() fixes this.
+
+test('createLineQueueAsk: markEnded() resolves a PENDING ask() with \'\' instead of hanging forever (the hang this fixes)', async () => {
+  const { ask, markEnded } = createLineQueueAsk(() => {});
+
+  const pending = ask('Q1?');
+  markEnded(); // simulates stdin closing with nothing more to give
+  const answer = await pending;
+  assert.equal(answer, '');
+});
+
+test('createLineQueueAsk: after markEnded(), any FURTHER ask() also resolves immediately with \'\' (never hangs)', async () => {
+  const { ask, markEnded } = createLineQueueAsk(() => {});
+  markEnded();
+  assert.equal(await ask('Q1?'), '');
+  assert.equal(await ask('Q2?'), '');
+});
+
+test('createLineQueueAsk: markEnded() does NOT discard an answer that already arrived and is still queued', async () => {
+  const { ask, pushLine, markEnded } = createLineQueueAsk(() => {});
+  pushLine('already-here');
+  markEnded();
+  assert.equal(await ask('Q1?'), 'already-here'); // queued answer still wins
+  assert.equal(await ask('Q2?'), ''); // queue exhausted, stream ended -> ''
+});

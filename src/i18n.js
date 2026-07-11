@@ -161,18 +161,6 @@ const catalogs = {
       agentRealNameLabel: 'nombre real del agente',
       orchestratorLabel: 'Orchestrator',
       reportsToLabel: 'Reporta a:',
-      // Deterministic description fallback (talents-ai-score bugfix): used
-      // whenever synthesis didn't run, or didn't cover this agent — never
-      // leaves a card with no description. Derived only from already-
-      // available structural data (tools/model), never invented.
-      agentDescriptionFallbackWithToolsAndModel: (model, tools) =>
-        `Agente estructural sin descripción sintetizada: opera con el modelo ${model} y tiene acceso a ${tools.join(', ')}.`,
-      agentDescriptionFallbackWithTools: (tools) =>
-        `Agente estructural sin descripción sintetizada: tiene acceso a ${tools.join(', ')}.`,
-      agentDescriptionFallbackWithModel: (model) =>
-        `Agente estructural sin descripción sintetizada: opera con el modelo ${model}.`,
-      agentDescriptionFallbackBare:
-        'Sin descripción disponible: no se ha sintetizado ninguna y no hay metadatos estructurales adicionales (herramientas o modelo) que permitan derivar una.',
       // Project technologies (talents-ai-score, ADR-012). Refined: shows
       // recognized FRAMEWORKS/LIBRARIES only (React, Express...), not a raw
       // dependency dump — the empty state also covers "manifest exists but
@@ -197,6 +185,10 @@ const catalogs = {
       roadmapConsolidationLabel: 'Pasos de consolidación',
       roadmapHonestyLabel: 'Nota de honestidad',
       roadmapPendingTranslation: 'Contenido en proceso de traducción — mostrando en español.',
+      // ADR-015: shown only when the 4 prose gaps below were actually
+      // replaced by a validated, project-adapted response — never on
+      // fallback to the curated content.
+      roadmapPersonalizedNotice: 'Contenido adaptado a tu proyecto.',
       privacyNote:
         'Este informe se ha generado en local. Solo registra qué herramientas '
         + 'existen, cuántas configuraciones tienes y tu nivel: nunca el contenido '
@@ -213,6 +205,9 @@ const catalogs = {
       // during the two slow phases (see src/terminal-progress.js).
       scanningLabel: 'Escaneando entorno y detectores…',
       synthesizingLabel: 'Sintetizando agentes con IA…',
+      // Roadmap personalization (talents-ai-score, ADR-015): reuses the
+      // same spinner mechanism as synthesizingLabel above.
+      personalizingRoadmapLabel: 'Personalizando roadmap…',
       // "Construir el siguiente nivel ahora" (issue 021): announced from the
       // terminal roadmap section whenever there's a next tier to build.
       buildNextLevelHint: 'Ejecuta `ai-footprint --build-next-level` para construir tu siguiente paso.',
@@ -258,6 +253,17 @@ const catalogs = {
       notObtained: 'No se ha podido registrar tu respuesta; se te volverá a preguntar la próxima vez.',
       deniedSaved: 'Entendido, no se guardará nada. Puedes cambiar de opinión más adelante volviendo a ejecutar el comando.',
       grantedSaved: (email) => `Gracias. A partir de ahora este informe se guardará automáticamente en Shakers (correo: ${email}, máx. 1 vez por hora).`,
+      // DX visibility (talents-ai-score): the prompt runs exactly ONCE per
+      // talent by design (ADR-007/ADR-011) — a talent who already answered
+      // (even in an earlier test run) will never see it again, which read
+      // as "it doesn't work" without an explicit explanation. Enumerated,
+      // testable in src/consent-skip.js.
+      skipAlreadyDecided: (decision, path) =>
+        `Consentimiento ya respondido (${decision === 'granted' ? 'concedido' : 'rechazado'}) — guardado en ${path}. `
+        + 'Usa --consent-status para verlo o --consent-revoke para cambiarlo.',
+      nonInteractiveWarning:
+        'Entrada no interactiva (no-TTY) detectada: si no llega ninguna respuesta por stdin, '
+        + 'el consentimiento no se guardará esta vez y se te volverá a preguntar la próxima vez.',
       status: {
         heading: 'Estado del consentimiento (guardado en Shakers)',
         decisionGranted: 'Decisión: concedido (granted)',
@@ -383,14 +389,6 @@ const catalogs = {
       agentRealNameLabel: "agent's real name",
       orchestratorLabel: 'Orchestrator',
       reportsToLabel: 'Reports to:',
-      agentDescriptionFallbackWithToolsAndModel: (model, tools) =>
-        `Structural agent with no synthesized description: runs on the ${model} model and has access to ${tools.join(', ')}.`,
-      agentDescriptionFallbackWithTools: (tools) =>
-        `Structural agent with no synthesized description: has access to ${tools.join(', ')}.`,
-      agentDescriptionFallbackWithModel: (model) =>
-        `Structural agent with no synthesized description: runs on the ${model} model.`,
-      agentDescriptionFallbackBare:
-        'No description available: none was synthesized and there is no additional structural metadata (tools or model) to derive one from.',
       // Project technologies (talents-ai-score, ADR-012). Refined: shows
       // recognized FRAMEWORKS/LIBRARIES only, not a raw dependency dump.
       technologiesHeading: 'Project technologies',
@@ -410,6 +408,7 @@ const catalogs = {
       roadmapConsolidationLabel: 'Consolidation steps',
       roadmapHonestyLabel: 'Honesty note',
       roadmapPendingTranslation: 'Content pending translation — showing in Spanish.',
+      roadmapPersonalizedNotice: 'Content adapted to your project.',
       privacyNote:
         'This report was generated locally. It only records which tools exist, '
         + 'how many configurations you have and your level: never the content of '
@@ -424,6 +423,7 @@ const catalogs = {
       tempDashboard: (file) => `Temporary dashboard: ${file}`,
       scanningLabel: 'Scanning environment and detectors…',
       synthesizingLabel: 'Synthesizing agents with AI…',
+      personalizingRoadmapLabel: 'Personalizing roadmap…',
       buildNextLevelHint: 'Run `ai-footprint --build-next-level` to build your next step.',
     },
     buildNextLevel: {
@@ -460,6 +460,12 @@ const catalogs = {
       notObtained: "Couldn't record your answer; you'll be asked again next time.",
       deniedSaved: 'Understood, nothing will be saved. You can change your mind later by running the command again.',
       grantedSaved: (email) => `Thanks. From now on this report will be saved in Shakers automatically (email: ${email}, max. once per hour).`,
+      skipAlreadyDecided: (decision, path) =>
+        `Consent already answered (${decision}) — stored at ${path}. `
+        + 'Use --consent-status to view it or --consent-revoke to change it.',
+      nonInteractiveWarning:
+        'Non-interactive input (no TTY) detected: if no answer arrives via stdin, consent will not be '
+        + 'saved this run and you will be asked again next time.',
       status: {
         heading: 'Consent status (saved in Shakers)',
         decisionGranted: 'Decision: granted',

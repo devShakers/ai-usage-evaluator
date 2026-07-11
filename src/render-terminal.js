@@ -4,6 +4,7 @@ const { getCatalog, categoryLabel } = require('./i18n');
 const { buildAgentCardTree } = require('./render-html');
 const { getRoadmapEntry } = require('./roadmap-content');
 const { analyzeTier } = require('./tier-analysis');
+const { mergeRoadmapPersonalization } = require('./roadmap-personalization');
 
 /*
  * talents-ai-score: terminal parity with the HTML report. The HTML report
@@ -93,7 +94,7 @@ function agentLine(card, depth, t) {
 }
 
 function printAgents(report, t, p) {
-  const { childrenByParent, roots } = buildAgentCardTree(report, t);
+  const { childrenByParent, roots } = buildAgentCardTree(report);
   p(`  ${c.bold}${t.html.diagramHeading}${c.reset}`);
   if (!roots.length) {
     p(`  ${c.gray}  ${t.html.agentsEmpty}${c.reset}`);
@@ -153,17 +154,27 @@ function printTierAnalysis(report, t, p) {
  * (an older report shape, pre-issue-019) so a next step is always shown.
  */
 
-function printRoadmap(maturity, t, lang, p) {
+// talents-ai-score, ADR-015: `report.roadmapPersonalization` (set by
+// bin/report.js after an ephemeral, already-validated call — see
+// src/roadmap-personalization.js) merges in the SAME way render-html.js's
+// roadmapSection does, via the SAME shared mergeRoadmapPersonalization —
+// one merge implementation, not two. Absent/null renders the curated
+// content untouched, exactly as before ADR-015.
+function printRoadmap(report, maturity, t, lang, p) {
   const tierKey = maturity && maturity.tierKey;
-  const entry = tierKey ? getRoadmapEntry(tierKey, lang) : null;
+  const curatedEntry = tierKey ? getRoadmapEntry(tierKey, lang) : null;
 
-  if (!entry) {
+  if (!curatedEntry) {
     const nextStep = t.nextSteps[maturity.level] || maturity.next;
     p(`  ${c.bold}${c.yellow}${t.terminal.nextStep}${c.reset}`);
     p(`  ${c.white}${nextStep}${c.reset}`);
     p();
     return;
   }
+
+  const personalization = report && report.roadmapPersonalization;
+  const entry = mergeRoadmapPersonalization(curatedEntry, personalization);
+  const wasPersonalized = !curatedEntry.maxTier && !!personalization;
 
   p(`  ${c.bold}${c.yellow}${t.html.roadmapHeading}${c.reset}`);
   p(`  ${c.white}${c.bold}${entry.title}${c.reset}`);
@@ -179,6 +190,7 @@ function printRoadmap(maturity, t, lang, p) {
     }
   }
   if (entry.pendingTranslation) p(`  ${c.dim}${t.html.roadmapPendingTranslation}${c.reset}`);
+  if (wasPersonalized) p(`  ${c.dim}${t.html.roadmapPersonalizedNotice}${c.reset}`);
 
   // Announce --build-next-level (issue 021) whenever there's an actual next
   // tier to build for — never when already at the terminal T7 entry (there
@@ -266,7 +278,7 @@ function renderTerminal(report, maturity, lang) {
   // Tier roadmap: current -> next (parity with render-html.js's
   // roadmapSection), falls back to the old generic band next-step text
   // when there's no tierKey on `maturity`.
-  printRoadmap(maturity, t, lang, p);
+  printRoadmap(report, maturity, t, lang, p);
 
   return lines.join('\n');
 }

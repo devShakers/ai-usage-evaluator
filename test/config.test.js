@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { getSynthesisEndpoint } = require('../src/config');
+const { getSynthesisEndpoint, getRoadmapEndpoint } = require('../src/config');
 
 /*
  * talents-ai-score, ADR-010/011: the agent-synthesis endpoint follows the
@@ -25,4 +25,21 @@ test('getSynthesisEndpoint: reads AI_FOOTPRINT_SYNTHESIS_ENDPOINT, trimmed', () 
 test('getSynthesisEndpoint: empty/whitespace-only value -> null', () => {
   assert.equal(getSynthesisEndpoint({ AI_FOOTPRINT_SYNTHESIS_ENDPOINT: '' }), null);
   assert.equal(getSynthesisEndpoint({ AI_FOOTPRINT_SYNTHESIS_ENDPOINT: '   ' }), null);
+});
+
+// talents-ai-score, ADR-015: roadmap personalization endpoint, same
+// no-hardcode/no-default/env-var-only pattern.
+
+test('getRoadmapEndpoint: unset env var -> null', () => {
+  assert.equal(getRoadmapEndpoint({}), null);
+});
+
+test('getRoadmapEndpoint: reads AI_FOOTPRINT_ROADMAP_ENDPOINT, trimmed', () => {
+  const env = { AI_FOOTPRINT_ROADMAP_ENDPOINT: '  https://hub.example.com/works/ai-footprint/roadmap  ' };
+  assert.equal(getRoadmapEndpoint(env), 'https://hub.example.com/works/ai-footprint/roadmap');
+});
+
+test('getRoadmapEndpoint: empty/whitespace-only value -> null', () => {
+  assert.equal(getRoadmapEndpoint({ AI_FOOTPRINT_ROADMAP_ENDPOINT: '' }), null);
+  assert.equal(getRoadmapEndpoint({ AI_FOOTPRINT_ROADMAP_ENDPOINT: '   ' }), null);
 });

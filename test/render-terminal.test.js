@@ -83,6 +83,27 @@ test('renderTerminal: agent synthesis symbolic name + phrase are shown when pres
   assert.match(html, /Coordina el trabajo\./);
 });
 
+// talents-ai-score: no synthesized whatItDoes -> NO filler phrase at all (a
+// first pass showed the same templated sentence on every card, which read
+// as noise since the tools/model chips already carry that information
+// distinctly per agent).
+test('renderTerminal: agents without synthesis show no filler description line, only name/tools/model', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [
+      { name: 'ddd-enforcer', tools: [], model: 'opus', parent: null },
+      { name: 'hub-mr-reviewer', tools: [], model: 'opus', parent: null },
+      { name: 'test-writer', tools: [], model: 'sonnet', parent: null },
+    ],
+  };
+  const html = strip(renderTerminal(report, MATURITY_NO_TIER, 'es'));
+  assert.match(html, /ddd-enforcer/);
+  assert.match(html, /hub-mr-reviewer/);
+  assert.match(html, /test-writer/);
+  assert.equal(html.includes('sin descripción sintetizada'), false);
+  assert.equal(html.includes('Sin descripción disponible'), false);
+});
+
 test('renderTerminal: with maturity.tierKey, shows the tier roadmap (current -> next) instead of the generic band next-step', () => {
   const maturity = { level: 3, key: 'power', name: 'Power user', score: 70, emoji: 'x', next: 'generic band text', tier: 5, tierKey: 'T5' };
   const html = strip(renderTerminal(BASE_REPORT, maturity, 'es'));

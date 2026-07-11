@@ -83,30 +83,53 @@ test('renderHtml: agents without synthesis -> title is the real name, chips are 
   assert.match(section, /sonnet/);
 });
 
-// talents-ai-score bugfix: every card must show a description, even
-// without synthesis — falls back to a deterministic phrase derived from
-// structural data (tools/model), never leaves the card with no phrase.
-test('renderHtml: agents without synthesis STILL get a phrase — a deterministic fallback derived from tools/model, never blank', () => {
+// talents-ai-score: the earlier "always show a phrase" fix backfired in
+// practice — every agent without synthesis got the SAME templated filler
+// sentence, so every card looked identical and it read as noise, not
+// information (the user's own words: "molesta"). Reverted to: no
+// synthesized whatItDoes -> NO phrase at all, only the chips (name/tools/
+// model), which already differ per agent and are the actually-distinctive
+// data. When synthesis DOES cover an agent, nothing changes — its real
+// whatItDoes still renders as the phrase.
+test('renderHtml: agents without synthesis get NO phrase at all (no filler text) — only the chips', () => {
   const report = {
     ...BASE_REPORT,
     agents: [{ name: 'backend-developer', tools: ['Read', 'Write'], model: 'sonnet', parent: null }],
   };
   const html = renderHtml(report, MATURITY, 'es');
   const section = treeSectionOf(html);
-  assert.match(section, /class="agent-phrase"/);
-  assert.match(section, /sin descripción sintetizada/i);
-  assert.match(section, /sonnet/);
-  assert.match(section, /Read, Write/);
+  assert.equal(section.includes('class="agent-phrase"'), false);
+  assert.match(section, /sonnet/); // still present as a chip
+  assert.match(section, /Read/);
+  assert.match(section, /Write/);
 });
 
-test('renderHtml: an agent with no tools and no model gets the bare "no description available" fallback', () => {
+test('renderHtml: multiple agents without synthesis are NOT rendered with identical filler text — each card differs by its own chips only', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [
+      { name: 'ddd-enforcer', tools: [], model: 'opus', parent: null },
+      { name: 'hub-mr-reviewer', tools: [], model: 'opus', parent: null },
+      { name: 'test-writer', tools: [], model: 'sonnet', parent: null },
+    ],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.equal(section.includes('class="agent-phrase"'), false);
+  assert.match(section, /agent-title">ddd-enforcer</);
+  assert.match(section, /agent-title">hub-mr-reviewer</);
+  assert.match(section, /agent-title">test-writer</);
+});
+
+test('renderHtml: an agent with no tools and no model (nothing to show beyond its name) simply has no chips and no phrase — never a fabricated one', () => {
   const report = {
     ...BASE_REPORT,
     agents: [{ name: 'bare-agent', tools: [], model: null, parent: null }],
   };
   const html = renderHtml(report, MATURITY, 'es');
   const section = treeSectionOf(html);
-  assert.match(section, /Sin descripción disponible/);
+  assert.equal(section.includes('class="agent-phrase"'), false);
+  assert.match(section, /agent-title">bare-agent</);
 });
 
 // --- enriched: agents + synthesis --------------------------------------------

@@ -3,6 +3,7 @@
 const { getCatalog, categoryLabel } = require('./i18n');
 const { getRoadmapEntry } = require('./roadmap-content');
 const { analyzeTier } = require('./tier-analysis');
+const { mergeRoadmapPersonalization } = require('./roadmap-personalization');
 
 /*
  * Generates a SELF-CONTAINED HTML dashboard: all the CSS and data are
@@ -208,23 +209,19 @@ function normalizeAgentName(name) {
   return String(name || '').trim().toLowerCase().replace(/^[`'"*]+|[`'"*]+$/g, '');
 }
 
-// talents-ai-score bugfix: every agent card must show a description. When
-// synthesis didn't run at all (no endpoint configured — the common case),
-// or ran but its response didn't cover a given agent (partial response),
-// `whatItDoes` used to be `null` and the card rendered with NO phrase at
-// all. This derives a deterministic (never invented) fallback purely from
-// already-available structural data (tools/model) — same "never invent"
-// invariant as the rest of this codebase, just applied to a UI fallback
-// instead of a detector.
-function deterministicWhatItDoes(tools, model, t) {
-  const hasTools = Array.isArray(tools) && tools.length > 0;
-  const hasModel = !!model;
-  if (hasTools && hasModel) return t.html.agentDescriptionFallbackWithToolsAndModel(model, tools);
-  if (hasTools) return t.html.agentDescriptionFallbackWithTools(tools);
-  if (hasModel) return t.html.agentDescriptionFallbackWithModel(model);
-  return t.html.agentDescriptionFallbackBare;
-}
-
+// talents-ai-score: an EARLIER fix forced a deterministic filler phrase
+// (derived from tools/model) whenever synthesis didn't cover an agent, so
+// "every card always has a description". In practice that backfired: every
+// agent without synthesis got the SAME templated sentence ("Structural
+// agent with no synthesized description: runs on the X model..."), so
+// every card looked near-identical and read as noise, not information —
+// the user's own reaction, verbatim: "molesta". REVERTED: with no
+// synthesized `whatItDoes`, there is simply NO phrase — only the chips
+// (name/tools/model), which are the actually distinctive per-agent data
+// and already render below the title regardless of synthesis. When
+// synthesis DOES cover an agent, nothing changes: its real `whatItDoes`
+// still renders as the phrase.
+//
 // Merges the structural org chart (ADR-009: name/tools/model/parent —
 // always available, deterministic) with the ephemeral synthesis result
 // (ADR-010: symbolicName/whatItDoes — optional, per-run), keyed by
@@ -233,13 +230,13 @@ function deterministicWhatItDoes(tools, model, t) {
 // root, same defensive rule the retired org-chart tree used). This module
 // never reads `description` from anywhere.
 //
-// Guarantees (talents-ai-score bugfix — every card shows a name AND a
-// description, always):
+// Guarantees:
 //   - `name`: always the structural agent's name — parseAgentFile already
 //     guarantees this is never blank (falls back to the filename there).
 //   - `whatItDoes`: the synthesis phrase when this agent was covered by
-//     it, otherwise `deterministicWhatItDoes`'s fallback — NEVER null.
-function buildAgentCardTree(report, t) {
+//     it, otherwise `null` (no phrase rendered — see the note above this
+//     function for why a filler fallback was tried and reverted).
+function buildAgentCardTree(report) {
   const agents = Array.isArray(report.agents) ? report.agents : [];
   const synthesisAgents =
     report.agentSynthesis && Array.isArray(report.agentSynthesis.agents) ? report.agentSynthesis.agents : [];
@@ -254,7 +251,7 @@ function buildAgentCardTree(report, t) {
     return {
       name: a.name,
       symbolicName: synth && synth.symbolicName ? synth.symbolicName : null,
-      whatItDoes: synth && synth.whatItDoes ? synth.whatItDoes : deterministicWhatItDoes(tools, model, t),
+      whatItDoes: synth && synth.whatItDoes ? synth.whatItDoes : null,
       tools,
       model,
       parent: parentKey,
@@ -328,7 +325,7 @@ function agentNodeHtml(card, childrenByParent, t, visited = new Set()) {
 }
 
 function agentCardsSection(report, t) {
-  const { childrenByParent, roots } = buildAgentCardTree(report, t);
+  const { childrenByParent, roots } = buildAgentCardTree(report);
   if (!roots.length) {
     return `<section>
     <div class="h2">${esc(t.html.diagramHeading)}</div>
@@ -387,6 +384,18 @@ function roadmapPendingNotice(entry, t) {
     : '';
 }
 
+// talents-ai-score, ADR-015: shown only when the 4 prose gaps were
+// actually replaced by a validated, project-adapted response (never when
+// falling back to curated verbatim) — an honest signal of what changed,
+// same spirit as the agent card's real-name badge or the pending-
+// translation notice above. Tier/band/criterion/snippet are NEVER
+// personalized, so this notice never implies they were.
+function roadmapPersonalizedNotice(personalized, t) {
+  return personalized
+    ? `<p class="roadmap-personalized">${esc(t.html.roadmapPersonalizedNotice)}</p>`
+    : '';
+}
+
 function roadmapTerminalHtml(entry, t) {
   return `<div class="card roadmap-card">
     ${roadmapPendingNotice(entry, t)}
@@ -404,9 +413,10 @@ function roadmapTerminalHtml(entry, t) {
   </div>`;
 }
 
-function roadmapJumpHtml(entry, t) {
+function roadmapJumpHtml(entry, t, personalized) {
   return `<div class="card roadmap-card">
     ${roadmapPendingNotice(entry, t)}
+    ${roadmapPersonalizedNotice(personalized, t)}
     <h3 class="roadmap-title">${esc(entry.title)}</h3>
     <div class="roadmap-upgrade-when"><b>${esc(t.html.roadmapUpgradeWhenLabel)}</b> ${esc(entry.upgradeWhen)}</div>
     <div class="roadmap-block">
@@ -465,13 +475,26 @@ function tierAnalysisSection(report, t) {
 // `maturity.tierKey` may be absent (an older maturity shape, pre-issue-019)
 // or unrecognized — degrades to nothing rendered rather than throwing or
 // inventing a tier.
-function roadmapSection(maturity, t, lang) {
+//
+// talents-ai-score, ADR-015: `report.roadmapPersonalization` (set by
+// bin/report.js after an ephemeral, already-validated network call — see
+// src/roadmap-personalization.js) merges in ONLY when this is a jump
+// entry (never the T7 terminal one). Absent/null (no endpoint configured,
+// or any fallback condition already collapsed it to null upstream) simply
+// renders the curated content untouched, exactly as before ADR-015 —
+// zero-cost, nothing broken.
+function roadmapSection(report, maturity, t, lang) {
   const tierKey = maturity && maturity.tierKey;
   if (!tierKey) return '';
   const entry = getRoadmapEntry(tierKey, lang);
   if (!entry) return '';
 
-  const body = entry.maxTier ? roadmapTerminalHtml(entry, t) : roadmapJumpHtml(entry, t);
+  const personalization = report && report.roadmapPersonalization;
+  const finalEntry = mergeRoadmapPersonalization(entry, personalization);
+  const wasPersonalized = !entry.maxTier && !!personalization;
+  const body = finalEntry.maxTier
+    ? roadmapTerminalHtml(finalEntry, t)
+    : roadmapJumpHtml(finalEntry, t, wasPersonalized);
   return `<section>
     <div class="h2">${esc(t.html.roadmapHeading)}</div>
     ${body}
@@ -906,6 +929,7 @@ function renderHtml(report, maturity, lang) {
   .roadmap-card{padding:26px 28px;display:flex;flex-direction:column;gap:18px;
     border-left:4px solid var(--accent-lime)}
   .roadmap-pending{margin:0;font-size:12.5px;font-style:italic;color:var(--faint)}
+  .roadmap-personalized{margin:0;font-size:12.5px;font-style:italic;color:var(--emphasis-strong)}
   .roadmap-title{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;color:var(--fg)}
   .roadmap-upgrade-when{font-size:14px;color:var(--muted);line-height:1.5}
   .roadmap-upgrade-when b{color:var(--fg)}
@@ -1019,7 +1043,7 @@ function renderHtml(report, maturity, lang) {
 
   ${tierAnalysisSection(report, t)}
 
-  ${roadmapSection(maturity, t, lang)}
+  ${roadmapSection(report, maturity, t, lang)}
 
   <footer>
     <div class="priv">

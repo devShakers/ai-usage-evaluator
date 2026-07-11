@@ -40,4 +40,17 @@ function getSynthesisEndpoint(env = process.env) {
   return value && value.trim() ? value.trim() : null;
 }
 
-module.exports = { getIngestEndpoint, getSynthesisEndpoint };
+/*
+ * Roadmap personalization endpoint (talents-ai-score, ADR-015): same
+ * no-hardcode, no-default, no-secret pattern as the two endpoints above —
+ * supplied via `AI_FOOTPRINT_ROADMAP_ENDPOINT`, unset means "nothing to
+ * call". The caller (src/roadmap-personalization.js / bin/report.js)
+ * treats an unset endpoint as a normal fallback to the curated roadmap
+ * content verbatim (src/roadmap-content.js), never an error.
+ */
+function getRoadmapEndpoint(env = process.env) {
+  const value = env.AI_FOOTPRINT_ROADMAP_ENDPOINT;
+  return value && value.trim() ? value.trim() : null;
+}
+
+module.exports = { getIngestEndpoint, getSynthesisEndpoint, getRoadmapEndpoint };
