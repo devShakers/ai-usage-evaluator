@@ -21,11 +21,25 @@ const readline = require('readline');
  * decoupled from when `ask()` happens to be called. `createLineQueueAsk`
  * is the pure logic (no real readline), exported for unit testing that
  * race directly; `createStdinAsk` wires it to a real stdin interface.
+ *
+ * talents-ai-score, DX fix: a SECOND, previously-invisible bug lived here —
+ * when stdin is non-interactive and ends with NO more lines ever coming
+ * (e.g. piped from an already-closed source, or `< /dev/null`), a pending
+ * `ask()` call's Promise never resolved: `rl`'s `'line'` event simply never
+ * fires again after the stream ends, so `await ask(...)` hung FOREVER. From
+ * the talent's point of view this looked exactly like "the CLI froze after
+ * showing the report" — indistinguishable from a crash, and much worse
+ * than a silent skip. `markEnded` (wired to `rl`'s `'close'` event, which
+ * fires when the underlying stream ends) resolves any pending `ask()` with
+ * `''` instead — never a valid yes/no/email, so the EXISTING validation in
+ * src/consent-flow.js already treats it as "no answer obtained" and prints
+ * `notObtained`, exhausting gracefully instead of hanging.
  */
 
 function createLineQueueAsk(writeQuestion) {
   const queue = [];
   let resolveNext = null;
+  let ended = false;
 
   function pushLine(line) {
     if (resolveNext) {
@@ -37,23 +51,38 @@ function createLineQueueAsk(writeQuestion) {
     }
   }
 
+  // Signals the stream has ended (EOF) with nothing further to give.
+  // Resolves any PENDING ask() with '' rather than leaving it hanging; any
+  // ask() call made AFTER this also resolves immediately with '' (there's
+  // nothing left to wait for).
+  function markEnded() {
+    ended = true;
+    if (resolveNext) {
+      const resolve = resolveNext;
+      resolveNext = null;
+      resolve('');
+    }
+  }
+
   function ask(question) {
     writeQuestion(question);
     return new Promise((resolve) => {
       if (queue.length > 0) resolve(queue.shift());
+      else if (ended) resolve('');
       else resolveNext = resolve;
     });
   }
 
-  return { ask, pushLine };
+  return { ask, pushLine, markEnded };
 }
 
 function createStdinAsk() {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const { ask, pushLine } = createLineQueueAsk((question) => {
+  const { ask, pushLine, markEnded } = createLineQueueAsk((question) => {
     process.stdout.write(`  ${question} `);
   });
   rl.on('line', pushLine);
+  rl.on('close', markEnded);
   ask.close = () => rl.close();
   return ask;
 }

@@ -16,6 +16,7 @@ const {
   getConsentStatus,
   revokeConsent,
   setEmail,
+  consentPath,
 } = require('../src/share');
 const { runConsentPrompt } = require('../src/consent-flow');
 const { createStdinAsk } = require('../src/stdin-ask');
@@ -24,6 +25,7 @@ const { buildSynthesisRequest, requestAgentSynthesis } = require('../src/agent-s
 const { getSynthesisEndpoint } = require('../src/config');
 const { buildNextLevelStarter } = require('../src/build-next-level');
 const { withStaticStatus, withSpinner } = require('../src/terminal-progress');
+const { computeConsentSkip } = require('../src/consent-skip');
 
 function openInBrowser(file) {
   const cmd =
@@ -241,8 +243,27 @@ async function main() {
   // ADR-011 — revises ADR-007/issue 006's pre-scan disclosure wall). Once a
   // decision exists (granted or denied), a normal run never interrupts with
   // this again.
+  //
+  // DX (talents-ai-score): a talent reported never seeing this prompt with
+  // no explanation why. computeConsentSkip (src/consent-skip.js) makes
+  // every reason explicit instead of silent — see its header for the full
+  // enumeration of conditions (already-persisted decision, by far the most
+  // likely real-world cause; non-interactive stdin, still attempted, not
+  // skipped outright, since a piped answer is legitimate and stays
+  // supported). `--no-save` was checked and confirmed to have NO bearing
+  // on this block at all.
   const state = loadConsentState();
-  if (!getConsentDecision(state)) {
+  const decision = getConsentDecision(state);
+  const consentSkip = computeConsentSkip({
+    decision,
+    stdinIsTTY: !!process.stdin.isTTY,
+    consentFilePath: consentPath(),
+    catalog,
+  });
+  if (consentSkip.message) {
+    process.stdout.write(`\n  ${consentSkip.message}\n`);
+  }
+  if (!consentSkip.skip) {
     const ask = createStdinAsk();
     try {
       await runConsentPrompt({ ask, catalog });

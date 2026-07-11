@@ -126,6 +126,45 @@ test('bin/report.js: a second run with a decision already persisted never asks a
   assert.equal(/Save this report in Shakers\?|Guardar este informe en Shakers\?/.test(second.stdout), false);
 });
 
+// --- DX: visible reason when the consent prompt is skipped (talents-ai-score) ---
+
+test('bin/report.js: a second run prints WHY the prompt was skipped (decision already persisted), naming the consent file and management flags', async () => {
+  await runCli({
+    args: ['--no-save', '--root', tmpProjectDir],
+    stdin: 'n\n',
+    env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
+  });
+
+  const second = await runCli({
+    args: ['--no-save', '--root', tmpProjectDir],
+    stdin: '',
+    env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
+  });
+  assert.match(second.stdout, /consent\.json/);
+  assert.match(second.stdout, /--consent-status/);
+  assert.match(second.stdout, /--consent-revoke/);
+});
+
+test('bin/report.js: --no-save has NO effect on whether the consent prompt is asked (confirmed, not a skip condition)', async () => {
+  const { stdout } = await runCli({
+    args: ['--no-save', '--root', tmpProjectDir],
+    stdin: 'n\n',
+    env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
+  });
+  assert.match(stdout, /Save this report in Shakers\?|Guardar este informe en Shakers\?/);
+});
+
+test('bin/report.js: non-interactive stdin (piped, as every test here already is) still gets a warning note, but the prompt is still attempted (a piped answer keeps working)', async () => {
+  const { stdout } = await runCli({
+    args: ['--no-save', '--root', tmpProjectDir],
+    stdin: 'n\n',
+    env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
+  });
+  assert.match(stdout, /non-TTY|no-TTY|no TTY/);
+  // the prompt still fires and the piped "n" still answers it (not skipped):
+  assert.match(stdout, /Save this report in Shakers\?|Guardar este informe en Shakers\?/);
+});
+
 test('bin/report.js: --json also always includes the full report regardless of consent, and never hangs on a misconfigured synthesis endpoint', async () => {
   const { code, stdout } = await runCli({
     args: ['--json', '--root', tmpProjectDir],
