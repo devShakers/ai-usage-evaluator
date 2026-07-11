@@ -208,23 +208,19 @@ function normalizeAgentName(name) {
   return String(name || '').trim().toLowerCase().replace(/^[`'"*]+|[`'"*]+$/g, '');
 }
 
-// talents-ai-score bugfix: every agent card must show a description. When
-// synthesis didn't run at all (no endpoint configured — the common case),
-// or ran but its response didn't cover a given agent (partial response),
-// `whatItDoes` used to be `null` and the card rendered with NO phrase at
-// all. This derives a deterministic (never invented) fallback purely from
-// already-available structural data (tools/model) — same "never invent"
-// invariant as the rest of this codebase, just applied to a UI fallback
-// instead of a detector.
-function deterministicWhatItDoes(tools, model, t) {
-  const hasTools = Array.isArray(tools) && tools.length > 0;
-  const hasModel = !!model;
-  if (hasTools && hasModel) return t.html.agentDescriptionFallbackWithToolsAndModel(model, tools);
-  if (hasTools) return t.html.agentDescriptionFallbackWithTools(tools);
-  if (hasModel) return t.html.agentDescriptionFallbackWithModel(model);
-  return t.html.agentDescriptionFallbackBare;
-}
-
+// talents-ai-score: an EARLIER fix forced a deterministic filler phrase
+// (derived from tools/model) whenever synthesis didn't cover an agent, so
+// "every card always has a description". In practice that backfired: every
+// agent without synthesis got the SAME templated sentence ("Structural
+// agent with no synthesized description: runs on the X model..."), so
+// every card looked near-identical and read as noise, not information —
+// the user's own reaction, verbatim: "molesta". REVERTED: with no
+// synthesized `whatItDoes`, there is simply NO phrase — only the chips
+// (name/tools/model), which are the actually distinctive per-agent data
+// and already render below the title regardless of synthesis. When
+// synthesis DOES cover an agent, nothing changes: its real `whatItDoes`
+// still renders as the phrase.
+//
 // Merges the structural org chart (ADR-009: name/tools/model/parent —
 // always available, deterministic) with the ephemeral synthesis result
 // (ADR-010: symbolicName/whatItDoes — optional, per-run), keyed by
@@ -233,13 +229,13 @@ function deterministicWhatItDoes(tools, model, t) {
 // root, same defensive rule the retired org-chart tree used). This module
 // never reads `description` from anywhere.
 //
-// Guarantees (talents-ai-score bugfix — every card shows a name AND a
-// description, always):
+// Guarantees:
 //   - `name`: always the structural agent's name — parseAgentFile already
 //     guarantees this is never blank (falls back to the filename there).
 //   - `whatItDoes`: the synthesis phrase when this agent was covered by
-//     it, otherwise `deterministicWhatItDoes`'s fallback — NEVER null.
-function buildAgentCardTree(report, t) {
+//     it, otherwise `null` (no phrase rendered — see the note above this
+//     function for why a filler fallback was tried and reverted).
+function buildAgentCardTree(report) {
   const agents = Array.isArray(report.agents) ? report.agents : [];
   const synthesisAgents =
     report.agentSynthesis && Array.isArray(report.agentSynthesis.agents) ? report.agentSynthesis.agents : [];
@@ -254,7 +250,7 @@ function buildAgentCardTree(report, t) {
     return {
       name: a.name,
       symbolicName: synth && synth.symbolicName ? synth.symbolicName : null,
-      whatItDoes: synth && synth.whatItDoes ? synth.whatItDoes : deterministicWhatItDoes(tools, model, t),
+      whatItDoes: synth && synth.whatItDoes ? synth.whatItDoes : null,
       tools,
       model,
       parent: parentKey,
@@ -328,7 +324,7 @@ function agentNodeHtml(card, childrenByParent, t, visited = new Set()) {
 }
 
 function agentCardsSection(report, t) {
-  const { childrenByParent, roots } = buildAgentCardTree(report, t);
+  const { childrenByParent, roots } = buildAgentCardTree(report);
   if (!roots.length) {
     return `<section>
     <div class="h2">${esc(t.html.diagramHeading)}</div>

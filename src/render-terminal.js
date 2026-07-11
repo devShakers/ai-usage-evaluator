@@ -93,7 +93,7 @@ function agentLine(card, depth, t) {
 }
 
 function printAgents(report, t, p) {
-  const { childrenByParent, roots } = buildAgentCardTree(report, t);
+  const { childrenByParent, roots } = buildAgentCardTree(report);
   p(`  ${c.bold}${t.html.diagramHeading}${c.reset}`);
   if (!roots.length) {
     p(`  ${c.gray}  ${t.html.agentsEmpty}${c.reset}`);
