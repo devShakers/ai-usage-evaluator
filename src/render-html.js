@@ -3,6 +3,7 @@
 const { getCatalog, categoryLabel } = require('./i18n');
 const { getRoadmapEntry } = require('./roadmap-content');
 const { analyzeTier } = require('./tier-analysis');
+const { mergeRoadmapPersonalization } = require('./roadmap-personalization');
 
 /*
  * Generates a SELF-CONTAINED HTML dashboard: all the CSS and data are
@@ -383,6 +384,18 @@ function roadmapPendingNotice(entry, t) {
     : '';
 }
 
+// talents-ai-score, ADR-015: shown only when the 4 prose gaps were
+// actually replaced by a validated, project-adapted response (never when
+// falling back to curated verbatim) — an honest signal of what changed,
+// same spirit as the agent card's real-name badge or the pending-
+// translation notice above. Tier/band/criterion/snippet are NEVER
+// personalized, so this notice never implies they were.
+function roadmapPersonalizedNotice(personalized, t) {
+  return personalized
+    ? `<p class="roadmap-personalized">${esc(t.html.roadmapPersonalizedNotice)}</p>`
+    : '';
+}
+
 function roadmapTerminalHtml(entry, t) {
   return `<div class="card roadmap-card">
     ${roadmapPendingNotice(entry, t)}
@@ -400,9 +413,10 @@ function roadmapTerminalHtml(entry, t) {
   </div>`;
 }
 
-function roadmapJumpHtml(entry, t) {
+function roadmapJumpHtml(entry, t, personalized) {
   return `<div class="card roadmap-card">
     ${roadmapPendingNotice(entry, t)}
+    ${roadmapPersonalizedNotice(personalized, t)}
     <h3 class="roadmap-title">${esc(entry.title)}</h3>
     <div class="roadmap-upgrade-when"><b>${esc(t.html.roadmapUpgradeWhenLabel)}</b> ${esc(entry.upgradeWhen)}</div>
     <div class="roadmap-block">
@@ -461,13 +475,26 @@ function tierAnalysisSection(report, t) {
 // `maturity.tierKey` may be absent (an older maturity shape, pre-issue-019)
 // or unrecognized — degrades to nothing rendered rather than throwing or
 // inventing a tier.
-function roadmapSection(maturity, t, lang) {
+//
+// talents-ai-score, ADR-015: `report.roadmapPersonalization` (set by
+// bin/report.js after an ephemeral, already-validated network call — see
+// src/roadmap-personalization.js) merges in ONLY when this is a jump
+// entry (never the T7 terminal one). Absent/null (no endpoint configured,
+// or any fallback condition already collapsed it to null upstream) simply
+// renders the curated content untouched, exactly as before ADR-015 —
+// zero-cost, nothing broken.
+function roadmapSection(report, maturity, t, lang) {
   const tierKey = maturity && maturity.tierKey;
   if (!tierKey) return '';
   const entry = getRoadmapEntry(tierKey, lang);
   if (!entry) return '';
 
-  const body = entry.maxTier ? roadmapTerminalHtml(entry, t) : roadmapJumpHtml(entry, t);
+  const personalization = report && report.roadmapPersonalization;
+  const finalEntry = mergeRoadmapPersonalization(entry, personalization);
+  const wasPersonalized = !entry.maxTier && !!personalization;
+  const body = finalEntry.maxTier
+    ? roadmapTerminalHtml(finalEntry, t)
+    : roadmapJumpHtml(finalEntry, t, wasPersonalized);
   return `<section>
     <div class="h2">${esc(t.html.roadmapHeading)}</div>
     ${body}
@@ -902,6 +929,7 @@ function renderHtml(report, maturity, lang) {
   .roadmap-card{padding:26px 28px;display:flex;flex-direction:column;gap:18px;
     border-left:4px solid var(--accent-lime)}
   .roadmap-pending{margin:0;font-size:12.5px;font-style:italic;color:var(--faint)}
+  .roadmap-personalized{margin:0;font-size:12.5px;font-style:italic;color:var(--emphasis-strong)}
   .roadmap-title{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;color:var(--fg)}
   .roadmap-upgrade-when{font-size:14px;color:var(--muted);line-height:1.5}
   .roadmap-upgrade-when b{color:var(--fg)}
@@ -1015,7 +1043,7 @@ function renderHtml(report, maturity, lang) {
 
   ${tierAnalysisSection(report, t)}
 
-  ${roadmapSection(maturity, t, lang)}
+  ${roadmapSection(report, maturity, t, lang)}
 
   <footer>
     <div class="priv">

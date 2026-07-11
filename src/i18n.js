@@ -185,6 +185,10 @@ const catalogs = {
       roadmapConsolidationLabel: 'Pasos de consolidación',
       roadmapHonestyLabel: 'Nota de honestidad',
       roadmapPendingTranslation: 'Contenido en proceso de traducción — mostrando en español.',
+      // ADR-015: shown only when the 4 prose gaps below were actually
+      // replaced by a validated, project-adapted response — never on
+      // fallback to the curated content.
+      roadmapPersonalizedNotice: 'Contenido adaptado a tu proyecto.',
       privacyNote:
         'Este informe se ha generado en local. Solo registra qué herramientas '
         + 'existen, cuántas configuraciones tienes y tu nivel: nunca el contenido '
@@ -201,6 +205,9 @@ const catalogs = {
       // during the two slow phases (see src/terminal-progress.js).
       scanningLabel: 'Escaneando entorno y detectores…',
       synthesizingLabel: 'Sintetizando agentes con IA…',
+      // Roadmap personalization (talents-ai-score, ADR-015): reuses the
+      // same spinner mechanism as synthesizingLabel above.
+      personalizingRoadmapLabel: 'Personalizando roadmap…',
       // "Construir el siguiente nivel ahora" (issue 021): announced from the
       // terminal roadmap section whenever there's a next tier to build.
       buildNextLevelHint: 'Ejecuta `ai-footprint --build-next-level` para construir tu siguiente paso.',
@@ -401,6 +408,7 @@ const catalogs = {
       roadmapConsolidationLabel: 'Consolidation steps',
       roadmapHonestyLabel: 'Honesty note',
       roadmapPendingTranslation: 'Content pending translation — showing in Spanish.',
+      roadmapPersonalizedNotice: 'Content adapted to your project.',
       privacyNote:
         'This report was generated locally. It only records which tools exist, '
         + 'how many configurations you have and your level: never the content of '
@@ -415,6 +423,7 @@ const catalogs = {
       tempDashboard: (file) => `Temporary dashboard: ${file}`,
       scanningLabel: 'Scanning environment and detectors…',
       synthesizingLabel: 'Synthesizing agents with AI…',
+      personalizingRoadmapLabel: 'Personalizing roadmap…',
       buildNextLevelHint: 'Run `ai-footprint --build-next-level` to build your next step.',
     },
     buildNextLevel: {

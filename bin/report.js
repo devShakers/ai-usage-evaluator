@@ -22,10 +22,13 @@ const { runConsentPrompt } = require('../src/consent-flow');
 const { createStdinAsk } = require('../src/stdin-ask');
 const { parseAgentDescriptions } = require('../src/agent-org-chart');
 const { buildSynthesisRequest, requestAgentSynthesis } = require('../src/agent-synthesis');
-const { getSynthesisEndpoint } = require('../src/config');
+const { getSynthesisEndpoint, getRoadmapEndpoint } = require('../src/config');
 const { buildNextLevelStarter } = require('../src/build-next-level');
 const { withStaticStatus, withSpinner } = require('../src/terminal-progress');
 const { computeConsentSkip } = require('../src/consent-skip');
+const { getRoadmapEntry } = require('../src/roadmap-content');
+const { computeTierResult } = require('../src/tier-engine');
+const { buildRoadmapPersonalizationRequest, requestRoadmapPersonalization } = require('../src/roadmap-personalization');
 
 function openInBrowser(file) {
   const cmd =
@@ -156,6 +159,37 @@ async function maybeSynthesizeAgents(report, root) {
   }
 }
 
+// Ephemeral roadmap personalization call (talents-ai-score, ADR-015): asks
+// the hub for a project-adapted rewrite of the CURRENT tier jump's 4 prose
+// gaps (whatUnlocks/steps/tips/mistakes) — everything else about the
+// roadmap (tier, band, the "upgrade when" criterion, the copyable
+// snippet) always stays the curated content, reinserted client-side
+// (src/roadmap-personalization.js's mergeRoadmapPersonalization, applied
+// by the render layer). Never attempted for the T7 terminal entry (no
+// jump to personalize) or when the tier can't be resolved. Any failure —
+// no endpoint, network error, timeout, invalid JSON, or a
+// steps/tips/mistakes count mismatch — resolves to `null`, and the render
+// layer falls back to the curated content verbatim, same resilience
+// invariant as maybeSynthesizeAgents above. Never touches the persistence
+// payload (src/share.js) — entirely separate, ephemeral call.
+async function maybePersonalizeRoadmap(report, maturity, lang) {
+  const tierKey = maturity && maturity.tierKey;
+  if (!tierKey) return null;
+  const entry = getRoadmapEntry(tierKey, lang);
+  if (!entry || entry.maxTier) return null;
+
+  const endpoint = getRoadmapEndpoint();
+  if (!endpoint) return null;
+
+  try {
+    const tierResult = computeTierResult(report);
+    const requestBody = buildRoadmapPersonalizationRequest(entry, tierResult, report);
+    return await requestRoadmapPersonalization(requestBody, { endpoint });
+  } catch {
+    return null; // never breaks the local report — falls back to the curated content
+  }
+}
+
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.help) {
@@ -208,6 +242,22 @@ async function main() {
     ? await withSpinner(catalog.cli.synthesizingLabel, () => maybeSynthesizeAgents(report, root || process.cwd()))
     : await maybeSynthesizeAgents(report, root || process.cwd());
   if (synthesis) report.agentSynthesis = synthesis;
+
+  // Ephemeral roadmap personalization (ADR-015): attaches
+  // `report.roadmapPersonalization` only on a validated success; on any
+  // failure the render layer falls back to the curated roadmap content
+  // verbatim. Reuses the SAME spinner mechanism as synthesis above, only
+  // shown when personalization will actually be ATTEMPTED (an applicable
+  // jump entry exists — never for T7 — AND an endpoint is configured):
+  // otherwise maybePersonalizeRoadmap returns instantly with nothing to
+  // wait for.
+  const roadmapEntryForTier = maturity.tierKey ? getRoadmapEntry(maturity.tierKey, lang) : null;
+  const willAttemptRoadmapPersonalization =
+    !!roadmapEntryForTier && !roadmapEntryForTier.maxTier && !!getRoadmapEndpoint();
+  const roadmapPersonalization = willAttemptRoadmapPersonalization
+    ? await withSpinner(catalog.cli.personalizingRoadmapLabel, () => maybePersonalizeRoadmap(report, maturity, lang))
+    : await maybePersonalizeRoadmap(report, maturity, lang);
+  if (roadmapPersonalization) report.roadmapPersonalization = roadmapPersonalization;
 
   if (opts.json) {
     process.stdout.write(JSON.stringify({ report, maturity }, null, 2) + '\n');

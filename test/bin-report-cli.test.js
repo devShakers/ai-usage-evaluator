@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const http = require('http');
 const { spawn } = require('child_process');
 
 /*
@@ -294,4 +295,107 @@ test('bin/report.js: --build-next-level runs without crashing and never overwrit
   } finally {
     fs.rmSync(tmpHomeDir, { recursive: true, force: true });
   }
+});
+
+// --- roadmap personalization (talents-ai-score, ADR-015) --------------------
+// Isolates AI_FOOTPRINT_HOME_DIR (not just the project root) so the tier
+// computed here is deterministic-enough across machines (empty root + no
+// home context files reliably lands at T1 — a real jump entry, not the T7
+// terminal shape) — same isolation pattern as --build-next-level above.
+
+function startRoadmapServer(handler) {
+  return new Promise((resolve) => {
+    const server = http.createServer(handler);
+    server.listen(0, '127.0.0.1', () => resolve(server));
+  });
+}
+
+test('bin/report.js: no roadmap endpoint configured -> curated roadmap shown, personalization never attempted', async () => {
+  const tmpHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-footprint-cli-home-'));
+  try {
+    const { code, stdout, stderr } = await runCli({
+      args: ['--no-save', '--root', tmpProjectDir],
+      stdin: 'n\n',
+      env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_HOME_DIR: tmpHomeDir },
+    });
+    assert.equal(code, 0);
+    assert.equal(/Personalizando roadmap|Personalizing roadmap/.test(stderr), false);
+    assert.equal(/Contenido adaptado a tu proyecto|Content adapted to your project/.test(stdout), false);
+  } finally {
+    fs.rmSync(tmpHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('bin/report.js: a roadmap endpoint returning a valid, count-matching response shows PERSONALIZED prose and the notice', async () => {
+  const tmpHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-footprint-cli-home-'));
+  const server = await startRoadmapServer((req, res) => {
+    let raw = '';
+    req.on('data', (c) => (raw += c));
+    req.on('end', () => {
+      const body = JSON.parse(raw);
+      const curated = body.curated;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        whatUnlocks: 'ADAPTED unlocks text for your stack.',
+        steps: curated.steps.map((s) => ({ text: `ADAPTED: ${s.text}`, estimate: s.estimate })),
+        tips: curated.tips.map((tip) => `ADAPTED: ${tip}`),
+        mistakes: curated.mistakes.map((m) => `ADAPTED: ${m}`),
+      }));
+    });
+  });
+  try {
+    const { port } = server.address();
+    const { code, stdout, stderr } = await runCli({
+      args: ['--no-save', '--root', tmpProjectDir],
+      stdin: 'n\n',
+      env: {
+        AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir,
+        AI_FOOTPRINT_HOME_DIR: tmpHomeDir,
+        AI_FOOTPRINT_ROADMAP_ENDPOINT: `http://127.0.0.1:${port}/works/ai-footprint/roadmap`,
+      },
+    });
+    assert.equal(code, 0);
+    assert.match(stderr, /Personalizando roadmap|Personalizing roadmap/);
+    assert.match(stdout, /ADAPTED unlocks text for your stack\./);
+    assert.match(stdout, /Contenido adaptado a tu proyecto|Content adapted to your project/);
+    // The criterion line is always curated, personalized or not.
+    assert.match(stdout, /Subes de tier cuando|You level up when/);
+  } finally {
+    server.close();
+    fs.rmSync(tmpHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('bin/report.js: an unreachable roadmap endpoint falls back to the curated roadmap verbatim, never crashes', async () => {
+  const tmpHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-footprint-cli-home-'));
+  try {
+    const { code, stdout } = await runCli({
+      args: ['--no-save', '--root', tmpProjectDir],
+      stdin: 'n\n',
+      env: {
+        AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir,
+        AI_FOOTPRINT_HOME_DIR: tmpHomeDir,
+        AI_FOOTPRINT_ROADMAP_ENDPOINT: 'http://127.0.0.1:1/works/ai-footprint/roadmap',
+      },
+    });
+    assert.equal(code, 0);
+    assert.match(stdout, /AI FOOTPRINT/);
+    assert.equal(/Contenido adaptado a tu proyecto|Content adapted to your project/.test(stdout), false);
+  } finally {
+    fs.rmSync(tmpHomeDir, { recursive: true, force: true });
+  }
+});
+
+test('bin/report.js: roadmap personalization status never leaks into --json\'s stdout, which stays pure JSON', async () => {
+  const { code, stdout } = await runCli({
+    args: ['--json', '--root', tmpProjectDir],
+    env: {
+      AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir,
+      AI_FOOTPRINT_ROADMAP_ENDPOINT: 'http://127.0.0.1:1/works/ai-footprint/roadmap',
+    },
+  });
+  assert.equal(code, 0);
+  assert.doesNotThrow(() => JSON.parse(stdout));
+  assert.equal(stdout.includes('Personalizando'), false);
+  assert.equal(stdout.includes('Personalizing'), false);
 });
