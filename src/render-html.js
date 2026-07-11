@@ -2,6 +2,7 @@
 
 const { getCatalog, categoryLabel } = require('./i18n');
 const { getRoadmapEntry } = require('./roadmap-content');
+const { analyzeTier } = require('./tier-analysis');
 
 /*
  * Generates a SELF-CONTAINED HTML dashboard: all the CSS and data are
@@ -193,28 +194,69 @@ function mcpSection(report, t) {
  * synthesis to begin with).
  */
 
+// talents-ai-score bugfix: matches the synthesis response back to the
+// structural agent by EXACT name equality, which is fragile — an LLM can
+// legitimately echo a name back trimmed differently, in a different case,
+// or wrapped in backticks/quotes/markdown emphasis without that being a
+// "wrong" answer in any meaningful sense. An exact-match miss caused by
+// this kind of harmless formatting drift silently loses that agent's
+// symbolicName/whatItDoes (falls through to "no synthesis for this one"),
+// even though the synthesis response DID cover it. Normalizing both sides
+// before comparing (never before storing/rendering) fixes the matching
+// without weakening it: two DIFFERENT agent names still never collide.
+function normalizeAgentName(name) {
+  return String(name || '').trim().toLowerCase().replace(/^[`'"*]+|[`'"*]+$/g, '');
+}
+
+// talents-ai-score bugfix: every agent card must show a description. When
+// synthesis didn't run at all (no endpoint configured — the common case),
+// or ran but its response didn't cover a given agent (partial response),
+// `whatItDoes` used to be `null` and the card rendered with NO phrase at
+// all. This derives a deterministic (never invented) fallback purely from
+// already-available structural data (tools/model) — same "never invent"
+// invariant as the rest of this codebase, just applied to a UI fallback
+// instead of a detector.
+function deterministicWhatItDoes(tools, model, t) {
+  const hasTools = Array.isArray(tools) && tools.length > 0;
+  const hasModel = !!model;
+  if (hasTools && hasModel) return t.html.agentDescriptionFallbackWithToolsAndModel(model, tools);
+  if (hasTools) return t.html.agentDescriptionFallbackWithTools(tools);
+  if (hasModel) return t.html.agentDescriptionFallbackWithModel(model);
+  return t.html.agentDescriptionFallbackBare;
+}
+
 // Merges the structural org chart (ADR-009: name/tools/model/parent —
 // always available, deterministic) with the ephemeral synthesis result
-// (ADR-010: symbolicName/whatItDoes — optional, per-run), keyed by name,
-// then groups by parent (dangling/self/missing parent references fall back
-// to the implicit root, same defensive rule the retired org-chart tree
-// used). This module never reads `description` from anywhere.
-function buildAgentCardTree(report) {
+// (ADR-010: symbolicName/whatItDoes — optional, per-run), keyed by
+// NORMALIZED name (see normalizeAgentName above), then groups by parent
+// (dangling/self/missing parent references fall back to the implicit
+// root, same defensive rule the retired org-chart tree used). This module
+// never reads `description` from anywhere.
+//
+// Guarantees (talents-ai-score bugfix — every card shows a name AND a
+// description, always):
+//   - `name`: always the structural agent's name — parseAgentFile already
+//     guarantees this is never blank (falls back to the filename there).
+//   - `whatItDoes`: the synthesis phrase when this agent was covered by
+//     it, otherwise `deterministicWhatItDoes`'s fallback — NEVER null.
+function buildAgentCardTree(report, t) {
   const agents = Array.isArray(report.agents) ? report.agents : [];
   const synthesisAgents =
     report.agentSynthesis && Array.isArray(report.agentSynthesis.agents) ? report.agentSynthesis.agents : [];
-  const synthesisByName = new Map(synthesisAgents.map((a) => [a.name, a]));
+  const synthesisByName = new Map(synthesisAgents.map((a) => [normalizeAgentName(a.name), a]));
   const byName = new Set(agents.map((a) => a.name));
 
   const cards = agents.map((a) => {
-    const synth = synthesisByName.get(a.name);
+    const synth = synthesisByName.get(normalizeAgentName(a.name));
     const parentKey = a.parent && byName.has(a.parent) && a.parent !== a.name ? a.parent : null;
+    const tools = Array.isArray(a.tools) ? a.tools : [];
+    const model = a.model || null;
     return {
       name: a.name,
       symbolicName: synth && synth.symbolicName ? synth.symbolicName : null,
-      whatItDoes: synth && synth.whatItDoes ? synth.whatItDoes : null,
-      tools: Array.isArray(a.tools) ? a.tools : [],
-      model: a.model || null,
+      whatItDoes: synth && synth.whatItDoes ? synth.whatItDoes : deterministicWhatItDoes(tools, model, t),
+      tools,
+      model,
       parent: parentKey,
     };
   });
@@ -286,7 +328,7 @@ function agentNodeHtml(card, childrenByParent, t, visited = new Set()) {
 }
 
 function agentCardsSection(report, t) {
-  const { childrenByParent, roots } = buildAgentCardTree(report);
+  const { childrenByParent, roots } = buildAgentCardTree(report, t);
   if (!roots.length) {
     return `<section>
     <div class="h2">${esc(t.html.diagramHeading)}</div>
@@ -387,6 +429,39 @@ function roadmapJumpHtml(entry, t) {
   </div>`;
 }
 
+/* ---------- tier analysis: why this tier (talents-ai-score) ----------
+ * Deterministic, mechanical breakdown (src/tier-analysis.js) — never LLM
+ * content. Complements the roadmap below: this section defends the
+ * ALREADY-computed tier ("here's the evidence"), the roadmap covers what's
+ * next ("here's how to level up").
+ */
+
+function tierAnalysisSection(report, t) {
+  const analysis = analyzeTier(report, t.tierAnalysis);
+  const tt = t.tierAnalysis;
+  const metItems = analysis.metCriteria
+    .map((c) => `<li>${esc(c.text)}</li>`)
+    .join('');
+  const blockingBlock = analysis.blockingCriterion
+    ? `<div class="tier-analysis-blocking">
+        <div class="tier-analysis-blocking-label">${esc(tt.blockingLabel)}</div>
+        <p class="tier-analysis-blocking-text">${esc(analysis.blockingCriterion)}</p>
+      </div>`
+    : `<p class="tier-analysis-maxtier">${esc(tt.maxTierNote)}</p>`;
+
+  return `<section>
+    <div class="h2">${esc(tt.heading)}</div>
+    <div class="card tier-analysis-card">
+      <p class="tier-analysis-intro">${esc(tt.intro(analysis.tierKey, analysis.tierName))}</p>
+      ${metItems ? `<div class="tier-analysis-block">
+        <div class="tier-analysis-met-label">${esc(tt.metHeading)}</div>
+        <ul class="tier-analysis-list">${metItems}</ul>
+      </div>` : ''}
+      ${blockingBlock}
+    </div>
+  </section>`;
+}
+
 // `maturity.tierKey` may be absent (an older maturity shape, pre-issue-019)
 // or unrecognized — degrades to nothing rendered rather than throwing or
 // inventing a tier.
@@ -403,17 +478,14 @@ function roadmapSection(maturity, t, lang) {
   </section>`;
 }
 
+// talents-ai-score: renders a DETECTED tool row only — undetected tools are
+// filtered out before this is ever called (see renderHtml below). Showing
+// every known tool the scanner CHECKS FOR (most of them absent on any
+// given machine) was pure noise: what's missing that's actually relevant
+// is already covered by the tier roadmap's next-step guidance, not
+// repeated here as a long "not detected" list.
 function toolRow(tool, t, lang) {
   const category = categoryLabel(lang, tool.category);
-  if (!tool.detected) {
-    return `<li class="tool off">
-      <span class="dot" aria-hidden="true"></span>
-      <span class="nm">${esc(tool.name)}</span>
-      <span class="cat">${esc(category)}</span>
-      <span class="sig" aria-hidden="true"></span>
-      <span class="meta">${esc(t.html.notDetected)}</span>
-    </li>`;
-  }
   const s = strength(tool);
   const bars = Array.from({ length: 4 }, (_, i) =>
     `<i class="${i < s ? 'on' : ''}"></i>`).join('');
@@ -432,13 +504,14 @@ function toolRow(tool, t, lang) {
 // data (report/maturity) doesn't change with the language, only its copy.
 function renderHtml(report, maturity, lang) {
   const t = getCatalog(lang);
-  const rows = report.tools
-    .slice()
-    .sort((a, b) => Number(b.detected) - Number(a.detected))
-    .map((tool) => toolRow(tool, t, lang))
-    .join('\n');
+  // talents-ai-score: only DETECTED tools are listed — undetected ones add
+  // visual noise without signal (a next step, if relevant, already covers
+  // it in the tier roadmap section, so it's never silently lost, just not
+  // repeated here as a name).
+  const detectedTools = report.tools.filter((tool) => tool.detected);
+  const rows = detectedTools.map((tool) => toolRow(tool, t, lang)).join('\n');
 
-  const detectedCount = report.tools.filter((tool) => tool.detected).length;
+  const detectedCount = detectedTools.length;
   const dataJson = esc(JSON.stringify({ report, maturity }, null, 2));
 
   const levelName = t.levelNames[maturity.key] || maturity.name;
@@ -783,6 +856,26 @@ function renderHtml(report, maturity, lang) {
     color:var(--faint);margin-bottom:6px}
   .next .t{font-size:16px;line-height:1.5;color:var(--fg)}
 
+  /* ---- Tier analysis: why this tier (talents-ai-score) ----
+   * Deterministic, mechanical breakdown (src/tier-analysis.js) — same card
+   * shape as the roadmap below (analogous "analytical defense" vs.
+   * "what's next" framing), teal accent instead of lime to distinguish it
+   * from the roadmap's momentum framing. */
+  .tier-analysis-card{padding:26px 28px;display:flex;flex-direction:column;
+    gap:16px;border-left:4px solid var(--emphasis)}
+  .tier-analysis-intro{margin:0;font-size:14.5px;line-height:1.65;color:var(--fg)}
+  .tier-analysis-block{display:flex;flex-direction:column;gap:10px}
+  .tier-analysis-met-label,.tier-analysis-blocking-label{font-size:12px;
+    font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+  .tier-analysis-list{margin:0;padding-left:20px;display:flex;flex-direction:column;
+    gap:8px;font-size:14px;line-height:1.55;color:var(--muted)}
+  .tier-analysis-blocking{display:flex;flex-direction:column;gap:8px;
+    padding:16px 18px;border-radius:var(--r-md);
+    background:color-mix(in srgb,var(--accent-lime) 16%, transparent)}
+  .tier-analysis-blocking-text{margin:0;font-size:14.5px;line-height:1.6;
+    color:var(--fg);font-weight:500}
+  .tier-analysis-maxtier{margin:0;font-size:14.5px;line-height:1.6;color:var(--fg)}
+
   /* ---- Tier roadmap: current -> next (talents-ai-score, issue 020) ---- */
   .roadmap-card{padding:26px 28px;display:flex;flex-direction:column;gap:18px;
     border-left:4px solid var(--accent-lime)}
@@ -870,9 +963,11 @@ function renderHtml(report, maturity, lang) {
 
   <section>
     <div class="h2">${esc(t.html.tools)}</div>
-    <ul class="tools">
+    ${detectedTools.length
+      ? `<ul class="tools">
       ${rows}
-    </ul>
+    </ul>`
+      : `<div class="card tool-empty">${esc(t.html.toolsEmpty)}</div>`}
   </section>
 
   <section>
@@ -895,6 +990,8 @@ function renderHtml(report, maturity, lang) {
   ${mcpSection(report, t)}
 
   ${agentCardsSection(report, t)}
+
+  ${tierAnalysisSection(report, t)}
 
   ${roadmapSection(maturity, t, lang)}
 

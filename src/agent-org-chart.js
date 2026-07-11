@@ -179,8 +179,19 @@ function parseFrontmatter(content, { includeDescription = false } = {}) {
 }
 
 // Parses one `.claude/agents/*.md` file into { name, tools, model, parent }.
-// Returns null if it doesn't declare a `name` (not a valid agent
-// definition) or has no frontmatter at all.
+// Returns null only when the file has NO frontmatter block at all (not a
+// valid agent definition — nothing this parser can extract from it).
+//
+// talents-ai-score bugfix: a file that DOES have a frontmatter block but
+// whose `name` key is missing, blank, or malformed (real-world edge cases
+// found while investigating this: `name:` with no value at all — Claude
+// Code's own frontmatter still recognizes the file as an agent by its
+// filename in that case — or a `name` line the regex-based parser above
+// doesn't populate) used to be silently DROPPED from the whole org chart,
+// which is worse than showing a name: the agent vanished entirely rather
+// than showing with a name. Every agent must show a name — falls back to
+// the file's own basename (extension stripped) when the frontmatter
+// doesn't supply one, so a card is NEVER rendered with no name.
 function parseAgentFile(filePath) {
   let content;
   try {
@@ -189,12 +200,15 @@ function parseAgentFile(filePath) {
     return null;
   }
   const fm = parseFrontmatter(content);
-  if (!fm || !fm.name) return null;
+  if (!fm) return null; // no frontmatter block at all: not a valid agent definition
+
+  const fallbackName = path.basename(filePath, path.extname(filePath));
+  const name = typeof fm.name === 'string' && fm.name.trim() ? fm.name.trim() : fallbackName;
 
   const tools = Array.isArray(fm.tools) ? fm.tools : typeof fm.tools === 'string' ? [fm.tools] : [];
 
   return {
-    name: fm.name,
+    name,
     tools,
     model: typeof fm.model === 'string' && fm.model ? fm.model : null,
     // Hierarchy (ADR-009): only set if the frontmatter declares `parent`
@@ -254,9 +268,16 @@ function parseAgentDescriptions(root) {
         continue;
       }
       const fm = parseFrontmatter(content, { includeDescription: true });
-      if (fm && fm.name && !seen.has(fm.name)) {
-        seen.add(fm.name);
-        result.push({ name: fm.name, description: typeof fm.description === 'string' ? fm.description : '' });
+      if (!fm) continue;
+      // Same fallback-to-filename rule as parseAgentFile above, so an
+      // agent missing/blank `name` in its frontmatter isn't dropped here
+      // either — its description still reaches the synthesis request,
+      // matched against the SAME name parseAgentOrgChart will have used.
+      const fallbackName = path.basename(file, path.extname(file));
+      const name = typeof fm.name === 'string' && fm.name.trim() ? fm.name.trim() : fallbackName;
+      if (!seen.has(name)) {
+        seen.add(name);
+        result.push({ name, description: typeof fm.description === 'string' ? fm.description : '' });
       }
     }
   }

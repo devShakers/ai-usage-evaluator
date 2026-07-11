@@ -69,7 +69,7 @@ test('renderHtml: missing report.agents entirely (older report) does not throw, 
 
 // --- fallback: agents present, no synthesis ----------------------------------
 
-test('renderHtml: agents without synthesis -> title is the real name, chips are tools+model, no phrase/badge', () => {
+test('renderHtml: agents without synthesis -> title is the real name, chips are tools+model, no badge', () => {
   const report = {
     ...BASE_REPORT,
     agents: [{ name: 'backend-developer', tools: ['Read', 'Write'], model: 'sonnet', parent: null }],
@@ -78,10 +78,35 @@ test('renderHtml: agents without synthesis -> title is the real name, chips are 
   const section = treeSectionOf(html);
   assert.match(section, /agent-title">backend-developer</);
   assert.equal(section.includes('agent-badge'), false);
-  assert.equal(section.includes('agent-phrase'), false);
   assert.match(section, /Read/);
   assert.match(section, /Write/);
   assert.match(section, /sonnet/);
+});
+
+// talents-ai-score bugfix: every card must show a description, even
+// without synthesis — falls back to a deterministic phrase derived from
+// structural data (tools/model), never leaves the card with no phrase.
+test('renderHtml: agents without synthesis STILL get a phrase — a deterministic fallback derived from tools/model, never blank', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'backend-developer', tools: ['Read', 'Write'], model: 'sonnet', parent: null }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /class="agent-phrase"/);
+  assert.match(section, /sin descripción sintetizada/i);
+  assert.match(section, /sonnet/);
+  assert.match(section, /Read, Write/);
+});
+
+test('renderHtml: an agent with no tools and no model gets the bare "no description available" fallback', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'bare-agent', tools: [], model: null, parent: null }],
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /Sin descripción disponible/);
 });
 
 // --- enriched: agents + synthesis --------------------------------------------
@@ -118,6 +143,46 @@ test('renderHtml: only SOME agents have a synthesis match -> the rest fall back 
   const section = treeSectionOf(html);
   assert.match(section, /The Builder/);
   assert.match(section, /agent-title">reviewer</); // no synthesis match -> falls back to real name
+});
+
+// talents-ai-score bugfix: matching used to be exact-string-equality, which
+// silently misses an agent when the synthesis response echoes its name
+// back with harmless formatting differences (case, surrounding
+// whitespace, or wrapped in backticks/quotes/markdown emphasis) — the
+// agent then got NEITHER symbolicName NOR whatItDoes even though the
+// synthesis response DID cover it. Matching is now normalized (trim +
+// case-fold + strip wrapping quote/backtick/asterisk characters).
+test('renderHtml: synthesis name matching tolerates case/whitespace/backtick formatting differences from the LLM response', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'backend-developer', tools: ['Read'], model: 'sonnet', parent: null }],
+    agentSynthesis: {
+      agents: [{ name: '`Backend-Developer` ', symbolicName: 'The Builder', whatItDoes: 'Writes backend code' }],
+      edges: [],
+    },
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /The Builder/);
+  assert.match(section, /agent-phrase">Writes backend code</);
+});
+
+test('renderHtml: synthesis matching still never collides two genuinely DIFFERENT agent names', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [
+      { name: 'backend-developer', tools: ['Read'], model: 'sonnet', parent: null },
+      { name: 'backend-developer-2', tools: ['Read'], model: 'sonnet', parent: null },
+    ],
+    agentSynthesis: {
+      agents: [{ name: 'backend-developer', symbolicName: 'The Builder', whatItDoes: 'Writes backend code' }],
+      edges: [],
+    },
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /agent-title">The Builder</);
+  assert.match(section, /agent-title">backend-developer-2</); // distinct agent, no false match
 });
 
 // --- hierarchy is VISUAL now: nesting + rail, not a text line ----------------
