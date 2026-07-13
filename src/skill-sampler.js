@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { extensionsForTechnology } = require('./tech-extensions');
+const { EXCLUDED_DIRS } = require('./scan-exclusions');
 
 /*
  * Deterministic code SAMPLER for the certify phase (skill-code-certification,
@@ -34,10 +35,6 @@ const { extensionsForTechnology } = require('./tech-extensions');
 const PER_SKILL_TOKEN_CAP = 50000;
 const RUN_TOKEN_BUDGET = 150000;
 const GENERATED_HEAD_BYTES = 512;
-
-const EXCLUDED_DIRS = new Set([
-  'node_modules', 'dist', 'build', '.git', 'vendor', 'coverage', '.next', 'out',
-]);
 
 const LOCKFILES = new Set([
   'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'npm-shrinkwrap.json',

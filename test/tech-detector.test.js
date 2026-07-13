@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { detectTechnologies, canonicalFrameworkName } = require('../src/tech-detector');
+const { detectTechnologies, canonicalFrameworkName, detectRawDependencyNames, findManifestFiles } = require('../src/tech-detector');
 
 /*
  * talents-ai-score: deterministic (no-LLM) extraction of the project's
@@ -138,17 +138,18 @@ test('detectTechnologies: pyproject.toml (poetry-style) -> recognized framework 
   assert.deepEqual(techs, ['FastAPI']);
 });
 
-test('detectTechnologies: pyproject.toml (PEP 621 array) -> recognized framework only (flask), not sqlalchemy', () => {
+test('detectTechnologies: pyproject.toml (PEP 621 array) -> recognized frameworks only (flask + sqlalchemy per issue 009), not unrecognized libs', () => {
   write(tmpDir, 'pyproject.toml', [
     '[project]',
     'name = "myapp"',
     'dependencies = [',
     '  "flask>=2.0",',
-    '  "sqlalchemy==2.0.0",',
+    '  "sqlalchemy==2.0.0",', // recognized since issue 009
+    '  "requests>=2.0",',     // NOT a framework -> excluded
     ']',
   ].join('\n'));
   const techs = detectTechnologies(tmpDir);
-  assert.deepEqual(techs, ['Flask']);
+  assert.deepEqual(techs, ['Flask', 'SQLAlchemy']);
 });
 
 test('detectTechnologies: merges and dedupes across multiple manifests, sorted', () => {
@@ -172,4 +173,127 @@ test('detectTechnologies: never reads application/business source code, only the
 test('detectTechnologies: a project with only unrecognized dependencies -> empty array (never a raw dump)', () => {
   write(tmpDir, 'package.json', JSON.stringify({ dependencies: { lodash: '^4.0.0', chalk: '^5.0.0' } }));
   assert.deepEqual(detectTechnologies(tmpDir), []);
+});
+
+// --- monorepo support (skill-code-certification, issue 008) -------------------
+
+test('monorepo: root manifest has no framework, sub-package (apps/hub) does -> detected from root', () => {
+  // Mirrors shakers-hub-frontend: root only has non-framework deps, React lives in apps/hub.
+  write(tmpDir, 'package.json', JSON.stringify({
+    devDependencies: { typescript: '^5.0.0', 'lucide-react': '^0.4.0' }, // neither is a recognized framework
+  }));
+  write(tmpDir, 'apps/hub/package.json', JSON.stringify({
+    dependencies: { react: '^18.0.0', 'react-dom': '^18.0.0', zustand: '^4.0.0' },
+  }));
+  write(tmpDir, 'packages/ui/package.json', JSON.stringify({
+    dependencies: { vue: '^3.0.0' },
+  }));
+  const techs = detectTechnologies(tmpDir);
+  assert.ok(techs.includes('React'), 'React from apps/hub must be detected from the monorepo root');
+  assert.ok(techs.includes('Vue'), 'Vue from packages/ui must be detected too (union across manifests)');
+});
+
+test('monorepo: does NOT require a `workspaces` field at the root (pnpm/turbo layouts)', () => {
+  write(tmpDir, 'package.json', JSON.stringify({ private: true })); // no `workspaces`, no deps
+  write(tmpDir, 'pnpm-workspace.yaml', 'packages:\n  - "apps/*"\n');
+  write(tmpDir, 'apps/api/package.json', JSON.stringify({ dependencies: { express: '^4.0.0' } }));
+  assert.deepEqual(detectTechnologies(tmpDir), ['Express']);
+});
+
+test('monorepo: unions + dedupes across sub-packages, deterministic sorted output', () => {
+  write(tmpDir, 'apps/web/package.json', JSON.stringify({ dependencies: { react: '^18.0.0' } }));
+  write(tmpDir, 'apps/web2/package.json', JSON.stringify({ dependencies: { react: '^18.0.0' } })); // dup React
+  write(tmpDir, 'services/api/requirements.txt', 'django==4.2\n');
+  const techs = detectTechnologies(tmpDir);
+  assert.deepEqual(techs, ['Django', 'React']); // sorted, deduped
+  const again = detectTechnologies(tmpDir);
+  assert.deepEqual(again, techs); // deterministic
+});
+
+test('monorepo: node_modules / dist / build / .git / .next / out / vendor / coverage are excluded', () => {
+  write(tmpDir, 'package.json', JSON.stringify({ dependencies: { react: '^18.0.0' } }));
+  // a framework hiding inside each excluded dir must NOT be picked up
+  for (const dir of ['node_modules', 'dist', 'build', '.git', 'vendor', 'coverage', '.next', 'out']) {
+    write(tmpDir, `${dir}/some-dep/package.json`, JSON.stringify({ dependencies: { django: '^4.0.0' } }));
+  }
+  const techs = detectTechnologies(tmpDir);
+  assert.deepEqual(techs, ['React'], 'only the real root React, nothing from excluded dirs');
+});
+
+test('findManifestFiles: skips excluded dirs, finds nested manifests, sorted deterministic paths', () => {
+  write(tmpDir, 'package.json', '{}');
+  write(tmpDir, 'apps/hub/package.json', '{}');
+  write(tmpDir, 'services/api/requirements.txt', '');
+  write(tmpDir, 'node_modules/x/package.json', '{}'); // excluded
+  const files = findManifestFiles(tmpDir).map((f) => f.slice(tmpDir.length + 1));
+  assert.deepEqual(files, ['apps/hub/package.json', 'package.json', 'services/api/requirements.txt']);
+  assert.equal(files.some((f) => f.includes('node_modules')), false);
+});
+
+test('detectRawDependencyNames: monorepo union includes non-framework raw names (for browser-tools detector)', () => {
+  write(tmpDir, 'package.json', JSON.stringify({ devDependencies: { typescript: '^5.0.0' } }));
+  write(tmpDir, 'apps/e2e/package.json', JSON.stringify({ devDependencies: { playwright: '^1.0.0' } }));
+  const raw = detectRawDependencyNames(tmpDir);
+  assert.ok(raw.includes('playwright'), 'raw names must union across sub-packages (browser-tools relies on this)');
+  assert.ok(raw.includes('typescript'));
+  assert.deepEqual(raw, [...new Set(raw)].sort()); // deduped + sorted
+});
+
+test('no regression: single root package.json behaves exactly as before', () => {
+  write(tmpDir, 'package.json', JSON.stringify({
+    dependencies: { react: '^18.0.0', express: '^4.0.0' },
+    devDependencies: { typescript: '^5.0.0' },
+  }));
+  assert.deepEqual(detectTechnologies(tmpDir).sort(), ['Express', 'React']);
+});
+
+// --- expanded framework catalog (skill-code-certification, issue 009) --------
+
+test('009: recognizes the new JS/TS families from a package.json', () => {
+  write(tmpDir, 'package.json', JSON.stringify({
+    dependencies: {
+      '@tanstack/react-query': '^5', '@tanstack/react-router': '^1', '@tanstack/react-table': '^8', '@tanstack/react-form': '^0.1',
+      zustand: '^4', '@reduxjs/toolkit': '^2', 'react-redux': '^9',
+      '@prisma/client': '^5', graphql: '^16', '@apollo/client': '^3', '@trpc/server': '^10', zod: '^3',
+      astro: '^4', '@remix-run/react': '^2',
+      tailwindcss: '^3', vite: '^5', vitest: '^1', jest: '^29', webpack: '^5',
+    },
+  }));
+  const techs = detectTechnologies(tmpDir);
+  for (const t of [
+    'TanStack Query', 'TanStack Router', 'TanStack Table', 'TanStack Form',
+    'Zustand', 'Redux', 'Redux Toolkit',
+    'Prisma', 'GraphQL', 'Apollo', 'tRPC', 'Zod',
+    'Astro', 'Remix',
+    'Tailwind CSS', 'Vite', 'Vitest', 'Jest', 'Webpack',
+  ]) {
+    assert.ok(techs.includes(t), `expected "${t}" to be detected`);
+  }
+  assert.deepEqual(techs, [...new Set(techs)].sort()); // deduped + sorted
+});
+
+test('009: TanStack Query aliases (react-query old + @tanstack/react-query) dedupe to one Skill', () => {
+  write(tmpDir, 'package.json', JSON.stringify({
+    dependencies: { 'react-query': '^3', '@tanstack/react-query': '^5' },
+  }));
+  const techs = detectTechnologies(tmpDir);
+  assert.deepEqual(techs.filter((t) => t === 'TanStack Query'), ['TanStack Query']);
+});
+
+test('009: Python SQLAlchemy + Pydantic from requirements.txt', () => {
+  write(tmpDir, 'requirements.txt', 'sqlalchemy==2.0\npydantic>=2\nrequests\n');
+  assert.deepEqual(detectTechnologies(tmpDir).sort(), ['Pydantic', 'SQLAlchemy']);
+});
+
+test('009: Go GORM by module-path prefix (new + legacy import path)', () => {
+  write(tmpDir, 'go.mod', 'module x\n\nrequire (\n\tgorm.io/gorm v1.25.0\n)\n');
+  assert.deepEqual(detectTechnologies(tmpDir), ['GORM']);
+  assert.equal(canonicalFrameworkName('github.com/jinzhu/gorm'), 'GORM');
+});
+
+test('009: still never guesses — unknown deps ignored even alongside known ones', () => {
+  write(tmpDir, 'package.json', JSON.stringify({
+    dependencies: { zustand: '^4', 'some-obscure-lib': '^1', 'another-internal-thing': '^2' },
+  }));
+  assert.deepEqual(detectTechnologies(tmpDir), ['Zustand']);
 });
