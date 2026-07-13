@@ -19,10 +19,17 @@
  *                         EXPLICIT — a deliberate flag, never implied. Without
  *                         it, an interactive y/n confirmation is shown before
  *                         ANY egress.
+ *   --all                 Certify ALL certifiable Skills (non-interactive
+ *                         selection).
+ *   --skills 1,3          Certify the certifiable Skills at these 1-based
+ *                         positions (non-interactive selection).
+ *   --html                Also write + open a self-contained HTML report.
  *   -h, --help            Show help.
  *
  * Unrecognized `--lang` values degrade to null (auto-detect), never guessed —
- * same rule as cli-args.js.
+ * same rule as cli-args.js. `--all`/`--skills` let the certify phase run
+ * without a TTY; without either, non-TTY input can't select Skills and the
+ * certify phase aborts (no code sent).
  */
 const VALID_LANGS = new Set(['es', 'en']);
 
@@ -32,6 +39,9 @@ function parseCertifyArgs(argv) {
     email: null,
     lang: null,
     acceptDisclaimer: false,
+    all: false,
+    skills: null,
+    html: false,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -45,6 +55,10 @@ function parseCertifyArgs(argv) {
       const value = a.slice('--lang='.length);
       opts.lang = VALID_LANGS.has(value) ? value : null;
     } else if (a === '--accept-disclaimer') opts.acceptDisclaimer = true;
+    else if (a === '--all') opts.all = true;
+    else if (a === '--skills') opts.skills = argv[++i];
+    else if (a.startsWith('--skills=')) opts.skills = a.slice('--skills='.length);
+    else if (a === '--html' || a === '-w') opts.html = true;
     else if (a === '--help' || a === '-h') opts.help = true;
   }
   return opts;

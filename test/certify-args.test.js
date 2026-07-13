@@ -48,9 +48,18 @@ test('parseCertifyArgs: --help/-h', () => {
   assert.equal(parseCertifyArgs(['-h']).help, true);
 });
 
+test('parseCertifyArgs: --all / --skills / --html (certify-phase flags)', () => {
+  assert.equal(parseCertifyArgs(['--all']).all, true);
+  assert.equal(parseCertifyArgs(['--skills', '1,3']).skills, '1,3');
+  assert.equal(parseCertifyArgs(['--skills=2']).skills, '2');
+  assert.equal(parseCertifyArgs(['--html']).html, true);
+  assert.equal(parseCertifyArgs(['-w']).html, true);
+  assert.equal(parseCertifyArgs([]).all, false);
+});
+
 test('parseCertifyArgs: ai-footprint-only flags are NOT recognized here (no cross-contamination)', () => {
-  const opts = parseCertifyArgs(['--html', '--json', '--no-save', '--build-next-level']);
-  assert.equal('html' in opts, false);
+  const opts = parseCertifyArgs(['--json', '--no-save', '--build-next-level']);
   assert.equal('json' in opts, false);
   assert.equal('buildNextLevel' in opts, false);
+  assert.equal('save' in opts, false);
 });

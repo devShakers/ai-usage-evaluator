@@ -337,6 +337,9 @@ const catalogs = {
         + '      --email CORREO       Tu correo de Talent (si no, se usa el guardado o se te pregunta)\n'
         + '      --lang es|en         Fuerza el idioma de la salida\n'
         + '      --accept-disclaimer  Acepta el aviso legal de forma no interactiva (aceptación explícita)\n'
+        + '      --all                Certifica TODAS las Skills certificables (sin selección interactiva)\n'
+        + '      --skills 1,3         Certifica las Skills en esas posiciones (sin selección interactiva)\n'
+        + '  -w, --html               Genera y abre un reporte HTML autocontenido\n'
         + '  -h, --help               Muestra esta ayuda\n\n'
         + 'Fase 1 (resolve): detecta las tecnologías de tu proyecto y consulta al Hub de\n'
         + 'Shakers qué Skills son certificables. Requiere AI_FOOTPRINT_CERTIFY_ENDPOINT\n'
@@ -392,6 +395,38 @@ const catalogs = {
       errorHttp: (status) => `el servicio de certificación devolvió un estado inesperado (HTTP ${status}).`,
       errorInvalidResponse: 'el servicio de certificación devolvió una respuesta inesperada.',
       errorRetryHint: 'No se ha certificado nada. Revisa tu conexión e inténtalo de nuevo más tarde.',
+      // Interactive Skill selection (certify phase, issue 005).
+      selectHeading: 'Selecciona las Skills que quieres certificar:',
+      selectPrompt: 'Introduce los números separados por comas (o "todas"):',
+      selectInvalid: 'Selección no válida. Introduce números de la lista (o "todas").',
+      selectNonInteractive: 'Entrada no interactiva sin --skills/--all: no se pueden seleccionar Skills. Se cancela (no se ha enviado código).',
+      selectNothing: 'No hay Skills certificables que seleccionar.',
+      selectNoneChosen: 'No se ha seleccionado ninguna Skill. No se ha enviado código.',
+      selectOption: (index, skillName, technology) => `  ${index}) ${skillName}${technology ? ` (${technology})` : ''}`,
+      certifyingLabel: 'Analizando el código de tus Skills…',
+      htmlSaved: (file) => `Reporte HTML de certificación: ${file}`,
+      // Certify report (terminal + HTML). Nota orientativa/no reproducible.
+      report: {
+        heading: 'Resultado de certificación de Skills',
+        disclaimer:
+          'Nota: la puntuación es orientativa y NO reproducible — es un juicio libre del '
+          + 'modelo (sin rúbrica) y puede variar entre ejecuciones. No es una certificación '
+          + 'oficial de cara al Client.',
+        partialSampleWarning:
+          'Muestra parcial: por los límites de tamaño no se ha enviado todo el código; '
+          + 'la valoración se basa en una muestra.',
+        scoreLine: (score) => `Puntuación: ${score == null ? 'n/d' : `${score}/100`}`,
+        rationaleLabel: 'Por qué',
+        improvementsLabel: 'Mejoras sugeridas',
+        sampleSummary: (included, candidate, estTokens) =>
+          `Muestra: ${included}/${candidate} ficheros · ~${estTokens} tokens`,
+        partialTag: '(muestra parcial)',
+        notCertified: 'No se ha podido certificar esta Skill en esta ejecución.',
+        notSampleableNote: (technology) =>
+          `No hay muestreo definido para la tecnología "${technology}": todavía no se puede certificar por código.`,
+        htmlTitle: 'Certificación de Skills · Shakers',
+        noItems: 'No hay resultados de certificación que mostrar.',
+      },
     },
   },
   en: {
@@ -622,6 +657,9 @@ const catalogs = {
         + '      --email EMAIL        Your Talent email (else the stored one, else you are asked)\n'
         + '      --lang es|en         Force the output language\n'
         + '      --accept-disclaimer  Accept the legal disclaimer non-interactively (explicit acceptance)\n'
+        + '      --all                Certify ALL certifiable Skills (no interactive selection)\n'
+        + '      --skills 1,3         Certify the Skills at these positions (no interactive selection)\n'
+        + '  -w, --html               Generate and open a self-contained HTML report\n'
         + '  -h, --help               Show this help\n\n'
         + 'Phase 1 (resolve): detects your project technologies and asks the Shakers Hub\n'
         + 'which Skills are certifiable. Requires AI_FOOTPRINT_CERTIFY_ENDPOINT to be set.\n'
@@ -675,6 +713,37 @@ const catalogs = {
       errorHttp: (status) => `the certification service returned an unexpected status (HTTP ${status}).`,
       errorInvalidResponse: 'the certification service returned an unexpected response.',
       errorRetryHint: 'Nothing was certified. Check your connection and try again later.',
+      // Interactive Skill selection (certify phase, issue 005).
+      selectHeading: 'Select the Skills you want to certify:',
+      selectPrompt: 'Enter the numbers separated by commas (or "all"):',
+      selectInvalid: 'Invalid selection. Enter numbers from the list (or "all").',
+      selectNonInteractive: 'Non-interactive input without --skills/--all: cannot select Skills. Aborting (no code was sent).',
+      selectNothing: 'There are no certifiable Skills to select.',
+      selectNoneChosen: 'No Skill selected. No code was sent.',
+      selectOption: (index, skillName, technology) => `  ${index}) ${skillName}${technology ? ` (${technology})` : ''}`,
+      certifyingLabel: 'Analyzing your Skills’ code…',
+      htmlSaved: (file) => `Certification HTML report: ${file}`,
+      report: {
+        heading: 'Skill certification result',
+        disclaimer:
+          'Note: the score is indicative and NOT reproducible — it is the model’s free '
+          + 'judgment (no rubric) and may vary between runs. It is not an official '
+          + 'Client-facing certification.',
+        partialSampleWarning:
+          'Partial sample: due to size limits not all code was sent; the assessment is '
+          + 'based on a sample.',
+        scoreLine: (score) => `Score: ${score == null ? 'n/a' : `${score}/100`}`,
+        rationaleLabel: 'Why',
+        improvementsLabel: 'Suggested improvements',
+        sampleSummary: (included, candidate, estTokens) =>
+          `Sample: ${included}/${candidate} files · ~${estTokens} tokens`,
+        partialTag: '(partial sample)',
+        notCertified: 'This Skill could not be certified in this run.',
+        notSampleableNote: (technology) =>
+          `No sampling is defined for the technology "${technology}": it can't be code-certified yet.`,
+        htmlTitle: 'Skill Certification · Shakers',
+        noItems: 'No certification results to show.',
+      },
     },
   },
 };

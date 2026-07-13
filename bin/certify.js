@@ -22,15 +22,43 @@
  *      error on any failure (never hangs, never a deterministic fallback).
  */
 
+const { execFile } = require('child_process');
 const { parseCertifyArgs } = require('../src/certify-args');
 const { detectReportLang, getCatalog } = require('../src/i18n');
 const { getCertifyEndpoint } = require('../src/config');
 const { detectTechnologies } = require('../src/tech-detector');
 const { confirmDisclaimerAcceptance } = require('../src/certify-disclaimer');
-const { buildResolveRequest, requestResolve } = require('../src/certify-client');
+const {
+  buildResolveRequest,
+  requestResolve,
+  buildCertifyRequest,
+  requestCertify,
+} = require('../src/certify-client');
 const { formatResolveReport } = require('../src/certify-render');
-const { isValidEmail, normalizeEmail, getConsentStatus } = require('../src/share');
+const { buildSkillSamples } = require('../src/skill-sampler');
+const { parseSkillSelection } = require('../src/skill-selection');
+const { renderCertificationTerminal, renderCertificationHtml } = require('../src/render-certification');
+const {
+  isValidEmail,
+  normalizeEmail,
+  getConsentStatus,
+  loadConsentState,
+  getConsentDecision,
+  shareCertification,
+} = require('../src/share');
+const { runConsentPrompt } = require('../src/consent-flow');
 const { createStdinAsk } = require('../src/stdin-ask');
+
+const MAX_SELECT_ATTEMPTS = 5;
+
+function openInBrowser(file) {
+  const cmd =
+    process.platform === 'darwin' ? 'open'
+    : process.platform === 'win32' ? 'cmd'
+    : 'xdg-open';
+  const args = process.platform === 'win32' ? ['/c', 'start', '', file] : [file];
+  execFile(cmd, args, () => {});
+}
 
 const MAX_EMAIL_ATTEMPTS = 5;
 
@@ -72,6 +100,120 @@ function resolveErrorMessage(reason, catalog) {
   if (reason === 'timeout') return c.errorTimeout;
   if (typeof reason === 'string' && reason.startsWith('http-')) return c.errorHttp(reason.slice('http-'.length));
   return c.errorInvalidResponse; // invalid-json | invalid-shape
+}
+
+// Interactive multi-select of certifiable Skills by 1-based index (or "all").
+// Returns the selected subset, or null if no valid selection was obtained.
+async function interactiveSelectSkills({ certifiable, catalog, ask }) {
+  const c = catalog.certify;
+  process.stdout.write(`\n  ${c.selectHeading}\n`);
+  certifiable.forEach((s, idx) => process.stdout.write(`${c.selectOption(idx + 1, s.skillName, s.technology)}\n`));
+  for (let attempt = 0; attempt < MAX_SELECT_ATTEMPTS; attempt++) {
+    const raw = String(await ask(c.selectPrompt)).trim();
+    const parsed = parseSkillSelection(raw, certifiable);
+    if (parsed.ok) return parsed.selected;
+    process.stdout.write(`  ${c.selectInvalid}\n`);
+  }
+  return null;
+}
+
+// Persists the analyzed certification result if consent is granted. Never
+// throws — must not break the local report (ADR-011).
+async function maybeShareCertification(items) {
+  try {
+    await shareCertification(items);
+  } catch {
+    // silent: any skip/failure reason is not an error of the local run
+  }
+}
+
+// The certify phase (issue 005): select -> sample -> scrub+send -> report ->
+// consent. Assumes the disclaimer was already accepted (bin does that before
+// resolve, and it covers code egress). Sets process.exitCode on hard errors.
+async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, catalog, lang, ask, stdinIsTTY }) {
+  const c = catalog.certify;
+  const certifiable = Array.isArray(resolveResult.certifiable) ? resolveResult.certifiable : [];
+
+  if (certifiable.length === 0) return; // nothing certifiable — resolve report already shown
+
+  // --- selection ---
+  let selected;
+  if (opts.all) {
+    selected = certifiable.slice();
+  } else if (opts.skills != null) {
+    const parsed = parseSkillSelection(opts.skills, certifiable);
+    if (!parsed.ok) {
+      process.stderr.write(`\n  ${c.selectInvalid}\n\n`);
+      process.exitCode = 1;
+      return;
+    }
+    selected = parsed.selected;
+  } else if (!stdinIsTTY) {
+    process.stdout.write(`\n  ${c.selectNonInteractive}\n\n`);
+    process.exitCode = 1;
+    return;
+  } else {
+    selected = await interactiveSelectSkills({ certifiable, catalog, ask });
+    if (!selected) {
+      process.stdout.write(`\n  ${c.selectNoneChosen}\n\n`);
+      return;
+    }
+  }
+  if (selected.length === 0) {
+    process.stdout.write(`\n  ${c.selectNoneChosen}\n\n`);
+    return;
+  }
+
+  // --- deterministic sampling (local) ---
+  const samples = buildSkillSamples(root, selected);
+  const sendable = samples.filter((s) => Array.isArray(s.files) && s.files.length > 0);
+
+  // --- certify (egress; scrub happens in buildCertifyRequest) ---
+  let results = [];
+  if (sendable.length > 0) {
+    const requestBody = buildCertifyRequest(email, sendable);
+    const outcome = await requestCertify(requestBody, { endpoint });
+    if (!outcome.ok) {
+      process.stderr.write(`\n  ${c.errorIntro} ${resolveErrorMessage(outcome.reason, catalog)}\n`);
+      process.stderr.write(`  ${c.errorRetryHint}\n\n`);
+      process.exitCode = 1;
+      return;
+    }
+    results = outcome.result.results;
+  }
+
+  // --- assemble + render ---
+  const resultById = new Map(results.map((r) => [String(r.skillId), r]));
+  const items = samples.map((s) => ({
+    skillId: s.skillId,
+    skillName: s.skillName,
+    technology: s.technology,
+    sampling: s.meta,
+    result: (Array.isArray(s.files) && s.files.length > 0) ? (resultById.get(String(s.skillId)) || null) : null,
+  }));
+  const certification = { items, model: null };
+
+  process.stdout.write('\n' + renderCertificationTerminal(certification, lang) + '\n\n');
+
+  if (opts.html) {
+    const os = require('os');
+    const fs = require('fs');
+    const pathMod = require('path');
+    const tmp = pathMod.join(os.tmpdir(), `ai-certify-${Date.now()}.html`);
+    fs.writeFileSync(tmp, renderCertificationHtml(certification, lang));
+    openInBrowser(tmp);
+    process.stdout.write(`  ${c.htmlSaved(tmp)}\n\n`);
+  }
+
+  // --- consent (ADR-011): report already shown; persist only if granted ---
+  const analyzed = items.some((i) => i.result);
+  if (analyzed) {
+    const decision = getConsentDecision(loadConsentState());
+    if (decision === null && stdinIsTTY) {
+      await runConsentPrompt({ ask, catalog });
+    }
+    await maybeShareCertification(items);
+  }
 }
 
 async function main() {
@@ -137,6 +279,20 @@ async function main() {
     }
 
     process.stdout.write('\n' + formatResolveReport(technologies, outcome.result, catalog) + '\n\n');
+
+    // (6) Certify phase (issue 005): select certifiable Skills, sample+scrub+
+    // send code, show the assessment report, offer to persist with consent.
+    await runCertifyPhase({
+      endpoint,
+      email,
+      resolveResult: outcome.result,
+      root,
+      opts,
+      catalog,
+      lang,
+      ask,
+      stdinIsTTY,
+    });
   } finally {
     ask.close();
   }

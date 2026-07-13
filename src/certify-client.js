@@ -3,6 +3,8 @@
 const http = require('http');
 const https = require('https');
 
+const { scrubSecrets } = require('./agent-synthesis');
+
 /*
  * Skill-certification client — RESOLVE phase (skill-code-certification,
  * issue 004 / ADR-001).
@@ -33,6 +35,12 @@ const https = require('https');
  */
 
 const DEFAULT_TIMEOUT_MS = 20000;
+// The certify phase runs one LLM call per Skill server-side (specs.md AI/LLM),
+// so it's much slower than resolve — a generous single timeout, still bounded
+// (never hangs). Zero client retries in V1 (specs.md).
+const DEFAULT_CERTIFY_TIMEOUT_MS = 90000;
+const SCORE_MIN = 0;
+const SCORE_MAX = 100;
 
 // Builds the resolve request body. `technologies` is defensively coerced to
 // an array of the framework/library NAMES (src/tech-detector.js output). The
@@ -129,4 +137,93 @@ async function requestResolve(requestBody, { endpoint, timeoutMs = DEFAULT_TIMEO
   return { ok: true, result: normalized };
 }
 
-module.exports = { buildResolveRequest, requestResolve, normalizeResolveResponse, DEFAULT_TIMEOUT_MS };
+/* ============================ CERTIFY phase ============================ */
+
+/*
+ * Phase 2 (skill-code-certification, issue 005 / ADR-001): send the SAMPLED,
+ * SCRUBBED code for the Skills the Talent chose, and get an LLM assessment
+ * per Skill. Request `{email, items:[{skillId, technology, files:[{path,
+ * content}]}]}`; response `{results:[{skillId, skillName, score, rationale,
+ * improvements[]}]}`.
+ *
+ * scrubSecrets is applied to EVERY file content HERE, at the request builder —
+ * the mandatory ADR-001 mitigation must hold even if the caller forgot (same
+ * defense-in-depth as agent-synthesis.js re-scrubbing at the boundary). The
+ * caller (bin/certify.js) also scrubs while sampling; this is the last guard.
+ */
+function buildCertifyRequest(email, sampledSkills) {
+  const items = (Array.isArray(sampledSkills) ? sampledSkills : [])
+    .filter((s) => s && Array.isArray(s.files) && s.files.length > 0)
+    .map((s) => ({
+      skillId: s.skillId,
+      technology: s.technology,
+      files: s.files.map((f) => ({
+        path: typeof f.path === 'string' ? f.path : '',
+        content: scrubSecrets(typeof f.content === 'string' ? f.content : ''),
+      })),
+    }));
+  return { email, items };
+}
+
+function clampScore(value) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return null;
+  return Math.max(SCORE_MIN, Math.min(SCORE_MAX, value));
+}
+
+// Defensive, field-by-field reconstruction (never spread): the server fixes
+// skillId/skillName, score is clamped to range, improvements coerced to a
+// string array. An item missing `results[]` -> invalid shape.
+function normalizeCertifyResponse(parsed) {
+  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.results)) return null;
+  return {
+    results: parsed.results.map((r) => ({
+      skillId: r && r.skillId != null ? r.skillId : null,
+      skillName: r && typeof r.skillName === 'string' ? r.skillName : null,
+      score: clampScore(r && r.score),
+      rationale: r && typeof r.rationale === 'string' ? r.rationale : '',
+      improvements:
+        r && Array.isArray(r.improvements)
+          ? r.improvements.filter((i) => typeof i === 'string' && i)
+          : [],
+    })),
+  };
+}
+
+async function requestCertify(requestBody, { endpoint, timeoutMs = DEFAULT_CERTIFY_TIMEOUT_MS } = {}) {
+  if (!endpoint) return { ok: false, reason: 'no-endpoint' };
+
+  let res;
+  try {
+    res = await postJsonWithTimeout(endpoint, requestBody, timeoutMs);
+  } catch (e) {
+    if (e && e.kind === 'timeout') return { ok: false, reason: 'timeout' };
+    return { ok: false, reason: 'network-error', detail: e && e.message };
+  }
+
+  if (res.status < 200 || res.status >= 300) {
+    return { ok: false, reason: `http-${res.status}` };
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(res.raw);
+  } catch {
+    return { ok: false, reason: 'invalid-json' };
+  }
+
+  const normalized = normalizeCertifyResponse(parsed);
+  if (!normalized) return { ok: false, reason: 'invalid-shape' };
+
+  return { ok: true, result: normalized };
+}
+
+module.exports = {
+  buildResolveRequest,
+  requestResolve,
+  normalizeResolveResponse,
+  buildCertifyRequest,
+  requestCertify,
+  normalizeCertifyResponse,
+  DEFAULT_TIMEOUT_MS,
+  DEFAULT_CERTIFY_TIMEOUT_MS,
+};

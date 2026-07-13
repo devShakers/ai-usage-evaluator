@@ -71,6 +71,10 @@ function writeReactProject() {
     path.join(tmpProjectDir, 'package.json'),
     JSON.stringify({ name: 'demo', dependencies: { react: '^18.0.0', express: '^4.0.0' } }),
   );
+  // Real source files so the sampler has candidates to certify.
+  fs.mkdirSync(path.join(tmpProjectDir, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(tmpProjectDir, 'src', 'App.jsx'), 'export default function App() { return null; }\n'.repeat(4));
+  fs.writeFileSync(path.join(tmpProjectDir, 'src', 'server.js'), 'const express = require("express"); const app = express();\n'.repeat(4));
 }
 
 test('--help prints usage and exits 0 (no endpoint needed)', async () => {
@@ -105,19 +109,55 @@ test('no recognized technologies -> informs and exits 0 (nothing to certify)', a
   }
 });
 
-test('resolve end-to-end against the stub: shows certifiable Skills, exit 0', async () => {
+test('full flow end-to-end against the stub: resolve -> --all certify -> report, exit 0', async () => {
   writeReactProject();
   const { server } = await startStub();
   try {
     const { code, stdout } = await runCli({
-      args: ['--root', tmpProjectDir, '--email', 'talent@example.com', '--accept-disclaimer', '--lang', 'en'],
+      args: ['--root', tmpProjectDir, '--email', 'talent@example.com', '--accept-disclaimer', '--all', '--lang', 'en'],
       env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_CERTIFY_ENDPOINT: certifyUrl(server) },
     });
     assert.equal(code, 0);
     assert.match(stdout, /LEGAL DISCLAIMER/);
     assert.match(stdout, /Certifiable Skills for your project/);
-    assert.match(stdout, /React/);
-    assert.match(stdout, /Express/); // the stub marks all received techs certifiable
+    // certify phase report
+    assert.match(stdout, /Skill certification result/);
+    assert.match(stdout, /indicative and NOT reproducible/);
+    assert.match(stdout, /Score: \d+\/100/);
+    assert.match(stdout, /Sample: \d+\/\d+ files/);
+  } finally {
+    server.close();
+  }
+});
+
+test('certify phase: non-interactive without --all/--skills aborts after resolve, exit 1, no code sent', async () => {
+  writeReactProject();
+  const { server, state } = await startStub();
+  try {
+    const { code, stdout } = await runCli({
+      args: ['--root', tmpProjectDir, '--email', 'talent@example.com', '--accept-disclaimer', '--lang', 'en'],
+      env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_CERTIFY_ENDPOINT: certifyUrl(server) },
+    });
+    assert.equal(code, 1);
+    assert.match(stdout, /cannot select Skills/);
+    // resolve happened (1 request), certify did NOT (no second request)
+    assert.equal(state.requests, 1, 'only the resolve call, no certify egress');
+  } finally {
+    server.close();
+  }
+});
+
+test('certify phase: --skills selects a subset', async () => {
+  writeReactProject();
+  const { server } = await startStub();
+  try {
+    const { code, stdout } = await runCli({
+      args: ['--root', tmpProjectDir, '--email', 'talent@example.com', '--accept-disclaimer', '--skills', '1', '--lang', 'en'],
+      env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_CERTIFY_ENDPOINT: certifyUrl(server) },
+    });
+    assert.equal(code, 0);
+    assert.match(stdout, /Skill certification result/);
+    assert.match(stdout, /Score: \d+\/100/);
   } finally {
     server.close();
   }
