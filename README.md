@@ -85,6 +85,32 @@ Results are saved in `~/.config/ai-footprint/` (`latest.json`,
 written to the scanned project** — the report can't slip into a commit by
 accident.
 
+## Skill certification (`ai-certify`)
+
+A second command, installed alongside `ai-footprint`, certifies Skills from
+your Shakers catalog by analyzing your local project. V1 ships **phase 1
+(resolve)**: it detects your project technologies, asks the Shakers Hub
+which map to a Skill you can certify, and shows certifiable vs
+non-certifiable — no code leaves your machine in this phase.
+
+```bash
+ai-certify                       # resolve certifiable Skills for the current project
+ai-certify --root ../other       # analyze another directory
+ai-certify --email you@shakers.com
+ai-certify --lang es|en
+ai-certify --accept-disclaimer   # accept the legal disclaimer non-interactively
+```
+
+Unlike `ai-footprint` (which always produces a local report), `ai-certify`
+is inherently server-side: it requires `AI_FOOTPRINT_CERTIFY_ENDPOINT` to be
+set (there is no local-only certification). Before **any** data is sent, a
+legal disclaimer is shown that you must explicitly accept — it assumes the
+project is your own and attributes responsibility to you, so **never run it
+on a third party's code** (e.g. a client under NDA). For local end-to-end
+testing without the real Hub, point it at the reference server's
+`POST /works/ai-footprint/skill-certification` stub (see below). The real
+implementation lives in `shakers-hub-backend`.
+
 ## The report
 
 - **Terminal output** and a **self-contained HTML dashboard** (Shakers
@@ -222,6 +248,7 @@ never breaks the local report.
 | `AI_FOOTPRINT_INGEST_ENDPOINT` | Where a saved report is sent, if consent is granted. |
 | `AI_FOOTPRINT_SYNTHESIS_ENDPOINT` | Agent-card synthesis endpoint (optional). |
 | `AI_FOOTPRINT_ROADMAP_ENDPOINT` | Roadmap personalization endpoint (optional). |
+| `AI_FOOTPRINT_CERTIFY_ENDPOINT` | Skill-certification endpoint for the `ai-certify` command. Unlike the others, this one does **not** degrade silently: `ai-certify` has no local-only product (the Skill catalog and analysis live on the Hub), so an unset value is an actionable error, not a no-op. |
 | `AI_FOOTPRINT_CONFIG_DIR` | Override `~/.config/ai-footprint/` (mainly for tests). |
 
 ## Reference server (not deployed)
@@ -238,7 +265,9 @@ node reference-server/server.js
 
 Routes: `GET /health`, `POST /reports` (`{email, payload}`),
 `POST /works/ai-footprint/agent-synthesis` (deterministic placeholder, not
-a real LLM), `GET /admin/reports` (`X-Admin-Key`, audit).
+a real LLM), `POST /works/ai-footprint/skill-certification` (deterministic
+placeholder for the `ai-certify` resolve/certify contract, not a real LLM),
+`GET /admin/reports` (`X-Admin-Key`, audit).
 
 ## How to add a new tool
 

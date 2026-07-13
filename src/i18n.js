@@ -323,6 +323,76 @@ const catalogs = {
       emailChanged: (email) => `Correo actualizado a ${email}. Se usará en el próximo guardado.`,
       emailInvalidCli: 'Correo no válido. Uso: ai-footprint --consent-email tu@correo.com',
     },
+    // Skill Code Certification (skill-code-certification, issues 004/006).
+    // Copy for the SECOND binary `ai-certify` (resolve phase V1). Localized
+    // like the consent flow — legal/disclaimer copy must not default to a
+    // language the Talent may not read. Vocabulario CONTEXT: Talent, Skill.
+    certify: {
+      help:
+        'AI Certify — certifica Skills de tu catálogo de Shakers analizando tu proyecto local\n\n'
+        + 'Uso:\n'
+        + '  ai-certify [opciones]\n\n'
+        + 'Opciones:\n'
+        + '      --root DIR           Analiza DIR en vez del directorio actual\n'
+        + '      --email CORREO       Tu correo de Talent (si no, se usa el guardado o se te pregunta)\n'
+        + '      --lang es|en         Fuerza el idioma de la salida\n'
+        + '      --accept-disclaimer  Acepta el aviso legal de forma no interactiva (aceptación explícita)\n'
+        + '  -h, --help               Muestra esta ayuda\n\n'
+        + 'Fase 1 (resolve): detecta las tecnologías de tu proyecto y consulta al Hub de\n'
+        + 'Shakers qué Skills son certificables. Requiere AI_FOOTPRINT_CERTIFY_ENDPOINT\n'
+        + 'configurado. Antes de cualquier envío se muestra un aviso legal que debes aceptar.',
+      scanningLabel: 'Detectando tecnologías del proyecto…',
+      resolvingLabel: 'Consultando Skills certificables…',
+      // Aviso legal (ADR-001): asume el proyecto propiedad del Talent y le
+      // atribuye la responsabilidad. Aceptación explícita obligatoria.
+      disclaimer:
+        'AVISO LEGAL — léelo antes de continuar:\n'
+        + '  ai-certify envía datos de tu proyecto a Shakers para certificar tus Skills.\n'
+        + '  En esta fase (resolve) se envían tu correo y los NOMBRES de las tecnologías\n'
+        + '  detectadas; la fase de certificación posterior enviará fragmentos de código.\n'
+        + '  Al continuar declaras que el proyecto es de tu propiedad y que tienes derecho\n'
+        + '  a enviar su contenido, y asumes la responsabilidad de ello. NO uses esta\n'
+        + '  herramienta sobre código de un tercero (p. ej. un cliente bajo NDA).',
+      disclaimerQuestion: '¿Aceptas y continúas? (s/n):',
+      disclaimerAcceptedFlag: 'Aviso legal aceptado mediante --accept-disclaimer.',
+      disclaimerNonInteractive:
+        'Entrada no interactiva y sin --accept-disclaimer: no se puede obtener una '
+        + 'aceptación explícita. Se cancela (no se ha enviado nada).',
+      disclaimerDeclined: 'No has aceptado el aviso legal. No se ha enviado nada.',
+      disclaimerInvalidAnswer: 'Respuesta no reconocida. Responde "s" (sí) o "n" (no).',
+      disclaimerNoAnswer: 'No se ha obtenido respuesta. No se ha enviado nada.',
+      emailPrompt: 'Introduce tu correo de Shakers:',
+      emailInvalid: 'Correo no válido, inténtalo de nuevo.',
+      emailUsing: (email) => `Usando el correo: ${email}`,
+      emailNeeded: 'Se necesita un correo válido para resolver tus Skills certificables. No se ha enviado nada.',
+      noTechnologies:
+        'No se reconoció ningún framework o librería en este proyecto (package.json, '
+        + 'requirements.txt, go.mod, pyproject.toml). No hay nada que certificar.',
+      technologiesDetected: (list) => `Tecnologías detectadas: ${list}`,
+      resolveHeading: 'Skills certificables para tu proyecto',
+      certifiableHeading: 'Certificables:',
+      certifiableEmpty: 'Ninguna tecnología detectada mapea a una Skill que puedas certificar ahora mismo.',
+      certifiableLine: (skillName, technology, skillId) =>
+        `✓ ${skillName}${technology ? ` (${technology})` : ''}${skillId != null ? ` [#${skillId}]` : ''}`,
+      nonCertifiableHeading: 'No certificables:',
+      nonCertifiableEmpty: 'Ninguna — todas las tecnologías detectadas son certificables.',
+      nonCertifiableLine: (tech, reason) => `· ${tech} — ${reason}`,
+      reasons: {
+        'no-skill-match': 'no hay una Skill equivalente en el catálogo de Shakers',
+        'not-declared': 'no has declarado esta Skill en tu perfil de Talent',
+        notCertifiable: 'no es certificable',
+      },
+      errorNoEndpoint:
+        'No hay endpoint de certificación configurado. Define AI_FOOTPRINT_CERTIFY_ENDPOINT '
+        + 'con la URL del Hub de Shakers y vuelve a ejecutar ai-certify. (No hay certificación '
+        + 'en local: el catálogo de Skills y el análisis viven en el Hub.)',
+      errorIntro: 'No se han podido resolver las Skills certificables:',
+      errorNetwork: 'no se pudo contactar con el servicio de certificación (error de red).',
+      errorTimeout: 'el servicio de certificación agotó el tiempo de espera.',
+      errorHttp: (status) => `el servicio de certificación devolvió un estado inesperado (HTTP ${status}).`,
+      errorInvalidResponse: 'el servicio de certificación devolvió una respuesta inesperada.',
+      errorRetryHint: 'No se ha certificado nada. Revisa tu conexión e inténtalo de nuevo más tarde.',
+    },
   },
   en: {
     categories: {
@@ -539,6 +609,72 @@ const catalogs = {
       revoked: 'Consent revoked. Nothing will be saved automatically anymore.',
       emailChanged: (email) => `Email updated to ${email}. It will be used on the next save.`,
       emailInvalidCli: 'Invalid email. Usage: ai-footprint --consent-email you@example.com',
+    },
+    // Skill Code Certification (skill-code-certification, issues 004/006) —
+    // English mirror of the `certify` catalog. Same content/invariants.
+    certify: {
+      help:
+        'AI Certify — certify Skills from your Shakers catalog by analyzing your local project\n\n'
+        + 'Usage:\n'
+        + '  ai-certify [options]\n\n'
+        + 'Options:\n'
+        + '      --root DIR           Analyze DIR instead of the current directory\n'
+        + '      --email EMAIL        Your Talent email (else the stored one, else you are asked)\n'
+        + '      --lang es|en         Force the output language\n'
+        + '      --accept-disclaimer  Accept the legal disclaimer non-interactively (explicit acceptance)\n'
+        + '  -h, --help               Show this help\n\n'
+        + 'Phase 1 (resolve): detects your project technologies and asks the Shakers Hub\n'
+        + 'which Skills are certifiable. Requires AI_FOOTPRINT_CERTIFY_ENDPOINT to be set.\n'
+        + 'A legal disclaimer is shown and must be accepted before anything is sent.',
+      scanningLabel: 'Detecting project technologies…',
+      resolvingLabel: 'Resolving certifiable Skills…',
+      disclaimer:
+        'LEGAL DISCLAIMER — read before continuing:\n'
+        + '  ai-certify sends data about your project to Shakers to certify your Skills.\n'
+        + '  In this phase (resolve) it sends your email and the NAMES of the detected\n'
+        + '  technologies; the later certification phase will send code snippets.\n'
+        + '  By continuing you declare that the project is your own and that you have the\n'
+        + '  right to send its contents, and you take responsibility for it. Do NOT use\n'
+        + "  this tool on a third party's code (e.g. a client under NDA).",
+      disclaimerQuestion: 'Do you accept and continue? (y/n):',
+      disclaimerAcceptedFlag: 'Disclaimer accepted via --accept-disclaimer.',
+      disclaimerNonInteractive:
+        'Non-interactive input and no --accept-disclaimer: cannot obtain explicit '
+        + 'acceptance. Aborting (nothing was sent).',
+      disclaimerDeclined: 'You did not accept the disclaimer. Nothing was sent.',
+      disclaimerInvalidAnswer: 'Answer not recognized. Reply "y" (yes) or "n" (no).',
+      disclaimerNoAnswer: 'No answer obtained. Nothing was sent.',
+      emailPrompt: 'Enter your Shakers email:',
+      emailInvalid: 'Invalid email, try again.',
+      emailUsing: (email) => `Using email: ${email}`,
+      emailNeeded: 'A valid email is required to resolve your certifiable Skills. Nothing was sent.',
+      noTechnologies:
+        'No framework or library was recognized in this project (package.json, '
+        + 'requirements.txt, go.mod, pyproject.toml). Nothing to certify.',
+      technologiesDetected: (list) => `Detected technologies: ${list}`,
+      resolveHeading: 'Certifiable Skills for your project',
+      certifiableHeading: 'Certifiable:',
+      certifiableEmpty: 'No detected technology maps to a Skill you can certify right now.',
+      certifiableLine: (skillName, technology, skillId) =>
+        `✓ ${skillName}${technology ? ` (${technology})` : ''}${skillId != null ? ` [#${skillId}]` : ''}`,
+      nonCertifiableHeading: 'Not certifiable:',
+      nonCertifiableEmpty: 'None — every detected technology is certifiable.',
+      nonCertifiableLine: (tech, reason) => `· ${tech} — ${reason}`,
+      reasons: {
+        'no-skill-match': 'no matching Skill in the Shakers catalog',
+        'not-declared': "you haven't declared this Skill in your Talent profile",
+        notCertifiable: 'not certifiable',
+      },
+      errorNoEndpoint:
+        'No certification endpoint configured. Set AI_FOOTPRINT_CERTIFY_ENDPOINT to the '
+        + 'Shakers Hub URL and run ai-certify again. (There is no local-only certification: '
+        + 'the Skill catalog and the analysis live on the Hub.)',
+      errorIntro: 'Could not resolve certifiable Skills:',
+      errorNetwork: 'the certification service could not be reached (network error).',
+      errorTimeout: 'the certification service timed out.',
+      errorHttp: (status) => `the certification service returned an unexpected status (HTTP ${status}).`,
+      errorInvalidResponse: 'the certification service returned an unexpected response.',
+      errorRetryHint: 'Nothing was certified. Check your connection and try again later.',
     },
   },
 };
