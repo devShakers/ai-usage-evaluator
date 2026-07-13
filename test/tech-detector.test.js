@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { detectTechnologies, canonicalFrameworkName } = require('../src/tech-detector');
+const { detectTechnologies, canonicalFrameworkName, detectRawDependencyNames, findManifestFiles } = require('../src/tech-detector');
 
 /*
  * talents-ai-score: deterministic (no-LLM) extraction of the project's
@@ -172,4 +172,76 @@ test('detectTechnologies: never reads application/business source code, only the
 test('detectTechnologies: a project with only unrecognized dependencies -> empty array (never a raw dump)', () => {
   write(tmpDir, 'package.json', JSON.stringify({ dependencies: { lodash: '^4.0.0', chalk: '^5.0.0' } }));
   assert.deepEqual(detectTechnologies(tmpDir), []);
+});
+
+// --- monorepo support (skill-code-certification, issue 008) -------------------
+
+test('monorepo: root manifest has no framework, sub-package (apps/hub) does -> detected from root', () => {
+  // Mirrors shakers-hub-frontend: root only has non-framework deps, React lives in apps/hub.
+  write(tmpDir, 'package.json', JSON.stringify({
+    devDependencies: { typescript: '^5.0.0', 'lucide-react': '^0.4.0' }, // neither is a recognized framework
+  }));
+  write(tmpDir, 'apps/hub/package.json', JSON.stringify({
+    dependencies: { react: '^18.0.0', 'react-dom': '^18.0.0', zustand: '^4.0.0' },
+  }));
+  write(tmpDir, 'packages/ui/package.json', JSON.stringify({
+    dependencies: { vue: '^3.0.0' },
+  }));
+  const techs = detectTechnologies(tmpDir);
+  assert.ok(techs.includes('React'), 'React from apps/hub must be detected from the monorepo root');
+  assert.ok(techs.includes('Vue'), 'Vue from packages/ui must be detected too (union across manifests)');
+});
+
+test('monorepo: does NOT require a `workspaces` field at the root (pnpm/turbo layouts)', () => {
+  write(tmpDir, 'package.json', JSON.stringify({ private: true })); // no `workspaces`, no deps
+  write(tmpDir, 'pnpm-workspace.yaml', 'packages:\n  - "apps/*"\n');
+  write(tmpDir, 'apps/api/package.json', JSON.stringify({ dependencies: { express: '^4.0.0' } }));
+  assert.deepEqual(detectTechnologies(tmpDir), ['Express']);
+});
+
+test('monorepo: unions + dedupes across sub-packages, deterministic sorted output', () => {
+  write(tmpDir, 'apps/web/package.json', JSON.stringify({ dependencies: { react: '^18.0.0' } }));
+  write(tmpDir, 'apps/web2/package.json', JSON.stringify({ dependencies: { react: '^18.0.0' } })); // dup React
+  write(tmpDir, 'services/api/requirements.txt', 'django==4.2\n');
+  const techs = detectTechnologies(tmpDir);
+  assert.deepEqual(techs, ['Django', 'React']); // sorted, deduped
+  const again = detectTechnologies(tmpDir);
+  assert.deepEqual(again, techs); // deterministic
+});
+
+test('monorepo: node_modules / dist / build / .git / .next / out / vendor / coverage are excluded', () => {
+  write(tmpDir, 'package.json', JSON.stringify({ dependencies: { react: '^18.0.0' } }));
+  // a framework hiding inside each excluded dir must NOT be picked up
+  for (const dir of ['node_modules', 'dist', 'build', '.git', 'vendor', 'coverage', '.next', 'out']) {
+    write(tmpDir, `${dir}/some-dep/package.json`, JSON.stringify({ dependencies: { django: '^4.0.0' } }));
+  }
+  const techs = detectTechnologies(tmpDir);
+  assert.deepEqual(techs, ['React'], 'only the real root React, nothing from excluded dirs');
+});
+
+test('findManifestFiles: skips excluded dirs, finds nested manifests, sorted deterministic paths', () => {
+  write(tmpDir, 'package.json', '{}');
+  write(tmpDir, 'apps/hub/package.json', '{}');
+  write(tmpDir, 'services/api/requirements.txt', '');
+  write(tmpDir, 'node_modules/x/package.json', '{}'); // excluded
+  const files = findManifestFiles(tmpDir).map((f) => f.slice(tmpDir.length + 1));
+  assert.deepEqual(files, ['apps/hub/package.json', 'package.json', 'services/api/requirements.txt']);
+  assert.equal(files.some((f) => f.includes('node_modules')), false);
+});
+
+test('detectRawDependencyNames: monorepo union includes non-framework raw names (for browser-tools detector)', () => {
+  write(tmpDir, 'package.json', JSON.stringify({ devDependencies: { typescript: '^5.0.0' } }));
+  write(tmpDir, 'apps/e2e/package.json', JSON.stringify({ devDependencies: { playwright: '^1.0.0' } }));
+  const raw = detectRawDependencyNames(tmpDir);
+  assert.ok(raw.includes('playwright'), 'raw names must union across sub-packages (browser-tools relies on this)');
+  assert.ok(raw.includes('typescript'));
+  assert.deepEqual(raw, [...new Set(raw)].sort()); // deduped + sorted
+});
+
+test('no regression: single root package.json behaves exactly as before', () => {
+  write(tmpDir, 'package.json', JSON.stringify({
+    dependencies: { react: '^18.0.0', express: '^4.0.0' },
+    devDependencies: { typescript: '^5.0.0' },
+  }));
+  assert.deepEqual(detectTechnologies(tmpDir).sort(), ['Express', 'React']);
 });

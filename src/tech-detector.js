@@ -3,7 +3,22 @@
 const fs = require('fs');
 const path = require('path');
 
+const { EXCLUDED_DIRS } = require('./scan-exclusions');
+
 /*
+ * Monorepo support (skill-code-certification, issue 008): manifests are
+ * discovered RECURSIVELY under `root`, not just at the top level. Many real
+ * Talent projects are monorepos (pnpm/turbo/yarn/npm workspaces, or a plain
+ * `apps/*` + `packages/*` layout) where the root `package.json` carries
+ * almost no real dependencies and the actual framework lives in a
+ * sub-package (e.g. `apps/hub/package.json`). We therefore walk the tree,
+ * read EVERY manifest we find of each supported type, and take the UNION of
+ * recognized technologies — WITHOUT relying on a `workspaces` field (some
+ * monorepos, like shakers-hub-frontend, don't declare one at the root).
+ * `node_modules`/`dist`/`build`/… are skipped (shared exclusions,
+ * src/scan-exclusions.js) — excluding `node_modules` is the critical
+ * performance guard. A single-manifest repo behaves exactly as before.
+ *
  * Deterministic (no-LLM) extraction of the project's TECHNOLOGIES
  * (talents-ai-score, ADR-012): parses known dependency MANIFEST files only
  * — never application/business source code. Only package/module NAMES are
@@ -105,8 +120,8 @@ function readFileSafe(p) {
   }
 }
 
-function fromPackageJson(root) {
-  const raw = readFileSafe(path.join(root, 'package.json'));
+function fromPackageJsonFile(filePath) {
+  const raw = readFileSafe(filePath);
   if (!raw) return [];
   let pkg;
   try {
@@ -124,8 +139,8 @@ function fromPackageJson(root) {
   return names;
 }
 
-function fromRequirementsTxt(root) {
-  const raw = readFileSafe(path.join(root, 'requirements.txt'));
+function fromRequirementsTxtFile(filePath) {
+  const raw = readFileSafe(filePath);
   if (!raw) return [];
   const names = [];
   for (const rawLine of raw.split(/\r?\n/)) {
@@ -137,8 +152,8 @@ function fromRequirementsTxt(root) {
   return names;
 }
 
-function fromGoMod(root) {
-  const raw = readFileSafe(path.join(root, 'go.mod'));
+function fromGoModFile(filePath) {
+  const raw = readFileSafe(filePath);
   if (!raw) return [];
   const names = [];
   const blockMatch = raw.match(/require\s*\(([\s\S]*?)\)/);
@@ -166,8 +181,8 @@ function fromGoMod(root) {
 // 621's `[project] dependencies = [...]` array (extracts the name before
 // any version specifier). Degrades to "nothing found" on anything it
 // doesn't recognize rather than guessing.
-function fromPyprojectToml(root) {
-  const raw = readFileSafe(path.join(root, 'pyproject.toml'));
+function fromPyprojectTomlFile(filePath) {
+  const raw = readFileSafe(filePath);
   if (!raw) return [];
   const names = [];
 
@@ -197,21 +212,66 @@ function fromPyprojectToml(root) {
   return names;
 }
 
-// Merges every manifest reader's output, deduped, sorted, WITHOUT filtering
-// through the canonical framework map. Internal building block for
+// Manifest filename -> reader (skill-code-certification, issue 008). Keyed by
+// basename so the recursive walker can dispatch each discovered file to the
+// right parser.
+const MANIFEST_READERS = {
+  'package.json': fromPackageJsonFile,
+  'requirements.txt': fromRequirementsTxtFile,
+  'go.mod': fromGoModFile,
+  'pyproject.toml': fromPyprojectTomlFile,
+};
+
+// Recursively finds every supported manifest under `root`, skipping the
+// shared excluded dirs (node_modules/dist/build/.git/vendor/coverage/
+// .next/out) — the node_modules skip is the critical perf guard on large
+// monorepos. Directory symlinks are NOT followed (readdir withFileTypes
+// reports a symlink as neither file nor dir here), avoiding cycle traps.
+// Returns absolute paths, sorted, for deterministic aggregation order.
+function findManifestFiles(root) {
+  const found = [];
+
+  function walk(dir) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const abs = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (EXCLUDED_DIRS.has(entry.name)) continue;
+        walk(abs);
+      } else if (entry.isFile() && Object.prototype.hasOwnProperty.call(MANIFEST_READERS, entry.name)) {
+        found.push(abs);
+      }
+    }
+  }
+
+  walk(root);
+  return found.sort();
+}
+
+// Merges every discovered manifest's output, deduped, sorted, WITHOUT
+// filtering through the canonical framework map. Internal building block for
 // detectTechnologies() below; also exported as detectRawDependencyNames()
 // because browser-tools-detector.js (issue 018) needs the raw dependency
 // names (e.g. 'playwright', 'puppeteer') to recognize browser-automation
 // tooling that isn't a "framework/library" in the tech-stack sense and so
 // is deliberately excluded from the canonical, human-facing technologies
 // list. Never exposed as `report.technologies` — internal wiring only.
+//
+// Monorepo (issue 008): walks the whole tree and unions across ALL found
+// manifests, so a framework declared only in a sub-package (apps/*,
+// packages/*) is detected even when the root manifest has none. Identical to
+// the previous single-root behaviour when there's only one manifest.
 function detectRawDependencyNames(root) {
-  const rawNames = [
-    ...fromPackageJson(root),
-    ...fromRequirementsTxt(root),
-    ...fromGoMod(root),
-    ...fromPyprojectToml(root),
-  ];
+  const rawNames = [];
+  for (const filePath of findManifestFiles(root)) {
+    const reader = MANIFEST_READERS[path.basename(filePath)];
+    if (reader) rawNames.push(...reader(filePath));
+  }
   return [...new Set(rawNames)].sort();
 }
 
@@ -229,4 +289,4 @@ function detectTechnologies(root) {
   return [...canonical].sort();
 }
 
-module.exports = { detectTechnologies, detectRawDependencyNames, canonicalFrameworkName };
+module.exports = { detectTechnologies, detectRawDependencyNames, canonicalFrameworkName, findManifestFiles };
