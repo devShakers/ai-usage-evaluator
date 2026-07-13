@@ -138,17 +138,18 @@ test('detectTechnologies: pyproject.toml (poetry-style) -> recognized framework 
   assert.deepEqual(techs, ['FastAPI']);
 });
 
-test('detectTechnologies: pyproject.toml (PEP 621 array) -> recognized framework only (flask), not sqlalchemy', () => {
+test('detectTechnologies: pyproject.toml (PEP 621 array) -> recognized frameworks only (flask + sqlalchemy per issue 009), not unrecognized libs', () => {
   write(tmpDir, 'pyproject.toml', [
     '[project]',
     'name = "myapp"',
     'dependencies = [',
     '  "flask>=2.0",',
-    '  "sqlalchemy==2.0.0",',
+    '  "sqlalchemy==2.0.0",', // recognized since issue 009
+    '  "requests>=2.0",',     // NOT a framework -> excluded
     ']',
   ].join('\n'));
   const techs = detectTechnologies(tmpDir);
-  assert.deepEqual(techs, ['Flask']);
+  assert.deepEqual(techs, ['Flask', 'SQLAlchemy']);
 });
 
 test('detectTechnologies: merges and dedupes across multiple manifests, sorted', () => {
@@ -244,4 +245,55 @@ test('no regression: single root package.json behaves exactly as before', () => 
     devDependencies: { typescript: '^5.0.0' },
   }));
   assert.deepEqual(detectTechnologies(tmpDir).sort(), ['Express', 'React']);
+});
+
+// --- expanded framework catalog (skill-code-certification, issue 009) --------
+
+test('009: recognizes the new JS/TS families from a package.json', () => {
+  write(tmpDir, 'package.json', JSON.stringify({
+    dependencies: {
+      '@tanstack/react-query': '^5', '@tanstack/react-router': '^1', '@tanstack/react-table': '^8', '@tanstack/react-form': '^0.1',
+      zustand: '^4', '@reduxjs/toolkit': '^2', 'react-redux': '^9',
+      '@prisma/client': '^5', graphql: '^16', '@apollo/client': '^3', '@trpc/server': '^10', zod: '^3',
+      astro: '^4', '@remix-run/react': '^2',
+      tailwindcss: '^3', vite: '^5', vitest: '^1', jest: '^29', webpack: '^5',
+    },
+  }));
+  const techs = detectTechnologies(tmpDir);
+  for (const t of [
+    'TanStack Query', 'TanStack Router', 'TanStack Table', 'TanStack Form',
+    'Zustand', 'Redux', 'Redux Toolkit',
+    'Prisma', 'GraphQL', 'Apollo', 'tRPC', 'Zod',
+    'Astro', 'Remix',
+    'Tailwind CSS', 'Vite', 'Vitest', 'Jest', 'Webpack',
+  ]) {
+    assert.ok(techs.includes(t), `expected "${t}" to be detected`);
+  }
+  assert.deepEqual(techs, [...new Set(techs)].sort()); // deduped + sorted
+});
+
+test('009: TanStack Query aliases (react-query old + @tanstack/react-query) dedupe to one Skill', () => {
+  write(tmpDir, 'package.json', JSON.stringify({
+    dependencies: { 'react-query': '^3', '@tanstack/react-query': '^5' },
+  }));
+  const techs = detectTechnologies(tmpDir);
+  assert.deepEqual(techs.filter((t) => t === 'TanStack Query'), ['TanStack Query']);
+});
+
+test('009: Python SQLAlchemy + Pydantic from requirements.txt', () => {
+  write(tmpDir, 'requirements.txt', 'sqlalchemy==2.0\npydantic>=2\nrequests\n');
+  assert.deepEqual(detectTechnologies(tmpDir).sort(), ['Pydantic', 'SQLAlchemy']);
+});
+
+test('009: Go GORM by module-path prefix (new + legacy import path)', () => {
+  write(tmpDir, 'go.mod', 'module x\n\nrequire (\n\tgorm.io/gorm v1.25.0\n)\n');
+  assert.deepEqual(detectTechnologies(tmpDir), ['GORM']);
+  assert.equal(canonicalFrameworkName('github.com/jinzhu/gorm'), 'GORM');
+});
+
+test('009: still never guesses — unknown deps ignored even alongside known ones', () => {
+  write(tmpDir, 'package.json', JSON.stringify({
+    dependencies: { zustand: '^4', 'some-obscure-lib': '^1', 'another-internal-thing': '^2' },
+  }));
+  assert.deepEqual(detectTechnologies(tmpDir), ['Zustand']);
 });

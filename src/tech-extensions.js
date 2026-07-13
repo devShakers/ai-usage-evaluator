@@ -13,7 +13,19 @@
  * surfaced in the report, NEVER guessed at with a made-up extension set (same
  * "honest limitation" discipline as tech-detector.js: recognizing more
  * ecosystems is future work, not something to fake).
+ *
+ * DETECTION-ONLY technologies (skill-code-certification, issue 009):
+ * tech-detector.js recognizes some technologies deliberately absent here
+ * because they have no meaningful CODE surface to review by sampling
+ * (config/tooling/utility-class based): Tailwind CSS, Vite, Webpack, Jest,
+ * Vitest. They still appear in the footprint and can be sent for RESOLVE, but
+ * extensionsForTechnology returns null so the sampler marks them NOT
+ * sampleable (not code-certified). Adding a real file surface later is all it
+ * takes to make them sampleable.
  */
+
+// Common JS/TS source extensions — most JS/TS libraries share this surface.
+const JS_TS = ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'];
 
 const TECH_EXTENSION_MAP = {
   // JS/TS — frontend
@@ -43,6 +55,28 @@ const TECH_EXTENSION_MAP = {
   Fiber: ['.go'],
   'Gorilla Mux': ['.go'],
   Beego: ['.go'],
+  GORM: ['.go'],
+  // JS/TS — state management (issue 009)
+  Zustand: JS_TS,
+  Redux: JS_TS,
+  'Redux Toolkit': JS_TS,
+  // JS/TS — TanStack family (issue 009)
+  'TanStack Query': JS_TS,
+  'TanStack Router': JS_TS,
+  'TanStack Table': JS_TS,
+  'TanStack Form': JS_TS,
+  // JS/TS — meta-frameworks (issue 009)
+  Astro: ['.astro', '.js', '.ts'],
+  Remix: JS_TS,
+  // JS/TS — data / API layer (issue 009)
+  Prisma: ['.prisma', '.ts', '.js'],
+  GraphQL: ['.graphql', '.gql', '.ts', '.js'],
+  Apollo: JS_TS,
+  tRPC: ['.ts', '.js'],
+  Zod: ['.ts', '.js'],
+  // Python (issue 009)
+  SQLAlchemy: ['.py'],
+  Pydantic: ['.py'],
 };
 
 // Returns the extension list for a canonical technology name, or null when

@@ -78,12 +78,59 @@ const EXACT_FRAMEWORK_MAP = {
   '@nestjs/core': 'NestJS',
   hapi: 'Hapi',
   '@hapi/hapi': 'Hapi',
+  // JS/TS — meta-frameworks
+  astro: 'Astro',
+  remix: 'Remix',
+  '@remix-run/react': 'Remix',
+  '@remix-run/node': 'Remix',
+  '@remix-run/server-runtime': 'Remix',
+  // JS/TS — state management
+  zustand: 'Zustand',
+  redux: 'Redux',
+  'react-redux': 'Redux',
+  '@reduxjs/toolkit': 'Redux Toolkit',
+  // JS/TS — TanStack family (each product is its own Skill)
+  '@tanstack/react-query': 'TanStack Query',
+  '@tanstack/vue-query': 'TanStack Query',
+  '@tanstack/solid-query': 'TanStack Query',
+  '@tanstack/svelte-query': 'TanStack Query',
+  'react-query': 'TanStack Query', // pre-rename package, same Skill
+  '@tanstack/react-router': 'TanStack Router',
+  '@tanstack/router': 'TanStack Router',
+  '@tanstack/react-table': 'TanStack Table',
+  '@tanstack/vue-table': 'TanStack Table',
+  '@tanstack/table-core': 'TanStack Table',
+  '@tanstack/react-form': 'TanStack Form',
+  '@tanstack/form-core': 'TanStack Form',
+  // JS/TS — data / API layer
+  prisma: 'Prisma',
+  '@prisma/client': 'Prisma',
+  graphql: 'GraphQL',
+  '@apollo/client': 'Apollo',
+  '@apollo/server': 'Apollo',
+  'apollo-server': 'Apollo',
+  '@trpc/server': 'tRPC',
+  '@trpc/client': 'tRPC',
+  zod: 'Zod',
+  // JS/TS — styling (DETECTION ONLY, not code-sampleable: utility classes in
+  // markup + a config file, no dedicated source-file surface to certify —
+  // NO entry in tech-extensions.js on purpose, see its header).
+  tailwindcss: 'Tailwind CSS',
+  // JS/TS — build tools & test runners (DETECTION ONLY, not code-sampleable:
+  // config/tooling, not a Skill surface certified by reading a code sample —
+  // NO entry in tech-extensions.js on purpose).
+  vite: 'Vite',
+  webpack: 'Webpack',
+  jest: 'Jest',
+  vitest: 'Vitest',
   // Python
   django: 'Django',
   flask: 'Flask',
   fastapi: 'FastAPI',
   pyramid: 'Pyramid',
   tornado: 'Tornado',
+  sqlalchemy: 'SQLAlchemy',
+  pydantic: 'Pydantic',
 };
 
 // Go module paths recognized by prefix (module paths carry version suffixes
@@ -94,6 +141,8 @@ const GO_FRAMEWORK_PREFIXES = [
   { prefix: 'github.com/gofiber/fiber', name: 'Fiber' },
   { prefix: 'github.com/gorilla/mux', name: 'Gorilla Mux' },
   { prefix: 'github.com/beego/beego', name: 'Beego' },
+  { prefix: 'gorm.io/gorm', name: 'GORM' },
+  { prefix: 'github.com/jinzhu/gorm', name: 'GORM' }, // pre-move import path, same Skill
 ];
 
 // Maps a raw dependency/module name to its canonical framework/library

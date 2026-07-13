@@ -31,6 +31,28 @@ test('extensionsForTechnology: unknown/invalid technology -> null (not sampleabl
   assert.equal(extensionsForTechnology(undefined), null);
 });
 
+// --- issue 009: expanded catalog, sampleable vs detection-only --------------
+
+test('009: new code-sampleable technologies have an extension mapping', () => {
+  for (const t of [
+    'TanStack Query', 'TanStack Router', 'TanStack Table', 'TanStack Form',
+    'Zustand', 'Redux', 'Redux Toolkit', 'Apollo', 'tRPC', 'Zod', 'Remix', 'GORM',
+    'SQLAlchemy', 'Pydantic',
+  ]) {
+    const exts = extensionsForTechnology(t);
+    assert.ok(Array.isArray(exts) && exts.length > 0, `"${t}" should be sampleable`);
+  }
+  assert.ok(extensionsForTechnology('Astro').includes('.astro'));
+  assert.ok(extensionsForTechnology('Prisma').includes('.prisma'));
+  assert.ok(extensionsForTechnology('GraphQL').includes('.graphql'));
+});
+
+test('009: detection-only technologies are NOT sampleable (null), by design', () => {
+  for (const t of ['Tailwind CSS', 'Vite', 'Webpack', 'Jest', 'Vitest']) {
+    assert.equal(extensionsForTechnology(t), null, `"${t}" must be detection-only (no extension mapping)`);
+  }
+});
+
 test('every canonical framework tech-detector emits has an extension mapping (no orphan techs)', () => {
   // Derive the canonical names from tech-detector's own public mapper rather
   // than a private table, so this stays honest if the detector's map changes.
