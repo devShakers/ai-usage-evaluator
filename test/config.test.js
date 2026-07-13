@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { getSynthesisEndpoint, getRoadmapEndpoint } = require('../src/config');
+const { getSynthesisEndpoint, getRoadmapEndpoint, getCertifyEndpoint } = require('../src/config');
 
 /*
  * talents-ai-score, ADR-010/011: the agent-synthesis endpoint follows the
@@ -42,4 +42,23 @@ test('getRoadmapEndpoint: reads AI_FOOTPRINT_ROADMAP_ENDPOINT, trimmed', () => {
 test('getRoadmapEndpoint: empty/whitespace-only value -> null', () => {
   assert.equal(getRoadmapEndpoint({ AI_FOOTPRINT_ROADMAP_ENDPOINT: '' }), null);
   assert.equal(getRoadmapEndpoint({ AI_FOOTPRINT_ROADMAP_ENDPOINT: '   ' }), null);
+});
+
+// skill-code-certification, ADR-001: certify endpoint, same no-hardcode/
+// no-default/env-var-only pattern. The DIFFERENCE is in how the caller
+// treats null (actionable error vs silent degrade) — that lives in
+// bin/certify.js, not here; this getter is a plain reader like the rest.
+
+test('getCertifyEndpoint: unset env var -> null', () => {
+  assert.equal(getCertifyEndpoint({}), null);
+});
+
+test('getCertifyEndpoint: reads AI_FOOTPRINT_CERTIFY_ENDPOINT, trimmed', () => {
+  const env = { AI_FOOTPRINT_CERTIFY_ENDPOINT: '  https://hub.example.com/works/ai-footprint/skill-certification  ' };
+  assert.equal(getCertifyEndpoint(env), 'https://hub.example.com/works/ai-footprint/skill-certification');
+});
+
+test('getCertifyEndpoint: empty/whitespace-only value -> null', () => {
+  assert.equal(getCertifyEndpoint({ AI_FOOTPRINT_CERTIFY_ENDPOINT: '' }), null);
+  assert.equal(getCertifyEndpoint({ AI_FOOTPRINT_CERTIFY_ENDPOINT: '   ' }), null);
 });

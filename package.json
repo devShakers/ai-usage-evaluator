@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "description": "Perfil local de uso de herramientas de IA para desarrolladores. Escanea, clasifica y muestra un informe. Cero dependencias.",
   "bin": {
-    "ai-footprint": "bin/report.js"
+    "ai-footprint": "bin/report.js",
+    "ai-certify": "bin/certify.js"
   },
   "scripts": {
     "start": "node bin/report.js",

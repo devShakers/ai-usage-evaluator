@@ -1,0 +1,96 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const { renderCertificationTerminal, renderCertificationHtml } = require('../src/render-certification');
+
+/*
+ * skill-code-certification, issue 005: certify report renderers (terminal +
+ * self-contained HTML). Must always show the indicative/not-reproducible
+ * disclaimer, a partial-sample warning when truncated, and per-Skill score/
+ * rationale/improvements — or a clear not-certified / not-sampleable state.
+ */
+
+function certification(overrides = {}) {
+  return {
+    items: [
+      {
+        skillId: 1, skillName: 'React', technology: 'React',
+        sampling: { sampleable: true, includedCount: 3, candidateCount: 5, estTokens: 1200, truncated: false, capReason: null },
+        result: { score: 82, rationale: 'Solid component patterns.', improvements: ['Add tests', 'Type props'] },
+      },
+      ...(overrides.extraItems || []),
+    ],
+    model: null,
+  };
+}
+
+test('terminal: shows heading, disclaimer, score, rationale, improvements, sample summary', () => {
+  const out = renderCertificationTerminal(certification(), 'en');
+  assert.match(out, /Skill certification result/);
+  assert.match(out, /indicative and NOT reproducible/);
+  assert.match(out, /Score: 82\/100/);
+  assert.match(out, /Solid component patterns/);
+  assert.match(out, /Add tests/);
+  assert.match(out, /Sample: 3\/5 files/);
+});
+
+test('terminal: partial-sample warning appears only when some sampling.truncated', () => {
+  const notTruncated = renderCertificationTerminal(certification(), 'en');
+  assert.equal(/Partial sample:/.test(notTruncated), false);
+
+  const truncated = renderCertificationTerminal({
+    items: [{
+      skillId: 1, skillName: 'React', technology: 'React',
+      sampling: { sampleable: true, includedCount: 1, candidateCount: 9, estTokens: 500, truncated: true, capReason: 'per-skill-cap' },
+      result: { score: 50, rationale: 'x', improvements: [] },
+    }],
+  }, 'en');
+  assert.match(truncated, /Partial sample:/);
+  assert.match(truncated, /\(partial sample\)/);
+});
+
+test('terminal: not-sampleable and not-certified states', () => {
+  const out = renderCertificationTerminal({
+    items: [
+      { skillId: 1, skillName: 'Mainframe', technology: 'COBOL', sampling: { sampleable: false, includedCount: 0, candidateCount: 0, estTokens: 0, truncated: false, capReason: null }, result: null },
+      { skillId: 2, skillName: 'React', technology: 'React', sampling: { sampleable: true, includedCount: 2, candidateCount: 2, estTokens: 100, truncated: false, capReason: null }, result: null },
+    ],
+  }, 'en');
+  assert.match(out, /No sampling is defined for the technology "COBOL"/);
+  assert.match(out, /could not be certified in this run/);
+});
+
+test('HTML: self-contained, zero-network (no http/src/link/script tags), escapes content', () => {
+  const html = renderCertificationHtml({
+    items: [{
+      skillId: 1, skillName: 'React <x>', technology: 'React',
+      sampling: { sampleable: true, includedCount: 1, candidateCount: 1, estTokens: 10, truncated: false, capReason: null },
+      result: { score: 90, rationale: 'Uses <script>alert(1)</script> safely', improvements: ['a & b'] },
+    }],
+  }, 'en');
+  assert.match(html, /^<!DOCTYPE html>/);
+  assert.equal(/https?:\/\//.test(html), false, 'no external URLs');
+  assert.equal(/<script/.test(html.replace(/&lt;script/g, '')), false, 'no live script tags (content escaped)');
+  assert.match(html, /React &lt;x&gt;/);
+  assert.match(html, /a &amp; b/);
+  assert.match(html, /Score: 90\/100/);
+});
+
+test('HTML: partial warning + Spanish rendering', () => {
+  const html = renderCertificationHtml({
+    items: [{
+      skillId: 1, skillName: 'React', technology: 'React',
+      sampling: { sampleable: true, includedCount: 1, candidateCount: 5, estTokens: 10, truncated: true, capReason: 'run-budget' },
+      result: { score: 40, rationale: 'ok', improvements: [] },
+    }],
+  }, 'es');
+  assert.match(html, /Muestra parcial/);
+  assert.match(html, /orientativa y NO reproducible/);
+});
+
+test('both renderers: empty items -> no-results notice, no throw', () => {
+  assert.match(renderCertificationTerminal({ items: [] }, 'en'), /No certification results/);
+  assert.match(renderCertificationHtml({ items: [] }, 'en'), /No certification results/);
+});

@@ -53,4 +53,26 @@ function getRoadmapEndpoint(env = process.env) {
   return value && value.trim() ? value.trim() : null;
 }
 
-module.exports = { getIngestEndpoint, getSynthesisEndpoint, getRoadmapEndpoint };
+/*
+ * Skill-certification endpoint (skill-code-certification, ADR-001): the
+ * destination for the new `ai-certify` binary's server-side, two-phase
+ * (resolve/certify) flow — supplied via `AI_FOOTPRINT_CERTIFY_ENDPOINT`, no
+ * compiled-in default, no secret, exactly like the three endpoints above.
+ *
+ * CRUCIAL DIFFERENCE in how the CALLER treats "unset", though: the ingest/
+ * synthesis/roadmap endpoints degrade GRACEFULLY when unset (silent no-op /
+ * deterministic fallback), because those features enrich an always-local
+ * report. `ai-certify` has NO local-only product — certifying a Skill is
+ * INHERENTLY a server-side act (the Hub owns the Skill catalog, the
+ * Talent-match gate and the LLM). So an unset endpoint here is an ACTIONABLE
+ * ERROR the caller (bin/certify.js) surfaces and exits on — never a silent
+ * degrade, never a deterministic fallback (ADR-001: there is no offline way
+ * to "judge code"). This helper stays a pure getter; the caller decides what
+ * a null means for its own flow.
+ */
+function getCertifyEndpoint(env = process.env) {
+  const value = env.AI_FOOTPRINT_CERTIFY_ENDPOINT;
+  return value && value.trim() ? value.trim() : null;
+}
+
+module.exports = { getIngestEndpoint, getSynthesisEndpoint, getRoadmapEndpoint, getCertifyEndpoint };

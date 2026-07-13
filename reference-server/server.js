@@ -36,11 +36,24 @@
  *     real endpoint synthesizes from the agent's DESCRIPTION content, which
  *     this stub never even asks for beyond structure (no model to feed it).
  *
+ * skill-code-certification / issue 006: adds a stub
+ * `/works/ai-footprint/skill-certification` endpoint that mirrors the other
+ * stubs' spirit — PUBLIC, no per-identity auth, DETERMINISTIC (NO LLM),
+ * nothing persisted — just enough to exercise the `ai-certify` CLI's
+ * request/response contract end to end locally. Two modes by body shape:
+ * RESOLVE (`{email, technologies[]}`) returns the received technologies as
+ * certifiable Skills (title-cased synthetic names, deterministic ids);
+ * CERTIFY (`{email, items[]}`) returns a per-Skill `{score, rationale,
+ * improvements[]}` derived from the input size (file/byte counts), never a
+ * model call. The REAL implementation (Anthropic call, Talent-match gate,
+ * evidence persistence) lives in shakers-hub-backend (ADR-001/002), not here.
+ *
  * Routes:
  *   GET  /health
- *   POST /reports                              {email, payload} -> public, no auth. 201 / 400 / 429
- *   POST /works/ai-footprint/agent-synthesis    {agents}         -> public, no auth. 200 / 400
- *   GET  /admin/reports   (X-Admin-Key)         -> lists stored reports (audit aid)
+ *   POST /reports                                {email, payload}          -> public, no auth. 201 / 400 / 429
+ *   POST /works/ai-footprint/agent-synthesis     {agents}                  -> public, no auth. 200 / 400
+ *   POST /works/ai-footprint/skill-certification {email, technologies|items} -> public, no auth. 200 / 400
+ *   GET  /admin/reports   (X-Admin-Key)          -> lists stored reports (audit aid)
  *
  * Startup:  ADMIN_KEY=mykey node reference-server/server.js
  */
@@ -139,6 +152,20 @@ function whitelistPayload(payload) {
   };
 }
 
+/* ---------- skill-certification stub helpers (issue 006) ---------- */
+// Deterministic, NO LLM. Same input -> same output, so the CLI's end-to-end
+// contract is reproducibly exercisable in local tests.
+function titleCase(s) {
+  return String(s).replace(/[-_.]/g, ' ').replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+// Stable synthetic Skill id from a technology name (a positive integer).
+function syntheticSkillId(technology) {
+  const s = String(technology);
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 100000;
+  return h;
+}
+
 function checkRate(map, key) {
   const now = Date.now();
   const r = map.get(key);
@@ -228,17 +255,81 @@ async function handle(req, res) {
     return send(res, 200, { agents, edges });
   }
 
+  /* --- skill certification: public, no per-identity auth, DETERMINISTIC   */
+  /* (NO LLM), nothing persisted (skill-code-certification, issue 006).     */
+  /* Two modes by body shape — RESOLVE ({technologies[]}) and CERTIFY       */
+  /* ({items[]}). The real endpoint (Anthropic call, EmailTalentMatchPort   */
+  /* 403 gate, evidence upsert) is shakers-hub-backend (ADR-001/002). ---   */
+  if (method === 'POST' && url === '/works/ai-footprint/skill-certification') {
+    const body = await readJson(req);
+    if (!body || !isValidEmail(body.email)) {
+      return send(res, 400, { error: 'correo inválido o ausente' });
+    }
+
+    // CERTIFY mode — {email, items: [{skillId, technology, files:[{path,content}]}]}.
+    // Score derived deterministically from the sampled input size (file/byte
+    // count), NOT from any code understanding — this stub never runs a model.
+    if (Array.isArray(body.items)) {
+      const results = body.items.map((item) => {
+        const files = Array.isArray(item.files) ? item.files : [];
+        const fileCount = files.length;
+        const totalBytes = files.reduce(
+          (sum, f) => sum + (f && typeof f.content === 'string' ? f.content.length : 0),
+          0,
+        );
+        const skillName = titleCase(item.technology || String(item.skillId));
+        const score = Math.max(0, Math.min(100, 40 + fileCount * 10 + (totalBytes % 40)));
+        return {
+          skillId: item.skillId != null ? item.skillId : syntheticSkillId(item.technology || ''),
+          skillName,
+          score,
+          rationale:
+            `Stub determinista: puntuación derivada de ${fileCount} fichero(s) y ${totalBytes} `
+            + 'bytes de código muestreado (sin LLM). El servidor real es shakers-hub-backend.',
+          improvements: [
+            `Añade tests que ejerciten tu uso de ${skillName}.`,
+            `Documenta los patrones de ${skillName} usados en este proyecto.`,
+          ],
+        };
+      });
+      console.log(`[skill-certify] modo=certify correo=${normalizeEmail(body.email)} skills=${results.length}`);
+      return send(res, 200, { results });
+    }
+
+    // RESOLVE mode — {email, technologies: string[]}. Deterministic stub:
+    // every received technology becomes certifiable (issue 006). The real
+    // endpoint intersects catalog Skills with the Talent's declared Skills.
+    if (Array.isArray(body.technologies)) {
+      const certifiable = body.technologies
+        .filter((t) => typeof t === 'string' && t)
+        .map((t) => ({ skillId: syntheticSkillId(t), skillName: titleCase(t), technology: t }));
+      console.log(`[skill-certify] modo=resolve correo=${normalizeEmail(body.email)} certificables=${certifiable.length}`);
+      return send(res, 200, { certifiable, nonCertifiable: [] });
+    }
+
+    return send(res, 400, { error: 'se requiere technologies[] (resolve) o items[] (certify)' });
+  }
+
   send(res, 404, { error: 'no encontrado' });
 }
 
-http.createServer((req, res) => {
-  handle(req, res).catch((e) => send(res, 500, { error: String(e.message || e) }));
-}).listen(PORT, () => {
-  console.log(`\n  Servidor de referencia AI Footprint en ${PUBLIC_URL}`);
-  console.log(`  (STUB en memoria — no usar en producción; el real es shakers-hub-backend)`);
-  console.log(`  Sin kill switch (ADR-011): consentimiento cliente-side es el único control.\n`);
-  console.log(`  ADMIN_KEY: ${ADMIN_KEY}`);
-  if (!process.env.ADMIN_KEY) console.log(`  (generada al vuelo; fíjala con ADMIN_KEY=... para que persista)`);
-  console.log(`\n  Auditar reportes recibidos:`);
-  console.log(`    curl ${PUBLIC_URL}/admin/reports -H "X-Admin-Key: ${ADMIN_KEY}"\n`);
-});
+// Only bind a port when run directly (`node reference-server/server.js`).
+// When require()d (tests), nothing listens — the caller wires `handle` into
+// its own throwaway server on an ephemeral port. Keeps this a zero-dependency
+// stub while making its contract unit-testable (skill-code-certification,
+// issue 006 e2e).
+if (require.main === module) {
+  http.createServer((req, res) => {
+    handle(req, res).catch((e) => send(res, 500, { error: String(e.message || e) }));
+  }).listen(PORT, () => {
+    console.log(`\n  Servidor de referencia AI Footprint en ${PUBLIC_URL}`);
+    console.log(`  (STUB en memoria — no usar en producción; el real es shakers-hub-backend)`);
+    console.log(`  Sin kill switch (ADR-011): consentimiento cliente-side es el único control.\n`);
+    console.log(`  ADMIN_KEY: ${ADMIN_KEY}`);
+    if (!process.env.ADMIN_KEY) console.log(`  (generada al vuelo; fíjala con ADMIN_KEY=... para que persista)`);
+    console.log(`\n  Auditar reportes recibidos:`);
+    console.log(`    curl ${PUBLIC_URL}/admin/reports -H "X-Admin-Key: ${ADMIN_KEY}"\n`);
+  });
+}
+
+module.exports = { handle };

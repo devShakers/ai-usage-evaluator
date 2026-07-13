@@ -46,6 +46,7 @@ FILES=(
   "package.json"
   "README.md"
   "bin/report.js"
+  "bin/certify.js"
 )
 
 say()  { printf "  %b\n" "$1"; }
@@ -55,6 +56,7 @@ uninstall() {
   printf "\n  ${B}${C}AI Footprint — uninstall${N}\n\n"
   rm -rf "$INSTALL_DIR" && say "${G}+${N} removed $INSTALL_DIR"
   rm -f "$BIN_DIR/ai-footprint" && say "${G}+${N} removed $BIN_DIR/ai-footprint"
+  rm -f "$BIN_DIR/ai-certify" && say "${G}+${N} removed $BIN_DIR/ai-certify"
   say "\n  ${G}${B}Done.${N} (Your reports in ~/.config/ai-footprint/ are kept.)\n"
   exit 0
 }
@@ -146,10 +148,24 @@ EOF
 chmod +x "$SHIM"
 say "\n  ${G}+${N} Command created at $SHIM"
 
+# ─── Create the `ai-certify` launcher (skill-code-certification) ─────────────
+# Second command: the Skill-certification CLI (bin/certify.js), installed
+# alongside ai-footprint from the same INSTALL_DIR.
+CERTIFY_SHIM="$BIN_DIR/ai-certify"
+cat > "$CERTIFY_SHIM" <<EOF
+#!/usr/bin/env bash
+exec node "$INSTALL_DIR/bin/certify.js" "\$@"
+EOF
+chmod +x "$CERTIFY_SHIM"
+say "  ${G}+${N} Command created at $CERTIFY_SHIM"
+
 # ─── Verification ───────────────────────────────────────────────────────────
 node "$INSTALL_DIR/bin/report.js" --help >/dev/null 2>&1 \
-  && say "  ${G}+${N} Verification OK" \
-  || die "Verification failed while running the tool."
+  && say "  ${G}+${N} Verification OK (ai-footprint)" \
+  || die "Verification failed while running ai-footprint."
+node "$INSTALL_DIR/bin/certify.js" --help >/dev/null 2>&1 \
+  && say "  ${G}+${N} Verification OK (ai-certify)" \
+  || die "Verification failed while running ai-certify."
 
 # ─── Final message ──────────────────────────────────────────────────────────
 printf "\n  ${G}${B}Installed successfully.${N}\n\n"

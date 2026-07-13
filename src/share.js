@@ -7,6 +7,7 @@ const http = require('http');
 const https = require('https');
 
 const { getIngestEndpoint } = require('./config');
+const { scrubSecrets } = require('./agent-synthesis');
 
 /*
  * Sharing (= PERSISTENCE) layer.
@@ -62,6 +63,13 @@ function consentPath() {
 // than 1h ago. Independent of the server's rate limit (that's enforced by
 // the backend, per correo normalizado + IP per specs.md).
 const SEND_THROTTLE_MS = 60 * 60 * 1000;
+
+// skill-code-certification, issue 005: a SEPARATE client-side throttle for
+// certification persistence, so re-persisting the (expensive) certify result
+// doesn't spam the backend — kept independent of the footprint send throttle
+// (its own `lastCertifySentAt` field) so neither clobbers the other.
+const CERTIFY_SEND_THROTTLE_MS = 60 * 60 * 1000;
+const CERT_SCHEMA_VERSION = 1;
 
 /* ---------- minimal HTTP utility (no dependencies) ---------- */
 
@@ -448,8 +456,104 @@ async function autoShare(report, maturity) {
   return { ok: false, skipped: false, reason: `http-${res.status}` };
 }
 
+/* ---------- certification persistence (skill-code-certification, issue 005) ----------
+ *
+ * ADR-002 "Camino 2": persist ONLY the ALREADY-ANALYZED result (score /
+ * rationale / improvements per Skill) — NEVER the code. ADR-011 consent model
+ * reused verbatim: shown-always-local is bin/certify.js's job; this only
+ * persists, and only when consent is `granted`. Transport (O-2): re-submit
+ * through the SAME /reports ingestion contract ({email, payload}) the
+ * footprint uses — the backend distinguishes by `payload.kind`. Prose
+ * (rationale/improvements) is SCRUBBED before leaving the machine (ADR-002:
+ * the LLM might have quoted code despite the prompt's "reference, don't
+ * quote" rule).
+ */
+
+// Strict whitelist: the analyzed RESULT only, rebuilt field-by-field (never
+// spread). No file content, path, or raw sample ever appears here — those
+// were ephemeral to the certify request and are not persisted (ADR-001).
+function deriveCertificationPayload(items, { model = null } = {}) {
+  const list = Array.isArray(items) ? items : [];
+  const skillCodeAssessments = list
+    .filter((i) => i && i.result && typeof i.result === 'object')
+    .map((i) => ({
+      skillId: i.skillId != null ? i.skillId : null,
+      skillName: typeof i.skillName === 'string' ? i.skillName : null,
+      technology: typeof i.technology === 'string' ? i.technology : null,
+      score: typeof i.result.score === 'number' ? i.result.score : null,
+      rationale: scrubSecrets(typeof i.result.rationale === 'string' ? i.result.rationale : ''),
+      improvements: Array.isArray(i.result.improvements)
+        ? i.result.improvements.filter((x) => typeof x === 'string' && x).map((x) => scrubSecrets(x))
+        : [],
+      sampled: !!(i.sampling && i.sampling.sampleable),
+      model,
+    }));
+  return {
+    schemaVersion: CERT_SCHEMA_VERSION,
+    generatedAt: new Date().toISOString(),
+    kind: 'skill-code-assessment',
+    skillCodeAssessments,
+  };
+}
+
+function isCertifyThrottled(state, now = Date.now()) {
+  if (!state || !state.lastCertifySentAt) return false;
+  const last = new Date(state.lastCertifySentAt).getTime();
+  if (Number.isNaN(last)) return false;
+  return now - last < CERTIFY_SEND_THROTTLE_MS;
+}
+
+// Persists the analyzed certification result if (and only if) consent is
+// granted. Never throws — every skip/failure resolves with { ok:false, ... },
+// so it can't break the local report (ADR-011 invariant).
+async function shareCertification(items, { model = null } = {}) {
+  const state = loadConsentState();
+  const decision = getConsentDecision(state);
+
+  if (decision !== 'granted') {
+    return { ok: false, skipped: true, reason: decision === 'denied' ? 'consent-denied' : 'no-decision' };
+  }
+  if (!state.email) {
+    return { ok: false, skipped: true, reason: 'no-email' };
+  }
+  if (isCertifyThrottled(state)) {
+    return { ok: false, skipped: true, reason: 'throttled' };
+  }
+
+  const payload = deriveCertificationPayload(items, { model });
+  if (payload.skillCodeAssessments.length === 0) {
+    return { ok: false, skipped: true, reason: 'nothing-to-persist' };
+  }
+
+  const endpoint = getIngestEndpoint();
+  if (!endpoint) {
+    return { ok: false, skipped: true, reason: 'no-endpoint-configured' };
+  }
+
+  let res;
+  try {
+    res = await requestJson('POST', endpoint, { body: { email: state.email, payload } });
+  } catch (e) {
+    return { ok: false, skipped: false, reason: 'network-error', error: e.message };
+  }
+
+  if (res.status >= 200 && res.status < 300) {
+    state.lastCertifySentAt = new Date().toISOString();
+    saveConsentState(state);
+    return { ok: true, response: res.json };
+  }
+  if (res.status === 429) {
+    return { ok: false, skipped: false, reason: 'rate-limited' };
+  }
+  return { ok: false, skipped: false, reason: `http-${res.status}` };
+}
+
 module.exports = {
   autoShare,
+  deriveCertificationPayload,
+  shareCertification,
+  isCertifyThrottled,
+  CERTIFY_SEND_THROTTLE_MS,
   loadConsentState,
   saveConsentState,
   getConsentDecision,
