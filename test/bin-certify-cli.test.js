@@ -181,6 +181,76 @@ test('disclaimer not accepted (non-TTY, no flag) -> aborts, exit 1, NOTHING sent
   }
 });
 
+// --- issue 014: status -> UX mapping (403 is not a technical error) ----------
+
+function startStatusStub(status, body = '{}') {
+  return new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      req.on('data', () => {});
+      req.on('end', () => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(body); });
+    });
+    server.listen(0, '127.0.0.1', () => resolve(server));
+  });
+}
+function statusUrl(server) {
+  const { port } = server.address();
+  return `http://127.0.0.1:${port}/works/ai-footprint/skill-certification`;
+}
+
+test('014: 403 (not a registered Talent) -> calm message, exit 0, no error styling/retry/HTTP-code', async () => {
+  writeReactProject();
+  const server = await startStatusStub(403, JSON.stringify({ message: 'not a talent' }));
+  try {
+    const { code, stdout, stderr } = await runCli({
+      args: ['--root', tmpProjectDir, '--email', 'nobody@example.com', '--accept-disclaimer', '--all', '--lang', 'en'],
+      env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_CERTIFY_ENDPOINT: statusUrl(server) },
+    });
+    assert.equal(code, 0, '403 is an expected outcome, not a crash');
+    const out = stdout + stderr;
+    assert.match(out, /only for registered Shakers Talents/);
+    assert.match(out, /nobody@example\.com/);
+    // No technical-error framing:
+    assert.equal(/HTTP 403|unexpected status|Could not resolve|Check your connection|try again later/.test(out), false);
+  } finally {
+    server.close();
+  }
+});
+
+test('014: 413 -> clear "too large" message (not the generic connection error), exit 1', async () => {
+  writeReactProject();
+  const server = await startStatusStub(413);
+  try {
+    const { code, stdout, stderr } = await runCli({
+      args: ['--root', tmpProjectDir, '--email', 'a@b.com', '--accept-disclaimer', '--all', '--lang', 'en'],
+      env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_CERTIFY_ENDPOINT: statusUrl(server) },
+    });
+    assert.equal(code, 1);
+    const out = stdout + stderr;
+    assert.match(out, /too large/);
+    assert.equal(/Check your connection|HTTP 413/.test(out), false);
+  } finally {
+    server.close();
+  }
+});
+
+test('014: 5xx stays a real technical error (generic message + retry), exit 1', async () => {
+  writeReactProject();
+  const server = await startStatusStub(500);
+  try {
+    const { code, stdout, stderr } = await runCli({
+      args: ['--root', tmpProjectDir, '--email', 'a@b.com', '--accept-disclaimer', '--all', '--lang', 'en'],
+      env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_CERTIFY_ENDPOINT: statusUrl(server) },
+    });
+    assert.equal(code, 1);
+    const out = stdout + stderr;
+    assert.match(out, /Could not resolve certifiable Skills/);
+    assert.match(out, /HTTP 500/);
+    assert.match(out, /try again later/);
+  } finally {
+    server.close();
+  }
+});
+
 test('resolve failure (bad endpoint) -> actionable error, exit 1, never hangs', async () => {
   writeReactProject();
   const { code, stderr } = await runCli({

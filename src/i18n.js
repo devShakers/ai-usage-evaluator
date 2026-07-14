@@ -418,6 +418,14 @@ const catalogs = {
       errorHttp: (status) => `el servicio de certificación devolvió un estado inesperado (HTTP ${status}).`,
       errorInvalidResponse: 'el servicio de certificación devolvió una respuesta inesperada.',
       errorRetryHint: 'No se ha certificado nada. Revisa tu conexión e inténtalo de nuevo más tarde.',
+      // Resultado ESPERADO del gate (403), no un error técnico (issue 014):
+      // mensaje calmado, sin "estado inesperado", sin "HTTP 403", sin reintento.
+      notRegistered: (email) =>
+        `La certificación de skills es solo para Talents registrados de Shakers; no encontramos ${email} como Talent.`,
+      // 413: proyecto demasiado grande (issue 014) — accionable, no el genérico de conexión.
+      errorTooLarge:
+        'El proyecto es demasiado grande para certificar de una vez. Reduce el alcance '
+        + '(menos ficheros o Skills) e inténtalo de nuevo.',
       // Interactive Skill selection (certify phase, issue 005).
       selectHeading: 'Selecciona las Skills que quieres certificar:',
       selectHint: 'Flechas ↑/↓ para moverte · espacio para marcar/desmarcar · a = todas · enter para confirmar · esc para cancelar',
@@ -775,6 +783,14 @@ const catalogs = {
       errorHttp: (status) => `the certification service returned an unexpected status (HTTP ${status}).`,
       errorInvalidResponse: 'the certification service returned an unexpected response.',
       errorRetryHint: 'Nothing was certified. Check your connection and try again later.',
+      // Expected gate outcome (403), not a technical error (issue 014): calm
+      // message, no "unexpected status", no "HTTP 403", no retry hint.
+      notRegistered: (email) =>
+        `Skill certification is only for registered Shakers Talents; we couldn't find ${email} as a Talent.`,
+      // 413: project too large (issue 014) — actionable, not the generic connection error.
+      errorTooLarge:
+        'The project is too large to certify at once. Reduce the scope '
+        + '(fewer files or Skills) and try again.',
       // Interactive Skill selection (certify phase, issue 005).
       selectHeading: 'Select the Skills you want to certify:',
       selectHint: 'Arrows ↑/↓ to move · space to toggle · a = all · enter to confirm · esc to cancel',

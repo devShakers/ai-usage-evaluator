@@ -33,6 +33,7 @@ const {
   requestResolve,
   buildCertifyRequest,
   requestCertify,
+  classifyCertifyFailure,
 } = require('../src/certify-client');
 const { formatResolveReport } = require('../src/certify-render');
 const { buildSkillSamples } = require('../src/skill-sampler');
@@ -92,7 +93,7 @@ async function resolveEmail({ opts, catalog, ask, stdinIsTTY }) {
   return null;
 }
 
-// Maps a requestResolve failure reason to an actionable, localized message.
+// Maps a TECHNICAL failure reason to an actionable, localized message.
 function resolveErrorMessage(reason, catalog) {
   const c = catalog.certify;
   if (reason === 'no-endpoint') return c.errorNoEndpoint;
@@ -100,6 +101,33 @@ function resolveErrorMessage(reason, catalog) {
   if (reason === 'timeout') return c.errorTimeout;
   if (typeof reason === 'string' && reason.startsWith('http-')) return c.errorHttp(reason.slice('http-'.length));
   return c.errorInvalidResponse; // invalid-json | invalid-shape
+}
+
+// Reports a resolve/certify failure with the RIGHT UX per status (issue 014):
+// 403 = expected gate outcome (calm, clean exit, no retry/error styling);
+// 413 = actionable "too large"; everything else = real technical error.
+// Shared by both the resolve and certify phases.
+function reportCertifyFailure(reason, catalog, email) {
+  const c = catalog.certify;
+  const kind = classifyCertifyFailure(reason);
+
+  if (kind === 'gate') {
+    // Not a technical error: informative message on stdout, no "unexpected
+    // status", no "HTTP 403", no retry hint, no error styling. Exit code stays
+    // 0 — this is a valid, expected outcome (the email simply isn't a
+    // registered Talent), not a crash.
+    process.stdout.write(`\n  ${c.notRegistered(email)}\n\n`);
+    return;
+  }
+  if (kind === 'too-large') {
+    process.stderr.write(`\n  ${c.errorTooLarge}\n\n`);
+    process.exitCode = 1;
+    return;
+  }
+  // technical: network/timeout/invalid/5xx/other non-2xx — generic error + retry.
+  process.stderr.write(`\n  ${c.errorIntro} ${resolveErrorMessage(reason, catalog)}\n`);
+  process.stderr.write(`  ${c.errorRetryHint}\n\n`);
+  process.exitCode = 1;
 }
 
 // Persists the analyzed certification result if consent is granted. Never
@@ -172,9 +200,7 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
     // stderr line on non-TTY.
     const outcome = await withSpinner(c.certifyingLabel, () => requestCertify(requestBody, { endpoint }));
     if (!outcome.ok) {
-      process.stderr.write(`\n  ${c.errorIntro} ${resolveErrorMessage(outcome.reason, catalog)}\n`);
-      process.stderr.write(`  ${c.errorRetryHint}\n\n`);
-      process.exitCode = 1;
+      reportCertifyFailure(outcome.reason, catalog, email);
       return;
     }
     results = outcome.result.results;
@@ -278,9 +304,7 @@ async function main() {
     const requestBody = buildResolveRequest(email, technologies);
     const outcome = await requestResolve(requestBody, { endpoint });
     if (!outcome.ok) {
-      process.stderr.write(`\n  ${catalog.certify.errorIntro} ${resolveErrorMessage(outcome.reason, catalog)}\n`);
-      process.stderr.write(`  ${catalog.certify.errorRetryHint}\n\n`);
-      process.exitCode = 1;
+      reportCertifyFailure(outcome.reason, catalog, email);
       return;
     }
 
