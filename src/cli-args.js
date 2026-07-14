@@ -12,7 +12,13 @@
  * `--enroll` pattern — they act immediately and do NOT scan:
  *   --consent-status          view the current decision/email/last send
  *   --consent-revoke          revoke consent (-> denied), no more sends
+ *   --consent-reset           clear the decision (-> null), asks again next run
  *   --consent-email <correo>  change the persisted email, decision untouched
+ *
+ * skill-code-certification / ADR-003: `--consent-reset` is distinct from
+ * `--consent-revoke`. Revoke sets `denied` (a real "no", which also silences
+ * the prompt); reset clears the decision back to "no decision yet" so the
+ * consent question is asked again on the next run.
  *
  * talents-ai-score, issue 021: `--build-next-level` is an OPTIONAL,
  * explicitly-invoked phase (never runs during a normal scan) that writes
@@ -39,6 +45,7 @@ function parseArgs(argv) {
     help: false,
     consentStatus: false,
     consentRevoke: false,
+    consentReset: false,
     consentEmail: null,
     buildNextLevel: false,
     force: false,
@@ -52,6 +59,7 @@ function parseArgs(argv) {
     else if (a === '--root') opts.root = argv[++i];
     else if (a === '--consent-status') opts.consentStatus = true;
     else if (a === '--consent-revoke') opts.consentRevoke = true;
+    else if (a === '--consent-reset') opts.consentReset = true;
     else if (a === '--consent-email') opts.consentEmail = argv[++i];
     else if (a.startsWith('--consent-email=')) opts.consentEmail = a.slice('--consent-email='.length);
     else if (a === '--build-next-level') opts.buildNextLevel = true;

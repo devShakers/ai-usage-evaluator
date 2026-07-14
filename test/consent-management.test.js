@@ -12,8 +12,10 @@ const {
   loadConsentState,
   getConsentStatus,
   revokeConsent,
+  resetConsent,
   setEmail,
   autoShare,
+  getConsentDecision,
 } = require('../src/share');
 
 /*
@@ -53,6 +55,31 @@ function serverUrl(server) {
   const { port } = server.address();
   return `http://127.0.0.1:${port}/reports`;
 }
+
+// --- skill-code-certification / ADR-003: resetConsent -----------------------
+
+test('resetConsent: clears the decision to null (asks again), distinct from revoke (denied), keeps the email', () => {
+  recordConsent('granted', 'talent@example.com');
+  assert.equal(getConsentDecision(loadConsentState()), 'granted');
+
+  resetConsent();
+  const state = loadConsentState();
+  assert.equal(getConsentDecision(state), null, 'decision cleared to "no decision yet"');
+  assert.equal(state.email, 'talent@example.com', 'email retained across reset');
+});
+
+test('resetConsent vs revokeConsent: reset -> null (re-ask), revoke -> denied (stays no)', () => {
+  recordConsent('granted', 'a@b.com');
+  revokeConsent();
+  assert.equal(getConsentDecision(loadConsentState()), 'denied');
+  resetConsent();
+  assert.equal(getConsentDecision(loadConsentState()), null);
+});
+
+test('resetConsent: idempotent and safe with no prior state', () => {
+  assert.doesNotThrow(() => resetConsent());
+  assert.equal(getConsentDecision(loadConsentState()), null);
+});
 function echoServer() {
   return startServer((req, res) => {
     let raw = '';

@@ -205,6 +205,20 @@ function revokeConsent() {
   return { ok: true, state };
 }
 
+// Resets the consent decision back to "no decision yet" (skill-code-
+// certification / ADR-003): clears `consent` so `getConsentDecision` returns
+// null and the one-time prompt is asked AGAIN on the next run. Distinct from
+// `revokeConsent` (which persists `denied`, a real "no" that also silences the
+// prompt). Keeps the stored email (a re-grant doesn't require retyping it),
+// same courtesy as revoke. Idempotent.
+function resetConsent() {
+  const state = loadConsentState() || {};
+  delete state.consent;
+  if (state.lastSentAt === undefined) state.lastSentAt = null;
+  saveConsentState(state);
+  return { ok: true, state };
+}
+
 // Changes the persisted email WITHOUT touching the consent decision
 // (specs.md: "sin tocar la decisión de consentimiento"). Works whether or
 // not a decision exists yet; the next successful send (if consent is
@@ -560,6 +574,7 @@ module.exports = {
   recordConsent,
   getConsentStatus,
   revokeConsent,
+  resetConsent,
   setEmail,
   isValidEmail,
   normalizeEmail,

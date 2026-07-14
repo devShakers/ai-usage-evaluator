@@ -15,6 +15,7 @@ const {
   autoShare,
   getConsentStatus,
   revokeConsent,
+  resetConsent,
   setEmail,
   consentPath,
 } = require('../src/share');
@@ -39,30 +40,9 @@ function openInBrowser(file) {
   execFile(cmd, args, () => {});
 }
 
-function help() {
-  return `
-AI Footprint — perfil local de uso de herramientas de IA
-
-Uso:
-  ai-footprint [opciones]
-
-Opciones:
-  -w, --html            Genera y abre el dashboard HTML en el navegador
-      --json            Imprime el informe en JSON por stdout
-      --no-save         No guarda nada en disco (solo muestra)
-      --root DIR        Escanea DIR en vez del directorio actual
-      --build-next-level  Alternativa secundaria: genera el starter determinista del siguiente tier (ver el prompt copiable del roadmap para la vía principal)
-      --force           Junto a --build-next-level, sobrescribe un fichero ya existente
-      --lang es|en      Fuerza el idioma del informe (y del prompt de implementación), en vez de detectarlo del sistema
-  -h, --help            Muestra esta ayuda
-
-El informe se genera y se muestra SIEMPRE en tu equipo, sin condición. La
-primera vez que ejecutas la herramienta, DESPUÉS de mostrarte el informe, se
-te pregunta si quieres GUARDARLO en Shakers (con tu correo); puedes aceptar
-o rechazar, y solo se te pregunta una vez. Gestiona esa decisión con:
---consent-status, --consent-revoke, --consent-email <correo>.
-`;
-}
+// Help text is now localized (skill-code-certification / ADR-003): it lives in
+// the i18n `cli.help` catalog and is resolved via the machine locale (or
+// --lang), replacing the previously hardcoded Spanish block.
 
 // One-shot consent management commands (issue 007). Mirror the retired
 // `--enroll` pattern: they act immediately and do NOT scan.
@@ -83,6 +63,14 @@ function doConsentStatus(catalog) {
 function doConsentRevoke(catalog) {
   revokeConsent();
   process.stdout.write(`\n  ${catalog.consent.revoked}\n\n`);
+}
+
+// skill-code-certification / ADR-003: clears the decision back to "no decision
+// yet" so the consent question is asked again next run — distinct from revoke
+// (which persists `denied`).
+function doConsentReset(catalog) {
+  resetConsent();
+  process.stdout.write(`\n  ${catalog.consent.reset}\n\n`);
 }
 
 function doConsentEmail(newEmail, catalog) {
@@ -198,25 +186,30 @@ async function maybePersonalizeRoadmap(report, maturity, lang) {
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
-  if (opts.help) {
-    process.stdout.write(help());
-    return;
-  }
 
-  // talents-ai-score (implementation-prompt item): `--lang` overrides the
-  // auto-detected report language — the whole report, the copyable
-  // implementation prompt included, so there's ONE language axis, not a
-  // second independent choice just for the prompt.
+  // Resolve language FIRST (skill-code-certification / ADR-003) so even --help
+  // is localized to the machine locale (or --lang) — no hardcoded Spanish.
+  // `--lang` overrides the auto-detected language for the whole report and the
+  // copyable implementation prompt too (one language axis).
   const lang = opts.lang || detectReportLang();
   const catalog = getCatalog(lang);
 
-  // Consent management commands: one-shot, don't scan (issue 007).
+  if (opts.help) {
+    process.stdout.write(catalog.cli.help);
+    return;
+  }
+
+  // Consent management commands: one-shot, don't scan (issue 007 / ADR-003).
   if (opts.consentStatus) {
     doConsentStatus(catalog);
     return;
   }
   if (opts.consentRevoke) {
     doConsentRevoke(catalog);
+    return;
+  }
+  if (opts.consentReset) {
+    doConsentReset(catalog);
     return;
   }
   if (opts.consentEmail) {
@@ -288,6 +281,36 @@ async function main() {
     return;
   }
 
+  // Consent-to-PERSIST, asked BEFORE the report is printed (skill-code-
+  // certification / ADR-003 — revises ADR-011's "after the report" order). The
+  // legal/consent text (catalog.consent.persistIntro) + the yes/no + (on yes)
+  // the email prompt all show FIRST; the report is STILL always printed
+  // afterwards, accept or decline — this is NOT a wall. Asked once (until
+  // --consent-reset); a persisted decision (granted/denied) skips it, with
+  // computeConsentSkip explaining why. Not reached under --json (stdout must
+  // stay one parseable document). The ephemeral synthesis egress (ADR-010)
+  // already ran above and is intentionally NOT gated here — consent governs
+  // persistence only (ADR-003 open flag).
+  const state = loadConsentState();
+  const decision = getConsentDecision(state);
+  const consentSkip = computeConsentSkip({
+    decision,
+    stdinIsTTY: !!process.stdin.isTTY,
+    consentFilePath: consentPath(),
+    catalog,
+  });
+  if (consentSkip.message) {
+    process.stdout.write(`\n  ${consentSkip.message}\n`);
+  }
+  if (!consentSkip.skip) {
+    const ask = createStdinAsk();
+    try {
+      await runConsentPrompt({ ask, catalog });
+    } finally {
+      ask.close();
+    }
+  }
+
   process.stdout.write(renderTerminal(report, maturity, lang) + '\n');
 
   const html = renderHtml(report, maturity, lang);
@@ -310,40 +333,6 @@ async function main() {
   // explicitly requested — never part of a normal run otherwise.
   if (opts.buildNextLevel) {
     doBuildNextLevel(root, maturity, opts.force, catalog);
-  }
-
-  // Consent-to-PERSIST prompt: shown ONCE, AFTER the report is already on
-  // screen, only if there's no decision persisted yet (talents-ai-score,
-  // ADR-011 — revises ADR-007/issue 006's pre-scan disclosure wall). Once a
-  // decision exists (granted or denied), a normal run never interrupts with
-  // this again.
-  //
-  // DX (talents-ai-score): a talent reported never seeing this prompt with
-  // no explanation why. computeConsentSkip (src/consent-skip.js) makes
-  // every reason explicit instead of silent — see its header for the full
-  // enumeration of conditions (already-persisted decision, by far the most
-  // likely real-world cause; non-interactive stdin, still attempted, not
-  // skipped outright, since a piped answer is legitimate and stays
-  // supported). `--no-save` was checked and confirmed to have NO bearing
-  // on this block at all.
-  const state = loadConsentState();
-  const decision = getConsentDecision(state);
-  const consentSkip = computeConsentSkip({
-    decision,
-    stdinIsTTY: !!process.stdin.isTTY,
-    consentFilePath: consentPath(),
-    catalog,
-  });
-  if (consentSkip.message) {
-    process.stdout.write(`\n  ${consentSkip.message}\n`);
-  }
-  if (!consentSkip.skip) {
-    const ask = createStdinAsk();
-    try {
-      await runConsentPrompt({ ask, catalog });
-    } finally {
-      ask.close();
-    }
   }
 
   // Automatic sending, always at the end and after seeing the local report.

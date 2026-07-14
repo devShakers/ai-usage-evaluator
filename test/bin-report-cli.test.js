@@ -56,20 +56,45 @@ test.afterEach(() => {
   fs.rmSync(tmpProjectDir, { recursive: true, force: true });
 });
 
-test('bin/report.js: shows the local report BEFORE asking about persisting, with no decision persisted yet', async () => {
+test('bin/report.js: asks about persisting BEFORE the report, and the report is STILL shown after (ADR-003)', async () => {
   const { code, stdout } = await runCli({
     args: ['--no-save', '--root', tmpProjectDir],
     stdin: 'n\n',
     env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
   });
   assert.equal(code, 0);
-  assert.match(stdout, /AI FOOTPRINT/); // the report banner
+  assert.match(stdout, /AI FOOTPRINT/); // the report banner is still present
   assert.match(stdout, /Level \d|Nivel \d/); // the maturity level line
 
   const reportIdx = stdout.search(/AI FOOTPRINT/);
   const consentIdx = stdout.search(/Save this report in Shakers\?|Guardar este informe en Shakers\?/);
-  assert.ok(reportIdx !== -1 && consentIdx !== -1, 'expected both the report and the consent question in the output');
-  assert.ok(reportIdx < consentIdx, 'the report must be shown BEFORE the consent-to-persist question');
+  assert.ok(reportIdx !== -1 && consentIdx !== -1, 'expected both the consent question and the report in the output');
+  assert.ok(consentIdx < reportIdx, 'ADR-003: the consent question must come BEFORE the report');
+});
+
+test('bin/report.js: the legal/consent disclosure text appears in the CLI (not just the README), before the report', async () => {
+  const { stdout } = await runCli({
+    args: ['--no-save', '--root', tmpProjectDir],
+    stdin: 'n\n',
+    env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
+  });
+  // persistIntro mentions revocability + what is/ isn't saved (es or en).
+  assert.match(stdout, /revocable|revocable en cualquier momento|never the content of your files|nunca el contenido de tus ficheros/);
+  const disclosureIdx = stdout.search(/Shakers/);
+  const reportIdx = stdout.search(/AI FOOTPRINT/);
+  assert.ok(disclosureIdx !== -1 && disclosureIdx < reportIdx, 'disclosure text precedes the report');
+});
+
+test('bin/report.js: declining does NOT prompt for an email (email only on accept)', async () => {
+  const { stdout } = await runCli({
+    args: ['--no-save', '--root', tmpProjectDir],
+    stdin: 'n\n',
+    env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
+  });
+  assert.equal(/Enter your email:|Introduce tu correo:/.test(stdout), false, 'no email prompt on decline');
+  const state = JSON.parse(fs.readFileSync(path.join(tmpConfigDir, 'consent.json'), 'utf8'));
+  assert.equal(state.consent, 'denied');
+  assert.equal(state.email, undefined);
 });
 
 test('bin/report.js: declining persistence still shows the full report (denial only affects persistence, never display)', async () => {
@@ -144,6 +169,49 @@ test('bin/report.js: a second run prints WHY the prompt was skipped (decision al
   assert.match(second.stdout, /consent\.json/);
   assert.match(second.stdout, /--consent-status/);
   assert.match(second.stdout, /--consent-revoke/);
+  assert.match(second.stdout, /--consent-reset/); // ADR-003: how to be asked again
+});
+
+// --- ADR-003: --consent-reset, and localized help ---------------------------
+
+test('bin/report.js: --consent-reset clears the decision to null, so the next run asks again', async () => {
+  // First run: decline -> denied.
+  await runCli({ args: ['--no-save', '--root', tmpProjectDir], stdin: 'n\n', env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir } });
+  let state = JSON.parse(fs.readFileSync(path.join(tmpConfigDir, 'consent.json'), 'utf8'));
+  assert.equal(state.consent, 'denied');
+
+  // Reset (one-shot, does not scan).
+  const reset = await runCli({ args: ['--consent-reset'], env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir } });
+  assert.equal(reset.code, 0);
+  assert.match(reset.stdout, /reset|reiniciad/i);
+  state = JSON.parse(fs.readFileSync(path.join(tmpConfigDir, 'consent.json'), 'utf8'));
+  assert.equal(state.consent === undefined || state.consent === null, true, 'decision cleared to "no decision"');
+
+  // Next run asks again (distinct from --consent-revoke which would stay denied).
+  const again = await runCli({ args: ['--no-save', '--root', tmpProjectDir], stdin: 'n\n', env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir } });
+  assert.match(again.stdout, /Save this report in Shakers\?|Guardar este informe en Shakers\?/);
+});
+
+test('bin/report.js: --consent-reset is distinct from --consent-revoke (revoke stays denied, silent next run)', async () => {
+  await runCli({ args: ['--no-save', '--root', tmpProjectDir], stdin: 'y\ntalent@example.com\n', env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir } });
+  await runCli({ args: ['--consent-revoke'], env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir } });
+  const state = JSON.parse(fs.readFileSync(path.join(tmpConfigDir, 'consent.json'), 'utf8'));
+  assert.equal(state.consent, 'denied');
+  assert.equal(state.email, 'talent@example.com'); // revoke keeps the email
+  const next = await runCli({ args: ['--no-save', '--root', tmpProjectDir], stdin: '', env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir } });
+  assert.equal(/Save this report in Shakers\?|Guardar este informe en Shakers\?/.test(next.stdout), false);
+});
+
+test('bin/report.js: --help is localized (English under an English locale, Spanish under --lang es), never hardcoded Spanish', async () => {
+  const en = await runCli({ args: ['--help', '--lang', 'en'], env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir } });
+  assert.equal(en.code, 0);
+  assert.match(en.stdout, /Usage:/);
+  assert.match(en.stdout, /--consent-reset/);
+  assert.equal(en.stdout.includes('Uso:'), false, 'no Spanish "Uso:" under English');
+
+  const es = await runCli({ args: ['--help', '--lang', 'es'], env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir } });
+  assert.match(es.stdout, /Uso:/);
+  assert.match(es.stdout, /--consent-reset/);
 });
 
 test('bin/report.js: --no-save has NO effect on whether the consent prompt is asked (confirmed, not a skip condition)', async () => {
