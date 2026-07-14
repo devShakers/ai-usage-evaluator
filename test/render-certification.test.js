@@ -62,7 +62,7 @@ test('terminal: not-sampleable and not-certified states', () => {
   assert.match(out, /could not be certified in this run/);
 });
 
-test('HTML: self-contained, zero-network (no http/src/link/script tags), escapes content', () => {
+test('HTML: self-contained, zero-network (no external URLs), escapes content, inline copy script only', () => {
   const html = renderCertificationHtml({
     items: [{
       skillId: 1, skillName: 'React <x>', technology: 'React',
@@ -72,10 +72,54 @@ test('HTML: self-contained, zero-network (no http/src/link/script tags), escapes
   }, 'en');
   assert.match(html, /^<!DOCTYPE html>/);
   assert.equal(/https?:\/\//.test(html), false, 'no external URLs');
-  assert.equal(/<script/.test(html.replace(/&lt;script/g, '')), false, 'no live script tags (content escaped)');
+  assert.equal(/\bsrc=/.test(html), false, 'no external script/img src');
+  assert.equal(/<link/.test(html), false, 'no external stylesheet link');
+  // Injected content is escaped, never a live tag.
+  assert.equal(html.includes('<script>alert(1)</script>'), false, 'dangerous content must be escaped');
+  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.match(html, /React &lt;x&gt;/);
   assert.match(html, /a &amp; b/);
   assert.match(html, /Score: 90\/100/);
+  // Issue 011: a remediation prompt exists (improvements present) -> copy
+  // button + one inline, zero-network copy script.
+  assert.match(html, /data-copy-target="rem-0"/);
+  assert.match(html, /<button[^>]*class="copy-btn"/);
+  assert.equal((html.match(/<script>/g) || []).length, 1, 'exactly one inline copy script');
+});
+
+test('011: HTML has NO copy script when there are no improvements (nothing to remediate)', () => {
+  const html = renderCertificationHtml({
+    items: [{
+      skillId: 1, skillName: 'React', technology: 'React',
+      sampling: { sampleable: true, includedCount: 1, candidateCount: 1, estTokens: 10, truncated: false, capReason: null },
+      result: { score: 50, rationale: 'ok', improvements: [] },
+    }],
+  }, 'en');
+  assert.equal(/<script>/.test(html), false, 'no script when no remediation prompt');
+});
+
+test('011: terminal + HTML render the remediation prompt from improvements', () => {
+  const cert = {
+    items: [{
+      skillId: 1, skillName: 'React', technology: 'React',
+      sampling: { sampleable: true, includedCount: 2, candidateCount: 3, estTokens: 500, truncated: false, capReason: null },
+      result: { score: 60, rationale: 'decent', improvements: ['Add tests', 'Type props'] },
+    }],
+  };
+  const term = renderCertificationTerminal(cert, 'en');
+  assert.match(term, /Prompt to apply the improvements/);
+  assert.match(term, /A code review flagged these improvements/);
+  assert.match(term, /1\. Add tests/);
+  const html = renderCertificationHtml(cert, 'en');
+  assert.match(html, /Prompt to apply the improvements/);
+  assert.match(html, /<pre id="rem-0">/);
+});
+
+test('012: terminal + HTML show the cost note', () => {
+  const cert = { items: [] };
+  assert.match(renderCertificationTerminal(cert, 'en'), /Cost note:/);
+  assert.match(renderCertificationHtml(cert, 'en'), /Cost note:/);
+  assert.match(renderCertificationTerminal(cert, 'es'), /Nota de coste:/);
 });
 
 test('HTML: partial warning + Spanish rendering', () => {
