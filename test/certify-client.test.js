@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('http');
 
-const { buildResolveRequest, requestResolve, normalizeResolveResponse } = require('../src/certify-client');
+const { buildResolveRequest, requestResolve, normalizeResolveResponse, classifyCertifyFailure } = require('../src/certify-client');
 
 /*
  * skill-code-certification, issue 004: the RESOLVE client. Unlike
@@ -52,6 +52,16 @@ test('normalizeResolveResponse: rebuilds fields, defaults nonCertifiable to []',
 test('normalizeResolveResponse: missing certifiable[] -> null (invalid shape)', () => {
   assert.equal(normalizeResolveResponse({ nope: true }), null);
   assert.equal(normalizeResolveResponse(null), null);
+});
+
+// --- classifyCertifyFailure (issue 014) --------------------------------------
+
+test('classifyCertifyFailure: 403 -> gate, 413 -> too-large, everything else -> technical', () => {
+  assert.equal(classifyCertifyFailure('http-403'), 'gate');
+  assert.equal(classifyCertifyFailure('http-413'), 'too-large');
+  for (const r of ['http-500', 'http-502', 'http-429', 'http-400', 'network-error', 'timeout', 'invalid-json', 'invalid-shape', 'no-endpoint']) {
+    assert.equal(classifyCertifyFailure(r), 'technical', `${r} should be technical`);
+  }
 });
 
 // --- requestResolve: happy path + every failure mode -------------------------

@@ -217,10 +217,33 @@ async function requestCertify(requestBody, { endpoint, timeoutMs = DEFAULT_CERTI
   return { ok: true, result: normalized };
 }
 
+/*
+ * Classifies a resolve/certify failure reason (from requestResolve /
+ * requestCertify) into a UX category, so the CLI shows the RIGHT message
+ * instead of collapsing every non-2xx into the generic connection error
+ * (skill-code-certification, issue 014):
+ *   - 'gate'      -> HTTP 403: the email isn't a registered ACTIVE Talent.
+ *                   An EXPECTED outcome of the gate, NOT a technical error —
+ *                   calm/informative message, clean exit, no retry hint.
+ *   - 'too-large' -> HTTP 413: the sampled payload is too big. A specific,
+ *                   actionable message (reduce scope), not "check your
+ *                   connection".
+ *   - 'technical' -> everything else (no-endpoint, network-error, timeout,
+ *                   invalid-json/shape, 5xx and any other non-2xx): a real
+ *                   error, generic retry hint is appropriate.
+ * Pure/deterministic — unit-testable without the network.
+ */
+function classifyCertifyFailure(reason) {
+  if (reason === 'http-403') return 'gate';
+  if (reason === 'http-413') return 'too-large';
+  return 'technical';
+}
+
 module.exports = {
   buildResolveRequest,
   requestResolve,
   normalizeResolveResponse,
+  classifyCertifyFailure,
   buildCertifyRequest,
   requestCertify,
   normalizeCertifyResponse,
