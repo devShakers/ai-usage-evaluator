@@ -56,6 +56,13 @@ test('parseArgs: --consent-revoke', () => {
   assert.equal(parseArgs([]).consentRevoke, false);
 });
 
+test('parseArgs: --consent-reset (ADR-003, distinct from revoke)', () => {
+  assert.equal(parseArgs(['--consent-reset']).consentReset, true);
+  assert.equal(parseArgs([]).consentReset, false);
+  // independent flags
+  assert.equal(parseArgs(['--consent-reset']).consentRevoke, false);
+});
+
 test('parseArgs: --consent-email (space and = forms)', () => {
   assert.equal(parseArgs(['--consent-email', 'a@b.com']).consentEmail, 'a@b.com');
   assert.equal(parseArgs(['--consent-email=a@b.com']).consentEmail, 'a@b.com');

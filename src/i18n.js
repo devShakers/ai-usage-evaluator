@@ -258,6 +258,28 @@ const catalogs = {
       // opt-in alternative — the copyable implementation prompt (below) is
       // the PRIMARY "how do I implement this" path.
       buildNextLevelHint: 'Alternativamente, ejecuta `ai-footprint --build-next-level` para generar el fichero de partida directamente en tu proyecto.',
+      // Ayuda localizada (skill-code-certification / ADR-003): antes estaba
+      // hardcodeada en español en bin/report.js; ahora pasa por i18n y respeta
+      // la locale de la máquina.
+      help:
+        '\nAI Footprint — perfil local de uso de herramientas de IA\n\n'
+        + 'Uso:\n  ai-footprint [opciones]\n\n'
+        + 'Opciones:\n'
+        + '  -w, --html             Genera y abre el dashboard HTML en el navegador\n'
+        + '      --json             Imprime el informe en JSON por stdout\n'
+        + '      --no-save          No guarda nada en disco (solo muestra)\n'
+        + '      --root DIR         Escanea DIR en vez del directorio actual\n'
+        + '      --build-next-level Genera el starter del siguiente tier (alternativa secundaria)\n'
+        + '      --force            Junto a --build-next-level, sobrescribe un fichero existente\n'
+        + '      --lang es|en       Fuerza el idioma (informe + prompt) en vez de detectarlo del sistema\n'
+        + '      --consent-status   Muestra tu decisión de guardado / correo / último envío\n'
+        + '      --consent-revoke   Revoca el guardado (→ denegado); deja de enviar\n'
+        + '      --consent-reset    Borra la decisión (→ sin decidir); vuelve a preguntar\n'
+        + '      --consent-email C  Cambia el correo guardado, sin tocar la decisión\n'
+        + '  -h, --help             Muestra esta ayuda\n\n'
+        + 'El informe se genera y se muestra SIEMPRE en tu equipo. Antes de mostrarlo, la\n'
+        + 'primera vez se te pregunta si quieres GUARDARLO en Shakers (con tu correo);\n'
+        + 'se pregunta una sola vez. Reabre la pregunta con --consent-reset.\n',
     },
     // "Construir el siguiente nivel ahora" (talents-ai-score, issue 021):
     // optional, explicit phase — writes the deterministic starter for the
@@ -307,7 +329,7 @@ const catalogs = {
       // testable in src/consent-skip.js.
       skipAlreadyDecided: (decision, path) =>
         `Consentimiento ya respondido (${decision === 'granted' ? 'concedido' : 'rechazado'}) — guardado en ${path}. `
-        + 'Usa --consent-status para verlo o --consent-revoke para cambiarlo.',
+        + 'Usa --consent-status para verlo, --consent-revoke para rechazar o --consent-reset para volver a preguntar.',
       nonInteractiveWarning:
         'Entrada no interactiva (no-TTY) detectada: si no llega ninguna respuesta por stdin, '
         + 'el consentimiento no se guardará esta vez y se te volverá a preguntar la próxima vez.',
@@ -320,6 +342,7 @@ const catalogs = {
         lastSentAt: (value) => `Último guardado: ${value || '(nunca)'}`,
       },
       revoked: 'Consentimiento revocado. No se guardará nada más automáticamente.',
+      reset: 'Decisión de consentimiento reiniciada. Se te preguntará de nuevo en la próxima ejecución.',
       emailChanged: (email) => `Correo actualizado a ${email}. Se usará en el próximo guardado.`,
       emailInvalidCli: 'Correo no válido. Uso: ai-footprint --consent-email tu@correo.com',
     },
@@ -608,6 +631,28 @@ const catalogs = {
       synthesizingLabel: 'Synthesizing agents with AI…',
       personalizingRoadmapLabel: 'Personalizing roadmap…',
       buildNextLevelHint: 'Alternatively, run `ai-footprint --build-next-level` to generate the starter file directly in your project.',
+      // Localized help (skill-code-certification / ADR-003): previously
+      // hardcoded Spanish in bin/report.js; now routed through i18n so it
+      // respects the machine locale.
+      help:
+        '\nAI Footprint — local profile of your AI-tool usage\n\n'
+        + 'Usage:\n  ai-footprint [options]\n\n'
+        + 'Options:\n'
+        + '  -w, --html             Generate and open the HTML dashboard in the browser\n'
+        + '      --json             Print the report as JSON on stdout\n'
+        + '      --no-save          Write nothing to disk (show only)\n'
+        + '      --root DIR         Scan DIR instead of the current directory\n'
+        + '      --build-next-level Generate the next tier starter (secondary alternative)\n'
+        + '      --force            With --build-next-level, overwrite an existing file\n'
+        + '      --lang es|en       Force the language (report + prompt) instead of OS detection\n'
+        + '      --consent-status   Show your save decision / email / last send\n'
+        + '      --consent-revoke   Revoke saving (→ denied); stops sending\n'
+        + '      --consent-reset    Clear the decision (→ undecided); asks again\n'
+        + '      --consent-email C  Change the stored email, decision untouched\n'
+        + '  -h, --help             Show this help\n\n'
+        + 'The report is ALWAYS generated and shown on your machine. Before showing it,\n'
+        + 'the first time you are asked whether to SAVE it in Shakers (with your email);\n'
+        + 'you are asked only once. Reopen the question with --consent-reset.\n',
     },
     buildNextLevel: {
       heading: (tierKey) => `Generating the starter to reach ${tierKey}...`,
@@ -645,7 +690,7 @@ const catalogs = {
       grantedSaved: (email) => `Thanks. From now on this report will be saved in Shakers automatically (email: ${email}, max. once per hour).`,
       skipAlreadyDecided: (decision, path) =>
         `Consent already answered (${decision}) — stored at ${path}. `
-        + 'Use --consent-status to view it or --consent-revoke to change it.',
+        + 'Use --consent-status to view it, --consent-revoke to deny, or --consent-reset to be asked again.',
       nonInteractiveWarning:
         'Non-interactive input (no TTY) detected: if no answer arrives via stdin, consent will not be '
         + 'saved this run and you will be asked again next time.',
@@ -658,6 +703,7 @@ const catalogs = {
         lastSentAt: (value) => `Last saved: ${value || '(never)'}`,
       },
       revoked: 'Consent revoked. Nothing will be saved automatically anymore.',
+      reset: 'Consent decision reset. You will be asked again on the next run.',
       emailChanged: (email) => `Email updated to ${email}. It will be used on the next save.`,
       emailInvalidCli: 'Invalid email. Usage: ai-footprint --consent-email you@example.com',
     },
