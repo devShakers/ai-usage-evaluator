@@ -1,4 +1,4 @@
-# AI Footprint ESTO ES UN TEEEEST
+# AI Footprint
 
 Command-line tool that builds, **locally**, a deterministic profile of a
 developer's AI tool setup: which copilots/agents they have configured, how
