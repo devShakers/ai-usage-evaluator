@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { buildSkillSamples, listCandidateFiles, estTokensFor } = require('../src/skill-sampler');
+const { buildSkillSamples, listCandidateFiles, estTokensFor, PER_SKILL_TOKEN_CAP, RUN_TOKEN_BUDGET } = require('../src/skill-sampler');
 const { extensionsForTechnology } = require('../src/tech-extensions');
 
 /*
@@ -30,6 +30,11 @@ function write(rel, content) {
   fs.mkdirSync(path.dirname(abs), { recursive: true });
   fs.writeFileSync(abs, content);
 }
+
+test('012: default caps raised for sonnet-5 1M context (~150k/Skill, ~500k/run)', () => {
+  assert.equal(PER_SKILL_TOKEN_CAP, 150000);
+  assert.equal(RUN_TOKEN_BUDGET, 500000);
+});
 
 test('estTokensFor: ceil(bytes/4)', () => {
   assert.equal(estTokensFor(400), 100);

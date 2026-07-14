@@ -397,6 +397,7 @@ const catalogs = {
       errorRetryHint: 'No se ha certificado nada. Revisa tu conexión e inténtalo de nuevo más tarde.',
       // Interactive Skill selection (certify phase, issue 005).
       selectHeading: 'Selecciona las Skills que quieres certificar:',
+      selectHint: 'Flechas ↑/↓ para moverte · espacio para marcar/desmarcar · a = todas · enter para confirmar · esc para cancelar',
       selectPrompt: 'Introduce los números separados por comas (o "todas"):',
       selectInvalid: 'Selección no válida. Introduce números de la lista (o "todas").',
       selectNonInteractive: 'Entrada no interactiva sin --skills/--all: no se pueden seleccionar Skills. Se cancela (no se ha enviado código).',
@@ -426,6 +427,21 @@ const catalogs = {
           `No hay muestreo definido para la tecnología "${technology}": todavía no se puede certificar por código.`,
         htmlTitle: 'Certificación de Skills · Shakers',
         noItems: 'No hay resultados de certificación que mostrar.',
+        // Coste (issue 012): input mayor = más € por run.
+        costNote:
+          'Nota de coste: se analiza más código por Skill (hasta ~150k tokens/Skill, ~500k/run), '
+          + 'lo que aumenta el coste por ejecución.',
+        // Prompt de remediación (issue 011): generado en local desde las mejoras.
+        remediationHeading: 'Prompt para aplicar las mejoras',
+        remediationHint: 'Copia este prompt y pégalo en tu herramienta de IA (Claude Code, Cursor…) para aplicar las mejoras.',
+        remediationIntro: (skillName, technology) =>
+          `Ayúdame a mejorar mi código de ${skillName}${technology ? ` (${technology})` : ''} en este proyecto. `
+          + 'Una revisión de código señaló estas mejoras:',
+        remediationClosing:
+          'Aplícalas directamente en mi proyecto: crea o edita lo necesario, sigue las convenciones que ya uso '
+          + 'y explícame brevemente qué has cambiado y por qué.',
+        remediationCopyLabel: 'Copiar',
+        remediationCopiedLabel: 'Copiado ✓',
       },
     },
   },
@@ -715,6 +731,7 @@ const catalogs = {
       errorRetryHint: 'Nothing was certified. Check your connection and try again later.',
       // Interactive Skill selection (certify phase, issue 005).
       selectHeading: 'Select the Skills you want to certify:',
+      selectHint: 'Arrows ↑/↓ to move · space to toggle · a = all · enter to confirm · esc to cancel',
       selectPrompt: 'Enter the numbers separated by commas (or "all"):',
       selectInvalid: 'Invalid selection. Enter numbers from the list (or "all").',
       selectNonInteractive: 'Non-interactive input without --skills/--all: cannot select Skills. Aborting (no code was sent).',
@@ -743,6 +760,19 @@ const catalogs = {
           `No sampling is defined for the technology "${technology}": it can't be code-certified yet.`,
         htmlTitle: 'Skill Certification · Shakers',
         noItems: 'No certification results to show.',
+        costNote:
+          'Cost note: more code is analyzed per Skill (up to ~150k tokens/Skill, ~500k/run), '
+          + 'which increases the cost per run.',
+        remediationHeading: 'Prompt to apply the improvements',
+        remediationHint: 'Copy this prompt and paste it into your AI tool (Claude Code, Cursor…) to apply the improvements.',
+        remediationIntro: (skillName, technology) =>
+          `Help me improve my ${skillName}${technology ? ` (${technology})` : ''} code in this project. `
+          + 'A code review flagged these improvements:',
+        remediationClosing:
+          'Apply them directly in my project: create or edit whatever is needed, follow the conventions I already use, '
+          + 'and briefly explain what you changed and why.',
+        remediationCopyLabel: 'Copy',
+        remediationCopiedLabel: 'Copied ✓',
       },
     },
   },

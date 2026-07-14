@@ -48,8 +48,8 @@ const {
 } = require('../src/share');
 const { runConsentPrompt } = require('../src/consent-flow');
 const { createStdinAsk } = require('../src/stdin-ask');
-
-const MAX_SELECT_ATTEMPTS = 5;
+const { withSpinner } = require('../src/terminal-progress');
+const { runInteractiveMultiSelect } = require('../src/interactive-select');
 
 function openInBrowser(file) {
   const cmd =
@@ -102,21 +102,6 @@ function resolveErrorMessage(reason, catalog) {
   return c.errorInvalidResponse; // invalid-json | invalid-shape
 }
 
-// Interactive multi-select of certifiable Skills by 1-based index (or "all").
-// Returns the selected subset, or null if no valid selection was obtained.
-async function interactiveSelectSkills({ certifiable, catalog, ask }) {
-  const c = catalog.certify;
-  process.stdout.write(`\n  ${c.selectHeading}\n`);
-  certifiable.forEach((s, idx) => process.stdout.write(`${c.selectOption(idx + 1, s.skillName, s.technology)}\n`));
-  for (let attempt = 0; attempt < MAX_SELECT_ATTEMPTS; attempt++) {
-    const raw = String(await ask(c.selectPrompt)).trim();
-    const parsed = parseSkillSelection(raw, certifiable);
-    if (parsed.ok) return parsed.selected;
-    process.stdout.write(`  ${c.selectInvalid}\n`);
-  }
-  return null;
-}
-
 // Persists the analyzed certification result if consent is granted. Never
 // throws — must not break the local report (ADR-011).
 async function maybeShareCertification(items) {
@@ -153,11 +138,21 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
     process.exitCode = 1;
     return;
   } else {
-    selected = await interactiveSelectSkills({ certifiable, catalog, ask });
-    if (!selected) {
+    // Dynamic multi-select (issue 011): arrows + space + enter. Uses raw
+    // stdin, so release the line-based readline first (recreated later for the
+    // consent prompt) to avoid two handlers fighting over the TTY.
+    ask.close();
+    const picked = await runInteractiveMultiSelect({
+      items: certifiable,
+      labelFor: (s) => `${s.skillName}${s.technology ? ` (${s.technology})` : ''}`,
+      header: c.selectHeading,
+      hint: c.selectHint,
+    });
+    if (!picked || picked.length === 0) {
       process.stdout.write(`\n  ${c.selectNoneChosen}\n\n`);
       return;
     }
+    selected = picked;
   }
   if (selected.length === 0) {
     process.stdout.write(`\n  ${c.selectNoneChosen}\n\n`);
@@ -172,7 +167,10 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
   let results = [];
   if (sendable.length > 0) {
     const requestBody = buildCertifyRequest(email, sendable);
-    const outcome = await requestCertify(requestBody, { endpoint });
+    // Spinner while sonnet-5 runs (issue 011): the call takes ~15-25s — make
+    // it clear the CLI is working, not hung. withSpinner degrades to a single
+    // stderr line on non-TTY.
+    const outcome = await withSpinner(c.certifyingLabel, () => requestCertify(requestBody, { endpoint }));
     if (!outcome.ok) {
       process.stderr.write(`\n  ${c.errorIntro} ${resolveErrorMessage(outcome.reason, catalog)}\n`);
       process.stderr.write(`  ${c.errorRetryHint}\n\n`);
@@ -210,7 +208,15 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
   if (analyzed) {
     const decision = getConsentDecision(loadConsentState());
     if (decision === null && stdinIsTTY) {
-      await runConsentPrompt({ ask, catalog });
+      // A fresh readline: the interactive selection branch closed the original
+      // `ask` to take over raw stdin; the --all/--skills branches left it open,
+      // but a fresh instance is safe either way (closing twice is a no-op).
+      const consentAsk = createStdinAsk();
+      try {
+        await runConsentPrompt({ ask: consentAsk, catalog });
+      } finally {
+        consentAsk.close();
+      }
     }
     await maybeShareCertification(items);
   }
