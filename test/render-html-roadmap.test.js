@@ -122,10 +122,13 @@ test('renderHtml (en): the Copy button label follows the report locale', () => {
   assert.match(section, /data-copied-label="Copied ✓">Copy<\/button>/);
 });
 
-test('renderHtml: T7 (max tier) does NOT render an implementation prompt (nothing to implement)', () => {
+test('renderHtml (ADR-008): T7 (max tier) DOES render a consolidation implementation prompt (the top is never a dead end)', () => {
   const html = renderHtml(BASE_REPORT, maturityAt('T7'), 'es');
   const section = roadmapSectionOf(html);
-  assert.equal(section.includes('roadmap-prompt-code'), false);
+  assert.match(section, /<pre class="roadmap-prompt-code" id="implementation-prompt-code">/);
+  assert.match(section, /Prompt para implementar/);
+  // It's a consolidation prompt (refine what you have), not a level-up one.
+  assert.match(section, /consolidar|afinar|tier máximo/i);
 });
 
 test('renderHtml: the implementation prompt reflects detected frameworks from the report', () => {
@@ -161,9 +164,9 @@ test('renderHtml: the copy-to-clipboard script is present, inline, and reads fro
   assert.equal(/<script[^>]+src=/.test(html), false);
 });
 
-test('renderHtml: no copy-to-clipboard script/button rendered when there is no prompt (e.g. T7 max tier)', () => {
+test('renderHtml (ADR-008): T7 (max tier) now renders the copy button too (consolidation prompt is copyable)', () => {
   const html = renderHtml(BASE_REPORT, maturityAt('T7'), 'es');
   const section = roadmapSectionOf(html);
-  assert.equal(section.includes('roadmap-prompt-copy'), false);
-  assert.equal(section.includes('data-copy-target'), false);
+  assert.ok(section.includes('roadmap-prompt-copy'), 'T7 consolidation prompt has a copy button');
+  assert.ok(section.includes('data-copy-target'), 'copy button wired to the prompt element');
 });

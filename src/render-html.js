@@ -492,7 +492,7 @@ function roadmapPersonalizedNotice(personalized, t) {
     : '';
 }
 
-function roadmapTerminalHtml(entry, t) {
+function roadmapTerminalHtml(entry, t, promptText) {
   return `<div class="card roadmap-card">
     <h3 class="roadmap-title">${esc(entry.title)}</h3>
     <p class="roadmap-intro">${esc(entry.intro)}</p>
@@ -505,6 +505,7 @@ function roadmapTerminalHtml(entry, t) {
       <div class="roadmap-block-label">${esc(t.html.roadmapHonestyLabel)}</div>
       <p class="roadmap-honesty">${esc(entry.honestyNote)}</p>
     </div>
+    ${implementationPromptBlock(promptText, t)}
   </div>`;
 }
 
@@ -623,9 +624,12 @@ function roadmapSection(report, maturity, t, lang) {
   const personalization = report && report.roadmapPersonalization;
   const finalEntry = mergeRoadmapPersonalization(entry, personalization);
   const wasPersonalized = !entry.maxTier && !!personalization;
-  const promptText = finalEntry.maxTier ? null : buildImplementationPrompt(finalEntry, report, maturity, lang);
+  // skill-code-certification (ADR-008): the prompt is built for the T7 terminal
+  // entry too (a consolidation prompt) — the top of the ladder always shows a
+  // copyable prompt, never a dead end.
+  const promptText = buildImplementationPrompt(finalEntry, report, maturity, lang);
   const body = finalEntry.maxTier
-    ? roadmapTerminalHtml(finalEntry, t)
+    ? roadmapTerminalHtml(finalEntry, t, promptText)
     : roadmapJumpHtml(finalEntry, t, wasPersonalized, promptText);
   return `<section>
     <div class="h2">${esc(t.html.roadmapHeading)}</div>
@@ -700,6 +704,7 @@ const FOOTPRINT_CSS = `
     background:linear-gradient(90deg,var(--emphasis-strong),var(--emphasis));
     transition:width 1.1s cubic-bezier(.2,.7,.2,1)}
   .fill.go{}
+  .meter-scope{margin:8px 0 0;font-size:12px;color:var(--faint);line-height:1.4}
 
   /* ---- Tools section ---- */
   section{margin-bottom:24px}
@@ -1054,6 +1059,7 @@ function footprintSectionsHtml(report, maturity, lang) {
         <span class="score">${maturity.score}<span> / 100</span></span>
       </div>
       <div class="track"><div class="fill" data-target="${maturity.score}"></div></div>
+      ${t.terminal && t.terminal.scoreScopeNote ? `<p class="meter-scope">${esc(t.terminal.scoreScopeNote)}</p>` : ''}
     </div>
   </div>
 

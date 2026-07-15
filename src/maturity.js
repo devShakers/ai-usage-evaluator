@@ -123,15 +123,33 @@ function classify(report) {
       ? report.agentCounts.agents
       : 0;
 
-  const score = computeScore({
-    breadth,
-    context: d.instructions, // depthTotals already folds `config` into instructions
-    mcp: d.mcp,
-    custom: d.custom,
-    agentic: hasAgentic ? 1 : 0,
-    hooks: d.hooks,
-    multiAgent: agentCount,
-  });
+  // Score is PROJECT-SCOPED (skill-code-certification / ADR-009): it reads the
+  // scanner's `report.projectScope` (signals inside THIS project only) so that
+  // different projects get different notes and the developer's global home
+  // setup no longer dominates. `computeScore` is unchanged (ADR-008 model); only
+  // its INPUT is re-scoped. If `projectScope` is absent (an older report shape,
+  // or a hand-built test fixture pre-ADR-009), it degrades to the previous
+  // home-inflated computation so nothing throws — the scanner always sets it now.
+  const ps = report && report.projectScope;
+  const score = ps
+    ? computeScore({
+        breadth: ps.breadth,
+        context: ps.context,
+        mcp: ps.mcp,
+        custom: ps.custom,
+        agentic: ps.hasAgentic ? 1 : 0,
+        hooks: ps.hooks,
+        multiAgent: ps.agentCount,
+      })
+    : computeScore({
+        breadth,
+        context: d.instructions, // depthTotals already folds `config` into instructions
+        mcp: d.mcp,
+        custom: d.custom,
+        agentic: hasAgentic ? 1 : 0,
+        hooks: d.hooks,
+        multiAgent: agentCount,
+      });
 
   // Band 0-4 derived from the tier engine (issue 019, single source of
   // truth) — replaces the old ad-hoc level rules entirely.
