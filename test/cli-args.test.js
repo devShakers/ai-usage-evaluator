@@ -14,19 +14,25 @@ const { parseArgs } = require('../src/cli-args');
 
 test('parseArgs: defaults', () => {
   const opts = parseArgs([]);
-  assert.equal(opts.html, false);
   assert.equal(opts.json, false);
   assert.equal(opts.save, true);
   assert.equal(opts.root, null);
   assert.equal(opts.help, false);
 });
 
-test('parseArgs: --html/-w, --json, --no-save, --root', () => {
-  assert.equal(parseArgs(['--html']).html, true);
-  assert.equal(parseArgs(['-w']).html, true);
+// Reporting redesign (skill-code-certification): --html/-w is RETIRED (HTML is
+// no longer opt-in — the cumulative report is always written and linked). The
+// flag must leave no trace in the parser, not be silently accepted.
+test('parseArgs: --json, --no-save, --root', () => {
   assert.equal(parseArgs(['--json']).json, true);
   assert.equal(parseArgs(['--no-save']).save, false);
   assert.equal(parseArgs(['--root', '../other']).root, '../other');
+});
+
+test('parseArgs: retired --html/-w does NOT set any option', () => {
+  assert.equal('html' in parseArgs(['--html']), false);
+  assert.equal('html' in parseArgs(['-w']), false);
+  assert.equal(parseArgs(['-w']).root, null); // not mistaken for a value-consuming flag
 });
 
 test('parseArgs: --help/-h', () => {

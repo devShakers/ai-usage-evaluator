@@ -38,7 +38,6 @@ const VALID_LANGS = new Set(['es', 'en']);
 
 function parseArgs(argv) {
   const opts = {
-    html: false,
     json: false,
     save: true,
     root: null,
@@ -53,8 +52,7 @@ function parseArgs(argv) {
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--html' || a === '-w') opts.html = true;
-    else if (a === '--json') opts.json = true;
+    if (a === '--json') opts.json = true;
     else if (a === '--no-save') opts.save = false;
     else if (a === '--root') opts.root = argv[++i];
     else if (a === '--consent-status') opts.consentStatus = true;

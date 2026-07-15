@@ -23,8 +23,12 @@
  *                         selection).
  *   --skills 1,3          Certify the certifiable Skills at these 1-based
  *                         positions (non-interactive selection).
- *   --html                Also write + open a self-contained HTML report.
  *   -h, --help            Show help.
+ *
+ * Reporting redesign (skill-code-certification): `--html`/`-w` is RETIRED. The
+ * HTML is no longer opt-in — every certify run upserts its result into the
+ * cumulative local report (src/report-store.js) and always prints its file://
+ * link.
  *
  * Unrecognized `--lang` values degrade to null (auto-detect), never guessed —
  * same rule as cli-args.js. `--all`/`--skills` let the certify phase run
@@ -41,7 +45,6 @@ function parseCertifyArgs(argv) {
     acceptDisclaimer: false,
     all: false,
     skills: null,
-    html: false,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -58,7 +61,6 @@ function parseCertifyArgs(argv) {
     else if (a === '--all') opts.all = true;
     else if (a === '--skills') opts.skills = argv[++i];
     else if (a.startsWith('--skills=')) opts.skills = a.slice('--skills='.length);
-    else if (a === '--html' || a === '-w') opts.html = true;
     else if (a === '--help' || a === '-h') opts.help = true;
   }
   return opts;
