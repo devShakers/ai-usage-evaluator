@@ -45,9 +45,11 @@ const {
   getConsentStatus,
   loadConsentState,
   getConsentDecision,
+  consentPath,
   shareCertification,
 } = require('../src/share');
 const { runConsentPrompt } = require('../src/consent-flow');
+const { computeConsentSkip } = require('../src/consent-skip');
 const { createStdinAsk } = require('../src/stdin-ask');
 const { withSpinner } = require('../src/terminal-progress');
 const { runInteractiveMultiSelect } = require('../src/interactive-select');
@@ -141,6 +143,12 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
   if (certifiable.length === 0) return; // nothing certifiable — resolve report already shown
 
   // --- selection ---
+  // Tracks whether the interactive multi-select consumed and CLOSED the shared
+  // readline (`ask`). It does so to take over raw stdin; the --all/--skills and
+  // non-interactive branches leave `ask` open, so the consent prompt below can
+  // reuse it instead of opening a second readline on the same stdin (which
+  // would race for piped input).
+  let selectionClosedAsk = false;
   let selected;
   if (opts.all) {
     selected = certifiable.slice();
@@ -161,6 +169,7 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
     // stdin, so release the line-based readline first (recreated later for the
     // consent prompt) to avoid two handlers fighting over the TTY.
     ask.close();
+    selectionClosedAsk = true;
     const picked = await runInteractiveMultiSelect({
       items: certifiable,
       labelFor: (s) => `${s.skillName}${s.technology ? ` (${s.technology})` : ''}`,
@@ -208,34 +217,57 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
   }));
   const certification = { items, model: null };
 
+  // --- consent-to-persist (ADR-003), BEFORE the report is shown --------------
+  // Aligned with `ai-footprint` (bin/report.js): the legal/consent + email (+
+  // OTP verification when consent is granted from scratch) are asked FIRST, and
+  // only when there is NO persisted decision yet. If consent was already
+  // granted/denied, we do NOT ask again (persist happens directly for a granted
+  // decision). The report is STILL always shown afterwards, consent or not
+  // (ADR-003) — this is not a wall.
+  const analyzed = items.some((i) => i.result);
+  if (analyzed) {
+    const decision = getConsentDecision(loadConsentState());
+    // Same skip logic as bin/report.js: an already-persisted decision
+    // (granted/denied) is NOT re-asked; a non-TTY run still attempts the prompt
+    // (piped answers work) but prints a heads-up first. computeConsentSkip owns
+    // that policy so both binaries behave identically.
+    const consentSkip = computeConsentSkip({
+      decision,
+      stdinIsTTY,
+      consentFilePath: consentPath(),
+      catalog,
+    });
+    if (consentSkip.message) {
+      process.stdout.write(`\n  ${consentSkip.message}\n`);
+    }
+    if (!consentSkip.skip) {
+      // Reuse the still-open shared readline unless the interactive selection
+      // closed it (then open a fresh one just for the consent prompt).
+      const consentAsk = selectionClosedAsk ? createStdinAsk() : ask;
+      try {
+        await runConsentPrompt({ ask: consentAsk, catalog });
+      } finally {
+        if (selectionClosedAsk) consentAsk.close();
+      }
+    }
+  }
+
+  // --- report (always shown, ADR-003) ----------------------------------------
   process.stdout.write('\n' + renderCertificationTerminal(certification, lang) + '\n\n');
 
-  // Cumulative local report (skill-code-certification, reporting redesign):
-  // upsert each certified Skill (keyed by Skill id) into the shared report.html
-  // and ALWAYS print its file:// link. HTML is no longer opt-in behind --html.
-  // Writing the local report must never break the run.
+  // Local report (skill-code-certification, reporting redesign): upsert each
+  // certified Skill into THIS PROJECT's scoped report (keyed by Skill id within
+  // the project `root`) and ALWAYS print its file:// link. HTML is no longer
+  // opt-in behind --html. Writing the local report must never break the run.
   try {
-    const paths = upsertCertification({ items, lang });
+    const paths = upsertCertification({ root, items, lang });
     process.stdout.write(`  ${c.reportLink(paths.fileUrl)}\n\n`);
   } catch {
     // Never break the local run over a failed report write.
   }
 
-  // --- consent (ADR-011): report already shown; persist only if granted ---
-  const analyzed = items.some((i) => i.result);
+  // --- persist (only if consent is granted) ----------------------------------
   if (analyzed) {
-    const decision = getConsentDecision(loadConsentState());
-    if (decision === null && stdinIsTTY) {
-      // A fresh readline: the interactive selection branch closed the original
-      // `ask` to take over raw stdin; the --all/--skills branches left it open,
-      // but a fresh instance is safe either way (closing twice is a no-op).
-      const consentAsk = createStdinAsk();
-      try {
-        await runConsentPrompt({ ask: consentAsk, catalog });
-      } finally {
-        consentAsk.close();
-      }
-    }
     await maybeShareCertification(items);
   }
 }

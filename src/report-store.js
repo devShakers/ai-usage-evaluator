@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -11,34 +12,42 @@ const { footprintSectionsHtml, FOOTPRINT_CSS, FOOTPRINT_SCRIPT } = require('./re
 const { certificationSectionsHtml, CERTIFICATION_CSS } = require('./render-certification');
 
 /*
- * Cumulative report store (skill-code-certification, reporting redesign).
+ * Per-project local report store (skill-code-certification, reporting redesign
+ * v2 — REVISES the earlier "single global document that stacks footprint + all
+ * certifications" model, which was wrong).
  *
- * ONE persistent local report that fills in over time: every `ai-footprint`
- * run and every `ai-certify` run UPSERTS its own section into a shared state
- * file, and the HTML is REGENERATED WHOLE from that state each run (never
- * spliced, never partially overwritten). This is deliberately state-driven:
- * re-rendering the full document from a structured source of truth is far more
- * robust than string-editing an existing HTML file in place.
+ * The report is SCOPED TO A PROJECT, keyed by the ABSOLUTE path of the scanned
+ * project. Each project gets its OWN report file (`report-<hash>.html`) and its
+ * own slice of state — different projects never mix into one document.
  *
- * Identity (upsert keys), per the confirmed design decision:
- *   - Footprint  -> the ABSOLUTE path of the scanned project. Re-scanning the
- *     same repo UPDATES its card; scanning a different repo ADDS a new one.
- *   - Certification -> the Skill id (fallback: `name::technology`). Re-certifying
- *     the same Skill UPDATES its entry in place.
+ * Within a project:
+ *   - The FOOTPRINT section is rendered ONLY if that project has footprint data.
+ *   - The CERTIFICATION section is rendered ONLY if that project has at least
+ *     one certified Skill.
+ *   - Both sections appear together ONLY when both `ai-footprint` and
+ *     `ai-certify` have run for the SAME project.
  *
- * Location: the user's config dir `~/.config/ai-footprint/` (same base as
- * consent.json — one place, shared by both binaries, and cross-project, which
- * is exactly what a cumulative report needs). Overridable via
- * AI_FOOTPRINT_CONFIG_DIR (test isolation), the same override share.js uses.
- * Nothing is written into the scanned project (that would leak the setup into
- * a commit and clutter the repo — the original store.js rationale, preserved).
+ * Upsert semantics (never stack, never duplicate):
+ *   - Footprint      -> one per project; re-scanning REPLACES it in place.
+ *   - Certification  -> keyed by Skill id WITHIN the project; re-certifying the
+ *     same Skill REPLACES its entry, a different Skill adds one. Certifications
+ *     belong to the project they were produced in — not a global skillId bucket.
+ *
+ * The HTML is REGENERATED WHOLE from `report-state.json` each run (never
+ * spliced): re-rendering the full document from a structured source of truth is
+ * far more robust than string-editing an existing file.
+ *
+ * Location: `~/.config/ai-footprint/` (same base as consent.json — one place,
+ * shared by both binaries), overridable via AI_FOOTPRINT_CONFIG_DIR (the same
+ * override share.js uses) for test isolation. Nothing is ever written into the
+ * scanned project itself.
  *
  * Files written:
- *   - report-state.json  (structured source of truth; lang-independent data)
- *   - report.html        (regenerated from the state, in the CURRENT run's lang)
+ *   - report-state.json         (structured source of truth; lang-independent)
+ *   - report-<projectHash>.html (one per project, in the CURRENT run's lang)
  */
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 function configDir() {
   return process.env.AI_FOOTPRINT_CONFIG_DIR || path.join(os.homedir(), '.config', 'ai-footprint');
@@ -46,8 +55,16 @@ function configDir() {
 function statePath() {
   return path.join(configDir(), 'report-state.json');
 }
-function htmlPath() {
-  return path.join(configDir(), 'report.html');
+
+// Stable, filesystem-safe per-project file name derived from the absolute path.
+// A hash (not the raw path) keeps the name short, collision-resistant and free
+// of path separators / spaces, while staying deterministic so re-running in the
+// same project overwrites THAT project's file (never a second one).
+function projectSlug(absRoot) {
+  return crypto.createHash('sha1').update(String(absRoot)).digest('hex').slice(0, 12);
+}
+function htmlPathFor(absRoot) {
+  return path.join(configDir(), `report-${projectSlug(path.resolve(absRoot))}.html`);
 }
 
 // A real file:// URL (handles spaces, Windows drive letters, etc.) so the CLI
@@ -57,21 +74,44 @@ function fileUrl(p) {
 }
 
 function freshState() {
-  return { schemaVersion: SCHEMA_VERSION, updatedAt: null, footprints: {}, certifications: {} };
+  return { schemaVersion: SCHEMA_VERSION, updatedAt: null, projects: {} };
+}
+
+// v1 -> v2 migration: the old global model kept `footprints{path->…}` (already
+// path-keyed, so they map cleanly onto projects) and a GLOBAL `certifications`
+// bucket with no project attribution. Footprints are carried over; the orphaned
+// global certifications are dropped (they cannot be re-attributed to a project,
+// and the model that produced them was the one being corrected).
+function migrateFromV1(parsed) {
+  const projects = {};
+  const legacyFootprints = parsed && parsed.footprints && typeof parsed.footprints === 'object'
+    ? parsed.footprints
+    : {};
+  for (const [absRoot, fp] of Object.entries(legacyFootprints)) {
+    projects[absRoot] = {
+      root: (fp && fp.root) || absRoot,
+      updatedAt: (fp && fp.generatedAt) || null,
+      footprint: fp
+        ? { generatedAt: fp.generatedAt || null, report: fp.report, maturity: fp.maturity }
+        : null,
+      certifications: {},
+    };
+  }
+  return { schemaVersion: SCHEMA_VERSION, updatedAt: (parsed && parsed.updatedAt) || null, projects };
 }
 
 function loadState() {
+  let parsed;
   try {
-    const parsed = JSON.parse(fs.readFileSync(statePath(), 'utf8'));
-    return {
-      schemaVersion: SCHEMA_VERSION,
-      updatedAt: parsed.updatedAt || null,
-      footprints: parsed.footprints && typeof parsed.footprints === 'object' ? parsed.footprints : {},
-      certifications: parsed.certifications && typeof parsed.certifications === 'object' ? parsed.certifications : {},
-    };
+    parsed = JSON.parse(fs.readFileSync(statePath(), 'utf8'));
   } catch {
     return freshState();
   }
+  if (parsed && parsed.schemaVersion === SCHEMA_VERSION && parsed.projects && typeof parsed.projects === 'object') {
+    return { schemaVersion: SCHEMA_VERSION, updatedAt: parsed.updatedAt || null, projects: parsed.projects };
+  }
+  // Any older / unknown shape (v1 global model, or garbage) -> migrate what we can.
+  return migrateFromV1(parsed);
 }
 
 function saveState(state) {
@@ -79,7 +119,14 @@ function saveState(state) {
   fs.writeFileSync(statePath(), JSON.stringify(state, null, 2));
 }
 
-/* ---------- rendering the cumulative document ---------- */
+function getOrCreateProject(state, absRoot) {
+  if (!state.projects[absRoot]) {
+    state.projects[absRoot] = { root: absRoot, updatedAt: null, footprint: null, certifications: {} };
+  }
+  return state.projects[absRoot];
+}
+
+/* ---------- rendering a SINGLE project's document ---------- */
 
 function esc(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (ch) => ({
@@ -94,57 +141,54 @@ function sortedByGeneratedAtDesc(entries) {
 }
 
 const CUMULATIVE_CSS = `
-  .project-block{margin:0 0 28px}
-  .project-block:last-child{margin-bottom:0}
-  .block-meta{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;margin:0 0 12px 2px}
+  .block-meta{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;margin:0 0 18px 2px}
   .block-meta .path{font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--fg);
     word-break:break-all}
   .block-meta .when{font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
-  .section-empty{padding:16px 18px;color:var(--faint);font-size:13px}
+  section{margin:0 0 28px}
+  section:last-of-type{margin-bottom:0}
   .section-title{font-size:20px;font-weight:700;letter-spacing:-.01em;color:var(--fg);
     margin:0 0 14px;padding-bottom:8px;border-bottom:2px solid var(--secondary)}
 `;
 
-function renderCumulativeHtml(state, lang) {
+// Renders ONE project's report. Footprint and certification sections are each
+// included ONLY when the project actually has that kind of data — a cert-only
+// run shows no footprint section, a footprint-only run shows no certification
+// section, and both appear only when both ran for this same project.
+function renderProjectHtml(project, lang) {
   const t = getCatalog(lang);
   const c = t.cumulative;
 
-  const footprintEntries = sortedByGeneratedAtDesc(Object.values(state.footprints || {}));
-  const footprintBlocks = footprintEntries.length
-    ? footprintEntries.map((e) => {
-      const when = e.generatedAt ? new Date(e.generatedAt).toLocaleString() : '';
-      return `<div class="project-block">
-    <div class="block-meta">
-      <span class="path">${esc(e.root || c.unknownProject)}</span>
-      ${when ? `<span class="when">${esc(c.updatedLabel(when))}</span>` : ''}
-    </div>
-    ${footprintSectionsHtml(e.report, e.maturity, lang)}
-  </div>`;
-    }).join('\n')
-    : `<div class="card section-empty">${esc(c.footprintEmpty)}</div>`;
+  const sections = [];
 
-  const certEntries = sortedByGeneratedAtDesc(Object.values(state.certifications || {}));
-  const certBody = certEntries.length
-    ? certificationSectionsHtml({ items: certEntries.map((e) => e.item) }, lang)
-    : `<div class="card section-empty">${esc(c.certificationEmpty)}</div>`;
+  if (project && project.footprint && project.footprint.report) {
+    sections.push(`<section>
+    <h2 class="section-title">${esc(c.footprintHeading)}</h2>
+    ${footprintSectionsHtml(project.footprint.report, project.footprint.maturity, lang)}
+  </section>`);
+  }
 
-  const updatedWhen = state.updatedAt ? new Date(state.updatedAt).toLocaleString() : '';
+  const certItems = sortedByGeneratedAtDesc(Object.values((project && project.certifications) || {})).map((e) => e.item);
+  if (certItems.length) {
+    sections.push(`<section>
+    <h2 class="section-title">${esc(c.certificationHeading)}</h2>
+    ${certificationSectionsHtml({ items: certItems }, lang)}
+  </section>`);
+  }
+
+  const updatedWhen = project && project.updatedAt ? new Date(project.updatedAt).toLocaleString() : '';
 
   const body = `<header>
     <span class="badge"><span class="spark"></span>SHAKERS</span>
     <h1>${esc(c.title)}</h1>
     <p class="sub">${esc(c.subtitle)}</p>
+    <div class="block-meta">
+      <span class="path">${esc((project && project.root) || c.unknownProject)}</span>
+      ${updatedWhen ? `<span class="when">${esc(c.updatedLabel(updatedWhen))}</span>` : ''}
+    </div>
   </header>
 
-  <section>
-    <h2 class="section-title">${esc(c.footprintHeading)}</h2>
-    ${footprintBlocks}
-  </section>
-
-  <section>
-    <h2 class="section-title">${esc(c.certificationHeading)}</h2>
-    ${certBody}
-  </section>
+  ${sections.join('\n')}
 
   <footer>
     <div class="priv">
@@ -163,35 +207,40 @@ function renderCumulativeHtml(state, lang) {
   });
 }
 
-/* ---------- upserts (each writes state + regenerates the HTML) ---------- */
+/* ---------- upserts (each writes state + regenerates THIS project's HTML) ---------- */
 
-function writeAll(state, lang) {
+function writeProject(state, absRoot, lang) {
   state.schemaVersion = SCHEMA_VERSION;
-  state.updatedAt = new Date().toISOString();
+  const now = new Date().toISOString();
+  state.updatedAt = now;
+  const project = state.projects[absRoot];
+  project.updatedAt = now;
   saveState(state);
-  const html = renderCumulativeHtml(state, lang);
+
+  const html = renderProjectHtml(project, lang);
   fs.mkdirSync(configDir(), { recursive: true });
-  fs.writeFileSync(htmlPath(), html);
-  const p = htmlPath();
+  const p = htmlPathFor(absRoot);
+  fs.writeFileSync(p, html);
   return { statePath: statePath(), htmlPath: p, fileUrl: fileUrl(p), stateDir: configDir() };
 }
 
-// Upsert THIS project's footprint (keyed by absolute project path).
+// Upsert THIS project's footprint (keyed by absolute project path). Replaces the
+// project's single footprint in place; never touches other projects' reports.
 function upsertFootprint({ root, report, maturity, lang }) {
   const absRoot = path.resolve(root || process.cwd());
   const state = loadState();
-  state.footprints[absRoot] = {
-    root: absRoot,
+  const project = getOrCreateProject(state, absRoot);
+  project.footprint = {
     generatedAt: (report && report.generatedAt) || new Date().toISOString(),
     report,
     maturity,
   };
-  return writeAll(state, lang);
+  return writeProject(state, absRoot, lang);
 }
 
-// Stable upsert key for a certified Skill: its id when present, else a
-// name::technology composite (never index-based — indices aren't stable across
-// runs, which would defeat the "update in place" requirement).
+// Stable upsert key for a certified Skill WITHIN its project: its id when
+// present, else a name::technology composite (never index-based — indices
+// aren't stable across runs, which would defeat the "update in place" rule).
 function certKey(item) {
   if (item && item.skillId != null) return `id:${item.skillId}`;
   const name = (item && item.skillName) || '';
@@ -199,27 +248,31 @@ function certKey(item) {
   return `nt:${name}::${tech}`;
 }
 
-// Upsert each certified Skill from this run (keyed by Skill id). `items` is the
-// certify phase's assembled list ({skillId, skillName, technology, sampling,
-// result}). Only items that carry a Skill identity are stored.
-function upsertCertification({ items, lang }) {
+// Upsert each certified Skill from this run into THIS PROJECT's report (keyed by
+// Skill id within the project). Certifications are scoped to the project they
+// were produced in — scanning/certifying another project keeps a separate
+// report. Only items that carry a Skill identity are stored.
+function upsertCertification({ root, items, lang }) {
+  const absRoot = path.resolve(root || process.cwd());
   const list = Array.isArray(items) ? items.filter((i) => i && (i.skillId != null || i.skillName)) : [];
   const state = loadState();
+  const project = getOrCreateProject(state, absRoot);
   const now = new Date().toISOString();
   for (const item of list) {
-    state.certifications[certKey(item)] = { generatedAt: now, item };
+    project.certifications[certKey(item)] = { generatedAt: now, item };
   }
-  return writeAll(state, lang);
+  return writeProject(state, absRoot, lang);
 }
 
 module.exports = {
   configDir,
   statePath,
-  htmlPath,
+  htmlPathFor,
+  projectSlug,
   fileUrl,
   loadState,
   saveState,
-  renderCumulativeHtml,
+  renderProjectHtml,
   upsertFootprint,
   upsertCertification,
   certKey,
