@@ -153,32 +153,27 @@ function mcpSection(report, t) {
  */
 function toolProjectUsageSection(report, t) {
   const usage = Array.isArray(report.toolProjectUsage) ? report.toolProjectUsage : [];
-  if (!usage.length) return '';
-  const anyContent = usage.some((u) => u.available || (u.projects && u.projects.length));
-  if (!anyContent) return '';
+  // Show ONLY tools that actually have projects (user request, ADR-011 follow-up):
+  // drop `available:false` tools AND `available:true` ones with an empty list.
+  // If nothing survives the filter, the whole section is omitted.
+  const withProjects = usage.filter((u) => Array.isArray(u.projects) && u.projects.length > 0);
+  if (!withProjects.length) return '';
 
-  const cards = usage
+  const cards = withProjects
     .map((u) => {
       const sourceLabel =
         u.sourceKey && t.html.toolUsageSource && t.html.toolUsageSource[u.sourceKey]
           ? ` <span class="tu-source">· ${esc(t.html.toolUsageSource[u.sourceKey])}</span>`
           : '';
-      let body;
-      if (!u.available) {
-        body = `<div class="tu-note">${esc(t.html.toolUsageUnavailable)}</div>`;
-      } else if (!u.projects.length) {
-        body = `<div class="tu-note">${esc(t.html.toolUsageNoProjects)}</div>`;
-      } else {
-        const items = u.projects
-          .map(
-            (p) =>
-              `<li${p.approximate ? ' class="approx"' : ''}><code>${esc(p.path)}</code>${
-                p.approximate ? ` <span class="tu-approx">(${esc(t.html.toolUsageApproxNote)})</span>` : ''
-              }</li>`,
-          )
-          .join('');
-        body = `<div class="tu-count">${esc(t.html.toolUsageCount(u.projects.length))}</div><ul class="tu-projects">${items}</ul>`;
-      }
+      const items = u.projects
+        .map(
+          (p) =>
+            `<li${p.approximate ? ' class="approx"' : ''}><code>${esc(p.path)}</code>${
+              p.approximate ? ` <span class="tu-approx">(${esc(t.html.toolUsageApproxNote)})</span>` : ''
+            }</li>`,
+        )
+        .join('');
+      const body = `<div class="tu-count">${esc(t.html.toolUsageCount(u.projects.length))}</div><ul class="tu-projects">${items}</ul>`;
       return `<div class="card tu-card">
       <div class="tu-tool">${esc(u.toolName)}${sourceLabel}</div>
       ${body}

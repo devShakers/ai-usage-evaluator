@@ -125,28 +125,24 @@ function printAgents(report, t, p) {
  */
 function printToolProjectUsage(report, t, p) {
   const usage = Array.isArray(report.toolProjectUsage) ? report.toolProjectUsage : [];
-  if (!usage.length) return;
-  const anyContent = usage.some((u) => u.available || (u.projects && u.projects.length));
-  if (!anyContent) return;
+  // Show ONLY tools that actually have projects (user request, ADR-011 follow-up):
+  // drop `available:false` tools AND `available:true` ones with an empty list.
+  // If nothing survives the filter, the section is omitted entirely.
+  const withProjects = usage.filter((u) => Array.isArray(u.projects) && u.projects.length > 0);
+  if (!withProjects.length) return;
 
   p(`  ${c.bold}${t.html.toolUsageHeading}${c.reset}`);
   p(`  ${c.gray}${t.html.toolUsageIntro}${c.reset}`);
-  for (const u of usage) {
+  for (const u of withProjects) {
     const sourceLabel =
       u.sourceKey && t.html.toolUsageSource && t.html.toolUsageSource[u.sourceKey]
         ? ` ${c.gray}· ${t.html.toolUsageSource[u.sourceKey]}${c.reset}`
         : '';
     p(`  ${c.green}●${c.reset} ${c.white}${u.toolName}${c.reset}${sourceLabel}`);
-    if (!u.available) {
-      p(`    ${c.dim}${t.html.toolUsageUnavailable}${c.reset}`);
-    } else if (!u.projects.length) {
-      p(`    ${c.dim}${t.html.toolUsageNoProjects}${c.reset}`);
-    } else {
-      p(`    ${c.dim}${t.html.toolUsageCount(u.projects.length)}${c.reset}`);
-      for (const proj of u.projects) {
-        const approx = proj.approximate ? ` ${c.dim}(${t.html.toolUsageApproxNote})${c.reset}` : '';
-        p(`      ${c.gray}${proj.path}${c.reset}${approx}`);
-      }
+    p(`    ${c.dim}${t.html.toolUsageCount(u.projects.length)}${c.reset}`);
+    for (const proj of u.projects) {
+      const approx = proj.approximate ? ` ${c.dim}(${t.html.toolUsageApproxNote})${c.reset}` : '';
+      p(`      ${c.gray}${proj.path}${c.reset}${approx}`);
     }
   }
   p();
