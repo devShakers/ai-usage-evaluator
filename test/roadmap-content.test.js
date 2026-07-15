@@ -47,6 +47,21 @@ test('getRoadmapEntry: T7 returns the terminal ("nivel máximo") shape, not a ju
   assert.equal('steps' in entry, false);
 });
 
+// ADR-008 (skill-code-certification): T7 must NOT be a dead end. The top
+// setups keep receiving actionable, curated improvement steps (continuous
+// refinement — optimize hooks/agents, contribute skills, maintain, measure),
+// not an empty terminal roadmap.
+test('getRoadmapEntry (ADR-008): T7 carries several actionable improvement steps (not a dead end), es and en at parity', () => {
+  const es = getRoadmapEntry('T7', 'es');
+  const en = getRoadmapEntry('T7', 'en');
+  assert.ok(es.consolidationSteps.length >= 4, `T7/es should offer >= 4 steps, got ${es.consolidationSteps.length}`);
+  assert.equal(en.consolidationSteps.length, es.consolidationSteps.length, 'T7 step count must match across languages');
+  // Genuine English (never Spanish prose under an English request).
+  for (const step of en.consolidationSteps) {
+    assert.equal(/[áéíóúñ¿¡]/i.test(step), false, `English T7 step contains Spanish characters: ${step}`);
+  }
+});
+
 test('getRoadmapEntry: unrecognized tier key -> null, never throws', () => {
   assert.equal(getRoadmapEntry('T99'), null);
   assert.doesNotThrow(() => getRoadmapEntry(undefined));
