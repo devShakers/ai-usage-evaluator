@@ -290,11 +290,9 @@ const catalogs = {
     // project + certification per Skill). Copy for its chrome/headings.
     cumulative: {
       title: 'Tu informe de Shakers',
-      subtitle: 'Tu footprint de IA y la certificación de tus Skills, en un solo lugar.',
+      subtitle: 'Tu informe de IA para este proyecto.',
       footprintHeading: 'AI Footprint',
       certificationHeading: 'Certificación de Skills',
-      footprintEmpty: 'Aún no has ejecutado ningún análisis de footprint. Ejecuta `ai-footprint` para empezar.',
-      certificationEmpty: 'Aún no has certificado ninguna Skill. Ejecuta `ai-certify` para empezar.',
       privacyNote: 'Este informe se genera y se guarda solo en tu equipo. Nada se envía a Shakers salvo que des tu consentimiento explícito.',
       updatedLabel: (when) => `Actualizado: ${when}`,
       unknownProject: '(proyecto desconocido)',
@@ -703,11 +701,9 @@ const catalogs = {
     // English mirror. Same content/invariants as the Spanish catalog.
     cumulative: {
       title: 'Your Shakers report',
-      subtitle: 'Your AI footprint and your Skill certifications, all in one place.',
+      subtitle: 'Your AI report for this project.',
       footprintHeading: 'AI Footprint',
       certificationHeading: 'Skill certification',
-      footprintEmpty: 'You haven’t run any footprint analysis yet. Run `ai-footprint` to get started.',
-      certificationEmpty: 'You haven’t certified any Skill yet. Run `ai-certify` to get started.',
       privacyNote: 'This report is generated and stored only on your machine. Nothing is sent to Shakers unless you give explicit consent.',
       updatedLabel: (when) => `Updated: ${when}`,
       unknownProject: '(unknown project)',
