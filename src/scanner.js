@@ -6,7 +6,8 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { detectors } = require('./detectors');
-const { parseAgentOrgChart } = require('./agent-org-chart');
+const { parseAgentOrgChart, countProjectAgents } = require('./agent-org-chart');
+const { AGENTIC_IDS } = require('./tier-engine');
 const { detectTechnologies, detectRawDependencyNames } = require('./tech-detector');
 const { detectMcpServers } = require('./mcp-detector');
 const { analyzeMemoryStructure } = require('./memory-structure-detector');
@@ -310,6 +311,88 @@ const probes = {
   }),
 };
 
+/* ---------- PROJECT-SCOPED depth probes (skill-code-certification / ADR-009) ----
+ * The maturity SCORE must reflect the AI setup of THE CURRENT PROJECT, so that
+ * different projects get different notes and the developer's global home setup
+ * (`~/.claude`, etc.) stops dominating it (ADR-009). These probes are the
+ * home-free twins of `probes` above: same paths, but reading ONLY under `root`,
+ * never `os.homedir()`. Signals that live exclusively in home (e.g. windsurf /
+ * gemini-cli MCP config) are intentionally absent here — they aren't part of
+ * the project's setup. The TIER (tier-engine.js) keeps its project ∪ home scope
+ * (ADR-014) unchanged; only the score is re-scoped. Deterministic: same project
+ * tree always yields the same counts (no home, no clock, no randomness).
+ */
+const projectProbes = {
+  'claude-code': (root) => ({
+    mcpServers: countJsonKeys(path.join(root, '.mcp.json'), 'mcpServers'),
+    skills: countDirEntries(path.join(root, '.claude', 'skills')),
+    commands: countFiles(path.join(root, '.claude', 'commands'), '.md'),
+    instructions: exists(path.join(root, 'CLAUDE.md')) ? 1 : 0,
+    hooks: countJsonKeys(path.join(root, '.claude', 'settings.json'), 'hooks'),
+  }),
+  cursor: (root) => ({
+    rules:
+      countFiles(path.join(root, '.cursor', 'rules'), '.mdc') +
+      (exists(path.join(root, '.cursorrules')) ? 1 : 0),
+    mcpServers: countJsonKeys(path.join(root, '.cursor', 'mcp.json'), 'mcpServers'),
+  }),
+  'github-copilot': (root) => ({
+    instructions: exists(path.join(root, '.github', 'copilot-instructions.md')) ? 1 : 0,
+  }),
+  windsurf: (root) => ({
+    rules:
+      (exists(path.join(root, '.windsurfrules')) ? 1 : 0) +
+      countFiles(path.join(root, '.windsurf', 'rules'), '.md'),
+    // mcpServers is home-only (`~/.codeium/...`) → excluded from project scope.
+  }),
+  aider: (root) => ({
+    config: exists(path.join(root, '.aider.conf.yml')) ? 1 : 0,
+  }),
+  continue: (root) => ({
+    config: exists(path.join(root, '.continue')) ? 1 : 0,
+  }),
+  'gemini-cli': (root) => ({
+    instructions: exists(path.join(root, 'GEMINI.md')) ? 1 : 0,
+    // mcpServers is home-only (`~/.gemini/settings.json`) → excluded here.
+  }),
+  'codex-cli': (root) => ({
+    instructions: exists(path.join(root, 'AGENTS.md')) ? 1 : 0,
+  }),
+  trae: (root) => ({
+    rules: countFiles(path.join(root, '.trae', 'rules')),
+  }),
+};
+
+// Aggregates the 7 project-scoped score dimensions (skill-code-certification /
+// ADR-009), matching maturity.js's own dimension semantics exactly:
+//   - context = instructions + config (NOT rules)
+//   - custom  = skills + commands + rules
+//   - breadth = tools with a PROJECT-path signal (a config file inside the repo);
+//     a tool detected only via a global binary or a home path is the developer's,
+//     not the project's, so it doesn't count toward breadth.
+//   - agentic = an agentic CLI that has PROJECT config (project-path signal),
+//     i.e. the project itself is wired for agentic work — not merely that the
+//     binary is installed on the machine.
+//   - multiAgent = agents defined in THIS project's `.claude/agents` only.
+function computeProjectScope(root, detectedTools) {
+  let context = 0;
+  let mcp = 0;
+  let custom = 0;
+  let hooks = 0;
+  for (const t of detectedTools) {
+    const d = projectProbes[t.id] ? projectProbes[t.id](root) : {};
+    context += (d.instructions || 0) + (d.config || 0);
+    mcp += d.mcpServers || 0;
+    custom += (d.skills || 0) + (d.commands || 0) + (d.rules || 0);
+    hooks += d.hooks || 0;
+  }
+  const hasProjectSignal = (t) => Array.isArray(t.signalTypes) && t.signalTypes.includes('projectPath');
+  const breadth = detectedTools.filter(hasProjectSignal).length;
+  const hasAgentic = detectedTools.some((t) => AGENTIC_IDS.includes(t.id) && hasProjectSignal(t));
+  const agentCount = countProjectAgents(root);
+  return { breadth, context, mcp, custom, hasAgentic, hooks, agentCount };
+}
+
 /* ---------- agent org chart counts (talents-ai-score, ADR-009) ---------- */
 /* Deterministic (no-LLM), structure+names only — see src/agent-org-chart.js. */
 /* PROJECT ∪ HOME (talents-ai-score, ADR-014, closed decision #5): this used */
@@ -475,6 +558,11 @@ function scan(options = {}) {
     // Agent org chart (ADR-009): structure + names only, never content.
     agents,
     agentCounts: agentOrgChartCounts(root, agents.length),
+    // PROJECT-SCOPED score signals (skill-code-certification / ADR-009): the
+    // maturity SCORE is computed from THESE (project-only) — never the
+    // home-inflated `tools[].depth`/`agentCounts` — so distinct projects yield
+    // distinct notes. Deterministic. The tier keeps its project ∪ home scope.
+    projectScope: computeProjectScope(root, detectedTools),
     // Project technologies (ADR-012): dependency manifest names only.
     technologies,
     // MCP servers by name/category (issue 015): never the raw config.

@@ -217,9 +217,11 @@ function printRoadmap(report, maturity, t, lang, p) {
   // talents-ai-score, "next steps -> prompt": the PRIMARY "how do I
   // implement this" path now — a deterministic, ready-to-paste prompt
   // (src/roadmap-prompt.js), shown as a clearly delimited block so it's
-  // easy to select+copy straight from the terminal. Never shown for the
-  // T7 terminal entry (nothing to implement).
-  if (!entry.maxTier) {
+  // easy to select+copy straight from the terminal. skill-code-certification
+  // (ADR-008): shown for the T7 terminal entry TOO — there it's a
+  // consolidation/refinement prompt, so the top of the ladder never shows
+  // "nothing" (consejos + prompt, always).
+  {
     const promptText = buildImplementationPrompt(entry, report, maturity, lang);
     if (promptText) {
       p();
@@ -260,6 +262,10 @@ function renderTerminal(report, maturity, lang) {
   // Level
   p(`  ${c.bold}${c.white}${t.terminal.level(maturity.level, levelName)}${c.reset}`);
   p(`  ${c.cyan}${bar(maturity.score)}${c.reset} ${c.dim}${maturity.score}/100${c.reset}`);
+  // skill-code-certification / ADR-009: clarify that the score is project-scoped
+  // (the tier/level is the global developer scope) so an identical-looking
+  // number across projects, or a low score under a high tier, reads correctly.
+  if (t.terminal.scoreScopeNote) p(`  ${c.gray}${t.terminal.scoreScopeNote}${c.reset}`);
   p();
 
   // Detected

@@ -139,15 +139,84 @@ test('reporting redesign: a full certify run writes the cumulative report.html a
       env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_CERTIFY_ENDPOINT: certifyUrl(server) },
     });
     assert.equal(code, 0);
-    assert.match(stdout, /file:\/\/\S+report\.html/);
+    assert.match(stdout, /file:\/\/\S+report-[a-f0-9]{12}\.html/);
     assert.match(stdout, /Open your report|Abre tu informe/);
-    const htmlPath = path.join(tmpConfigDir, 'report.html');
-    assert.ok(fs.existsSync(htmlPath), 'report.html written to the config dir');
-    const html = fs.readFileSync(htmlPath, 'utf8');
+    const htmlFile = fs.readdirSync(tmpConfigDir).find((f) => /^report-[a-f0-9]{12}\.html$/.test(f));
+    assert.ok(htmlFile, 'per-project report-<hash>.html written to the config dir');
+    const html = fs.readFileSync(path.join(tmpConfigDir, htmlFile), 'utf8');
     // The certification landed in the cumulative report, in the Shakers theme.
     assert.match(html, /Skill certification/);
     assert.ok(html.includes('--bg:var(--ds-white)'), 'white background');
     assert.equal(/prefers-color-scheme\s*:\s*dark/.test(html), false, 'no dark mode');
+  } finally {
+    server.close();
+  }
+});
+
+test('consent (Issue B): with NO prior decision, the persist-consent prompt is shown BEFORE the report, and the report is STILL shown after declining', async () => {
+  writeReactProject();
+  const { server } = await startStub();
+  try {
+    const { code, stdout } = await runCli({
+      // deny ('n') — no email/OTP asked; keeps the test off the network
+      args: ['--root', tmpProjectDir, '--email', 'talent@example.com', '--accept-disclaimer', '--all', '--lang', 'en'],
+      stdin: 'n\n',
+      env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_CERTIFY_ENDPOINT: certifyUrl(server) },
+    });
+    assert.equal(code, 0);
+    const consentIdx = stdout.indexOf('Save this report in Shakers?');
+    const reportIdx = stdout.indexOf('Skill certification result');
+    assert.ok(consentIdx !== -1, 'consent prompt shown');
+    assert.ok(reportIdx !== -1, 'report still shown (ADR-003)');
+    assert.ok(consentIdx < reportIdx, 'consent is asked BEFORE the report is shown (like footprint)');
+    assert.match(stdout, /nothing will be saved/); // denied ack
+  } finally {
+    server.close();
+  }
+});
+
+test('consent front-loaded (ADR-003 / 2026-07-15): with NO prior decision, consent is asked BEFORE skill resolution/selection, not after certifying', async () => {
+  writeReactProject();
+  const { server } = await startStub();
+  try {
+    const { code, stdout } = await runCli({
+      // deny ('n') up front — no email/OTP, stays off the network
+      args: ['--root', tmpProjectDir, '--email', 'talent@example.com', '--accept-disclaimer', '--all', '--lang', 'en'],
+      stdin: 'n\n',
+      env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_CERTIFY_ENDPOINT: certifyUrl(server) },
+    });
+    assert.equal(code, 0);
+    const disclaimerIdx = stdout.indexOf('LEGAL DISCLAIMER');
+    const consentIdx = stdout.indexOf('Save this report in Shakers?');
+    const resolveIdx = stdout.indexOf('Certifiable Skills for your project');
+    const reportIdx = stdout.indexOf('Skill certification result');
+    assert.ok(disclaimerIdx !== -1 && consentIdx !== -1 && resolveIdx !== -1 && reportIdx !== -1);
+    // Egress disclaimer (ADR-001) stays first; then consent; then resolution
+    // (which precedes Skill selection); then the report.
+    assert.ok(disclaimerIdx < consentIdx, 'disclaimer (egress gate) precedes consent');
+    assert.ok(consentIdx < resolveIdx, 'consent is asked BEFORE Skills are resolved/selected');
+    assert.ok(resolveIdx < reportIdx, 'the report comes last, still always shown');
+  } finally {
+    server.close();
+  }
+});
+
+test('consent (Issue B): with consent ALREADY granted, no prompt is shown and the report is shown directly', async () => {
+  writeReactProject();
+  fs.writeFileSync(
+    path.join(tmpConfigDir, 'consent.json'),
+    JSON.stringify({ consent: 'granted', email: 'talent@example.com', lastSentAt: null }),
+  );
+  const { server } = await startStub();
+  try {
+    const { code, stdout } = await runCli({
+      args: ['--root', tmpProjectDir, '--email', 'talent@example.com', '--accept-disclaimer', '--all', '--lang', 'en'],
+      stdin: '', // nothing to answer — must not block waiting for consent
+      env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_CERTIFY_ENDPOINT: certifyUrl(server) },
+    });
+    assert.equal(code, 0);
+    assert.match(stdout, /Skill certification result/, 'report shown');
+    assert.equal(stdout.includes('Save this report in Shakers?'), false, 'no consent re-prompt when already granted');
   } finally {
     server.close();
   }

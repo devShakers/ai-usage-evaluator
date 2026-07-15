@@ -136,6 +136,10 @@ const catalogs = {
       brandSub: 'perfil de uso de IA',
       toolsDetected: (n, total) => `${n}/${total} herramientas detectadas`,
       level: (level, name) => `Nivel ${level} · ${name}`,
+      // skill-code-certification / ADR-009: la NOTA mide el setup de IA de ESTE
+      // proyecto (por eso proyectos distintos dan notas distintas); el nivel/tier
+      // refleja tu setup global como desarrollador (proyecto ∪ home).
+      scoreScopeNote: 'La nota mide el setup de IA de este proyecto; el nivel refleja tu setup global.',
       detectedHeading: 'Detectadas',
       none: '(ninguna)',
       environment: 'Entorno',
@@ -290,11 +294,9 @@ const catalogs = {
     // project + certification per Skill). Copy for its chrome/headings.
     cumulative: {
       title: 'Tu informe de Shakers',
-      subtitle: 'Tu footprint de IA y la certificación de tus Skills, en un solo lugar.',
+      subtitle: 'Tu informe de IA para este proyecto.',
       footprintHeading: 'AI Footprint',
       certificationHeading: 'Certificación de Skills',
-      footprintEmpty: 'Aún no has ejecutado ningún análisis de footprint. Ejecuta `ai-footprint` para empezar.',
-      certificationEmpty: 'Aún no has certificado ninguna Skill. Ejecuta `ai-certify` para empezar.',
       privacyNote: 'Este informe se genera y se guarda solo en tu equipo. Nada se envía a Shakers salvo que des tu consentimiento explícito.',
       updatedLabel: (when) => `Actualizado: ${when}`,
       unknownProject: '(proyecto desconocido)',
@@ -329,7 +331,13 @@ const catalogs = {
         + 'estructuradas derivadas (herramientas, MCP, memoria, '
         + 'automatizaciones, agentes, tecnologías) — nunca el contenido de '
         + 'tus ficheros, prompts, rutas ni credenciales. Dato indicativo, no '
-        + 'verificado. Consulta el README de este repositorio para más detalle.',
+        + 'verificado, no una cualificación oficial. Eres responsable de la '
+        + 'información que decidas compartir; Shakers no asume responsabilidad '
+        + 'por los datos que envíes. El uso indebido de estas herramientas —enviar '
+        + 'o analizar código que no es tuyo o que no estás autorizado a analizar— '
+        + 'puede acarrear penalizaciones en tu cuenta de Shakers, incluida la '
+        + 'posible suspensión. Consulta el README de este repositorio para '
+        + 'más detalle. [Copy legal PENDIENTE DE VALIDACIÓN LEGAL/LABORAL — NO DEFINITIVO]',
       persistQuestion: '¿Guardar este informe en Shakers? (s/n):',
       invalidAnswer: 'Respuesta no reconocida. Responde "s" (sí) o "n" (no).',
       emailPrompt: 'Introduce tu correo:',
@@ -410,9 +418,14 @@ const catalogs = {
         + '  ai-certify envía datos de tu proyecto a Shakers para certificar tus Skills.\n'
         + '  En esta fase (resolve) se envían tu correo y los NOMBRES de las tecnologías\n'
         + '  detectadas; la fase de certificación posterior enviará fragmentos de código.\n'
-        + '  Al continuar declaras que el proyecto es de tu propiedad y que tienes derecho\n'
-        + '  a enviar su contenido, y asumes la responsabilidad de ello. NO uses esta\n'
-        + '  herramienta sobre código de un tercero (p. ej. un cliente bajo NDA).',
+        + '  Eres el ÚNICO responsable de asegurarte de que eres propietario del código de\n'
+        + '  este proyecto o de que estás autorizado a analizarlo. Shakers no asume ninguna\n'
+        + '  responsabilidad por el código que envíes. Enviar código que no es tuyo o que\n'
+        + '  no estás autorizado a analizar es un uso indebido de esta herramienta y puede\n'
+        + '  acarrear penalizaciones en tu cuenta de Shakers, incluida la posible suspensión.\n'
+        + '  NO uses esta herramienta sobre código de un tercero (p. ej. un cliente bajo NDA).\n'
+        + '  Las notas son indicativas y no verificadas, no una cualificación oficial.\n'
+        + '  [PENDIENTE DE VALIDACIÓN LEGAL/LABORAL — TEXTO NO DEFINITIVO]',
       disclaimerQuestion: '¿Aceptas y continúas? (s/n):',
       disclaimerAcceptedFlag: 'Aviso legal aceptado mediante --accept-disclaimer.',
       disclaimerNonInteractive:
@@ -595,6 +608,10 @@ const catalogs = {
       brandSub: 'AI usage profile',
       toolsDetected: (n, total) => `${n}/${total} tools detected`,
       level: (level, name) => `Level ${level} · ${name}`,
+      // skill-code-certification / ADR-009: the SCORE measures THIS project's AI
+      // setup (so different projects score differently); the level/tier reflects
+      // your global developer setup (project ∪ home).
+      scoreScopeNote: "The score measures this project's AI setup; the level reflects your global setup.",
       detectedHeading: 'Detected',
       none: '(none)',
       environment: 'Environment',
@@ -703,11 +720,9 @@ const catalogs = {
     // English mirror. Same content/invariants as the Spanish catalog.
     cumulative: {
       title: 'Your Shakers report',
-      subtitle: 'Your AI footprint and your Skill certifications, all in one place.',
+      subtitle: 'Your AI report for this project.',
       footprintHeading: 'AI Footprint',
       certificationHeading: 'Skill certification',
-      footprintEmpty: 'You haven’t run any footprint analysis yet. Run `ai-footprint` to get started.',
-      certificationEmpty: 'You haven’t certified any Skill yet. Run `ai-certify` to get started.',
       privacyNote: 'This report is generated and stored only on your machine. Nothing is sent to Shakers unless you give explicit consent.',
       updatedLabel: (when) => `Updated: ${when}`,
       unknownProject: '(unknown project)',
@@ -737,8 +752,14 @@ const catalogs = {
         + "time (ai-footprint --consent-revoke): it saves your level/tier and "
         + 'structured signals derived across categories (tools, MCP, memory, '
         + 'automations, agents, technologies) — never the content of your '
-        + 'files, prompts, paths or credentials. Indicative data, not '
-        + 'verified. See this repository\'s README for more detail.',
+        + 'files, prompts, paths or credentials. Indicative data, not verified, '
+        + 'not an official qualification. You are responsible for the information '
+        + 'you choose to share; Shakers assumes no liability for the data you '
+        + 'submit. Misuse of these tools —submitting or analyzing code that is not '
+        + 'yours or that you are not authorized to analyze— may result in penalties '
+        + "on your Shakers account, up to and including suspension. See this "
+        + "repository's README for more detail. "
+        + '[Legal copy PENDING LEGAL/LABOR REVIEW — NOT FINAL]',
       persistQuestion: 'Save this report in Shakers? (y/n):',
       invalidAnswer: 'Answer not recognized. Reply "y" (yes) or "n" (no).',
       emailPrompt: 'Enter your email:',
@@ -809,9 +830,14 @@ const catalogs = {
         + '  ai-certify sends data about your project to Shakers to certify your Skills.\n'
         + '  In this phase (resolve) it sends your email and the NAMES of the detected\n'
         + '  technologies; the later certification phase will send code snippets.\n'
-        + '  By continuing you declare that the project is your own and that you have the\n'
-        + '  right to send its contents, and you take responsibility for it. Do NOT use\n'
-        + "  this tool on a third party's code (e.g. a client under NDA).",
+        + '  You are SOLELY responsible for ensuring you own, or are authorized to analyze,\n'
+        + "  this project's code. Shakers assumes no liability for the code you submit.\n"
+        + '  Submitting code that is not yours or that you are not authorized to analyze is\n'
+        + '  a misuse of these tools and may result in penalties on your Shakers account, up\n'
+        + '  to and including suspension. Do NOT use this tool on a third party\'s code\n'
+        + '  (e.g. a client under NDA). Skill scores are indicative and unverified, not an\n'
+        + '  official qualification.\n'
+        + '  [PENDING LEGAL/LABOR REVIEW — NOT FINAL]',
       disclaimerQuestion: 'Do you accept and continue? (y/n):',
       disclaimerAcceptedFlag: 'Disclaimer accepted via --accept-disclaimer.',
       disclaimerNonInteractive:

@@ -664,12 +664,13 @@ test('bin/report.js: a normal run writes the cumulative report.html and ALWAYS p
     env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
   });
   assert.equal(code, 0);
-  // The link is always printed (es or en label), pointing at report.html.
-  assert.match(stdout, /file:\/\/\S+report\.html/);
+  // The link is always printed (es or en label), pointing at the project report.
+  assert.match(stdout, /file:\/\/\S+report-[a-f0-9]{12}\.html/);
   assert.match(stdout, /Abre tu informe|Open your report/);
-  // The cumulative report was actually written to the config dir.
-  const htmlPath = path.join(tmpConfigDir, 'report.html');
-  assert.ok(fs.existsSync(htmlPath), 'report.html written to the config dir');
+  // The per-project report was actually written to the config dir.
+  const htmlFile = fs.readdirSync(tmpConfigDir).find((f) => /^report-[a-f0-9]{12}\.html$/.test(f));
+  assert.ok(htmlFile, 'per-project report-<hash>.html written to the config dir');
+  const htmlPath = path.join(tmpConfigDir, htmlFile);
   const html = fs.readFileSync(htmlPath, 'utf8');
   assert.ok(html.includes('--bg:var(--ds-white)'), 'white background');
   assert.equal(/prefers-color-scheme\s*:\s*dark/.test(html), false, 'no dark mode');
@@ -683,6 +684,6 @@ test('bin/report.js: --no-save is the explicit opt-out — no report.html, no li
     env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
   });
   assert.equal(code, 0);
-  assert.equal(fs.existsSync(path.join(tmpConfigDir, 'report.html')), false);
+  assert.equal(fs.readdirSync(tmpConfigDir).some((f) => /^report-.*\.html$/.test(f)), false, 'no report written');
   assert.equal(/file:\/\//.test(stdout), false, 'no link when nothing is written');
 });
