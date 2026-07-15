@@ -162,3 +162,60 @@ test('classify (ADR-008): score is always an integer clamped to [0,100]', () => 
     assert.ok(s >= 0 && s <= 100, `score out of range: ${s}`);
   }
 });
+
+/*
+ * ADR-009 (skill-code-certification): the SCORE is now PROJECT-SCOPED. It is
+ * computed from `report.projectScope` (signals inside THE CURRENT project only,
+ * attached by scanner.js) instead of the home-inflated `tools[].depth` /
+ * `agentCounts`, so different projects get different scores and the developer's
+ * global `~/.claude` setup stops dominating. `computeScore` (ADR-008 model) is
+ * unchanged; only its INPUT is re-scoped. The tier keeps its project ∪ home
+ * scope. When `projectScope` is absent (older report shape / legacy fixture),
+ * classify falls back to the previous computation — the tests above rely on it.
+ */
+
+function withProjectScope(baseReport, projectScope) {
+  return { ...baseReport, projectScope };
+}
+
+test('classify (ADR-009): score is computed from projectScope when present', () => {
+  // Rich home-inflated depth, but an EMPTY project scope -> score reflects the
+  // (empty) project, not the home setup.
+  const r = withProjectScope(
+    report([tool('claude-code', { instructions: 3, mcpServers: 6, skills: 6, commands: 6, hooks: 2 })], { agents: 4 }),
+    { breadth: 0, context: 0, mcp: 0, custom: 0, hasAgentic: false, hooks: 0, agentCount: 0 },
+  );
+  assert.equal(classify(r).score, 0);
+});
+
+test('classify (ADR-009): two projects with IDENTICAL tools/home but different projectScope score differently', () => {
+  // Same tools + same (home-derived) depth + same agentCounts — the ONLY
+  // difference is the per-project signals. This is exactly the backend-hub vs
+  // nuply "both 92" case the ADR fixes.
+  const tools = [tool('claude-code', { instructions: 2, mcpServers: 3, skills: 4, commands: 2, hooks: 1 })];
+  const bare = withProjectScope(report(tools, { agents: 3 }), {
+    breadth: 1, context: 0, mcp: 0, custom: 0, hasAgentic: false, hooks: 0, agentCount: 0,
+  });
+  const rich = withProjectScope(report(tools, { agents: 3 }), {
+    breadth: 1, context: 1, mcp: 2, custom: 4, hasAgentic: true, hooks: 1, agentCount: 2,
+  });
+  assert.notEqual(classify(bare).score, classify(rich).score);
+  assert.ok(classify(rich).score > classify(bare).score);
+});
+
+test('classify (ADR-009): a maxed projectScope reaches 100; the tier still comes from tools/agentCounts', () => {
+  const r = withProjectScope(
+    report([tool('claude-code', { instructions: 1, mcpServers: 1, skills: 1, hooks: 1 })], { agents: 4 }),
+    { breadth: 3, context: 2, mcp: 2, custom: 4, hasAgentic: true, hooks: 1, agentCount: 2 },
+  );
+  const m = classify(r);
+  assert.equal(m.score, 100);
+  assert.equal(m.tierKey, 'T7'); // tier from the (project ∪ home) tool signals, unchanged
+});
+
+test('classify (ADR-009): projectScope absent -> falls back to the legacy mixed computation, never throws', () => {
+  const legacy = report([tool('claude-code', { instructions: 2, mcpServers: 3, skills: 4, commands: 2 })], { agents: 1 });
+  assert.ok(!('projectScope' in legacy));
+  assert.doesNotThrow(() => classify(legacy));
+  assert.ok(classify(legacy).score > 0);
+});

@@ -21,6 +21,7 @@ const CURATED_T1 = getRoadmapEntry('T1', 'es'); // a real jump entry
 const CURATED_T7 = getRoadmapEntry('T7', 'es'); // terminal, no jump
 
 const MATURITY_T1 = { tier: 1, tierKey: 'T1', tierName: 'Primera herramienta' };
+const MATURITY_T7 = { tier: 7, tierKey: 'T7', tierName: 'Taller orquestado' };
 
 function reportWith(overrides) {
   return {
@@ -30,9 +31,38 @@ function reportWith(overrides) {
   };
 }
 
-test('buildImplementationPrompt: T7 (max tier, no jump to implement) -> null', () => {
-  const prompt = buildImplementationPrompt(CURATED_T7, reportWith({}), MATURITY_T1, 'es');
-  assert.equal(prompt, null);
+// skill-code-certification / ADR-008: T7 is NOT a dead end. The top of the
+// ladder now yields a CONSOLIDATION prompt (built from consolidationSteps +
+// whatRemains), so it never shows "nothing".
+test('buildImplementationPrompt: T7 (max tier) -> a consolidation prompt, not null', () => {
+  const prompt = buildImplementationPrompt(CURATED_T7, reportWith({}), MATURITY_T7, 'es');
+  assert.ok(prompt, 'expected a non-null consolidation prompt at T7');
+  assert.match(prompt, /T7/);
+  // Includes the curated consolidation steps verbatim.
+  for (const step of CURATED_T7.consolidationSteps) {
+    assert.ok(prompt.includes(step), `expected consolidation step "${step.slice(0, 30)}…" in the prompt`);
+  }
+  // Frames as consolidation/refinement, not "build the next level".
+  assert.match(prompt, /consolidar|afinar|tier máximo/i);
+});
+
+test('buildImplementationPrompt: T7 consolidation prompt renders in English too', () => {
+  const es = buildImplementationPrompt(getRoadmapEntry('T7', 'es'), reportWith({}), MATURITY_T7, 'es');
+  const en = buildImplementationPrompt(getRoadmapEntry('T7', 'en'), reportWith({}), MATURITY_T7, 'en');
+  assert.ok(en);
+  assert.notEqual(es, en);
+  assert.match(en, /consolidate|sharpen|top tier/i);
+});
+
+test('buildImplementationPrompt: T7 includes detected tools/frameworks when present', () => {
+  const report = reportWith({
+    technologies: ['Go'],
+    tools: [{ name: 'Claude Code', detected: true }, { name: 'Cody', detected: false }],
+  });
+  const prompt = buildImplementationPrompt(CURATED_T7, report, MATURITY_T7, 'es');
+  assert.match(prompt, /Go/);
+  assert.match(prompt, /Claude Code/);
+  assert.equal(prompt.includes('Cody'), false);
 });
 
 test('buildImplementationPrompt: null/missing entry -> null, never throws', () => {

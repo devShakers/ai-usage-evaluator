@@ -166,10 +166,12 @@ test('renderTerminal: a jump entry (not max tier) shows the copyable implementat
   assert.match(html, /Ayúdame a implementar/);
 });
 
-test('renderTerminal: T7 (max tier) does NOT show an implementation prompt', () => {
+test('renderTerminal (ADR-008): T7 (max tier) DOES show a consolidation implementation prompt (the top is never a dead end)', () => {
   const maturity = { level: 4, key: 'orchestrator', name: 'Orquestador', score: 100, emoji: 'x', next: 'x', tier: 7, tierKey: 'T7' };
   const html = strip(renderTerminal(BASE_REPORT, maturity, 'es'));
-  assert.equal(html.includes('Prompt para implementar'), false);
+  assert.match(html, /Prompt para implementar/);
+  // It's a consolidation prompt, not a "build the next level" one.
+  assert.match(html, /consolidar|afinar|tier máximo/i);
 });
 
 test('renderTerminal (ADR-008): T7 (max tier) is NOT a dead end — it lists the curated improvement steps', () => {
