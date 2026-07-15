@@ -155,33 +155,57 @@ const BASE_REPORT = {
 };
 const MATURITY = { level: 2, key: 'integrated', name: 'Integrado', score: 40, emoji: '◑', tierKey: 'T3', next: 'x' };
 
+// A tool WITH projects (Claude), a tool `available:false` (Windsurf) and a tool
+// `available:true` but with an EMPTY list (Cursor). Only the first must render.
 const USAGE = [
   { toolId: 'claude-code', toolName: 'Claude Code', available: true, sourceKey: 'claudeSessions', projects: [{ path: '/Users/alex/proj-one', approximate: false }] },
   { toolId: 'windsurf', toolName: 'Windsurf', available: false, sourceKey: null, projects: [] },
+  { toolId: 'cursor', toolName: 'Cursor', available: true, sourceKey: 'cursorWorkspaces', projects: [] },
 ];
 
-test('renderTerminal: lists projects per tool and the unavailable note', () => {
+test('renderTerminal: shows ONLY tools with >=1 project; filters unavailable and empty-list tools', () => {
   const out = renderTerminal({ ...BASE_REPORT, toolProjectUsage: USAGE }, MATURITY, 'en');
   assert.match(out, /Projects by AI tool/);
+  assert.match(out, /Claude Code/);
   assert.match(out, /\/Users\/alex\/proj-one/);
-  assert.match(out, /does not expose a local project history/);
+  // Cursor (available:true, empty) is filtered out — its source label only ever
+  // renders inside a Cursor card, so its absence proves the card wasn't drawn.
+  assert.doesNotMatch(out, /workspaces opened in Cursor/);
+  // The old "no local history" / "no projects" notes are no longer rendered
+  // (these strings are unique to the tool-usage section).
+  assert.doesNotMatch(out, /does not expose a local project history/);
+  assert.doesNotMatch(out, /no projects recorded yet/);
 });
 
-test('renderTerminal: the whole section is omitted when nothing is available', () => {
-  const empty = [{ toolId: 'windsurf', toolName: 'Windsurf', available: false, sourceKey: null, projects: [] }];
-  const out = renderTerminal({ ...BASE_REPORT, toolProjectUsage: empty }, MATURITY, 'en');
+test('renderTerminal: the whole section is omitted when no tool has projects', () => {
+  const none = [
+    { toolId: 'windsurf', toolName: 'Windsurf', available: false, sourceKey: null, projects: [] },
+    { toolId: 'cursor', toolName: 'Cursor', available: true, sourceKey: 'cursorWorkspaces', projects: [] },
+  ];
+  const out = renderTerminal({ ...BASE_REPORT, toolProjectUsage: none }, MATURITY, 'en');
   assert.doesNotMatch(out, /Projects by AI tool/);
 });
 
-test('renderHtml: renders the projects-per-tool section with the discovered path', () => {
+test('renderHtml: shows ONLY tools with >=1 project; filters unavailable and empty-list tools', () => {
   const html = renderHtml({ ...BASE_REPORT, toolProjectUsage: USAGE }, MATURITY, 'en');
   assert.match(html, /Projects by AI tool/);
+  assert.match(html, /Claude Code/);
   assert.match(html, /\/Users\/alex\/proj-one/);
+  // NOTE: renderHtml's footer dumps the whole report as raw-data JSON, so the
+  // filtered tools' NAMES still appear there — assert on strings UNIQUE to the
+  // rendered section instead. The Cursor source label and the "no history" note
+  // are only ever emitted inside a rendered card, so their absence proves the
+  // Windsurf/Cursor cards were filtered out.
+  assert.doesNotMatch(html, /workspaces opened in Cursor/);
+  assert.doesNotMatch(html, /does not expose a local project history/);
 });
 
-test('renderHtml: section omitted when no tool exposes a history', () => {
-  const empty = [{ toolId: 'windsurf', toolName: 'Windsurf', available: false, sourceKey: null, projects: [] }];
-  const html = renderHtml({ ...BASE_REPORT, toolProjectUsage: empty }, MATURITY, 'en');
+test('renderHtml: section omitted when no tool has projects', () => {
+  const none = [
+    { toolId: 'windsurf', toolName: 'Windsurf', available: false, sourceKey: null, projects: [] },
+    { toolId: 'cursor', toolName: 'Cursor', available: true, sourceKey: 'cursorWorkspaces', projects: [] },
+  ];
+  const html = renderHtml({ ...BASE_REPORT, toolProjectUsage: none }, MATURITY, 'en');
   assert.doesNotMatch(html, /Projects by AI tool/);
 });
 
