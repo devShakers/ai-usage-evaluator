@@ -172,6 +172,23 @@ test('renderTerminal: T7 (max tier) does NOT show an implementation prompt', () 
   assert.equal(html.includes('Prompt para implementar'), false);
 });
 
+test('renderTerminal (ADR-008): T7 (max tier) is NOT a dead end — it lists the curated improvement steps', () => {
+  const maturity = { level: 4, key: 'orchestrator', name: 'Orquestador', score: 90, emoji: 'x', next: 'x', tier: 7, tierKey: 'T7' };
+  const html = strip(renderTerminal(BASE_REPORT, maturity, 'es'));
+  // The consolidation/improvement label + at least one authored step must show.
+  assert.match(html, /Pasos de consolidación/);
+  const { T7_TERMINAL_ES } = require('../src/roadmap-content');
+  assert.ok(html.includes(T7_TERMINAL_ES.consolidationSteps[0]));
+});
+
+test('renderTerminal (ADR-008): T7 improvement steps render in English too', () => {
+  const maturity = { level: 4, key: 'orchestrator', name: 'Orchestrator', score: 90, emoji: 'x', next: 'x', tier: 7, tierKey: 'T7' };
+  const html = strip(renderTerminal(BASE_REPORT, maturity, 'en'));
+  assert.match(html, /Consolidation steps/);
+  const { T7_TERMINAL_EN } = require('../src/roadmap-content');
+  assert.ok(html.includes(T7_TERMINAL_EN.consolidationSteps[0]));
+});
+
 test('renderTerminal: the implementation prompt reflects detected frameworks from the report', () => {
   const maturity = { level: 3, key: 'power', name: 'Power user', score: 70, emoji: 'x', next: 'x', tier: 5, tierKey: 'T5' };
   const report = { ...BASE_REPORT, technologies: ['React', 'NestJS'] };

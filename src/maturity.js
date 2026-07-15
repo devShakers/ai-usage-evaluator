@@ -37,14 +37,11 @@ const LEVELS = [
 ];
 
 // DECISION (talents-ai-score, signal expansion): the level definitions
-// (LEVELS, HANDOFF §4) and the `score` weights below have NOT been touched.
-// New depth probes WERE added in scanner.js (windsurf.mcpServers,
-// gemini-cli.mcpServers) that automatically feed `mcp` here, because
-// depthTotals already sums `d.mcpServers` from ANY tool by key name — this
-// is not a recalibration of the formula, but it DOES change the result for
-// talents with those tools configured (their MCP didn't count before). Kept
-// as is because it makes the score more faithful to the existing
-// definition, not a redefinition of it; flagged here for transparency.
+// (LEVELS, HANDOFF §4) have NOT been touched. New depth probes WERE added in
+// scanner.js (windsurf.mcpServers, gemini-cli.mcpServers) that automatically
+// feed `mcp` here, because depthTotals already sums `d.mcpServers` from ANY
+// tool by key name. Kept as is because it makes the score more faithful to
+// the existing definition, not a redefinition of it.
 function depthTotals(tools) {
   let instructions = 0; // project instructions/rules files
   let mcp = 0; // configured MCP servers
@@ -62,22 +59,79 @@ function depthTotals(tools) {
   return { instructions, mcp, custom, hooks };
 }
 
+/*
+ * Score model 0-100 for the visual meter — RECALIBRATED (ADR-008,
+ * skill-code-certification).
+ *
+ * WHY the old formula was replaced: it was a saturating weighted sum
+ * (`breadth*8 + instructions*6 + min(mcp,8)*5 + min(custom,12)*3 + hooks*4 +
+ * agentic`, clamped to 100). Breadth alone pinned it: 13 detected tools ×
+ * 8 = 104 → 100, so a setup with a dozen tools and ZERO configured depth
+ * scored a perfect 100. The meter never discriminated in the high band and
+ * 100 was trivial to reach.
+ *
+ * THE NEW MODEL — normalization over a theoretical maximum, with a per-
+ * dimension cap. Each dimension contributes `weight × min(value/full, 1)`;
+ * the weights sum to exactly 100, so 100 is only reached when EVERY
+ * dimension is at (or beyond) its `full` target — a genuinely maximized
+ * setup. Capping each dimension is what kills the old saturation: piling up
+ * one cheap signal (more tools) can never carry the score on its own.
+ *
+ * Resolution in the high band comes from WHERE the weight sits. The four
+ * "breadth/depth" dimensions (breadth+context+mcp+custom = 66 pts) top out
+ * at 66 — a well-configured but non-agentic setup (≈ tier T4) caps there.
+ * The remaining 34 pts are the "hard" signals that define the top tiers:
+ * agentic (8), multi-agent (12) and hooks (14). So the 66→100 band maps
+ * onto the T5→T6→T7 progression, and moving from a good setup to an
+ * excellent one keeps moving the number. Illustrative scale:
+ *   - ~0-20  : tools only, nothing configured (T0-T1)
+ *   - ~20-66 : building depth — context, MCP, own tooling (T2-T4)
+ *   - ~66-86 : agentic operation & multi-agent (T5-T6)
+ *   - ~86-100: fully orchestrated workshop (T7); 100 = every dimension maxed
+ *
+ * DETERMINISTIC & REPRODUCIBLE: every input is a deterministic scan signal
+ * (no LLM, no clock, no randomness) → same report always yields the same
+ * integer score. `agentCount` reads report.agentCounts.agents (0 if absent).
+ */
+const SCORE_MODEL = [
+  { key: 'breadth', weight: 12, full: 3 }, // number of AI tools detected
+  { key: 'context', weight: 16, full: 2 }, // instructions + config files
+  { key: 'mcp', weight: 18, full: 2 }, // configured MCP servers
+  { key: 'custom', weight: 20, full: 4 }, // own skills + commands + rules
+  { key: 'agentic', weight: 8, full: 1 }, // has an agentic CLI (0/1)
+  { key: 'hooks', weight: 14, full: 1 }, // hook-based automation
+  { key: 'multiAgent', weight: 12, full: 2 }, // agent definitions (>=2 = top)
+];
+
+function computeScore({ breadth, context, mcp, custom, agentic, hooks, multiAgent }) {
+  const values = { breadth, context, mcp, custom, agentic, hooks, multiAgent };
+  let total = 0;
+  for (const dim of SCORE_MODEL) {
+    const v = values[dim.key] || 0;
+    total += dim.weight * Math.min(v / dim.full, 1);
+  }
+  return Math.max(0, Math.min(100, Math.round(total)));
+}
+
 function classify(report) {
   const detected = report.tools.filter((t) => t.detected);
   const breadth = detected.length;
   const d = depthTotals(detected);
   const hasAgentic = detected.some((t) => AGENTIC_IDS.includes(t.id));
+  const agentCount =
+    report && report.agentCounts && typeof report.agentCounts.agents === 'number'
+      ? report.agentCounts.agents
+      : 0;
 
-  // Score 0-100 for the visual meter.
-  const score = Math.min(
-    100,
-    breadth * 8 + // breadth
-      d.instructions * 6 + // project rules/instructions
-      Math.min(d.mcp, 8) * 5 + // MCP (capped to avoid over-rewarding)
-      Math.min(d.custom, 12) * 3 + // own skills/commands/rules
-      d.hooks * 4 + // hook-based automation
-      (hasAgentic ? 6 : 0),
-  );
+  const score = computeScore({
+    breadth,
+    context: d.instructions, // depthTotals already folds `config` into instructions
+    mcp: d.mcp,
+    custom: d.custom,
+    agentic: hasAgentic ? 1 : 0,
+    hooks: d.hooks,
+    multiAgent: agentCount,
+  });
 
   // Band 0-4 derived from the tier engine (issue 019, single source of
   // truth) — replaces the old ad-hoc level rules entirely.

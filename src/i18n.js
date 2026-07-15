@@ -361,6 +361,26 @@ const catalogs = {
       emailChanged: (email) => `Correo actualizado a ${email}. Se usará en el próximo guardado.`,
       emailInvalidCli: 'Correo no válido. Uso: ai-footprint --consent-email tu@correo.com',
     },
+    // Email-ownership verification (skill-code-certification / ADR-006): the
+    // OTP "modo espera" copy, shared by both binaries. Shown only when the
+    // Talent grants consent and a verification endpoint is reachable; gates
+    // PERSISTENCE ONLY — the report was already shown. The pasted code is never
+    // echoed here beyond the single prompt.
+    verify: {
+      sent: (email) => `Te enviamos un código de verificación a ${email}.`,
+      waitHint: 'Pega aquí el código. Pulsa "r" y Enter para reenviarlo, o Enter en blanco para cancelar.',
+      codePrompt: 'Código de verificación:',
+      verified: 'Correo verificado. Guardando tu informe en Shakers…',
+      invalidCode: 'Código incorrecto. Revísalo y vuelve a pegarlo.',
+      expired: 'El código ha caducado. Pulsa "r" y Enter para enviar uno nuevo.',
+      resent: (email) => `Te reenviamos un código a ${email}.`,
+      resendFailed: 'No se pudo reenviar el código. Inténtalo de nuevo en un momento.',
+      requestFailed: 'No se pudo enviar el código de verificación al Hub. No se guardará el informe; el reporte ya se te ha mostrado.',
+      technicalError: 'No se pudo verificar el correo contra el Hub. No se guardará el informe; el reporte ya se te ha mostrado.',
+      tooManyAttempts: 'Demasiados intentos fallidos. No se ha verificado el correo, así que no se guardará el informe.',
+      cancelled: 'Verificación cancelada. No se guardará el informe (el reporte ya se te ha mostrado).',
+      unavailable: 'La verificación de correo no está disponible ahora mismo; no se guardará el informe (el reporte ya se te ha mostrado).',
+    },
     // Skill Code Certification (skill-code-certification, issues 004/006).
     // Copy for the SECOND binary `ai-certify` (resolve phase V1). Localized
     // like the consent flow — legal/disclaimer copy must not default to a
@@ -744,6 +764,25 @@ const catalogs = {
       reset: 'Consent decision reset. You will be asked again on the next run.',
       emailChanged: (email) => `Email updated to ${email}. It will be used on the next save.`,
       emailInvalidCli: 'Invalid email. Usage: ai-footprint --consent-email you@example.com',
+    },
+    // Email-ownership verification (skill-code-certification / ADR-006): the
+    // OTP "wait mode" copy, shared by both binaries. Gates PERSISTENCE ONLY —
+    // the report was already shown. The pasted code is never echoed here
+    // beyond the single prompt.
+    verify: {
+      sent: (email) => `We sent a verification code to ${email}.`,
+      waitHint: 'Paste the code here. Press "r" then Enter to resend it, or Enter on a blank line to cancel.',
+      codePrompt: 'Verification code:',
+      verified: 'Email verified. Saving your report in Shakers…',
+      invalidCode: 'Incorrect code. Check it and paste it again.',
+      expired: 'The code has expired. Press "r" then Enter to send a new one.',
+      resent: (email) => `We resent a code to ${email}.`,
+      resendFailed: 'Could not resend the code. Please try again in a moment.',
+      requestFailed: 'Could not send the verification code to the Hub. The report will not be saved; it has already been shown to you.',
+      technicalError: 'Could not verify the email against the Hub. The report will not be saved; it has already been shown to you.',
+      tooManyAttempts: 'Too many failed attempts. The email was not verified, so the report will not be saved.',
+      cancelled: 'Verification cancelled. The report will not be saved (it has already been shown to you).',
+      unavailable: 'Email verification is not available right now; the report will not be saved (it has already been shown to you).',
     },
     // Skill Code Certification (skill-code-certification, issues 004/006) —
     // English mirror of the `certify` catalog. Same content/invariants.

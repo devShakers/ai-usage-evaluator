@@ -1,6 +1,8 @@
 'use strict';
 
 const { isValidEmail, recordConsent } = require('./share');
+const { getEmailVerificationRequestUrl, getEmailVerificationVerifyUrl } = require('./config');
+const { runEmailVerification } = require('./email-verification');
 
 /*
  * Consent-to-PERSIST prompt (talents-ai-score, ADR-011 — revises issue 006 /
@@ -53,14 +55,34 @@ async function askEmail(ask, catalog) {
   return null;
 }
 
-// Runs the short consent-to-persist prompt + (if accepted) email collection.
+// Default email-ownership verification (skill-code-certification / ADR-006):
+// binds the wait-mode OTP loop to the endpoints DERIVED from the ingest URL
+// (src/config.js — no new env var). Injectable via runConsentPrompt's
+// `verifyEmail` option so the consent tests never touch the network.
+async function defaultVerifyEmail({ email, ask, catalog }) {
+  return runEmailVerification({
+    email,
+    ask,
+    catalog,
+    requestUrl: getEmailVerificationRequestUrl(),
+    verifyUrl: getEmailVerificationVerifyUrl(),
+  });
+}
+
+// Runs the short consent-to-persist prompt + (if accepted) email collection +
+// (skill-code-certification / ADR-006) EMAIL-OWNERSHIP VERIFICATION.
 // Returns the resulting decision: 'granted' | 'denied' | null.
-// `null` means no valid answer was obtained within MAX_ATTEMPTS: nothing is
-// persisted, so the prompt shows again on the next run — the CLI never
-// persists without an explicit, well-formed `granted` decision. Caller
-// (bin/report.js) is expected to invoke this AFTER the local report has
-// already been rendered and shown — never before, never as a gate on it.
-async function runConsentPrompt({ ask, catalog }) {
+// `null` means no valid answer was obtained (unrecognized yes/no, malformed
+// email, or a FAILED/CANCELLED/EXPIRED verification): nothing is persisted, so
+// the prompt shows again on the next run — the CLI never persists without an
+// explicit, well-formed `granted` decision backed by a VERIFIED email.
+//
+// The verification gates PERSISTENCE ONLY (ADR-003/ADR-006): the caller
+// (bin/report.js, bin/certify.js) invokes this AFTER the local report has
+// already been rendered and shown — never before, never as a gate on it. A
+// Talent who declines to verify still saw their report; it just isn't saved.
+// `verifyEmail` is injectable for tests (defaults to the ingest-derived flow).
+async function runConsentPrompt({ ask, catalog, verifyEmail = defaultVerifyEmail }) {
   const c = catalog.consent;
   process.stdout.write(`\n  ${c.persistIntro}\n`);
 
@@ -78,6 +100,16 @@ async function runConsentPrompt({ ask, catalog }) {
 
   const email = await askEmail(ask, catalog);
   if (!email) {
+    process.stdout.write(`  ${c.notObtained}\n\n`);
+    return null;
+  }
+
+  // Prove ownership of the email before persisting anything under it. The
+  // report is already on screen; a non-verified outcome persists NOTHING and
+  // re-asks next run (reusing the `notObtained` closure). runEmailVerification
+  // already printed the specific reason (invalid/expired/network/unavailable).
+  const verification = await verifyEmail({ email, ask, catalog });
+  if (!verification || !verification.verified) {
     process.stdout.write(`  ${c.notObtained}\n\n`);
     return null;
   }

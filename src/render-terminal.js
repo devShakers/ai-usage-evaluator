@@ -194,7 +194,16 @@ function printRoadmap(report, maturity, t, lang, p) {
   p(`  ${c.white}${c.bold}${entry.title}${c.reset}`);
 
   if (entry.maxTier) {
+    // ADR-008 (skill-code-certification): T7 is NOT a dead end. Show the
+    // curated continuous-refinement steps (optimize hooks/agents, contribute
+    // skills, maintain, measure) so the top setups still get actionable
+    // next-steps — parity with the HTML report's terminal card (which
+    // already lists consolidationSteps). Curated content, never LLM.
     p(`  ${c.gray}${entry.whatRemains}${c.reset}`);
+    if (Array.isArray(entry.consolidationSteps) && entry.consolidationSteps.length) {
+      p(`  ${c.dim}${t.html.roadmapConsolidationLabel}:${c.reset}`);
+      entry.consolidationSteps.forEach((s) => p(`    ${c.green}•${c.reset} ${s}`));
+    }
   } else {
     p(`  ${c.dim}${t.html.roadmapUpgradeWhenLabel}${c.reset} ${entry.upgradeWhen}`);
     p(`  ${c.white}${entry.unlocks}${c.reset}`);

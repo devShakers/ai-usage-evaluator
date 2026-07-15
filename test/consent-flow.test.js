@@ -44,13 +44,48 @@ function scriptedAsk(answers) {
   };
 }
 
-test('runConsentPrompt: accept -> asks for email -> persists granted + email', async () => {
+// skill-code-certification / ADR-006: granting now requires a VERIFIED email.
+// `verifyEmail` is injected in these tests so they never touch the network;
+// `passVerify` simulates a successful OTP verification, `failVerify` a
+// cancelled/failed one. The full wait-mode loop is covered in
+// test/email-verification.test.js.
+const passVerify = async () => ({ verified: true });
+const failVerify = async () => ({ verified: false, reason: 'cancelled' });
+
+test('runConsentPrompt: accept -> asks for email -> verifies -> persists granted + email', async () => {
   const ask = scriptedAsk(['s', 'talent@example.com']);
-  const decision = await runConsentPrompt({ ask, catalog: catalogEs });
+  const decision = await runConsentPrompt({ ask, catalog: catalogEs, verifyEmail: passVerify });
   assert.equal(decision, 'granted');
   const state = loadConsentState();
   assert.equal(getConsentDecision(state), 'granted');
   assert.equal(state.email, 'talent@example.com');
+});
+
+// --- ADR-006: email verification gates PERSISTENCE only ---
+
+test('runConsentPrompt: accept + valid email but verification NOT passed -> nothing persisted, decision null (asked again next run)', async () => {
+  const ask = scriptedAsk(['s', 'talent@example.com']);
+  const decision = await runConsentPrompt({ ask, catalog: catalogEs, verifyEmail: failVerify });
+  assert.equal(decision, null);
+  // Nothing persisted: no granted decision, no email saved.
+  assert.equal(loadConsentState(), null);
+});
+
+test('runConsentPrompt: verification is only reached AFTER a valid email is captured (never on decline)', async () => {
+  let verifyCalled = false;
+  const spyVerify = async () => { verifyCalled = true; return { verified: true }; };
+  const ask = scriptedAsk(['n']);
+  const decision = await runConsentPrompt({ ask, catalog: catalogEs, verifyEmail: spyVerify });
+  assert.equal(decision, 'denied');
+  assert.equal(verifyCalled, false, 'declining must not trigger email verification');
+});
+
+test('runConsentPrompt: verification receives the captured (validated) email', async () => {
+  let seenEmail = null;
+  const spyVerify = async ({ email }) => { seenEmail = email; return { verified: true }; };
+  const ask = scriptedAsk(['s', 'talent@example.com']);
+  await runConsentPrompt({ ask, catalog: catalogEs, verifyEmail: spyVerify });
+  assert.equal(seenEmail, 'talent@example.com');
 });
 
 test('runConsentPrompt: decline -> persists denied, never asks for an email', async () => {
@@ -67,7 +102,7 @@ test('runConsentPrompt: decline -> persists denied, never asks for an email', as
 
 test('runConsentPrompt: malformed email re-prompts without persisting anything until a valid one arrives', async () => {
   const ask = scriptedAsk(['s', 'not-an-email', 'still-bad', 'talent@example.com']);
-  const decision = await runConsentPrompt({ ask, catalog: catalogEs });
+  const decision = await runConsentPrompt({ ask, catalog: catalogEs, verifyEmail: passVerify });
   assert.equal(decision, 'granted');
   assert.equal(loadConsentState().email, 'talent@example.com');
 });
@@ -91,7 +126,7 @@ test('runConsentPrompt: accepts common yes/no variants in both languages', async
     fs.rmSync(tmpDir, { recursive: true, force: true });
     fs.mkdirSync(tmpDir, { recursive: true });
     const ask = scriptedAsk([yes, 'talent@example.com']);
-    const decision = await runConsentPrompt({ ask, catalog: catalogEs });
+    const decision = await runConsentPrompt({ ask, catalog: catalogEs, verifyEmail: passVerify });
     assert.equal(decision, 'granted', `expected "${yes}" to be accepted as yes`);
   }
   for (const no of ['n', 'no', 'N', 'NO']) {

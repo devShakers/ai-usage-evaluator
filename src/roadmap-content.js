@@ -236,9 +236,12 @@ const T7_TERMINAL_ES = {
   intro: 'Ya estás en el tier más alto de la escala. Tu setup combina multi-agente + MCP + assets propios + automatización por hooks: está equipado de arriba a abajo.',
   whatRemains: 'El tier ya no sube, pero el equipamiento no es el trabajo. A partir de aquí el margen está en usar lo que tienes, no en instalar más: documentar tu setup para que otros lo repliquen, podar lo que no usas, y afilar cada agente/comando con el trabajo real. La escala mide cómo tienes montado el banco; que salgan buenas piezas de él depende de ti.',
   consolidationSteps: [
-    'Documenta tu organigrama de agentes y tus comandos para el resto del equipo.',
-    'Revisa qué assets llevas tiempo sin tocar (el CLI expone recency/mtime de forma informativa, no como gate — ADR-003): quizá sobran.',
-    'Comparte tu setup como referencia interna.',
+    'Afina tus hooks y agentes con el trabajo real: recorta lo que estorba, acota los matchers y ajusta las tools/límites de cada agente a su rol.',
+    'Poda lo que no usas: revisa qué assets llevas tiempo sin tocar (el CLI expone recency/mtime de forma informativa, no como gate — ADR-003) y elimina lo redundante.',
+    'Mantén vivos tus ficheros de contexto (CLAUDE.md, reglas, comandos): actualízalos cuando cambien el stack o las convenciones, o dejan de ayudar.',
+    'Empaqueta y contribuye tus skills/comandos a un repo compartido del equipo para que tu setup escale más allá de tu máquina.',
+    'Documenta tu organigrama de agentes y compártelo como referencia interna para que otros lo repliquen.',
+    'Mide el impacto real (tiempo ahorrado, tareas delegadas de principio a fin) y usa ese dato para decidir qué merece seguir en tu banco.',
   ],
   honestyNote: 'Estar en T7 significa que tienes el banco de trabajo mejor equipado que el CLI sabe medir. No significa que seas quien mejor usa la IA: el dato es una proxy de setup, indicativa y no verificada (ADR-007). No se lee como "calidad IA del Talent".',
 };
@@ -448,9 +451,12 @@ const T7_TERMINAL_EN = {
   intro: "You're at the top tier of the ladder. Your setup combines multi-agent + MCP + your own assets + hook-based automation: it's equipped top to bottom.",
   whatRemains: "The tier no longer rises, but equipment isn't the work. From here the margin is in using what you have, not installing more: documenting your setup so others can replicate it, pruning what you don't use, and sharpening each agent/command with real work. The ladder measures how your bench is set up; whether good pieces come out of it is up to you.",
   consolidationSteps: [
-    'Document your agent org chart and your commands for the rest of the team.',
-    "Review which assets you haven't touched in a while (the CLI exposes recency/mtime informatively, not as a gate — ADR-003): maybe some are redundant.",
-    'Share your setup as an internal reference.',
+    "Sharpen your hooks and agents against real work: trim what gets in the way, scope the matchers, and tune each agent's tools/limits to its role.",
+    "Prune what you don't use: review which assets you haven't touched in a while (the CLI exposes recency/mtime informatively, not as a gate — ADR-003) and drop the redundant ones.",
+    'Keep your context files (CLAUDE.md, rules, commands) alive: update them when the stack or conventions change, or they stop helping.',
+    'Package and contribute your skills/commands to a shared team repo so your setup scales beyond your own machine.',
+    'Document your agent org chart and share it as an internal reference so others can replicate it.',
+    'Measure the real impact (time saved, tasks delegated end to end) and use that to decide what deserves to stay on your bench.',
   ],
   honestyNote: 'Being at T7 means you have the best-equipped bench the CLI knows how to measure. It does not mean you\'re the one who uses AI best: the data is a proxy for setup, indicative and unverified (ADR-007). It\'s not read as "the Talent\'s AI quality".',
 };
