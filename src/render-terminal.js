@@ -115,6 +115,43 @@ function printAgents(report, t, p) {
   p();
 }
 
+/* ---------- projects per AI tool (skill-code-certification / ADR-011) ----------
+ * Parity with render-html.js's toolProjectUsageSection. `report.toolProjectUsage`
+ * (src/tool-project-usage.js) lists, per detected tool, the projects where it
+ * has been used locally. STRICTLY LOCAL — never persisted (not in
+ * src/share.js#derivePayload). Prints a project list when available, an honest
+ * "no local history" note otherwise; the whole section is skipped when no tool
+ * exposes a history at all (never a misleading empty block).
+ */
+function printToolProjectUsage(report, t, p) {
+  const usage = Array.isArray(report.toolProjectUsage) ? report.toolProjectUsage : [];
+  if (!usage.length) return;
+  const anyContent = usage.some((u) => u.available || (u.projects && u.projects.length));
+  if (!anyContent) return;
+
+  p(`  ${c.bold}${t.html.toolUsageHeading}${c.reset}`);
+  p(`  ${c.gray}${t.html.toolUsageIntro}${c.reset}`);
+  for (const u of usage) {
+    const sourceLabel =
+      u.sourceKey && t.html.toolUsageSource && t.html.toolUsageSource[u.sourceKey]
+        ? ` ${c.gray}· ${t.html.toolUsageSource[u.sourceKey]}${c.reset}`
+        : '';
+    p(`  ${c.green}●${c.reset} ${c.white}${u.toolName}${c.reset}${sourceLabel}`);
+    if (!u.available) {
+      p(`    ${c.dim}${t.html.toolUsageUnavailable}${c.reset}`);
+    } else if (!u.projects.length) {
+      p(`    ${c.dim}${t.html.toolUsageNoProjects}${c.reset}`);
+    } else {
+      p(`    ${c.dim}${t.html.toolUsageCount(u.projects.length)}${c.reset}`);
+      for (const proj of u.projects) {
+        const approx = proj.approximate ? ` ${c.dim}(${t.html.toolUsageApproxNote})${c.reset}` : '';
+        p(`      ${c.gray}${proj.path}${c.reset}${approx}`);
+      }
+    }
+  }
+  p();
+}
+
 /* ---------- tier analysis: why this tier (parity with render-html.js) ----------
  * Same deterministic source (src/tier-analysis.js) as the HTML report —
  * defends the already-computed tier with the criteria met + the exact
@@ -262,10 +299,6 @@ function renderTerminal(report, maturity, lang) {
   // Level
   p(`  ${c.bold}${c.white}${t.terminal.level(maturity.level, levelName)}${c.reset}`);
   p(`  ${c.cyan}${bar(maturity.score)}${c.reset} ${c.dim}${maturity.score}/100${c.reset}`);
-  // skill-code-certification / ADR-009: clarify that the score is project-scoped
-  // (the tier/level is the global developer scope) so an identical-looking
-  // number across projects, or a low score under a high tier, reads correctly.
-  if (t.terminal.scoreScopeNote) p(`  ${c.gray}${t.terminal.scoreScopeNote}${c.reset}`);
   p();
 
   // Detected
@@ -315,6 +348,9 @@ function renderTerminal(report, maturity, lang) {
 
   // Agents (parity with render-html.js's agentCardsSection)
   printAgents(report, t, p);
+
+  // Projects per AI tool (parity with render-html.js's toolProjectUsageSection)
+  printToolProjectUsage(report, t, p);
 
   // Tier analysis: why this tier (parity with render-html.js's
   // tierAnalysisSection) — defends the already-computed tier before the
