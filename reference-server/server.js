@@ -48,12 +48,25 @@
  * model call. The REAL implementation (Anthropic call, Talent-match gate,
  * evidence persistence) lives in shakers-hub-backend (ADR-001/002), not here.
  *
+ * skill-code-certification / ADR-006: adds two DETERMINISTIC stub routes for
+ * the email-ownership OTP flow — `email-verification/request` (sends a code)
+ * and `email-verification/verify` (checks it). NO real email is sent and NO
+ * TTL/single-use store exists here: the stub accepts one FIXED, documented
+ * code (`123456`) so the CLI's wait-mode contract is reproducibly exercisable
+ * locally. `request` responds 200 `{sent:true}` for any well-formed email
+ * (anti-enumeration, ADR-006). `verify` responds 200 `{verified:true}` when
+ * the code matches `123456`, else 200 `{verified:false, reason:'invalid-code'}`.
+ * The REAL implementation (HubSpot transactional send, Redis TTL/single-use,
+ * rate limiting) lives in shakers-hub-backend (ADR-006), not here.
+ *
  * Routes:
  *   GET  /health
- *   POST /reports                                {email, payload}          -> public, no auth. 201 / 400 / 429
- *   POST /works/ai-footprint/agent-synthesis     {agents}                  -> public, no auth. 200 / 400
- *   POST /works/ai-footprint/skill-certification {email, technologies|items} -> public, no auth. 200 / 400
- *   GET  /admin/reports   (X-Admin-Key)          -> lists stored reports (audit aid)
+ *   POST /reports                                     {email, payload}          -> public, no auth. 201 / 400 / 429
+ *   POST /works/ai-footprint/agent-synthesis          {agents}                  -> public, no auth. 200 / 400
+ *   POST /works/ai-footprint/skill-certification      {email, technologies|items} -> public, no auth. 200 / 400
+ *   POST /works/ai-footprint/email-verification/request {email}                 -> public, no auth. 200 / 400
+ *   POST /works/ai-footprint/email-verification/verify  {email, code}           -> public, no auth. 200 / 400
+ *   GET  /admin/reports   (X-Admin-Key)               -> lists stored reports (audit aid)
  *
  * Startup:  ADMIN_KEY=mykey node reference-server/server.js
  */
@@ -65,6 +78,10 @@ const PORT = process.env.PORT || 8787;
 const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
 const RATE_LIMIT = 5;
 const RATE_WINDOW_MS = 60 * 60 * 1000;
+// skill-code-certification / ADR-006: the ONE fixed code this stub accepts, so
+// local wait-mode testing + e2e are deterministic. The real backend generates
+// a random 6-digit code with a 10-min TTL and single-use (HubSpot send).
+const STUB_VERIFICATION_CODE = '123456';
 // Admin key: if not passed via environment, one is generated and shown at startup.
 const ADMIN_KEY = process.env.ADMIN_KEY || 'adm_' + crypto.randomBytes(16).toString('hex');
 
@@ -308,6 +325,34 @@ async function handle(req, res) {
     }
 
     return send(res, 400, { error: 'se requiere technologies[] (resolve) o items[] (certify)' });
+  }
+
+  /* --- email-ownership verification: public, no per-identity auth,          */
+  /* DETERMINISTIC (skill-code-certification / ADR-006). request sends a code  */
+  /* (here: a no-op that accepts any email, anti-enumeration); verify checks   */
+  /* it against the fixed STUB_VERIFICATION_CODE. Real backend =               */
+  /* shakers-hub-backend (HubSpot send, Redis TTL/single-use). ---            */
+  if (method === 'POST' && url === '/works/ai-footprint/email-verification/request') {
+    const body = await readJson(req);
+    if (!body || !isValidEmail(body.email)) {
+      return send(res, 400, { error: 'correo inválido o ausente' });
+    }
+    // Anti-enumeration (ADR-006): always 200, regardless of whether the email
+    // is a registered Talent. No real email is sent by this stub.
+    console.log(`[verify-email] modo=request correo=${normalizeEmail(body.email)} (código fijo de stub: ${STUB_VERIFICATION_CODE})`);
+    return send(res, 200, { sent: true });
+  }
+
+  if (method === 'POST' && url === '/works/ai-footprint/email-verification/verify') {
+    const body = await readJson(req);
+    if (!body || !isValidEmail(body.email) || typeof body.code !== 'string') {
+      return send(res, 400, { error: 'correo o código inválido o ausente' });
+    }
+    const verified = body.code.trim() === STUB_VERIFICATION_CODE;
+    console.log(`[verify-email] modo=verify correo=${normalizeEmail(body.email)} verificado=${verified}`);
+    // Soft outcome in the 2xx body (never leaks whether the email exists):
+    // matched -> verified:true; mismatch -> verified:false + reason.
+    return send(res, 200, verified ? { verified: true } : { verified: false, reason: 'invalid-code' });
   }
 
   send(res, 404, { error: 'no encontrado' });

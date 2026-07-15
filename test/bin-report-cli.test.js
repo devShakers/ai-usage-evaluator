@@ -20,7 +20,30 @@ const { spawn } = require('child_process');
  * unset, so nothing ever touches the network or the real developer machine.
  */
 
+const { handle } = require('../reference-server/server');
+
 const BIN = path.join(__dirname, '..', 'bin', 'report.js');
+
+/*
+ * skill-code-certification / ADR-006: granting persistence now requires a
+ * VERIFIED email. The verification endpoints are DERIVED from the ingest URL,
+ * so the accept-path tests below point AI_FOOTPRINT_INGEST_ENDPOINT at the
+ * reference-server stub (fixed OTP code 123456) and pipe the code after the
+ * email. Tests that only decline / reset don't need it.
+ */
+const STUB_OTP = '123456';
+let stubServer;
+let stubIngest;
+test.before(async () => {
+  stubServer = await new Promise((resolve) => {
+    const s = http.createServer((req, res) => {
+      handle(req, res).catch(() => { res.writeHead(500); res.end('{}'); });
+    });
+    s.listen(0, '127.0.0.1', () => resolve(s));
+  });
+  stubIngest = `http://127.0.0.1:${stubServer.address().port}/works/ai-footprint/reports`;
+});
+test.after(() => stubServer && stubServer.close());
 
 function runCli({ args = [], stdin = '', env = {} } = {}) {
   return new Promise((resolve, reject) => {
@@ -118,11 +141,11 @@ test('bin/report.js: declining persistence still shows the full report (denial o
 // plus this one) — but there was no end-to-end test for the ACCEPT path
 // (only the decline path was covered), which is the gap this closes: full
 // "y" -> email -> granted, asserted at the real CLI process boundary.
-test('bin/report.js: accepting persistence and providing a valid email records a GRANTED decision with that email (full accept+email path)', async () => {
+test('bin/report.js: accepting persistence + valid email + verified OTP records a GRANTED decision with that email (full accept+email+verify path)', async () => {
   const { code, stdout } = await runCli({
     args: ['--no-save', '--root', tmpProjectDir],
-    stdin: 'y\ntalent@example.com\n',
-    env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
+    stdin: `y\ntalent@example.com\n${STUB_OTP}\n`,
+    env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_INGEST_ENDPOINT: stubIngest },
   });
   assert.equal(code, 0);
   assert.match(stdout, /AI FOOTPRINT/); // report still always shown first
@@ -193,7 +216,7 @@ test('bin/report.js: --consent-reset clears the decision to null, so the next ru
 });
 
 test('bin/report.js: --consent-reset is distinct from --consent-revoke (revoke stays denied, silent next run)', async () => {
-  await runCli({ args: ['--no-save', '--root', tmpProjectDir], stdin: 'y\ntalent@example.com\n', env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir } });
+  await runCli({ args: ['--no-save', '--root', tmpProjectDir], stdin: `y\ntalent@example.com\n${STUB_OTP}\n`, env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_INGEST_ENDPOINT: stubIngest } });
   await runCli({ args: ['--consent-revoke'], env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir } });
   const state = JSON.parse(fs.readFileSync(path.join(tmpConfigDir, 'consent.json'), 'utf8'));
   assert.equal(state.consent, 'denied');

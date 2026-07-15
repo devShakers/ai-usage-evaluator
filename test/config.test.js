@@ -3,7 +3,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { getSynthesisEndpoint, getRoadmapEndpoint, getCertifyEndpoint } = require('../src/config');
+const {
+  getSynthesisEndpoint,
+  getRoadmapEndpoint,
+  getCertifyEndpoint,
+  getEmailVerificationRequestUrl,
+  getEmailVerificationVerifyUrl,
+} = require('../src/config');
 
 /*
  * talents-ai-score, ADR-010/011: the agent-synthesis endpoint follows the
@@ -61,4 +67,46 @@ test('getCertifyEndpoint: reads AI_FOOTPRINT_CERTIFY_ENDPOINT, trimmed', () => {
 test('getCertifyEndpoint: empty/whitespace-only value -> null', () => {
   assert.equal(getCertifyEndpoint({ AI_FOOTPRINT_CERTIFY_ENDPOINT: '' }), null);
   assert.equal(getCertifyEndpoint({ AI_FOOTPRINT_CERTIFY_ENDPOINT: '   ' }), null);
+});
+
+// skill-code-certification / ADR-006: the email-verification URLs introduce NO
+// new env var — they are DERIVED as siblings of the ingest endpoint (email
+// verification gates persistence, which targets the ingest URL; in the Hub
+// both live in the same ai-footprint module).
+
+test('getEmailVerification*Url: unset ingest env var -> null (nowhere to persist, nothing to verify for)', () => {
+  assert.equal(getEmailVerificationRequestUrl({}), null);
+  assert.equal(getEmailVerificationVerifyUrl({}), null);
+});
+
+test('getEmailVerification*Url: derives siblings of the ingest endpoint (last path segment replaced)', () => {
+  const env = { AI_FOOTPRINT_INGEST_ENDPOINT: 'https://hub.example.com/works/ai-footprint/reports' };
+  assert.equal(
+    getEmailVerificationRequestUrl(env),
+    'https://hub.example.com/works/ai-footprint/email-verification/request',
+  );
+  assert.equal(
+    getEmailVerificationVerifyUrl(env),
+    'https://hub.example.com/works/ai-footprint/email-verification/verify',
+  );
+});
+
+test('getEmailVerification*Url: robust to a trailing slash on the ingest endpoint', () => {
+  const env = { AI_FOOTPRINT_INGEST_ENDPOINT: 'https://hub.example.com/works/ai-footprint/reports/' };
+  assert.equal(
+    getEmailVerificationRequestUrl(env),
+    'https://hub.example.com/works/ai-footprint/email-verification/request',
+  );
+  assert.equal(
+    getEmailVerificationVerifyUrl(env),
+    'https://hub.example.com/works/ai-footprint/email-verification/verify',
+  );
+});
+
+test('getEmailVerification*Url: trims surrounding whitespace like the other getters', () => {
+  const env = { AI_FOOTPRINT_INGEST_ENDPOINT: '  https://hub.example.com/works/ai-footprint/reports  ' };
+  assert.equal(
+    getEmailVerificationRequestUrl(env),
+    'https://hub.example.com/works/ai-footprint/email-verification/request',
+  );
 });
