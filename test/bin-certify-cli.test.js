@@ -175,6 +175,32 @@ test('consent (Issue B): with NO prior decision, the persist-consent prompt is s
   }
 });
 
+test('consent front-loaded (ADR-003 / 2026-07-15): with NO prior decision, consent is asked BEFORE skill resolution/selection, not after certifying', async () => {
+  writeReactProject();
+  const { server } = await startStub();
+  try {
+    const { code, stdout } = await runCli({
+      // deny ('n') up front — no email/OTP, stays off the network
+      args: ['--root', tmpProjectDir, '--email', 'talent@example.com', '--accept-disclaimer', '--all', '--lang', 'en'],
+      stdin: 'n\n',
+      env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_CERTIFY_ENDPOINT: certifyUrl(server) },
+    });
+    assert.equal(code, 0);
+    const disclaimerIdx = stdout.indexOf('LEGAL DISCLAIMER');
+    const consentIdx = stdout.indexOf('Save this report in Shakers?');
+    const resolveIdx = stdout.indexOf('Certifiable Skills for your project');
+    const reportIdx = stdout.indexOf('Skill certification result');
+    assert.ok(disclaimerIdx !== -1 && consentIdx !== -1 && resolveIdx !== -1 && reportIdx !== -1);
+    // Egress disclaimer (ADR-001) stays first; then consent; then resolution
+    // (which precedes Skill selection); then the report.
+    assert.ok(disclaimerIdx < consentIdx, 'disclaimer (egress gate) precedes consent');
+    assert.ok(consentIdx < resolveIdx, 'consent is asked BEFORE Skills are resolved/selected');
+    assert.ok(resolveIdx < reportIdx, 'the report comes last, still always shown');
+  } finally {
+    server.close();
+  }
+});
+
 test('consent (Issue B): with consent ALREADY granted, no prompt is shown and the report is shown directly', async () => {
   writeReactProject();
   fs.writeFileSync(

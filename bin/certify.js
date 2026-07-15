@@ -13,13 +13,19 @@
  * Zero-dependency invariant (node stdlib only) preserved: every helper is a
  * local src/ module, no third-party package.
  *
- * Flow (order matters for ADR-001 — no egress before explicit acceptance):
+ * Flow (order matters for ADR-001 — no egress before explicit acceptance —
+ * and for the front-loaded consent, skill-code-certification 2026-07-15):
  *   1. Resolve endpoint. Unset -> actionable error, exit 1 (no local product).
  *   2. Detect technologies locally (no egress). None -> inform, exit 0.
- *   3. Show the legal disclaimer and require EXPLICIT acceptance.
- *   4. Resolve identity email (flag / stored consent email / prompt).
- *   5. POST {email, technologies[]}; render the result, or an actionable
- *      error on any failure (never hangs, never a deterministic fallback).
+ *   3. Show the legal disclaimer and require EXPLICIT acceptance (egress gate).
+ *   4. Consent-to-persist + email + OTP verification, FRONT-LOADED — asked here
+ *      (before choosing Skills), only if no decision is persisted yet.
+ *   5. Resolve identity email (reuses the OTP-verified consent email / flag /
+ *      prompt).
+ *   6. POST {email, technologies[]} (resolve); render the result, or an
+ *      actionable error on any failure (never hangs, no deterministic fallback).
+ *   7. Certify phase: select Skills -> sample+scrub+send -> report (always
+ *      shown, ADR-003) -> persist iff consent was granted up front.
  */
 
 const { parseCertifyArgs } = require('../src/certify-args');
@@ -133,9 +139,36 @@ async function maybeShareCertification(items) {
   }
 }
 
+// Front-loaded consent-to-PERSIST (skill-code-certification / ADR-003 + user
+// decision 2026-07-15): asked at the START of the run — after the code-egress
+// disclaimer (ADR-001) but BEFORE choosing Skills — never after certifying.
+// Only when there is NO persisted decision yet; a granted/denied decision is
+// not re-asked (computeConsentSkip explains why, and still attempts a piped
+// answer on non-TTY). runConsentPrompt handles yes/no -> email -> OTP
+// verification and persists the decision. The report is STILL always shown
+// later, consent or not (ADR-003) — this is not a wall. Returns nothing; the
+// decision lives in the shared consent state, read again at persist time.
+async function runFrontloadedConsent({ ask, catalog, stdinIsTTY }) {
+  const decision = getConsentDecision(loadConsentState());
+  const consentSkip = computeConsentSkip({
+    decision,
+    stdinIsTTY,
+    consentFilePath: consentPath(),
+    catalog,
+  });
+  if (consentSkip.message) {
+    process.stdout.write(`\n  ${consentSkip.message}\n`);
+  }
+  if (!consentSkip.skip) {
+    await runConsentPrompt({ ask, catalog });
+  }
+}
+
 // The certify phase (issue 005): select -> sample -> scrub+send -> report ->
-// consent. Assumes the disclaimer was already accepted (bin does that before
-// resolve, and it covers code egress). Sets process.exitCode on hard errors.
+// persist. Assumes the disclaimer was already accepted AND the persist-consent
+// was already asked (bin does both before resolve, front-loaded — ADR-001 for
+// egress, ADR-003 + user decision for consent). Sets process.exitCode on hard
+// errors.
 async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, catalog, lang, ask, stdinIsTTY }) {
   const c = catalog.certify;
   const certifiable = Array.isArray(resolveResult.certifiable) ? resolveResult.certifiable : [];
@@ -143,12 +176,10 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
   if (certifiable.length === 0) return; // nothing certifiable — resolve report already shown
 
   // --- selection ---
-  // Tracks whether the interactive multi-select consumed and CLOSED the shared
-  // readline (`ask`). It does so to take over raw stdin; the --all/--skills and
-  // non-interactive branches leave `ask` open, so the consent prompt below can
-  // reuse it instead of opening a second readline on the same stdin (which
-  // would race for piped input).
-  let selectionClosedAsk = false;
+  // The interactive multi-select takes over raw stdin, so it CLOSES the shared
+  // readline (`ask`); the --all/--skills and non-interactive branches leave it
+  // open. Consent already ran up front (before this phase), so nothing here
+  // reuses `ask` afterwards — main()'s finally closes it.
   let selected;
   if (opts.all) {
     selected = certifiable.slice();
@@ -166,10 +197,10 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
     return;
   } else {
     // Dynamic multi-select (issue 011): arrows + space + enter. Uses raw
-    // stdin, so release the line-based readline first (recreated later for the
-    // consent prompt) to avoid two handlers fighting over the TTY.
+    // stdin, so release the line-based readline first to avoid two handlers
+    // fighting over the TTY. Consent already ran before this phase, so nothing
+    // reuses `ask` after this point (main()'s finally closes it idempotently).
     ask.close();
-    selectionClosedAsk = true;
     const picked = await runInteractiveMultiSelect({
       items: certifiable,
       labelFor: (s) => `${s.skillName}${s.technology ? ` (${s.technology})` : ''}`,
@@ -216,43 +247,11 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
     result: (Array.isArray(s.files) && s.files.length > 0) ? (resultById.get(String(s.skillId)) || null) : null,
   }));
   const certification = { items, model: null };
-
-  // --- consent-to-persist (ADR-003), BEFORE the report is shown --------------
-  // Aligned with `ai-footprint` (bin/report.js): the legal/consent + email (+
-  // OTP verification when consent is granted from scratch) are asked FIRST, and
-  // only when there is NO persisted decision yet. If consent was already
-  // granted/denied, we do NOT ask again (persist happens directly for a granted
-  // decision). The report is STILL always shown afterwards, consent or not
-  // (ADR-003) — this is not a wall.
   const analyzed = items.some((i) => i.result);
-  if (analyzed) {
-    const decision = getConsentDecision(loadConsentState());
-    // Same skip logic as bin/report.js: an already-persisted decision
-    // (granted/denied) is NOT re-asked; a non-TTY run still attempts the prompt
-    // (piped answers work) but prints a heads-up first. computeConsentSkip owns
-    // that policy so both binaries behave identically.
-    const consentSkip = computeConsentSkip({
-      decision,
-      stdinIsTTY,
-      consentFilePath: consentPath(),
-      catalog,
-    });
-    if (consentSkip.message) {
-      process.stdout.write(`\n  ${consentSkip.message}\n`);
-    }
-    if (!consentSkip.skip) {
-      // Reuse the still-open shared readline unless the interactive selection
-      // closed it (then open a fresh one just for the consent prompt).
-      const consentAsk = selectionClosedAsk ? createStdinAsk() : ask;
-      try {
-        await runConsentPrompt({ ask: consentAsk, catalog });
-      } finally {
-        if (selectionClosedAsk) consentAsk.close();
-      }
-    }
-  }
 
   // --- report (always shown, ADR-003) ----------------------------------------
+  // Consent-to-persist was already asked up front (runFrontloadedConsent in
+  // main, before Skill selection) — nothing consent-related happens here.
   process.stdout.write('\n' + renderCertificationTerminal(certification, lang) + '\n\n');
 
   // Local report (skill-code-certification, reporting redesign): upsert each
@@ -315,7 +314,17 @@ async function main() {
       return;
     }
 
-    // (4) Identity.
+    // (4) Consent-to-PERSIST + email + OTP, FRONT-LOADED (skill-code-
+    // certification / user decision 2026-07-15): all the legal/consent/email/
+    // verification interaction happens NOW — after the egress disclaimer, before
+    // choosing Skills — never buried after certifying. Only asked when there's
+    // no persisted decision yet. A granted decision stores the (OTP-verified)
+    // email, reused as the identity below; the report is still always shown.
+    await runFrontloadedConsent({ ask, catalog, stdinIsTTY });
+
+    // (5) Identity for the server calls (resolve/certify). Reuses the email just
+    // stored by the consent grant; otherwise --email / prompt (a declined
+    // consent stores no email, so an identity email is still resolved here).
     const email = await resolveEmail({ opts, catalog, ask, stdinIsTTY });
     if (!email) {
       process.stderr.write(`  ${catalog.certify.emailNeeded}\n\n`);
@@ -323,7 +332,7 @@ async function main() {
       return;
     }
 
-    // (5) Resolve request. Resilient: inform on failure, never hang, no
+    // (6) Resolve request. Resilient: inform on failure, never hang, no
     // deterministic fallback (ADR-001).
     const requestBody = buildResolveRequest(email, technologies);
     const outcome = await requestResolve(requestBody, { endpoint });
@@ -334,8 +343,9 @@ async function main() {
 
     process.stdout.write('\n' + formatResolveReport(technologies, outcome.result, catalog) + '\n\n');
 
-    // (6) Certify phase (issue 005): select certifiable Skills, sample+scrub+
-    // send code, show the assessment report, offer to persist with consent.
+    // (7) Certify phase (issue 005): select certifiable Skills, sample+scrub+
+    // send code, show the assessment report; persist iff consent was granted
+    // up front.
     await runCertifyPhase({
       endpoint,
       email,
