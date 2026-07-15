@@ -2,19 +2,27 @@
 
 const { getCatalog } = require('./i18n');
 const { buildRemediationPrompt } = require('./certify-remediation-prompt');
+const { renderDocument } = require('./report-theme');
 
 /*
  * Renders the certify-phase report (skill-code-certification, issues 005 +
  * 011). Terminal (with visual hierarchy + color, so the result stands out and
  * is NOT confusable with the disclaimer/instructions) + a SELF-CONTAINED,
- * ZERO-NETWORK HTML page. NEW module — does NOT touch the ai-footprint render
- * templates. i18n via the `certify.report` catalog (es/en).
+ * ZERO-NETWORK HTML page.
+ *
+ * Reporting redesign (skill-code-certification): the HTML now shares the
+ * Shakers theme (src/report-theme.js) with the footprint report instead of the
+ * old generic system-ui / light-dark stylesheet — same white background
+ * (priority #1), same teal/lime/zinc tokens, same Inter type scale. The
+ * per-Skill sections are also exported (`certificationSectionsHtml`) so the
+ * cumulative report (src/report-store.js) can stitch them into ONE document
+ * alongside the footprint. i18n via the `certify.report` catalog (es/en).
  *
  * Surfaces: the "indicative / not reproducible" disclaimer (kept visually
- * quiet/dim), a cost note (issue 012), a "partial sample" warning when
- * truncated, and per Skill a bold colored score, rationale, improvements,
- * sample summary, and a copyable REMEDIATION PROMPT (issue 011) — terminal
- * block + HTML copy button.
+ * quiet), a cost note (issue 012), a "partial sample" warning when truncated,
+ * and per Skill a colored score, rationale, improvements, sample summary, and
+ * a copyable REMEDIATION PROMPT (issue 011 — terminal block + HTML copy button
+ * driven by report-theme's shared, zero-network clipboard script).
  *
  * Input `certification` = { items: [{ skillName, technology, sampling,
  * result: {score, rationale, improvements[]} | null }], model? }.
@@ -127,25 +135,67 @@ function renderCertificationTerminal(certification, lang) {
   return lines.join('\n').replace(/\n+$/, '');
 }
 
-/* ---------- HTML (self-contained, zero network, inline copy script) ---------- */
+/* ---------- HTML (Shakers theme via report-theme, white background) ---------- */
 
-function renderCertificationHtml(certification, lang) {
+// Certification-specific component CSS. Tokens + base primitives (.card,
+// .chip, header, footer, pre, focus…) come from report-theme; only the
+// Skill-card and remediation styling live here. Score bands use the DS status
+// palette (--band-*), defined in the theme tokens.
+const CERTIFICATION_CSS = `
+  .cert-intro{font-size:13px;line-height:1.55;color:var(--faint);
+    border-left:3px solid var(--border);padding:2px 0 2px 12px;margin:0 0 8px}
+  .cert-warning{background:color-mix(in srgb,var(--ds-warning) 16%, var(--surface));
+    color:var(--ds-zinc-900);border:1px solid color-mix(in srgb,var(--ds-warning) 45%, var(--surface));
+    padding:10px 14px;border-radius:var(--r-md);font-weight:600;font-size:13.5px;margin:12px 0}
+  .skill{padding:20px 22px;margin:16px 0;display:flex;flex-direction:column;gap:10px}
+  .skill.not-sampleable,.skill.not-certified{opacity:.9}
+  .skill-head{display:flex;align-items:center;justify-content:space-between;
+    gap:14px;flex-wrap:wrap}
+  .skill-head h2{font-size:18px;font-weight:700;letter-spacing:-.01em;margin:0;color:var(--fg)}
+  .skill-head .tech{font-weight:500;color:var(--secondary-fg);background:var(--secondary);
+    font-size:11px;letter-spacing:.02em;padding:3px 10px;border-radius:var(--r-full);
+    margin-left:8px;white-space:nowrap}
+  .score-badge{flex:none;font-weight:700;font-size:14px;padding:5px 14px;
+    border-radius:var(--r-full);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .band-high{background:var(--band-high-bg);color:var(--band-high-fg)}
+  .band-mid{background:var(--band-mid-bg);color:var(--band-mid-fg)}
+  .band-low{background:var(--band-low-bg);color:var(--band-low-fg)}
+  .skill .rationale{margin:0;font-size:14px;line-height:1.6;color:var(--fg)}
+  .skill .label{font-weight:700;color:var(--fg)}
+  .skill ul{margin:2px 0 4px 1.15rem;padding:0;display:flex;flex-direction:column;
+    gap:6px;font-size:14px;line-height:1.55;color:var(--muted)}
+  .skill .sample,.skill .note,.skill .hint{font-size:12.5px;color:var(--faint);margin:0}
+  .remediation{margin-top:6px;border-top:1px dashed var(--border);padding-top:14px;
+    display:flex;flex-direction:column;gap:8px}
+  .remediation-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .copy-btn{flex:none;font-family:var(--font-sans);font-size:12px;font-weight:600;
+    letter-spacing:.02em;color:var(--secondary-fg);background:var(--secondary);
+    border:1px solid transparent;padding:5px 12px;border-radius:var(--r-full);cursor:pointer}
+  .copy-btn:hover{background:var(--track)}
+  .copy-btn.copied{color:var(--accent-lime-fg);
+    background:color-mix(in srgb,var(--accent-lime) 28%, transparent)}
+  .remediation pre{white-space:pre-wrap;word-break:break-word;font-size:12.5px;
+    line-height:1.55;color:var(--fg);border-color:var(--emphasis);max-height:none}
+`;
+
+// Per-Skill sections + the disclaimer/cost-note/partial-warning preamble. No
+// <h1> — reused by BOTH renderCertificationHtml (standalone, adds the <h1>)
+// and the cumulative report (which puts them under its own section heading).
+function certificationSectionsHtml(certification, lang) {
   const catalog = getCatalog(lang);
   const r = catalog.certify.report;
   const items = Array.isArray(certification && certification.items) ? certification.items : [];
 
-  let anyRemediation = false;
-
   const sections = items.map((item, index) => {
     const head =
       `<div class="skill-head"><h2>${escapeHtml(item.skillName)}`
-      + `${item.technology ? ` <span class="tech">${escapeHtml(item.technology)}</span>` : ''}</h2>`;
+      + `${item.technology ? `<span class="tech">${escapeHtml(item.technology)}</span>` : ''}</h2>`;
 
     if (item.sampling && item.sampling.sampleable === false) {
-      return `<section class="skill not-sampleable">${head}</div><p class="note">${escapeHtml(r.notSampleableNote(item.technology))}</p></section>`;
+      return `<section class="card skill not-sampleable">${head}</div><p class="note">${escapeHtml(r.notSampleableNote(item.technology))}</p></section>`;
     }
     if (!item.result) {
-      return `<section class="skill not-certified">${head}</div><p class="note">${escapeHtml(r.notCertified)}</p></section>`;
+      return `<section class="card skill not-certified">${head}</div><p class="note">${escapeHtml(r.notCertified)}</p></section>`;
     }
 
     const band = scoreBand(item.result.score);
@@ -163,8 +213,10 @@ function renderCertificationHtml(certification, lang) {
     let remediationHtml = '';
     const remediation = buildRemediationPrompt(item, lang);
     if (remediation) {
-      anyRemediation = true;
-      const id = `rem-${index}`;
+      // A stable-ish id per Skill so multiple certifications in the cumulative
+      // report never collide on the copy target. Falls back to the index.
+      const idBase = item.skillId != null ? String(item.skillId) : String(index);
+      const id = `rem-${idBase.replace(/[^a-zA-Z0-9_-]/g, '')}`;
       remediationHtml =
         `<div class="remediation"><div class="remediation-head">`
         + `<span class="label">${escapeHtml(r.remediationHeading)}</span>`
@@ -173,7 +225,7 @@ function renderCertificationHtml(certification, lang) {
         + `<pre id="${id}">${escapeHtml(remediation)}</pre></div>`;
     }
 
-    return `<section class="skill">${head}${scoreBadge}`
+    return `<section class="card skill">${head}${scoreBadge}`
       + (item.result.rationale ? `<p class="rationale"><span class="label">${escapeHtml(r.rationaleLabel)}:</span> ${escapeHtml(item.result.rationale)}</p>` : '')
       + improvements
       + sample
@@ -181,78 +233,35 @@ function renderCertificationHtml(certification, lang) {
       + `</section>`;
   }).join('\n');
 
-  const partial = anyTruncated(items) ? `<p class="warning">${escapeHtml(r.partialSampleWarning)}</p>` : '';
+  const partial = anyTruncated(items) ? `<p class="cert-warning">${escapeHtml(r.partialSampleWarning)}</p>` : '';
   const body = items.length === 0 ? `<p class="note">${escapeHtml(r.noItems)}</p>` : sections;
 
-  // Inline, zero-network copy script (only when there's a prompt to copy).
-  // Reads text from the target's own textContent — no prompt re-embedded as a
-  // JS string, so no escaping concerns. Mirrors render-html.js's pattern.
-  const copyScript = anyRemediation
-    ? `\n<script>
-document.querySelectorAll('[data-copy-target]').forEach(function(btn){
-  btn.addEventListener('click', function(){
-    var t = document.getElementById(btn.getAttribute('data-copy-target'));
-    if (!t) return;
-    var text = t.textContent;
-    var done = function(){
-      var orig = btn.getAttribute('data-original-label') || btn.textContent;
-      btn.setAttribute('data-original-label', orig);
-      btn.textContent = btn.getAttribute('data-copied-label') || orig;
-      btn.classList.add('copied');
-      setTimeout(function(){ btn.textContent = orig; btn.classList.remove('copied'); }, 1800);
-    };
-    var fallback = function(){
-      var ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly','');
-      ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.focus(); ta.select();
-      try { document.execCommand('copy'); } catch (e) {} document.body.removeChild(ta);
-    };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(done, function(){ fallback(); done(); });
-    } else { fallback(); done(); }
-  });
-});
-</script>`
-    : '';
-
-  return `<!DOCTYPE html>
-<html lang="${escapeHtml(catalog.html.lang)}">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(r.htmlTitle)}</title>
-<style>
-  :root { color-scheme: light dark; }
-  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 780px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
-  h1 { font-size: 1.5rem; }
-  .disclaimer, .costnote { font-size: .85rem; opacity: .7; border-left: 3px solid #888; padding-left: .75rem; }
-  .warning { background: #fff3cd; color: #664d03; padding: .5rem .75rem; border-radius: 6px; font-weight: 600; }
-  .skill { border: 1px solid #8884; border-radius: 10px; padding: 1rem 1.25rem; margin: 1.25rem 0; box-shadow: 0 1px 2px #0001; }
-  .skill-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: .5rem; }
-  .skill-head h2 { font-size: 1.15rem; margin: 0; }
-  .tech { font-weight: normal; opacity: .7; font-size: .85rem; }
-  .score-badge { font-weight: 700; font-size: 1rem; padding: .2rem .6rem; border-radius: 999px; white-space: nowrap; color: #fff; }
-  .band-high { background: #157347; }
-  .band-mid { background: #997404; }
-  .band-low { background: #b02a37; }
-  .rationale { margin: .5rem 0; }
-  .label { font-weight: 700; }
-  .sample, .note, .hint { font-size: .85rem; opacity: .75; }
-  ul { margin: .25rem 0 .75rem 1.25rem; }
-  .remediation { margin-top: .9rem; border-top: 1px dashed #8884; padding-top: .75rem; }
-  .remediation-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-  .copy-btn { font: inherit; font-size: 12px; padding: .25rem .6rem; border: 1px solid #8886; border-radius: 6px; background: transparent; cursor: pointer; }
-  .copy-btn.copied { color: #157347; border-color: #157347; }
-  pre { background: #8881; padding: .75rem; border-radius: 8px; overflow: auto; white-space: pre-wrap; font-size: .85rem; }
-</style>
-</head>
-<body>
-<h1>${escapeHtml(r.heading)}</h1>
-<p class="disclaimer">${escapeHtml(r.disclaimer)}</p>
-<p class="costnote">${escapeHtml(r.costNote)}</p>
+  return `<p class="cert-intro">${escapeHtml(r.disclaimer)}</p>
+<p class="cert-intro">${escapeHtml(r.costNote)}</p>
 ${partial}
-${body}${copyScript}
-</body>
-</html>`;
+${body}`;
 }
 
-module.exports = { renderCertificationTerminal, renderCertificationHtml, anyTruncated, scoreBand };
+function renderCertificationHtml(certification, lang) {
+  const catalog = getCatalog(lang);
+  const r = catalog.certify.report;
+  const body = `<header><span class="badge"><span class="spark"></span>AI CERTIFY</span>
+  <h1>${escapeHtml(r.heading)}</h1></header>
+${certificationSectionsHtml(certification, lang)}`;
+
+  return renderDocument({
+    lang: catalog.html.lang,
+    title: r.htmlTitle,
+    componentCss: CERTIFICATION_CSS,
+    body,
+  });
+}
+
+module.exports = {
+  renderCertificationTerminal,
+  renderCertificationHtml,
+  certificationSectionsHtml,
+  CERTIFICATION_CSS,
+  anyTruncated,
+  scoreBand,
+};

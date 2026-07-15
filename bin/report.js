@@ -1,12 +1,10 @@
 #!/usr/bin/env node
 'use strict';
 
-const { execFile } = require('child_process');
 const { scan } = require('../src/scanner');
 const { classify } = require('../src/maturity');
 const { renderTerminal } = require('../src/render-terminal');
-const { renderHtml } = require('../src/render-html');
-const { save } = require('../src/store');
+const { upsertFootprint } = require('../src/report-store');
 const { detectReportLang, getCatalog } = require('../src/i18n');
 const { parseArgs } = require('../src/cli-args');
 const {
@@ -30,15 +28,6 @@ const { computeConsentSkip } = require('../src/consent-skip');
 const { getRoadmapEntry } = require('../src/roadmap-content');
 const { computeTierResult } = require('../src/tier-engine');
 const { buildRoadmapPersonalizationRequest, requestRoadmapPersonalization } = require('../src/roadmap-personalization');
-
-function openInBrowser(file) {
-  const cmd =
-    process.platform === 'darwin' ? 'open'
-    : process.platform === 'win32' ? 'cmd'
-    : 'xdg-open';
-  const args = process.platform === 'win32' ? ['/c', 'start', '', file] : [file];
-  execFile(cmd, args, () => {});
-}
 
 // Help text is now localized (skill-code-certification / ADR-003): it lives in
 // the i18n `cli.help` catalog and is resolved via the machine locale (or
@@ -313,20 +302,19 @@ async function main() {
 
   process.stdout.write(renderTerminal(report, maturity, lang) + '\n');
 
-  const html = renderHtml(report, maturity, lang);
+  // Cumulative local report (skill-code-certification, reporting redesign):
+  // upsert THIS project's footprint into the shared report.html (keyed by the
+  // scanned project path) and ALWAYS print its file:// link. The HTML is no
+  // longer opt-in behind --html — it's produced on every run. `--no-save` is
+  // the explicit opt-out (write nothing to disk, e.g. CI). Writing the local
+  // report must never break the run.
   if (opts.save) {
-    const paths = save(report, html);
-    process.stdout.write(`  ${catalog.cli.saved(paths.dir)}\n\n`);
-    if (opts.html) openInBrowser(paths.htmlPath);
-    else process.stdout.write(`  ${catalog.cli.useHtmlHint}\n\n`);
-  } else if (opts.html) {
-    const os = require('os');
-    const fs = require('fs');
-    const path = require('path');
-    const tmp = path.join(os.tmpdir(), `ai-footprint-${Date.now()}.html`);
-    fs.writeFileSync(tmp, html);
-    openInBrowser(tmp);
-    process.stdout.write(`  ${catalog.cli.tempDashboard(tmp)}\n\n`);
+    try {
+      const paths = upsertFootprint({ root, report, maturity, lang });
+      process.stdout.write(`\n  ${catalog.cli.reportLink(paths.fileUrl)}\n\n`);
+    } catch {
+      // Never break the local run over a failed report write.
+    }
   }
 
   // "Construir el siguiente nivel ahora" (issue 021): optional, only when
