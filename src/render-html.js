@@ -655,170 +655,23 @@ function toolRow(tool, t, lang) {
   </li>`;
 }
 
-// `lang` ('es'|'en', see src/i18n.js) decides the text catalog. The report
-// data (report/maturity) doesn't change with the language, only its copy.
-function renderHtml(report, maturity, lang) {
-  const t = getCatalog(lang);
-  // talents-ai-score: only DETECTED tools are listed — undetected ones add
-  // visual noise without signal (a next step, if relevant, already covers
-  // it in the tier roadmap section, so it's never silently lost, just not
-  // repeated here as a name).
-  const detectedTools = report.tools.filter((tool) => tool.detected);
-  const rows = detectedTools.map((tool) => toolRow(tool, t, lang)).join('\n');
+/* ============================================================
+ * Document assembly (skill-code-certification, reporting redesign).
+ *
+ * The Shakers theme (tokens + base primitives + WHITE background + the
+ * document shell) now lives in src/report-theme.js, shared with the
+ * certification report and the cumulative report. This file keeps only the
+ * FOOTPRINT-specific component CSS and the footprint body markup. The prior
+ * `prefers-color-scheme: dark` override is gone: the report is white always
+ * (priority #1). The section builders above are unchanged.
+ * ============================================================ */
 
-  const detectedCount = detectedTools.length;
-  const dataJson = esc(JSON.stringify({ report, maturity }, null, 2));
+const { renderDocument } = require('./report-theme');
 
-  const levelName = t.levelNames[maturity.key] || maturity.name;
-
-  // Environment block: new scanner field, optional for compatibility with
-  // reports generated before this field existed (report.environment absent).
-  const env = report.environment || {};
-  const editors = Array.isArray(env.editorsInstalled) ? env.editorsInstalled : [];
-  const editorChips = editors.length
-    ? editors.map((id) => `<span class="chip">${esc(id)}</span>`).join('')
-    : `<span class="chip empty">${esc(t.html.noEditorsDetected)}</span>`;
-
-  // 0..4 level scale for the step progress indicator.
-  const levelPips = Array.from({ length: 5 }, (_, i) => {
-    const cls = i < maturity.level ? 'done' : (i === maturity.level ? 'here' : '');
-    return `<span class="pip ${cls}"></span>`;
-  }).join('');
-
-  return `<!doctype html>
-<html lang="${t.html.lang}">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(t.html.title(maturity.level))}</title>
-<style>
-  /* =========================================================
-   * Shakers tokens (Nexia). Layer 1 (primitives) → Layer 2 (semantic).
-   * Reimplemented inline: React components can't be imported into a static
-   * HTML file, so we reincarnate the visual language, not the components.
-   * Values are copied VERBATIM from the design system's design-spec
-   * (tokens.css / DESIGN.md): teal/lime/zinc palette, radii 6/8/10/14px,
-   * shadcn shadow set, Inter type scale (12/14/16/18/20/24/30/36).
-   *
-   * Intentional deviations from Nexia (documented, not drift):
-   *  - lime is used as an "accent/momentum" role here. In Nexia, brand-lime
-   *    is a primitive, NOT a Layer-2 semantic alias. This report is a public
-   *    talent-facing artifact (not the Hub backoffice), and lime is a core
-   *    Shakers brand accent, so it is lifted to a local accent role on
-   *    purpose. Paired for WCAG AA in both themes (see --model-fg/--accent).
-   *  - dark-theme --emphasis is teal-300 (not the light teal-500) so the
-   *    brand green stays legible on the dark surface.
-   * ========================================================= */
-  :root{
-    /* Layer 1 — brand primitives (subset used) */
-    --ds-teal-50:#e2f2f0; --ds-teal-100:#c5e5e1; --ds-teal-300:#51b1a5;
-    --ds-teal-400:#269787; --ds-teal-500:#0e7d69; --ds-teal-600:#0b5a4c;
-    --ds-teal-700:#08473c; --ds-teal-800:#05342c; --ds-teal-900:#03211c;
-    --ds-lime-200:#f5ff96; --ds-lime-500:#d8e637; --ds-lime-600:#b0bd2d;
-    --ds-zinc-50:#fafafa; --ds-zinc-100:#f4f4f5; --ds-zinc-200:#e4e4e7;
-    --ds-zinc-300:#d4d4d8; --ds-zinc-400:#a1a1aa; --ds-zinc-500:#71717a;
-    --ds-zinc-600:#52525b; --ds-zinc-700:#3f3f46; --ds-zinc-800:#27272a; --ds-zinc-900:#18181b;
-    --ds-zinc-950:#09090b; --ds-white:#ffffff;
-
-    /* Radii ("Border Radius" frame) */
-    --r-sm:6px; --r-md:8px; --r-lg:10px; --r-xl:14px; --r-full:9999px;
-    /* Shadows (shadcn upstream, same light/dark set) */
-    --shadow-sm:0 1px 3px 0 rgb(0 0 0 / .1), 0 1px 2px -1px rgb(0 0 0 / .1);
-    --shadow-md:0 1px 3px 0 rgb(0 0 0 / .1), 0 2px 4px -1px rgb(0 0 0 / .1);
-    --shadow-lg:0 1px 3px 0 rgb(0 0 0 / .1), 0 4px 6px -1px rgb(0 0 0 / .1);
-
-    /* Inter typography with a system fallback (see the DRIFT note). No
-       @font-face or network: if Inter isn't installed, it degrades to the
-       DS's own stack. */
-    --font-sans:"Inter",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,
-      "Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif,
-      "Apple Color Emoji","Segoe UI Emoji";
-    --font-mono:ui-monospace,"SF Mono","Cascadia Code","JetBrains Mono",Menlo,Consolas,monospace;
-
-    /* Layer 2 — semantic (light theme, Nexia default) */
-    --bg:var(--ds-zinc-50);
-    --surface:var(--ds-white);
-    --fg:var(--ds-zinc-900);
-    --muted:var(--ds-zinc-700);
-    /* zinc-600, not zinc-500: caption/label text sits on the zinc-50 page bg,
-       where zinc-500 is 4.47:1 — just under WCAG AA (4.5:1). zinc-600 clears
-       AA (~7.4:1) on both the page bg and the white card surface. */
-    --faint:var(--ds-zinc-600);
-    --border:var(--ds-zinc-200);
-    --primary:var(--ds-teal-800);
-    --primary-fg:var(--ds-zinc-50);
-    --secondary:var(--ds-teal-50);
-    --secondary-fg:var(--ds-teal-600);
-    --emphasis:var(--ds-teal-500);
-    --emphasis-strong:var(--ds-teal-600);
-    --accent-lime:var(--ds-lime-500);
-    --accent-lime-fg:var(--ds-teal-800);
-    /* Model chip: an opaque lime tint over the surface (not a transparent
-       overlay), paired with a theme-aware foreground so it clears contrast
-       in BOTH themes. In light, dark teal text on a pale lime tint. */
-    --model-bg:color-mix(in srgb,var(--ds-lime-500) 26%, var(--surface));
-    --model-fg:var(--ds-teal-800);
-    --off:var(--ds-zinc-300);
-    --track:var(--ds-zinc-100);
-    --ring:var(--ds-teal-500);
-  }
-
-  @media (prefers-color-scheme: dark){
-    :root{
-      --bg:var(--ds-zinc-950);
-      --surface:var(--ds-zinc-900);
-      --fg:var(--ds-zinc-50);
-      --muted:var(--ds-zinc-300);
-      --faint:var(--ds-zinc-400);
-      --border:var(--ds-zinc-800);
-      --primary:var(--ds-teal-600);
-      --primary-fg:var(--ds-zinc-50);
-      --secondary:var(--ds-teal-900);
-      --secondary-fg:var(--ds-teal-50);
-      --emphasis:var(--ds-teal-300);
-      --emphasis-strong:var(--ds-teal-400);
-      --accent-lime:var(--ds-lime-200);
-      --accent-lime-fg:var(--ds-teal-900);
-      /* Dark: the light theme's dark-teal-on-pale-lime chip would be dark
-         text on a dark surface (illegible). Flip to a bright lime foreground
-         over a subtle lime tint of the dark surface. */
-      --model-bg:color-mix(in srgb,var(--ds-lime-500) 20%, var(--surface));
-      --model-fg:var(--ds-lime-200);
-      --off:var(--ds-zinc-700);
-      --track:var(--ds-zinc-800);
-      --ring:var(--ds-teal-600);
-    }
-  }
-
-  *{box-sizing:border-box}
-  html{color-scheme:light dark}
-  body{margin:0;background:var(--bg);color:var(--fg);
-    font-family:var(--font-sans);line-height:1.45;
-    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
-    padding:40px 20px 64px;}
-  /* overflow-x:clip is a page-level guard: the report must NEVER produce a
-     horizontal page scrollbar at any width. Nothing legitimately overflows
-     the wrap (the one deep-nesting case scrolls inside its OWN
-     overflow-x:auto block — see .agent-node.has-children), so clip here has
-     no visible effect today; it only prevents a future stray wide child
-     (a long unbreakable token, a new section) from widening the page.
-     clip (not hidden/auto) leaves the vertical axis untouched and creates no
-     scroll container. */
-  .wrap{max-width:840px;margin:0 auto;overflow-x:clip}
-  .card{background:var(--surface);border:1px solid var(--border);
-    border-radius:var(--r-lg);box-shadow:var(--shadow-sm)}
-
-  /* ---- Header ---- */
-  header{margin-bottom:24px}
-  .badge{display:inline-flex;align-items:center;gap:8px;
-    background:var(--secondary);color:var(--secondary-fg);
-    font-size:12px;font-weight:600;letter-spacing:.02em;
-    padding:5px 12px;border-radius:var(--r-full)}
-  .badge .spark{width:7px;height:7px;border-radius:50%;background:var(--emphasis)}
-  h1{font-size:clamp(28px,5vw,36px);font-weight:700;letter-spacing:-.02em;
-    line-height:1.15;margin:16px 0 6px}
-  .sub{color:var(--muted);font-size:16px;margin:0}
-
+// Footprint-specific component CSS (hero/meter, tool list, recency, env, MCP,
+// agent tree, next-step, tier analysis, roadmap). Tokens + base primitives are
+// injected by report-theme, so they are intentionally NOT repeated here.
+const FOOTPRINT_CSS = `
   /* ---- Hero card: level + meter ---- */
   .hero{padding:28px;margin:24px 0;display:flex;flex-wrap:wrap;
     align-items:center;gap:28px 40px}
@@ -846,7 +699,7 @@ function renderHtml(report, maturity, lang) {
   .fill{height:100%;width:0;border-radius:var(--r-full);
     background:linear-gradient(90deg,var(--emphasis-strong),var(--emphasis));
     transition:width 1.1s cubic-bezier(.2,.7,.2,1)}
-  .fill.go{width:${maturity.score}%}
+  .fill.go{}
 
   /* ---- Tools section ---- */
   section{margin-bottom:24px}
@@ -1137,17 +990,55 @@ function renderHtml(report, maturity, lang) {
     .fill{transition:none}
     ul.tools .tool{animation:none;opacity:1;transform:none}
   }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <header>
+`;
+
+// Footprint animations only: fill meters grow from 0, tool rows stagger in.
+// Clipboard copy is provided globally by report-theme's COPY_SCRIPT.
+const FOOTPRINT_SCRIPT = `
+  requestAnimationFrame(function(){
+    document.querySelectorAll('.fill').forEach(function(f){
+      f.classList.add('go');
+      f.style.width = (f.getAttribute('data-target') || '0') + '%';
+    });
+    document.querySelectorAll('ul.tools .tool').forEach(function(el, i){
+      el.style.animationDelay = (i * 40) + 'ms';
+    });
+  });
+`;
+
+// Header banner — standalone footprint document only. The cumulative report
+// (src/report-store.js) renders its own single header, so it does NOT call this.
+function footprintHeaderHtml(t) {
+  return `<header>
     <span class="badge"><span class="spark"></span>AI FOOTPRINT</span>
     <h1>${esc(t.html.h1)}</h1>
     <p class="sub">${esc(t.html.sub)}</p>
-  </header>
+  </header>`;
+}
 
-  <div class="card hero">
+// Inner sections (hero + tools + env + technologies + mcp + agents + tier +
+// roadmap), no header banner and no footer. Reused verbatim by BOTH the
+// standalone renderHtml below and the cumulative report, so a project's
+// footprint looks identical whichever document it lands in.
+function footprintSectionsHtml(report, maturity, lang) {
+  const t = getCatalog(lang);
+  const detectedTools = report.tools.filter((tool) => tool.detected);
+  const rows = detectedTools.map((tool) => toolRow(tool, t, lang)).join('\n');
+  const detectedCount = detectedTools.length;
+  const levelName = t.levelNames[maturity.key] || maturity.name;
+
+  const env = report.environment || {};
+  const editors = Array.isArray(env.editorsInstalled) ? env.editorsInstalled : [];
+  const editorChips = editors.length
+    ? editors.map((id) => `<span class="chip">${esc(id)}</span>`).join('')
+    : `<span class="chip empty">${esc(t.html.noEditorsDetected)}</span>`;
+
+  const levelPips = Array.from({ length: 5 }, (_, i) => {
+    const cls = i < maturity.level ? 'done' : (i === maturity.level ? 'here' : '');
+    return `<span class="pip ${cls}"></span>`;
+  }).join('');
+
+  return `<div class="card hero">
     <div class="lvl">
       <div class="k">${esc(t.html.levelOf(maturity.level))}</div>
       <div class="v">
@@ -1162,7 +1053,7 @@ function renderHtml(report, maturity, lang) {
         <span>${esc(t.html.maturity)}</span>
         <span class="score">${maturity.score}<span> / 100</span></span>
       </div>
-      <div class="track"><div class="fill" id="fill"></div></div>
+      <div class="track"><div class="fill" data-target="${maturity.score}"></div></div>
     </div>
   </div>
 
@@ -1198,9 +1089,14 @@ function renderHtml(report, maturity, lang) {
 
   ${tierAnalysisSection(report, t)}
 
-  ${roadmapSection(report, maturity, t, lang)}
+  ${roadmapSection(report, maturity, t, lang)}`;
+}
 
-  <footer>
+// Footer (privacy note + meta line + raw-data disclosure) — standalone
+// footprint document only, same as the header banner.
+function footprintFooterHtml(report, maturity, t) {
+  const dataJson = esc(JSON.stringify({ report, maturity }, null, 2));
+  return `<footer>
     <div class="priv">
       <span class="lock" aria-hidden="true">🔒</span>
       <span>${esc(t.html.privacyNote)}</span>
@@ -1210,67 +1106,31 @@ function renderHtml(report, maturity, lang) {
       <summary>${esc(t.html.rawData)}</summary>
       <pre>${dataJson}</pre>
     </details>
-  </footer>
-</div>
-<script>
-  requestAnimationFrame(function(){
-    var f = document.getElementById('fill');
-    if (f) f.classList.add('go');
-    var rows = document.querySelectorAll('ul.tools .tool');
-    rows.forEach(function(el,i){ el.style.animationDelay = (i*40)+'ms'; });
-  });
+  </footer>`;
+}
 
-  // Copy-to-clipboard (talents-ai-score): navigator.clipboard with a
-  // document.execCommand fallback, both inline, zero-network (no CDN, no
-  // fetch). Reads the text straight from the target element's own
-  // textContent, never a second copy of the prompt re-embedded as a JS
-  // string literal, so there's no escaping concern for a multi-line
-  // prompt full of quotes/backticks. Works for any current/future
-  // data-copy-target button generically.
-  function afReportFallbackCopy(text){
-    var ta = document.createElement('textarea');
-    ta.value = text;
-    ta.setAttribute('readonly', '');
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    try { document.execCommand('copy'); } catch (e) { /* best effort */ }
-    document.body.removeChild(ta);
-  }
-  document.querySelectorAll('[data-copy-target]').forEach(function(btn){
-    btn.addEventListener('click', function(){
-      var target = document.getElementById(btn.getAttribute('data-copy-target'));
-      if (!target) return;
-      var text = target.textContent;
-      var showCopied = function(){
-        var original = btn.getAttribute('data-original-label') || btn.textContent;
-        btn.setAttribute('data-original-label', original);
-        var copiedLabel = btn.getAttribute('data-copied-label') || original;
-        btn.textContent = copiedLabel;
-        btn.classList.add('copied');
-        setTimeout(function(){
-          btn.textContent = original;
-          btn.classList.remove('copied');
-        }, 1800);
-      };
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(showCopied, function(){ afReportFallbackCopy(text); showCopied(); });
-      } else {
-        afReportFallbackCopy(text);
-        showCopied();
-      }
-    });
+// `lang` ('es'|'en', see src/i18n.js) decides the text catalog. The report
+// data (report/maturity) doesn't change with the language, only its copy.
+function renderHtml(report, maturity, lang) {
+  const t = getCatalog(lang);
+  const body = `${footprintHeaderHtml(t)}
+
+  ${footprintSectionsHtml(report, maturity, lang)}
+
+  ${footprintFooterHtml(report, maturity, t)}`;
+
+  return renderDocument({
+    lang: t.html.lang,
+    title: t.html.title(maturity.level),
+    componentCss: FOOTPRINT_CSS,
+    body,
+    script: FOOTPRINT_SCRIPT,
   });
-</script>
-</body>
-</html>`;
 }
 
 // buildAgentCardTree is also exported (not just renderHtml): render-terminal.js
 // reuses it so the terminal's agent list/hierarchy is built from the EXACT
-// same merged (structural + synthesis) tree as the HTML card tree, instead
-// of a second, potentially-diverging implementation — "same information",
-// literally the same data structure, for both outputs.
-module.exports = { renderHtml, buildAgentCardTree };
+// same merged (structural + synthesis) tree as the HTML card tree. And
+// footprintSectionsHtml / FOOTPRINT_CSS are exported for the cumulative report
+// (src/report-store.js) to embed a project's footprint into the shared doc.
+module.exports = { renderHtml, buildAgentCardTree, footprintSectionsHtml, FOOTPRINT_CSS, FOOTPRINT_SCRIPT };

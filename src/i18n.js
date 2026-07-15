@@ -244,9 +244,10 @@ const catalogs = {
       rawData: 'Ver los datos exactos de este informe (JSON)',
     },
     cli: {
-      saved: (dir) => `Guardado en ${dir}`,
-      useHtmlHint: 'Usa --html para abrir el dashboard visual.',
-      tempDashboard: (file) => `Dashboard temporal: ${file}`,
+      // Reporting redesign (skill-code-certification): el HTML ya NO es opt-in
+      // (se retira --html). En cada ejecución se actualiza el informe acumulado
+      // y se imprime SIEMPRE su enlace file:// para abrirlo en el navegador.
+      reportLink: (url) => `Abre tu informe en el navegador:\n  ${url}`,
       // Terminal progress feedback (talents-ai-score): stderr-only status
       // during the two slow phases (see src/terminal-progress.js).
       scanningLabel: 'Escaneando entorno y detectores…',
@@ -265,9 +266,8 @@ const catalogs = {
         '\nAI Footprint — perfil local de uso de herramientas de IA\n\n'
         + 'Uso:\n  ai-footprint [opciones]\n\n'
         + 'Opciones:\n'
-        + '  -w, --html             Genera y abre el dashboard HTML en el navegador\n'
         + '      --json             Imprime el informe en JSON por stdout\n'
-        + '      --no-save          No guarda nada en disco (solo muestra)\n'
+        + '      --no-save          No escribe el informe en disco (solo muestra)\n'
         + '      --root DIR         Escanea DIR en vez del directorio actual\n'
         + '      --build-next-level Genera el starter del siguiente tier (alternativa secundaria)\n'
         + '      --force            Junto a --build-next-level, sobrescribe un fichero existente\n'
@@ -277,13 +277,28 @@ const catalogs = {
         + '      --consent-reset    Borra la decisión (→ sin decidir); vuelve a preguntar\n'
         + '      --consent-email C  Cambia el correo guardado, sin tocar la decisión\n'
         + '  -h, --help             Muestra esta ayuda\n\n'
-        + 'El informe se genera y se muestra SIEMPRE en tu equipo. Antes de mostrarlo, la\n'
-        + 'primera vez se te pregunta si quieres GUARDARLO en Shakers (con tu correo);\n'
-        + 'se pregunta una sola vez. Reabre la pregunta con --consent-reset.\n',
+        + 'El informe se genera y se muestra SIEMPRE en tu equipo, y se guarda un informe\n'
+        + 'HTML acumulado en local cuyo enlace se imprime en cada ejecución. Antes de\n'
+        + 'mostrarlo, la primera vez se te pregunta si quieres GUARDARLO en Shakers (con tu\n'
+        + 'correo); se pregunta una sola vez. Reabre la pregunta con --consent-reset.\n',
     },
     // "Construir el siguiente nivel ahora" (talents-ai-score, issue 021):
     // optional, explicit phase — writes the deterministic starter for the
     // NEXT tier from the curated roadmap's own snippets, never LLM-generated.
+    // Cumulative report (skill-code-certification, reporting redesign): the
+    // single local HTML that both binaries fill in over time (footprint per
+    // project + certification per Skill). Copy for its chrome/headings.
+    cumulative: {
+      title: 'Tu informe de Shakers',
+      subtitle: 'Tu footprint de IA y la certificación de tus Skills, en un solo lugar.',
+      footprintHeading: 'AI Footprint',
+      certificationHeading: 'Certificación de Skills',
+      footprintEmpty: 'Aún no has ejecutado ningún análisis de footprint. Ejecuta `ai-footprint` para empezar.',
+      certificationEmpty: 'Aún no has certificado ninguna Skill. Ejecuta `ai-certify` para empezar.',
+      privacyNote: 'Este informe se genera y se guarda solo en tu equipo. Nada se envía a Shakers salvo que des tu consentimiento explícito.',
+      updatedLabel: (when) => `Actualizado: ${when}`,
+      unknownProject: '(proyecto desconocido)',
+    },
     buildNextLevel: {
       heading: (tierKey) => `Generando el starter para subir a ${tierKey}...`,
       created: (filename) => `+ creado ${filename}`,
@@ -362,7 +377,6 @@ const catalogs = {
         + '      --accept-disclaimer  Acepta el aviso legal de forma no interactiva (aceptación explícita)\n'
         + '      --all                Certifica TODAS las Skills certificables (sin selección interactiva)\n'
         + '      --skills 1,3         Certifica las Skills en esas posiciones (sin selección interactiva)\n'
-        + '  -w, --html               Genera y abre un reporte HTML autocontenido\n'
         + '  -h, --help               Muestra esta ayuda\n\n'
         + 'Fase 1 (resolve): detecta las tecnologías de tu proyecto y consulta al Hub de\n'
         + 'Shakers qué Skills son certificables. Requiere AI_FOOTPRINT_CERTIFY_ENDPOINT\n'
@@ -436,7 +450,9 @@ const catalogs = {
       selectNoneChosen: 'No se ha seleccionado ninguna Skill. No se ha enviado código.',
       selectOption: (index, skillName, technology) => `  ${index}) ${skillName}${technology ? ` (${technology})` : ''}`,
       certifyingLabel: 'Analizando el código de tus Skills…',
-      htmlSaved: (file) => `Reporte HTML de certificación: ${file}`,
+      // Reporting redesign: el HTML ya no es opt-in; cada certificación se
+      // añade al informe acumulado y se imprime SIEMPRE su enlace file://.
+      reportLink: (url) => `Abre tu informe en el navegador:\n  ${url}`,
       // Certify report (terminal + HTML). Nota orientativa/no reproducible.
       report: {
         heading: 'Resultado de certificación de Skills',
@@ -632,9 +648,10 @@ const catalogs = {
       rawData: "View this report's exact data (JSON)",
     },
     cli: {
-      saved: (dir) => `Saved to ${dir}`,
-      useHtmlHint: 'Use --html to open the visual dashboard.',
-      tempDashboard: (file) => `Temporary dashboard: ${file}`,
+      // Reporting redesign (skill-code-certification): HTML is no longer opt-in
+      // (--html retired). Every run updates the cumulative report and ALWAYS
+      // prints its file:// link to open in the browser.
+      reportLink: (url) => `Open your report in your browser:\n  ${url}`,
       scanningLabel: 'Scanning environment and detectors…',
       synthesizingLabel: 'Synthesizing agents with AI…',
       personalizingRoadmapLabel: 'Personalizing roadmap…',
@@ -646,9 +663,8 @@ const catalogs = {
         '\nAI Footprint — local profile of your AI-tool usage\n\n'
         + 'Usage:\n  ai-footprint [options]\n\n'
         + 'Options:\n'
-        + '  -w, --html             Generate and open the HTML dashboard in the browser\n'
         + '      --json             Print the report as JSON on stdout\n'
-        + '      --no-save          Write nothing to disk (show only)\n'
+        + '      --no-save          Do not write the report to disk (show only)\n'
         + '      --root DIR         Scan DIR instead of the current directory\n'
         + '      --build-next-level Generate the next tier starter (secondary alternative)\n'
         + '      --force            With --build-next-level, overwrite an existing file\n'
@@ -658,9 +674,23 @@ const catalogs = {
         + '      --consent-reset    Clear the decision (→ undecided); asks again\n'
         + '      --consent-email C  Change the stored email, decision untouched\n'
         + '  -h, --help             Show this help\n\n'
-        + 'The report is ALWAYS generated and shown on your machine. Before showing it,\n'
+        + 'The report is ALWAYS generated and shown on your machine, and a cumulative HTML\n'
+        + 'report is saved locally whose link is printed on every run. Before showing it,\n'
         + 'the first time you are asked whether to SAVE it in Shakers (with your email);\n'
         + 'you are asked only once. Reopen the question with --consent-reset.\n',
+    },
+    // Cumulative report (skill-code-certification, reporting redesign) —
+    // English mirror. Same content/invariants as the Spanish catalog.
+    cumulative: {
+      title: 'Your Shakers report',
+      subtitle: 'Your AI footprint and your Skill certifications, all in one place.',
+      footprintHeading: 'AI Footprint',
+      certificationHeading: 'Skill certification',
+      footprintEmpty: 'You haven’t run any footprint analysis yet. Run `ai-footprint` to get started.',
+      certificationEmpty: 'You haven’t certified any Skill yet. Run `ai-certify` to get started.',
+      privacyNote: 'This report is generated and stored only on your machine. Nothing is sent to Shakers unless you give explicit consent.',
+      updatedLabel: (when) => `Updated: ${when}`,
+      unknownProject: '(unknown project)',
     },
     buildNextLevel: {
       heading: (tierKey) => `Generating the starter to reach ${tierKey}...`,
@@ -729,7 +759,6 @@ const catalogs = {
         + '      --accept-disclaimer  Accept the legal disclaimer non-interactively (explicit acceptance)\n'
         + '      --all                Certify ALL certifiable Skills (no interactive selection)\n'
         + '      --skills 1,3         Certify the Skills at these positions (no interactive selection)\n'
-        + '  -w, --html               Generate and open a self-contained HTML report\n'
         + '  -h, --help               Show this help\n\n'
         + 'Phase 1 (resolve): detects your project technologies and asks the Shakers Hub\n'
         + 'which Skills are certifiable. Requires AI_FOOTPRINT_CERTIFY_ENDPOINT to be set.\n'
@@ -801,7 +830,9 @@ const catalogs = {
       selectNoneChosen: 'No Skill selected. No code was sent.',
       selectOption: (index, skillName, technology) => `  ${index}) ${skillName}${technology ? ` (${technology})` : ''}`,
       certifyingLabel: 'Analyzing your Skills’ code…',
-      htmlSaved: (file) => `Certification HTML report: ${file}`,
+      // Reporting redesign: HTML is no longer opt-in; each certification is
+      // added to the cumulative report and its file:// link is ALWAYS printed.
+      reportLink: (url) => `Open your report in your browser:\n  ${url}`,
       report: {
         heading: 'Skill certification result',
         disclaimer:

@@ -22,7 +22,6 @@
  *      error on any failure (never hangs, never a deterministic fallback).
  */
 
-const { execFile } = require('child_process');
 const { parseCertifyArgs } = require('../src/certify-args');
 const { detectReportLang, getCatalog } = require('../src/i18n');
 const { getCertifyEndpoint } = require('../src/config');
@@ -38,7 +37,8 @@ const {
 const { formatResolveReport } = require('../src/certify-render');
 const { buildSkillSamples } = require('../src/skill-sampler');
 const { parseSkillSelection } = require('../src/skill-selection');
-const { renderCertificationTerminal, renderCertificationHtml } = require('../src/render-certification');
+const { renderCertificationTerminal } = require('../src/render-certification');
+const { upsertCertification } = require('../src/report-store');
 const {
   isValidEmail,
   normalizeEmail,
@@ -51,15 +51,6 @@ const { runConsentPrompt } = require('../src/consent-flow');
 const { createStdinAsk } = require('../src/stdin-ask');
 const { withSpinner } = require('../src/terminal-progress');
 const { runInteractiveMultiSelect } = require('../src/interactive-select');
-
-function openInBrowser(file) {
-  const cmd =
-    process.platform === 'darwin' ? 'open'
-    : process.platform === 'win32' ? 'cmd'
-    : 'xdg-open';
-  const args = process.platform === 'win32' ? ['/c', 'start', '', file] : [file];
-  execFile(cmd, args, () => {});
-}
 
 const MAX_EMAIL_ATTEMPTS = 5;
 
@@ -219,14 +210,15 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
 
   process.stdout.write('\n' + renderCertificationTerminal(certification, lang) + '\n\n');
 
-  if (opts.html) {
-    const os = require('os');
-    const fs = require('fs');
-    const pathMod = require('path');
-    const tmp = pathMod.join(os.tmpdir(), `ai-certify-${Date.now()}.html`);
-    fs.writeFileSync(tmp, renderCertificationHtml(certification, lang));
-    openInBrowser(tmp);
-    process.stdout.write(`  ${c.htmlSaved(tmp)}\n\n`);
+  // Cumulative local report (skill-code-certification, reporting redesign):
+  // upsert each certified Skill (keyed by Skill id) into the shared report.html
+  // and ALWAYS print its file:// link. HTML is no longer opt-in behind --html.
+  // Writing the local report must never break the run.
+  try {
+    const paths = upsertCertification({ items, lang });
+    process.stdout.write(`  ${c.reportLink(paths.fileUrl)}\n\n`);
+  } catch {
+    // Never break the local run over a failed report write.
   }
 
   // --- consent (ADR-011): report already shown; persist only if granted ---

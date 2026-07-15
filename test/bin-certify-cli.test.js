@@ -130,6 +130,29 @@ test('full flow end-to-end against the stub: resolve -> --all certify -> report,
   }
 });
 
+test('reporting redesign: a full certify run writes the cumulative report.html and ALWAYS prints its file:// link (no --html needed)', async () => {
+  writeReactProject();
+  const { server } = await startStub();
+  try {
+    const { code, stdout } = await runCli({
+      args: ['--root', tmpProjectDir, '--email', 'talent@example.com', '--accept-disclaimer', '--all', '--lang', 'en'],
+      env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_CERTIFY_ENDPOINT: certifyUrl(server) },
+    });
+    assert.equal(code, 0);
+    assert.match(stdout, /file:\/\/\S+report\.html/);
+    assert.match(stdout, /Open your report|Abre tu informe/);
+    const htmlPath = path.join(tmpConfigDir, 'report.html');
+    assert.ok(fs.existsSync(htmlPath), 'report.html written to the config dir');
+    const html = fs.readFileSync(htmlPath, 'utf8');
+    // The certification landed in the cumulative report, in the Shakers theme.
+    assert.match(html, /Skill certification/);
+    assert.ok(html.includes('--bg:var(--ds-white)'), 'white background');
+    assert.equal(/prefers-color-scheme\s*:\s*dark/.test(html), false, 'no dark mode');
+  } finally {
+    server.close();
+  }
+});
+
 test('certify phase: non-interactive without --all/--skills aborts after resolve, exit 1, no code sent', async () => {
   writeReactProject();
   const { server, state } = await startStub();

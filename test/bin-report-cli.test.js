@@ -630,3 +630,36 @@ test('bin/report.js: LANG=es_ES.UTF-8 (Spanish OS locale) is unaffected — Span
   assert.equal(code, 0);
   assert.match(stdout, /Guardar este informe en Shakers/);
 });
+
+// --- reporting redesign (skill-code-certification): --html retired, the
+// cumulative report is written and its file:// link printed on EVERY run ---
+
+test('bin/report.js: a normal run writes the cumulative report.html and ALWAYS prints its file:// link (no --html needed)', async () => {
+  const { code, stdout } = await runCli({
+    args: ['--root', tmpProjectDir], // NOTE: no --no-save, no --html
+    stdin: 'n\n',
+    env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
+  });
+  assert.equal(code, 0);
+  // The link is always printed (es or en label), pointing at report.html.
+  assert.match(stdout, /file:\/\/\S+report\.html/);
+  assert.match(stdout, /Abre tu informe|Open your report/);
+  // The cumulative report was actually written to the config dir.
+  const htmlPath = path.join(tmpConfigDir, 'report.html');
+  assert.ok(fs.existsSync(htmlPath), 'report.html written to the config dir');
+  const html = fs.readFileSync(htmlPath, 'utf8');
+  assert.ok(html.includes('--bg:var(--ds-white)'), 'white background');
+  assert.equal(/prefers-color-scheme\s*:\s*dark/.test(html), false, 'no dark mode');
+  assert.ok(fs.existsSync(path.join(tmpConfigDir, 'report-state.json')), 'state file written');
+});
+
+test('bin/report.js: --no-save is the explicit opt-out — no report.html, no link printed', async () => {
+  const { code, stdout } = await runCli({
+    args: ['--no-save', '--root', tmpProjectDir],
+    stdin: 'n\n',
+    env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
+  });
+  assert.equal(code, 0);
+  assert.equal(fs.existsSync(path.join(tmpConfigDir, 'report.html')), false);
+  assert.equal(/file:\/\//.test(stdout), false, 'no link when nothing is written');
+});

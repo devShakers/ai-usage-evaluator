@@ -81,13 +81,15 @@ test('HTML: self-contained, zero-network (no external URLs), escapes content, in
   assert.match(html, /a &amp; b/);
   assert.match(html, /Score: 90\/100/);
   // Issue 011: a remediation prompt exists (improvements present) -> copy
-  // button + one inline, zero-network copy script.
-  assert.match(html, /data-copy-target="rem-0"/);
+  // button + the shared, zero-network copy script. Reporting redesign: the
+  // copy-target id is keyed by Skill id (rem-<skillId>), not a run-relative
+  // index, so the same id stays stable across runs / in the cumulative report.
+  assert.match(html, /data-copy-target="rem-1"/);
   assert.match(html, /<button[^>]*class="copy-btn"/);
   assert.equal((html.match(/<script>/g) || []).length, 1, 'exactly one inline copy script');
 });
 
-test('011: HTML has NO copy script when there are no improvements (nothing to remediate)', () => {
+test('011: HTML has NO remediation copy BUTTON when there are no improvements (nothing to remediate)', () => {
   const html = renderCertificationHtml({
     items: [{
       skillId: 1, skillName: 'React', technology: 'React',
@@ -95,7 +97,13 @@ test('011: HTML has NO copy script when there are no improvements (nothing to re
       result: { score: 50, rationale: 'ok', improvements: [] },
     }],
   }, 'en');
-  assert.equal(/<script>/.test(html), false, 'no script when no remediation prompt');
+  // Reporting redesign: the report shares one zero-network clipboard handler
+  // (report-theme's COPY_SCRIPT) that no-ops when there's nothing to copy, so a
+  // <script> is always present. The invariant that matters is that there is no
+  // remediation UI to copy, and no external network surface.
+  assert.equal(/class="copy-btn"/.test(html), false, 'no copy button when no remediation prompt');
+  assert.equal(/<pre id="rem-/.test(html), false, 'no remediation prompt block when there is nothing to copy');
+  assert.equal(/https?:\/\//.test(html), false, 'zero-network: no external URLs');
 });
 
 test('011: terminal + HTML render the remediation prompt from improvements', () => {
@@ -112,7 +120,7 @@ test('011: terminal + HTML render the remediation prompt from improvements', () 
   assert.match(term, /1\. Add tests/);
   const html = renderCertificationHtml(cert, 'en');
   assert.match(html, /Prompt to apply the improvements/);
-  assert.match(html, /<pre id="rem-0">/);
+  assert.match(html, /<pre id="rem-1">/); // keyed by Skill id (reporting redesign)
 });
 
 test('012: terminal + HTML show the cost note', () => {

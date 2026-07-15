@@ -48,13 +48,18 @@ test('parseCertifyArgs: --help/-h', () => {
   assert.equal(parseCertifyArgs(['-h']).help, true);
 });
 
-test('parseCertifyArgs: --all / --skills / --html (certify-phase flags)', () => {
+test('parseCertifyArgs: --all / --skills (certify-phase flags)', () => {
   assert.equal(parseCertifyArgs(['--all']).all, true);
   assert.equal(parseCertifyArgs(['--skills', '1,3']).skills, '1,3');
   assert.equal(parseCertifyArgs(['--skills=2']).skills, '2');
-  assert.equal(parseCertifyArgs(['--html']).html, true);
-  assert.equal(parseCertifyArgs(['-w']).html, true);
   assert.equal(parseCertifyArgs([]).all, false);
+});
+
+// Reporting redesign (skill-code-certification): --html/-w is RETIRED (HTML is
+// no longer opt-in). The flag must leave no trace in the parser.
+test('parseCertifyArgs: retired --html/-w does NOT set any option', () => {
+  assert.equal('html' in parseCertifyArgs(['--html']), false);
+  assert.equal('html' in parseCertifyArgs(['-w']), false);
 });
 
 test('parseCertifyArgs: ai-footprint-only flags are NOT recognized here (no cross-contamination)', () => {
