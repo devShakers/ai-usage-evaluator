@@ -297,22 +297,4 @@ function parseAgentDescriptions(root) {
   return result;
 }
 
-// PROJECT-SCOPED agent count (skill-code-certification / ADR-009): counts the
-// agents defined INSIDE the scanned project (`<root>/.claude/agents`) ONLY —
-// never the talent's home directory. `parseAgentOrgChart` above is deliberately
-// project ∪ home (ADR-014, for the TIER), but the maturity SCORE must reflect
-// THIS project's setup so different projects get different notes (ADR-009), and
-// the developer's global home setup must not dominate it. Deduped by name with
-// the same rule as parseAgentOrgChart. Deterministic; never throws.
-function countProjectAgents(root) {
-  const seen = new Set();
-  const dir = path.join(root, '.claude', 'agents');
-  for (const file of listAgentMarkdownFiles(dir)) {
-    const agent = parseAgentFile(file);
-    if (!agent || seen.has(agent.name)) continue;
-    seen.add(agent.name);
-  }
-  return seen.size;
-}
-
-module.exports = { parseAgentOrgChart, parseFrontmatter, parseAgentFile, parseAgentDescriptions, countProjectAgents };
+module.exports = { parseAgentOrgChart, parseFrontmatter, parseAgentFile, parseAgentDescriptions };
