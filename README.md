@@ -124,6 +124,26 @@ implementation lives in `shakers-hub-backend`.
   detected from dependency manifests), MCP servers (name + category), your
   agent org chart (cards + hierarchy), the tier analysis, and the
   current→next roadmap with its implementation prompt.
+- **The HTML report is cumulative and scoped per project.** Each scanned
+  project has its OWN report file (`report-<hash>.html` in
+  `~/.config/ai-footprint/`), keyed by the project's absolute path, and is
+  regenerated whole from `report-state.json` on every run. It fills in over
+  time: the footprint section appears once you've run `ai-footprint` in that
+  project, and the certification section once you've run `ai-certify` there;
+  both appear together when both have run for the **same** project. This is
+  intentional (skill-code-certification, reporting redesign) — the report is a
+  persistent per-project artifact, not a per-invocation transcript. So running
+  `ai-certify` in a project where you previously ran `ai-footprint` correctly
+  still shows the footprint section: that footprint was produced for this
+  project and is part of its cumulative record, not stale or leaked data.
+  Different projects never mix into one document.
+- **Score scope (ADR-009): the 0-100 score reflects THIS project's AI setup**
+  (signals inside the project directory), so different projects get different
+  scores and your global `~/.claude` setup no longer dominates. The **tier
+  (T0-T7)** keeps the wider project ∪ home scope — it reflects you as a
+  developer, not this one project — so a bare project can show a low score
+  under a high tier. That is by design; the report labels the score
+  accordingly.
 
 ## What it detects
 
@@ -235,6 +255,16 @@ runs before anything leaves the machine.
   production is a separate deployment decision that still requires its own
   legal/labor go-ahead** for that rollout — this repo doesn't ship a
   production endpoint by default (see below).
+- **⚠️ Legal copy is NOT FINAL (pending validation).** The consent copy
+  (`ai-footprint`, ADR-003), the code-egress disclaimer (`ai-certify`,
+  ADR-001) and the installer notice all now state that **you are solely
+  responsible for owning/being authorized to analyze the code you submit,
+  that Shakers assumes no liability for it, and that misuse may lead to
+  penalties on your Shakers account (up to suspension)**. This wording — and
+  especially the account-penalty clause, whose enforceability depends on the
+  Shakers Terms of Service — **must be reviewed and approved by a legal/labor
+  expert before production**. Treat the current text as a placeholder, not a
+  final legal position.
 
 ## Configuration (environment variables)
 

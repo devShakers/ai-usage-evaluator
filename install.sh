@@ -63,8 +63,17 @@ uninstall() {
 
 [ "${1:-}" = "--uninstall" ] && uninstall
 
-printf "\n  ${B}${C}AI Footprint — installer v${VERSION}${N}\n"
-say  "${C}local AI usage profile · 12 tools${N}\n"
+printf "\n  ${B}${C}AI Footprint & Skill Certification — installer v${VERSION}${N}\n"
+say  "${C}local-first developer AI tools${N}"
+say  "  ${B}ai-footprint${N}  scans your machine and current project for AI tooling"
+say  "                (assistants, MCP servers, agents, hooks, custom skills/"
+say  "                commands) and scores your setup on a T0-T7 maturity ladder,"
+say  "                with a curated roadmap and a copy-paste prompt to level up."
+say  "  ${B}ai-certify${N}    certifies your skills from your actual project code: it"
+say  "                maps your stack to Shakers Skills and returns a per-skill"
+say  "                assessment. Code is sampled, secret-scrubbed, sent for"
+say  "                analysis, and never stored."
+say  ""
 
 # ─── Requirements ───────────────────────────────────────────────────────────
 command -v node >/dev/null 2>&1 || die "Node.js is required and not installed.\n    Install it from https://nodejs.org (v18 or higher)."
@@ -170,9 +179,31 @@ node "$INSTALL_DIR/bin/certify.js" --help >/dev/null 2>&1 \
 # ─── Final message ──────────────────────────────────────────────────────────
 printf "\n  ${G}${B}Installed successfully.${N}\n\n"
 say "  ${B}Usage:${N}"
-say "    ${C}ai-footprint${N}          Report in the terminal"
-say "    ${C}ai-footprint --html${N}   + opens the visual dashboard"
-say "    ${C}ai-footprint --json${N}   JSON output"
+say "    ${C}ai-footprint${N}          Scan this project + machine; print the report and"
+say "                          a link to the cumulative HTML report for the project"
+say "    ${C}ai-footprint --json${N}   Machine-readable JSON output"
+say "    ${C}ai-footprint --no-save${N} Do not write the HTML report (e.g. in CI)"
+say "    ${C}ai-certify${N}            Certify your skills from this project's code"
+say "    ${C}<cmd> --help${N}          Full options for either command"
+say ""
+say "  ${B}Getting started:${N} run ${C}ai-footprint${N} in any project, then ${C}ai-certify${N}"
+say "  to certify a skill. Both are local-first; nothing is sent without your consent."
+printf "\n"
+# ─── Legal notice (skill-code-certification / ADR-001 + ADR-003) ─────────────
+# NOT FINAL: pending review by a legal/labor expert before production. The
+# account-penalty clause in particular depends on the Shakers Terms of Service.
+say "  ${B}${Y}Before you use these tools:${N}"
+say "  ${Y}These tools run locally. ai-footprint sends only derived signals (never file${N}"
+say "  ${Y}contents) and only if you opt in. ai-certify sends sampled, secret-scrubbed${N}"
+say "  ${Y}source code to a server-side model to assess your skills; that code is${N}"
+say "  ${Y}processed ephemerally and not persisted. You are SOLELY responsible for${N}"
+say "  ${Y}ensuring you own, or are authorized to analyze, this project's code. Shakers${N}"
+say "  ${Y}assumes no liability for the code you submit. Submitting code that is not${N}"
+say "  ${Y}yours, or that you are not authorized to analyze, is a misuse of these tools${N}"
+say "  ${Y}and may result in penalties on your Shakers account, up to and including${N}"
+say "  ${Y}suspension. Skill scores are indicative and unverified, not an official${N}"
+say "  ${Y}qualification.${N}"
+say "  ${Y}[This notice is pending review by a legal/labor expert and is NOT FINAL.]${N}"
 printf "\n"
 
 # Notice if ~/.local/bin is not in the PATH
