@@ -136,10 +136,6 @@ const catalogs = {
       brandSub: 'perfil de uso de IA',
       toolsDetected: (n, total) => `${n}/${total} herramientas detectadas`,
       level: (level, name) => `Nivel ${level} · ${name}`,
-      // skill-code-certification / ADR-009: la NOTA mide el setup de IA de ESTE
-      // proyecto (por eso proyectos distintos dan notas distintas); el nivel/tier
-      // refleja tu setup global como desarrollador (proyecto ∪ home).
-      scoreScopeNote: 'La nota mide el setup de IA de este proyecto; el nivel refleja tu setup global.',
       detectedHeading: 'Detectadas',
       none: '(ninguna)',
       environment: 'Entorno',
@@ -203,6 +199,20 @@ const catalogs = {
       // persisted (see src/share.js's derivePayload, which only sends
       // countsByCategory/total, never these names).
       mcpHeading: 'Servidores MCP detectados',
+      // Projects where each AI tool was used (skill-code-certification /
+      // ADR-011). LOCAL ONLY — nunca se persiste (ver src/share.js#derivePayload):
+      // son rutas de proyecto de la propia máquina del usuario (legal aprobado).
+      toolUsageHeading: 'Proyectos por herramienta de IA',
+      toolUsageIntro: 'Dónde has usado cada herramienta de IA en esta máquina. Solo local: no se envía a ningún sitio.',
+      toolUsageEmpty: 'Ninguna herramienta detectada expone un historial de proyectos en local.',
+      toolUsageNoProjects: 'sin proyectos registrados todavía',
+      toolUsageUnavailable: 'no expone un historial de proyectos en local',
+      toolUsageApproxNote: 'ruta aproximada (reconstruida del nombre de carpeta)',
+      toolUsageCount: (n) => `${n} ${n === 1 ? 'proyecto' : 'proyectos'}`,
+      toolUsageSource: {
+        claudeSessions: 'historial de sesiones',
+        cursorWorkspaces: 'workspaces abiertos en Cursor',
+      },
       // Tier roadmap (talents-ai-score, issue 020): only short UI labels
       // live here — the authored prose itself lives in
       // src/roadmap-content.js (ported verbatim from the product-manager's
@@ -263,6 +273,17 @@ const catalogs = {
       // opt-in alternative — the copyable implementation prompt (below) is
       // the PRIMARY "how do I implement this" path.
       buildNextLevelHint: 'Alternativamente, ejecuta `ai-footprint --build-next-level` para generar el fichero de partida directamente en tu proyecto.',
+      // Oferta interactiva "analizar los proyectos descubiertos" (skill-code-
+      // certification / ADR-011): se muestra tras el informe en una TTY cuando
+      // se descubrieron proyectos. Lista rutas e imprime comandos listos para
+      // copiar; NUNCA lanza el análisis automáticamente.
+      analyzeHeading: 'Analizar tus proyectos',
+      analyzeIntro: (n) => `Detectamos ${n} ${n === 1 ? 'proyecto' : 'proyectos'} donde has usado herramientas de IA.`,
+      analyzePrompt: 'Escribe el número de un proyecto para ver sus comandos de análisis ("a" = todos, Enter = omitir): ',
+      analyzeItem: (i, p) => `  ${i}. ${p}`,
+      analyzeCommandsFor: (p) => `\n  Para analizar «${p}»:\n    ai-footprint --root "${p}"\n    ai-certify --root "${p}"`,
+      analyzeSkipped: 'Omitido. Puedes ejecutar esos comandos cuando quieras.',
+      analyzeInvalid: 'Selección no válida; omitido.',
       // Ayuda localizada (skill-code-certification / ADR-003): antes estaba
       // hardcodeada en español en bin/report.js; ahora pasa por i18n y respeta
       // la locale de la máquina.
@@ -608,10 +629,6 @@ const catalogs = {
       brandSub: 'AI usage profile',
       toolsDetected: (n, total) => `${n}/${total} tools detected`,
       level: (level, name) => `Level ${level} · ${name}`,
-      // skill-code-certification / ADR-009: the SCORE measures THIS project's AI
-      // setup (so different projects score differently); the level/tier reflects
-      // your global developer setup (project ∪ home).
-      scoreScopeNote: "The score measures this project's AI setup; the level reflects your global setup.",
       detectedHeading: 'Detected',
       none: '(none)',
       environment: 'Environment',
@@ -658,6 +675,20 @@ const catalogs = {
       technologiesEmpty: 'No recognized framework or library was found in the dependency manifests (package.json, requirements.txt, go.mod, pyproject.toml).',
       // MCP servers by name (talents-ai-score, issue 015). LOCAL ONLY.
       mcpHeading: 'Detected MCP servers',
+      // Projects where each AI tool was used (skill-code-certification /
+      // ADR-011). LOCAL ONLY — never persisted (see src/share.js#derivePayload):
+      // these are project paths on the user's own machine (legal-approved).
+      toolUsageHeading: 'Projects by AI tool',
+      toolUsageIntro: 'Where you have used each AI tool on this machine. Local only: nothing is sent anywhere.',
+      toolUsageEmpty: 'No detected tool exposes a local project history.',
+      toolUsageNoProjects: 'no projects recorded yet',
+      toolUsageUnavailable: 'does not expose a local project history',
+      toolUsageApproxNote: 'approximate path (reconstructed from the folder name)',
+      toolUsageCount: (n) => `${n} ${n === 1 ? 'project' : 'projects'}`,
+      toolUsageSource: {
+        claudeSessions: 'session history',
+        cursorWorkspaces: 'workspaces opened in Cursor',
+      },
       // Tier roadmap (talents-ai-score, issue 020): only short UI labels
       // live here — the authored prose is Spanish-only for now (no English
       // translation authored yet), src/roadmap-content.js.
@@ -693,6 +724,17 @@ const catalogs = {
       synthesizingLabel: 'Synthesizing agents with AI…',
       personalizingRoadmapLabel: 'Personalizing roadmap…',
       buildNextLevelHint: 'Alternatively, run `ai-footprint --build-next-level` to generate the starter file directly in your project.',
+      // Interactive "analyse the discovered projects" offer (skill-code-
+      // certification / ADR-011): shown after the report on a TTY when projects
+      // were discovered. Lists paths and prints ready-to-copy commands; NEVER
+      // auto-runs the analysis.
+      analyzeHeading: 'Analyse your projects',
+      analyzeIntro: (n) => `We found ${n} ${n === 1 ? 'project' : 'projects'} where you have used AI tools.`,
+      analyzePrompt: 'Type a project number to see its analysis commands ("a" = all, Enter = skip): ',
+      analyzeItem: (i, p) => `  ${i}. ${p}`,
+      analyzeCommandsFor: (p) => `\n  To analyse "${p}":\n    ai-footprint --root "${p}"\n    ai-certify --root "${p}"`,
+      analyzeSkipped: 'Skipped. You can run those commands whenever you like.',
+      analyzeInvalid: 'Invalid selection; skipped.',
       // Localized help (skill-code-certification / ADR-003): previously
       // hardcoded Spanish in bin/report.js; now routed through i18n so it
       // respects the machine locale.
