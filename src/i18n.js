@@ -333,7 +333,10 @@ const catalogs = {
         + 'tus ficheros, prompts, rutas ni credenciales. Dato indicativo, no '
         + 'verificado, no una cualificación oficial. Eres responsable de la '
         + 'información que decidas compartir; Shakers no asume responsabilidad '
-        + 'por los datos que envíes. Consulta el README de este repositorio para '
+        + 'por los datos que envíes. El uso indebido de estas herramientas —enviar '
+        + 'o analizar código que no es tuyo o que no estás autorizado a analizar— '
+        + 'puede acarrear penalizaciones en tu cuenta de Shakers, incluida la '
+        + 'posible suspensión. Consulta el README de este repositorio para '
         + 'más detalle. [Copy legal PENDIENTE DE VALIDACIÓN LEGAL/LABORAL — NO DEFINITIVO]',
       persistQuestion: '¿Guardar este informe en Shakers? (s/n):',
       invalidAnswer: 'Respuesta no reconocida. Responde "s" (sí) o "n" (no).',
@@ -752,7 +755,10 @@ const catalogs = {
         + 'files, prompts, paths or credentials. Indicative data, not verified, '
         + 'not an official qualification. You are responsible for the information '
         + 'you choose to share; Shakers assumes no liability for the data you '
-        + "submit. See this repository's README for more detail. "
+        + 'submit. Misuse of these tools —submitting or analyzing code that is not '
+        + 'yours or that you are not authorized to analyze— may result in penalties '
+        + "on your Shakers account, up to and including suspension. See this "
+        + "repository's README for more detail. "
         + '[Legal copy PENDING LEGAL/LABOR REVIEW — NOT FINAL]',
       persistQuestion: 'Save this report in Shakers? (y/n):',
       invalidAnswer: 'Answer not recognized. Reply "y" (yes) or "n" (no).',
