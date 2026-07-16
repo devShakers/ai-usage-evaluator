@@ -26,6 +26,7 @@ const { getCatalog } = require('./i18n');
 const BRAND = {
   primary: [5, 52, 44],    // #05342c teal (primary)
   teal500: [14, 125, 105], // #0e7d69 teal-500 (prompt accent)
+  teal700: [8, 71, 60],    // #08473c teal-700 — box borders (darker brand green)
   lime: [216, 230, 55],    // #d8e637 lime — HERO accent (bolt, border, titles)
   violet: [139, 92, 246],  // #8b5cf6 — sparing 2nd accent
   white: [244, 244, 245],  // primary text
@@ -88,15 +89,18 @@ function centerCells(cells, width, color) {
   const left = Math.max(0, (width - len) >> 1);
   return ' '.repeat(left) + cellsColored(cells, color) + ' '.repeat(Math.max(0, width - len - left));
 }
-function bd(ch, color) { return color ? `${fg(BRAND.lime)}${ch}${RESET}` : ch; }
+// Box borders/corners/divider in the darker brand green (teal-700). Single
+// constant so the shade is trivial to swap (e.g. to lime) if the user prefers.
+const BORDER = BRAND.teal700;
+function bd(ch, color) { return color ? `${fg(BORDER)}${ch}${RESET}` : ch; }
 
 // Rounded top border with the title embedded, Claude-Code style:
 //   ╭─ sh-eval · v0.1.0 ───────…───────╮
 function topBorder(title, inner, color) {
   const dashCount = Math.max(0, inner - (title.length + 3)); // "─ " + title + " "
   if (!color) return `╭─ ${title} ${'─'.repeat(dashCount)}╮`;
-  return `${fg(BRAND.lime)}╭─ ${RESET}${BOLD}${fg(BRAND.white)}${title}${RESET}`
-    + `${fg(BRAND.lime)} ${'─'.repeat(dashCount)}╮${RESET}`;
+  return `${fg(BORDER)}╭─ ${RESET}${BOLD}${fg(BRAND.white)}${title}${RESET}`
+    + `${fg(BORDER)} ${'─'.repeat(dashCount)}╮${RESET}`;
 }
 function bottomBorder(inner, color) { return bd(`╰${'─'.repeat(inner)}╯`, color); }
 
@@ -135,9 +139,13 @@ function bannerWide({ title, color }) {
   left.push([]);
   left.push([{ t: 'AI Usage Evaluator', st: { fg: BRAND.zinc } }]);
 
-  // Right column: Commands + Getting started (violet, the sparing 2nd accent).
+  // Right column: a short "what it is" summary, then Commands + Getting started
+  // (violet, the sparing 2nd accent).
   const NAME = 11;
   const right = [];
+  right.push([{ t: 'A local-first CLI to understand and', st: { fg: BRAND.white } }]);
+  right.push([{ t: 'level up how you work with AI.', st: { fg: BRAND.white } }]);
+  right.push([]);
   right.push([{ t: 'Commands', st: { bold: true, fg: BRAND.lime } }]);
   right.push([{ t: 'footprint'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'score AI setup (T0–T7) + roadmap', st: { fg: BRAND.zinc } }]);
   right.push([{ t: 'certify'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'certify Skills from your code', st: { fg: BRAND.zinc } }]);
@@ -190,6 +198,9 @@ function bannerStacked({ title, color, width }) {
   lines.push(line([{ t: '', st: null }]));
   lines.push(line([{ t: 'Welcome to ', st: { bold: true, fg: BRAND.white } }, { t: 'shakers', st: { bold: true, fg: BRAND.lime } }], { center: true }));
   lines.push(line([{ t: 'AI Usage Evaluator', st: { fg: BRAND.zinc } }], { center: true }));
+  lines.push(line([{ t: '', st: null }]));
+  lines.push(line([{ t: 'A local-first CLI to understand and', st: { fg: BRAND.white } }]));
+  lines.push(line([{ t: 'level up how you work with AI.', st: { fg: BRAND.white } }]));
   lines.push(line([{ t: '', st: null }]));
   lines.push(line([{ t: 'Commands', st: { bold: true, fg: BRAND.lime } }]));
   lines.push(line([{ t: 'footprint  ', st: { bold: true, fg: BRAND.white } }, { t: 'score AI setup (T0–T7)', st: { fg: BRAND.zinc } }]));

@@ -108,10 +108,12 @@ test('renderBanner (wide): colour off yields a plain, accent-free boxed header',
   // Rounded box with the title embedded in the top border.
   assert.match(banner, /╭─ sh-eval · v1\.0\.0 ─+╮/);
   assert.match(banner, /╰─+╯/);
-  // Two-column content: welcome + product line on the left, Commands/Getting
-  // started on the right.
+  // Two-column content: welcome + product line on the left, a "what it is"
+  // summary + Commands/Getting started on the right.
   assert.match(banner, /Welcome to shakers/);
   assert.match(banner, /AI Usage Evaluator/);
+  assert.match(banner, /A local-first CLI to understand and/);
+  assert.match(banner, /level up how you work with AI\./);
   assert.match(banner, /Commands/);
   assert.match(banner, /footprint/);
   assert.match(banner, /certify/);
