@@ -19,75 +19,173 @@ const { getCatalog } = require('./i18n');
 
 // ── Shakers brand colours (from shakers-design-system/design-spec/tokens.css) ──
 // 24-bit truecolour ANSI. Gated on a TTY by the caller (colour=false -> plain).
+// Palette direction (user feedback with the real logo, 2026-07-16): LIME is the
+// hero accent (the logo is a lime bolt on a dark tile), white for primary text,
+// grey for secondary/meta, a sparing violet for a second section title. Teal is
+// demoted to a secondary accent (the prompt).
 const BRAND = {
   primary: [5, 52, 44],    // #05342c teal (primary)
-  teal500: [14, 125, 105], // #0e7d69 teal-500
-  lime: [216, 230, 55],    // #d8e637 lime spark
-  zinc: [113, 113, 122],   // muted grey for the tagline
+  teal500: [14, 125, 105], // #0e7d69 teal-500 (prompt accent)
+  lime: [216, 230, 55],    // #d8e637 lime — HERO accent (bolt, border, titles)
+  violet: [139, 92, 246],  // #8b5cf6 — sparing 2nd accent
+  white: [244, 244, 245],  // primary text
+  zinc: [113, 113, 122],   // secondary / meta text
+  dark: [14, 14, 16],      // logo tile background
 };
 
 function fg(rgb) {
   return `\x1b[38;2;${rgb[0]};${rgb[1]};${rgb[2]}m`;
 }
+function bg(rgb) {
+  return `\x1b[48;2;${rgb[0]};${rgb[1]};${rgb[2]}m`;
+}
 const RESET = '\x1b[0m';
 const BOLD = '\x1b[1m';
 
-// ASCII wordmark. Kept as plain text so it degrades gracefully when colour is
-// off (piped / non-TTY).
-const WORDMARK = [
-  '  ____  _   _    _    _  _______ ____  ____  ',
-  ' / ___|| | | |  / \\  | |/ / ____|  _ \\/ ___| ',
-  ' \\___ \\| |_| | / _ \\ | \' /|  _| | |_) \\___ \\ ',
-  '  ___) |  _  |/ ___ \\| . \\| |___|  _ < ___) |',
-  ' |____/|_| |_/_/   \\_\\_|\\_\\_____|_| \\_\\____/ ',
+// Pixel-art lightning bolt (the logo's hero element). Full blocks only, for max
+// terminal compatibility; reads as an angular bolt. Rendered lime on a dark
+// tile (see tileRow). 5 wide × 5 tall.
+const BOLT_ART = [
+  '   ██',
+  '  ██ ',
+  '█████',
+  ' ██  ',
+  '██   ',
 ];
 
-// Shakers lightning bolt — a monochrome, angular Unicode glyph (U+03DF) that
-// echoes the bolt in the Shakers logo. Rendered in brand teal (never the
-// emoji ⚡, which most terminals force to colour). Used in the REPL prompt
-// (via the i18n string) and as a banner accent.
-const BOLT = 'ϟ';
+// ── boxed-header primitives ───────────────────────────────────────────────
+// A "cell" = { t: text, st: {bold?, fg?, bg?} }. Visible width is measured on
+// the PLAIN text so ANSI escapes never break padding/alignment.
+function span(text, st, color) {
+  if (!color || !st) return text;
+  let pre = '';
+  if (st.bold) pre += BOLD;
+  if (st.bg) pre += bg(st.bg);
+  if (st.fg) pre += fg(st.fg);
+  return `${pre}${text}${RESET}`;
+}
+function cellsPlain(cells) { return cells.map((c) => c.t).join(''); }
+function cellsColored(cells, color) { return cells.map((c) => span(c.t, c.st, color)).join(''); }
 
-// Builds the startup banner (shown ONCE on entry, not per prompt). Deliberately
-// ALWAYS ENGLISH — this is a brand/product surface, like the installer notice
-// (the functional footprint/certify output still respects the OS locale). It's
-// informative: what the tool is + a one-liner per command + how to start.
-// `color=false` yields a plain, accent-free banner (piped / non-TTY).
-const SPARK = ' ────────────────────────────────────────── ';
+function padRightCells(cells, width, color) {
+  const len = cellsPlain(cells).length;
+  return cellsColored(cells, color) + ' '.repeat(Math.max(0, width - len));
+}
+function centerCells(cells, width, color) {
+  const len = cellsPlain(cells).length;
+  const left = Math.max(0, (width - len) >> 1);
+  return ' '.repeat(left) + cellsColored(cells, color) + ' '.repeat(Math.max(0, width - len - left));
+}
+function bd(ch, color) { return color ? `${fg(BRAND.lime)}${ch}${RESET}` : ch; }
 
-function renderBanner({ version = '', color = true } = {}) {
-  const teal = (s) => (color ? `${BOLD}${fg(BRAND.teal500)}${s}${RESET}` : s);
-  const zinc = (s) => (color ? `${fg(BRAND.zinc)}${s}${RESET}` : s);
-  const lines = [];
+// `~/…`-shorten + tail-truncate the cwd so it fits a column.
+function formatCwd(cwd, home, max) {
+  let s = String(cwd || '');
+  if (home && (s === home || s.startsWith(home + '/'))) s = '~' + s.slice(home.length);
+  if (s.length > max) s = '…' + s.slice(s.length - (max - 1));
+  return s;
+}
+
+// Rounded top border with the title embedded, Claude-Code style:
+//   ╭─ sh-eval · v0.1.0 ───────…───────╮
+function topBorder(title, inner, color) {
+  const dashCount = Math.max(0, inner - (title.length + 3)); // "─ " + title + " "
+  if (!color) return `╭─ ${title} ${'─'.repeat(dashCount)}╮`;
+  return `${fg(BRAND.lime)}╭─ ${RESET}${BOLD}${fg(BRAND.white)}${title}${RESET}`
+    + `${fg(BRAND.lime)} ${'─'.repeat(dashCount)}╮${RESET}`;
+}
+function bottomBorder(inner, color) { return bd(`╰${'─'.repeat(inner)}╯`, color); }
+
+// One tile row (dark background + lime bolt), padded to `tileW`.
+function tileCell(i, tileW) {
+  const art = BOLT_ART[i] || '';
+  const t = art.padEnd(tileW - 1, ' ').padStart(tileW, ' ').slice(0, tileW);
+  return { t, st: { bg: BRAND.dark, fg: BRAND.lime, bold: true } };
+}
+
+// Builds the startup banner (shown ONCE on entry). Deliberately ALWAYS ENGLISH —
+// a brand/product surface like the installer notice (functional footprint/
+// certify output still respects the OS locale). Two-column boxed layout on wide
+// terminals, degrading to a single stacked column under ~76 columns.
+function renderBanner({ version = '', color = true, width = 80, cwd = process.cwd(), home = process.env.HOME || '' } = {}) {
+  const title = version ? `sh-eval · v${version}` : 'sh-eval';
+  return width >= 76
+    ? bannerWide({ title, color, cwd, home })
+    : bannerStacked({ title, color, cwd, home, width });
+}
+
+function bannerWide({ title, color, cwd, home }) {
+  const LW = 24;         // left (logo) column
+  const RW = 44;         // right (info) column
+  const INNER = 1 + LW + 3 + RW + 1; // between the outer borders (73)
+  const TILE = 7;
+
+  // Left column: welcome, bolt tile, product line, cwd.
+  const left = [];
+  left.push([{ t: 'Welcome to ', st: { bold: true, fg: BRAND.white } }, { t: 'shakers', st: { bold: true, fg: BRAND.lime } }]);
+  for (let i = 0; i < BOLT_ART.length; i++) left.push([tileCell(i, TILE)]);
+  left.push([{ t: 'AI Usage Evaluator', st: { fg: BRAND.zinc } }]);
+  left.push([{ t: formatCwd(cwd, home, LW), st: { fg: BRAND.zinc } }]);
+
+  // Right column: Commands + Getting started (violet, the sparing 2nd accent).
+  const NAME = 11;
+  const right = [];
+  right.push([]); // top spacer, aligns "Commands" with the tile top
+  right.push([{ t: 'Commands', st: { bold: true, fg: BRAND.lime } }]);
+  right.push([{ t: 'footprint'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'score AI setup (T0–T7) + roadmap', st: { fg: BRAND.zinc } }]);
+  right.push([{ t: 'certify'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'certify Skills from your code', st: { fg: BRAND.zinc } }]);
+  right.push([{ t: '─'.repeat(RW), st: { fg: BRAND.zinc } }]);
+  right.push([{ t: 'Getting started', st: { bold: true, fg: BRAND.violet } }]);
+  right.push([
+    { t: 'Type ', st: { fg: BRAND.zinc } }, { t: 'footprint', st: { fg: BRAND.white } },
+    { t: ' or ', st: { fg: BRAND.zinc } }, { t: 'certify', st: { fg: BRAND.white } },
+    { t: ' · help · exit', st: { fg: BRAND.zinc } },
+  ]);
+
+  const rows = Math.max(left.length, right.length);
+  const lines = [''];
+  lines.push(topBorder(title, INNER, color));
+  for (let i = 0; i < rows; i++) {
+    const l = centerCells(left[i] || [], LW, color);
+    const r = padRightCells(right[i] || [], RW, color);
+    lines.push(`${bd('│', color)} ${l} ${bd('│', color)} ${r} ${bd('│', color)}`);
+  }
+  lines.push(bottomBorder(INNER, color));
   lines.push('');
-  for (const row of WORDMARK) lines.push(color ? `${BOLD}${fg(BRAND.teal500)}${row}${RESET}` : row);
-  lines.push(color ? `${fg(BRAND.lime)}${SPARK}${RESET}` : SPARK);
+  return lines.join('\n') + '\n';
+}
 
-  // Title: bolt + product name (+ version).
-  lines.push(`  ${teal(`${BOLT}  Shakers · AI Usage Evaluator`)}${version ? zinc(`  ·  v${version}`) : ''}`);
-  lines.push('');
-  lines.push(`  ${zinc('A local-first CLI to understand and level up how you work with AI.')}`);
-  lines.push('');
-
-  // One indented block per command: teal name padded to a column, zinc wrapped
-  // description. Continuation lines align under the description.
-  const COL = 12; // 2 leading spaces + name padded to 10
-  const cmd = (name, descLines) => {
-    const pad = ' '.repeat(Math.max(1, COL - 2 - name.length));
-    lines.push(`  ${teal(name)}${pad}${zinc(descLines[0])}`);
-    for (const extra of descLines.slice(1)) lines.push(`${' '.repeat(COL)}${zinc(extra)}`);
+function bannerStacked({ title, color, cwd, home, width }) {
+  const INNER = Math.max(20, Math.min(width - 2, 56));
+  const W = INNER - 2; // content width inside the "│ … │" padding
+  const TILE = 7;
+  const line = (cellsOrStr, { center = false } = {}) => {
+    const cells = Array.isArray(cellsOrStr) ? cellsOrStr : [cellsOrStr];
+    // truncate on plain length
+    let plain = cellsPlain(cells);
+    let body;
+    if (plain.length > W) {
+      const flat = plain.slice(0, W - 1) + '…';
+      body = flat; // truncated -> drop styling (rare, narrow terminals)
+      return `${bd('│', color)} ${body}${' '.repeat(Math.max(0, W - body.length))} ${bd('│', color)}`;
+    }
+    body = center ? centerCells(cells, W, color) : padRightCells(cells, W, color);
+    return `${bd('│', color)} ${body} ${bd('│', color)}`;
   };
-  cmd('footprint', [
-    'Scan your machine and project for AI tooling (assistants, MCP servers,',
-    'agents, hooks, custom skills) and score your setup on a T0–T7 maturity',
-    'ladder — with a roadmap and a copy-paste prompt to reach the next level.',
-  ]);
-  cmd('certify', [
-    "Analyze your project's code to certify your Shakers Skills:",
-    'a score, the rationale, and concrete improvements.',
-  ]);
-  lines.push('');
-  lines.push(`  ${zinc('Type `footprint` or `certify` to start · `help` for details · `exit` to leave.')}`);
+
+  const lines = [''];
+  lines.push(topBorder(title, INNER, color));
+  for (let i = 0; i < BOLT_ART.length; i++) lines.push(line([tileCell(i, TILE)], { center: true }));
+  lines.push(line([{ t: 'Welcome to ', st: { bold: true, fg: BRAND.white } }, { t: 'shakers', st: { bold: true, fg: BRAND.lime } }], { center: true }));
+  lines.push(line([{ t: 'AI Usage Evaluator', st: { fg: BRAND.zinc } }], { center: true }));
+  lines.push(line([{ t: formatCwd(cwd, home, W), st: { fg: BRAND.zinc } }], { center: true }));
+  lines.push(line([{ t: '', st: null }]));
+  lines.push(line([{ t: 'Commands', st: { bold: true, fg: BRAND.lime } }]));
+  lines.push(line([{ t: 'footprint  ', st: { bold: true, fg: BRAND.white } }, { t: 'score AI setup (T0–T7)', st: { fg: BRAND.zinc } }]));
+  lines.push(line([{ t: 'certify    ', st: { bold: true, fg: BRAND.white } }, { t: 'certify your Skills', st: { fg: BRAND.zinc } }]));
+  lines.push(line([{ t: '', st: null }]));
+  lines.push(line([{ t: 'Type footprint or certify · help · exit', st: { fg: BRAND.zinc } }]));
+  lines.push(bottomBorder(INNER, color));
   lines.push('');
   return lines.join('\n') + '\n';
 }
@@ -160,7 +258,14 @@ async function runRepl({ stdin, deps, lang = 'en', version = '', out = process.s
   const catalog = getCatalog(lang);
   const useColor = color === undefined ? !!out.isTTY : color;
 
-  out.write(renderBanner({ version, color: useColor })); // banner is always English
+  // Banner is always English; boxed layout adapts to the terminal width.
+  out.write(renderBanner({
+    version,
+    color: useColor,
+    width: out.columns || 80,
+    cwd: process.cwd(),
+    home: process.env.HOME || '',
+  }));
 
   for (;;) {
     out.write(renderPrompt({ lang, color: useColor }));
@@ -185,7 +290,5 @@ module.exports = {
   parseCommandLine,
   dispatchCommand,
   runRepl,
-  WORDMARK,
   BRAND,
-  BOLT,
 };
