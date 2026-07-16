@@ -199,20 +199,6 @@ const catalogs = {
       // persisted (see src/share.js's derivePayload, which only sends
       // countsByCategory/total, never these names).
       mcpHeading: 'Servidores MCP detectados',
-      // Projects where each AI tool was used (skill-code-certification /
-      // ADR-011). LOCAL ONLY — nunca se persiste (ver src/share.js#derivePayload):
-      // son rutas de proyecto de la propia máquina del usuario (legal aprobado).
-      toolUsageHeading: 'Proyectos por herramienta de IA',
-      toolUsageIntro: 'Dónde has usado cada herramienta de IA en esta máquina. Solo local: no se envía a ningún sitio.',
-      toolUsageEmpty: 'Ninguna herramienta detectada expone un historial de proyectos en local.',
-      toolUsageNoProjects: 'sin proyectos registrados todavía',
-      toolUsageUnavailable: 'no expone un historial de proyectos en local',
-      toolUsageApproxNote: 'ruta aproximada (reconstruida del nombre de carpeta)',
-      toolUsageCount: (n) => `${n} ${n === 1 ? 'proyecto' : 'proyectos'}`,
-      toolUsageSource: {
-        claudeSessions: 'historial de sesiones',
-        cursorWorkspaces: 'workspaces abiertos en Cursor',
-      },
       // Tier roadmap (talents-ai-score, issue 020): only short UI labels
       // live here — the authored prose itself lives in
       // src/roadmap-content.js (ported verbatim from the product-manager's
@@ -272,24 +258,13 @@ const catalogs = {
       // "Construir el siguiente nivel ahora" (issue 021): now a SECONDARY,
       // opt-in alternative — the copyable implementation prompt (below) is
       // the PRIMARY "how do I implement this" path.
-      buildNextLevelHint: 'Alternativamente, ejecuta `ai-footprint --build-next-level` para generar el fichero de partida directamente en tu proyecto.',
-      // Oferta interactiva "analizar los proyectos descubiertos" (skill-code-
-      // certification / ADR-011): se muestra tras el informe en una TTY cuando
-      // se descubrieron proyectos. Lista rutas e imprime comandos listos para
-      // copiar; NUNCA lanza el análisis automáticamente.
-      analyzeHeading: 'Analizar tus proyectos',
-      analyzeIntro: (n) => `Detectamos ${n} ${n === 1 ? 'proyecto' : 'proyectos'} donde has usado herramientas de IA.`,
-      analyzePrompt: 'Escribe el número de un proyecto para ver sus comandos de análisis ("a" = todos, Enter = omitir): ',
-      analyzeItem: (i, p) => `  ${i}. ${p}`,
-      analyzeCommandsFor: (p) => `\n  Para analizar «${p}»:\n    ai-footprint --root "${p}"\n    ai-certify --root "${p}"`,
-      analyzeSkipped: 'Omitido. Puedes ejecutar esos comandos cuando quieras.',
-      analyzeInvalid: 'Selección no válida; omitido.',
+      buildNextLevelHint: 'Alternativamente, ejecuta `footprint --build-next-level` para generar el fichero de partida directamente en tu proyecto.',
       // Ayuda localizada (skill-code-certification / ADR-003): antes estaba
       // hardcodeada en español en bin/report.js; ahora pasa por i18n y respeta
       // la locale de la máquina.
       help:
         '\nAI Footprint — perfil local de uso de herramientas de IA\n\n'
-        + 'Uso:\n  ai-footprint [opciones]\n\n'
+        + 'Uso:\n  footprint [opciones]\n\n'
         + 'Opciones:\n'
         + '      --json             Imprime el informe en JSON por stdout\n'
         + '      --no-save          No escribe el informe en disco (solo muestra)\n'
@@ -348,7 +323,7 @@ const catalogs = {
       persistIntro:
         'Este informe se ha generado y mostrado en tu equipo, siempre. '
         + 'Guardarlo en Shakers es opcional y revocable en cualquier momento '
-        + '(ai-footprint --consent-revoke): guarda tu nivel/tier y señales '
+        + '(footprint --consent-revoke): guarda tu nivel/tier y señales '
         + 'estructuradas derivadas (herramientas, MCP, memoria, '
         + 'automatizaciones, agentes, tecnologías) — nunca el contenido de '
         + 'tus ficheros, prompts, rutas ni credenciales. Dato indicativo, no '
@@ -388,7 +363,7 @@ const catalogs = {
       revoked: 'Consentimiento revocado. No se guardará nada más automáticamente.',
       reset: 'Decisión de consentimiento reiniciada. Se te preguntará de nuevo en la próxima ejecución.',
       emailChanged: (email) => `Correo actualizado a ${email}. Se usará en el próximo guardado.`,
-      emailInvalidCli: 'Correo no válido. Uso: ai-footprint --consent-email tu@correo.com',
+      emailInvalidCli: 'Correo no válido. Uso: footprint --consent-email tu@correo.com',
     },
     // Email-ownership verification (skill-code-certification / ADR-006): the
     // OTP "modo espera" copy, shared by both binaries. Shown only when the
@@ -418,7 +393,7 @@ const catalogs = {
       help:
         'AI Certify — certifica Skills de tu catálogo de Shakers analizando tu proyecto local\n\n'
         + 'Uso:\n'
-        + '  ai-certify [opciones]\n\n'
+        + '  certify [opciones]\n\n'
         + 'Opciones:\n'
         + '      --root DIR           Analiza DIR en vez del directorio actual\n'
         + '      --email CORREO       Tu correo de Talent (si no, se usa el guardado o se te pregunta)\n'
@@ -436,7 +411,7 @@ const catalogs = {
       // atribuye la responsabilidad. Aceptación explícita obligatoria.
       disclaimer:
         'AVISO LEGAL — léelo antes de continuar:\n'
-        + '  ai-certify envía datos de tu proyecto a Shakers para certificar tus Skills.\n'
+        + '  certify envía datos de tu proyecto a Shakers para certificar tus Skills.\n'
         + '  En esta fase (resolve) se envían tu correo y los NOMBRES de las tecnologías\n'
         + '  detectadas; la fase de certificación posterior enviará fragmentos de código.\n'
         + '  Eres el ÚNICO responsable de asegurarte de que eres propietario del código de\n'
@@ -478,7 +453,7 @@ const catalogs = {
       },
       errorNoEndpoint:
         'No hay endpoint de certificación configurado. Define AI_FOOTPRINT_CERTIFY_ENDPOINT '
-        + 'con la URL del Hub de Shakers y vuelve a ejecutar ai-certify. (No hay certificación '
+        + 'con la URL del Hub de Shakers y vuelve a ejecutar certify. (No hay certificación '
         + 'en local: el catálogo de Skills y el análisis viven en el Hub.)',
       errorIntro: 'No se han podido resolver las Skills certificables:',
       errorNetwork: 'no se pudo contactar con el servicio de certificación (error de red).',
@@ -544,6 +519,26 @@ const catalogs = {
         remediationCopyLabel: 'Copiar',
         remediationCopiedLabel: 'Copiado ✓',
       },
+    },
+    // Branded mini-shell chrome (skill-code-certification / ADR-014). The
+    // `shakers` REPL is the single entrypoint; this covers the banner tagline,
+    // prompt and command help — the commands themselves keep their own copy.
+    repl: {
+      tagline: 'Herramientas locales de IA para desarrolladores',
+      hint: 'Escribe "help" para ver los comandos, "exit" para salir.',
+      prompt: 'sh-eval ›',
+      goodbye: 'Hasta pronto.',
+      unknown: (cmd) => `Comando no reconocido: "${cmd}". Escribe "help" para ver los comandos disponibles.`,
+      help:
+        'Shakers — comandos disponibles\n\n'
+        + '  footprint [opciones]   Escanea este proyecto y tu equipo; puntúa tu setup de IA (T0-T7)\n'
+        + '  certify   [opciones]   Certifica tus Skills a partir del código de este proyecto\n'
+        + '  help                   Muestra esta ayuda\n'
+        + '  clear                  Limpia la pantalla\n'
+        + '  exit | quit            Cierra la shell\n\n'
+        + 'Los flags de cada comando siguen funcionando dentro de la shell\n'
+        + '(p.ej. `footprint --root <dir>`, `certify --all`). Usa `footprint --help`\n'
+        + 'o `certify --help` para ver todas sus opciones.',
     },
   },
   en: {
@@ -675,20 +670,6 @@ const catalogs = {
       technologiesEmpty: 'No recognized framework or library was found in the dependency manifests (package.json, requirements.txt, go.mod, pyproject.toml).',
       // MCP servers by name (talents-ai-score, issue 015). LOCAL ONLY.
       mcpHeading: 'Detected MCP servers',
-      // Projects where each AI tool was used (skill-code-certification /
-      // ADR-011). LOCAL ONLY — never persisted (see src/share.js#derivePayload):
-      // these are project paths on the user's own machine (legal-approved).
-      toolUsageHeading: 'Projects by AI tool',
-      toolUsageIntro: 'Where you have used each AI tool on this machine. Local only: nothing is sent anywhere.',
-      toolUsageEmpty: 'No detected tool exposes a local project history.',
-      toolUsageNoProjects: 'no projects recorded yet',
-      toolUsageUnavailable: 'does not expose a local project history',
-      toolUsageApproxNote: 'approximate path (reconstructed from the folder name)',
-      toolUsageCount: (n) => `${n} ${n === 1 ? 'project' : 'projects'}`,
-      toolUsageSource: {
-        claudeSessions: 'session history',
-        cursorWorkspaces: 'workspaces opened in Cursor',
-      },
       // Tier roadmap (talents-ai-score, issue 020): only short UI labels
       // live here — the authored prose is Spanish-only for now (no English
       // translation authored yet), src/roadmap-content.js.
@@ -723,24 +704,13 @@ const catalogs = {
       scanningLabel: 'Scanning environment and detectors…',
       synthesizingLabel: 'Synthesizing agents with AI…',
       personalizingRoadmapLabel: 'Personalizing roadmap…',
-      buildNextLevelHint: 'Alternatively, run `ai-footprint --build-next-level` to generate the starter file directly in your project.',
-      // Interactive "analyse the discovered projects" offer (skill-code-
-      // certification / ADR-011): shown after the report on a TTY when projects
-      // were discovered. Lists paths and prints ready-to-copy commands; NEVER
-      // auto-runs the analysis.
-      analyzeHeading: 'Analyse your projects',
-      analyzeIntro: (n) => `We found ${n} ${n === 1 ? 'project' : 'projects'} where you have used AI tools.`,
-      analyzePrompt: 'Type a project number to see its analysis commands ("a" = all, Enter = skip): ',
-      analyzeItem: (i, p) => `  ${i}. ${p}`,
-      analyzeCommandsFor: (p) => `\n  To analyse "${p}":\n    ai-footprint --root "${p}"\n    ai-certify --root "${p}"`,
-      analyzeSkipped: 'Skipped. You can run those commands whenever you like.',
-      analyzeInvalid: 'Invalid selection; skipped.',
+      buildNextLevelHint: 'Alternatively, run `footprint --build-next-level` to generate the starter file directly in your project.',
       // Localized help (skill-code-certification / ADR-003): previously
       // hardcoded Spanish in bin/report.js; now routed through i18n so it
       // respects the machine locale.
       help:
         '\nAI Footprint — local profile of your AI-tool usage\n\n'
-        + 'Usage:\n  ai-footprint [options]\n\n'
+        + 'Usage:\n  footprint [options]\n\n'
         + 'Options:\n'
         + '      --json             Print the report as JSON on stdout\n'
         + '      --no-save          Do not write the report to disk (show only)\n'
@@ -791,7 +761,7 @@ const catalogs = {
       persistIntro:
         'This report has already been generated and shown on your machine, '
         + 'always. Saving it in Shakers is optional and revocable at any '
-        + "time (ai-footprint --consent-revoke): it saves your level/tier and "
+        + "time (footprint --consent-revoke): it saves your level/tier and "
         + 'structured signals derived across categories (tools, MCP, memory, '
         + 'automations, agents, technologies) — never the content of your '
         + 'files, prompts, paths or credentials. Indicative data, not verified, '
@@ -826,7 +796,7 @@ const catalogs = {
       revoked: 'Consent revoked. Nothing will be saved automatically anymore.',
       reset: 'Consent decision reset. You will be asked again on the next run.',
       emailChanged: (email) => `Email updated to ${email}. It will be used on the next save.`,
-      emailInvalidCli: 'Invalid email. Usage: ai-footprint --consent-email you@example.com',
+      emailInvalidCli: 'Invalid email. Usage: footprint --consent-email you@example.com',
     },
     // Email-ownership verification (skill-code-certification / ADR-006): the
     // OTP "wait mode" copy, shared by both binaries. Gates PERSISTENCE ONLY —
@@ -853,7 +823,7 @@ const catalogs = {
       help:
         'AI Certify — certify Skills from your Shakers catalog by analyzing your local project\n\n'
         + 'Usage:\n'
-        + '  ai-certify [options]\n\n'
+        + '  certify [options]\n\n'
         + 'Options:\n'
         + '      --root DIR           Analyze DIR instead of the current directory\n'
         + '      --email EMAIL        Your Talent email (else the stored one, else you are asked)\n'
@@ -869,7 +839,7 @@ const catalogs = {
       resolvingLabel: 'Resolving certifiable Skills…',
       disclaimer:
         'LEGAL DISCLAIMER — read before continuing:\n'
-        + '  ai-certify sends data about your project to Shakers to certify your Skills.\n'
+        + '  certify sends data about your project to Shakers to certify your Skills.\n'
         + '  In this phase (resolve) it sends your email and the NAMES of the detected\n'
         + '  technologies; the later certification phase will send code snippets.\n'
         + '  You are SOLELY responsible for ensuring you own, or are authorized to analyze,\n'
@@ -911,7 +881,7 @@ const catalogs = {
       },
       errorNoEndpoint:
         'No certification endpoint configured. Set AI_FOOTPRINT_CERTIFY_ENDPOINT to the '
-        + 'Shakers Hub URL and run ai-certify again. (There is no local-only certification: '
+        + 'Shakers Hub URL and run certify again. (There is no local-only certification: '
         + 'the Skill catalog and the analysis live on the Hub.)',
       errorIntro: 'Could not resolve certifiable Skills:',
       errorNetwork: 'the certification service could not be reached (network error).',
@@ -974,6 +944,26 @@ const catalogs = {
         remediationCopyLabel: 'Copy',
         remediationCopiedLabel: 'Copied ✓',
       },
+    },
+    // Branded mini-shell chrome (skill-code-certification / ADR-014). The
+    // `shakers` REPL is the single entrypoint; this covers the banner tagline,
+    // prompt and command help — the commands themselves keep their own copy.
+    repl: {
+      tagline: 'Local AI tooling for developers',
+      hint: 'Type "help" to list commands, "exit" to quit.',
+      prompt: 'sh-eval ›',
+      goodbye: 'See you soon.',
+      unknown: (cmd) => `Unknown command: "${cmd}". Type "help" to list the available commands.`,
+      help:
+        'Shakers — available commands\n\n'
+        + '  footprint [options]   Scan this project + your machine; score your AI setup (T0-T7)\n'
+        + '  certify   [options]   Certify your Skills from this project\'s code\n'
+        + '  help                  Show this help\n'
+        + '  clear                 Clear the screen\n'
+        + '  exit | quit           Close the shell\n\n'
+        + 'Each command\'s flags still work inside the shell\n'
+        + '(e.g. `footprint --root <dir>`, `certify --all`). Use `footprint --help`\n'
+        + 'or `certify --help` for all their options.',
     },
   },
 };

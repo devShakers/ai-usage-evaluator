@@ -9,7 +9,7 @@
 #   ./install.sh
 #
 # The script detects whether the files are local (installs by copying) or
-# not (downloads them from the repo). When done it leaves the `ai-footprint`
+# not (downloads them from the repo). When done it leaves the `sh-eval`
 # command available. Uninstall: ./install.sh --uninstall
 #
 set -euo pipefail
@@ -42,9 +42,14 @@ fi
 # this installer by being left off a hardcoded list) never goes missing from
 # an install again. If a file is ever added to src/ that must NOT ship (none
 # today), exclude it explicitly at the discovery step below and say why.
+# ADR-014: `sh-eval` (the branded REPL) is the ONLY installed command. The
+# per-command binaries (bin/report.js / bin/certify.js) are still SHIPPED — the
+# REPL imports them (run(args,{ask})) — but no launcher is created for them, so
+# they aren't invoked directly.
 FILES=(
   "package.json"
   "README.md"
+  "bin/sh-eval.js"
   "bin/report.js"
   "bin/certify.js"
 )
@@ -53,23 +58,26 @@ say()  { printf "  %b\n" "$1"; }
 die()  { printf "  ${R}✗ %b${N}\n" "$1" >&2; exit 1; }
 
 uninstall() {
-  printf "\n  ${B}${C}AI Footprint — uninstall${N}\n\n"
+  printf "\n  ${B}${C}Shakers — uninstall${N}\n\n"
   rm -rf "$INSTALL_DIR" && say "${G}+${N} removed $INSTALL_DIR"
-  rm -f "$BIN_DIR/ai-footprint" && say "${G}+${N} removed $BIN_DIR/ai-footprint"
-  rm -f "$BIN_DIR/ai-certify" && say "${G}+${N} removed $BIN_DIR/ai-certify"
+  rm -f "$BIN_DIR/sh-eval" && say "${G}+${N} removed $BIN_DIR/sh-eval"
+  # Legacy launchers from installs before ADR-014's single-entrypoint REPL.
+  rm -f "$BIN_DIR/ai-footprint" && say "${G}+${N} removed legacy $BIN_DIR/ai-footprint"
+  rm -f "$BIN_DIR/ai-certify" && say "${G}+${N} removed legacy $BIN_DIR/ai-certify"
   say "\n  ${G}${B}Done.${N} (Your reports in ~/.config/ai-footprint/ are kept.)\n"
   exit 0
 }
 
 [ "${1:-}" = "--uninstall" ] && uninstall
 
-printf "\n  ${B}${C}AI Footprint & Skill Certification — installer v${VERSION}${N}\n"
-say  "${C}local-first developer AI tools${N}"
-say  "  ${B}ai-footprint${N}  scans your machine and current project for AI tooling"
+printf "\n  ${B}${C}Shakers — installer v${VERSION}${N}\n"
+say  "${C}local-first developer AI tools, in one branded shell${N}"
+say  "  ${B}sh-eval${N}       opens an interactive Shakers shell with two commands:"
+say  "  ${B}footprint${N}     scans your machine and current project for AI tooling"
 say  "                (assistants, MCP servers, agents, hooks, custom skills/"
 say  "                commands) and scores your setup on a T0-T7 maturity ladder,"
 say  "                with a curated roadmap and a copy-paste prompt to level up."
-say  "  ${B}ai-certify${N}    certifies your skills from your actual project code: it"
+say  "  ${B}certify${N}       certifies your skills from your actual project code: it"
 say  "                maps your stack to Shakers Skills and returns a per-skill"
 say  "                assessment. Code is sampled, secret-scrubbed, sent for"
 say  "                analysis, and never stored."
@@ -84,7 +92,7 @@ say "${G}+${N} Node $(node -v) detected"
 # Local install (cloned repo) or remote (curl)?
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo '')"
 LOCAL=0
-if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/bin/report.js" ]; then
+if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/bin/sh-eval.js" ]; then
   LOCAL=1
   say "${G}+${N} Files found locally — installing by copy"
 else
@@ -148,53 +156,48 @@ for f in "${SRC_FILES[@]}"; do
   say "    ${G}+${N} src/$f"
 done
 
-# ─── Create the `ai-footprint` launcher ─────────────────────────────────────
-SHIM="$BIN_DIR/ai-footprint"
+# ─── Create the single `sh-eval` launcher (ADR-014) ─────────────────────────
+# The branded REPL is the ONLY command. bin/report.js / bin/certify.js are
+# shipped (the REPL imports them) but get NO standalone launcher.
+SHIM="$BIN_DIR/sh-eval"
 cat > "$SHIM" <<EOF
 #!/usr/bin/env bash
-exec node "$INSTALL_DIR/bin/report.js" "\$@"
+exec node "$INSTALL_DIR/bin/sh-eval.js" "\$@"
 EOF
 chmod +x "$SHIM"
 say "\n  ${G}+${N} Command created at $SHIM"
 
-# ─── Create the `ai-certify` launcher (skill-code-certification) ─────────────
-# Second command: the Skill-certification CLI (bin/certify.js), installed
-# alongside ai-footprint from the same INSTALL_DIR.
-CERTIFY_SHIM="$BIN_DIR/ai-certify"
-cat > "$CERTIFY_SHIM" <<EOF
-#!/usr/bin/env bash
-exec node "$INSTALL_DIR/bin/certify.js" "\$@"
-EOF
-chmod +x "$CERTIFY_SHIM"
-say "  ${G}+${N} Command created at $CERTIFY_SHIM"
+# Remove legacy launchers from installs before the single-entrypoint REPL, so
+# an upgrade doesn't leave the retired `ai-footprint`/`ai-certify` commands
+# lying around pointing at the old direct binaries.
+rm -f "$BIN_DIR/ai-footprint" "$BIN_DIR/ai-certify" 2>/dev/null || true
 
 # ─── Verification ───────────────────────────────────────────────────────────
-node "$INSTALL_DIR/bin/report.js" --help >/dev/null 2>&1 \
-  && say "  ${G}+${N} Verification OK (ai-footprint)" \
-  || die "Verification failed while running ai-footprint."
-node "$INSTALL_DIR/bin/certify.js" --help >/dev/null 2>&1 \
-  && say "  ${G}+${N} Verification OK (ai-certify)" \
-  || die "Verification failed while running ai-certify."
+# Drive the REPL non-interactively (pipe `exit`) so verification never hangs.
+printf 'exit\n' | node "$INSTALL_DIR/bin/sh-eval.js" >/dev/null 2>&1 \
+  && say "  ${G}+${N} Verification OK (sh-eval)" \
+  || die "Verification failed while running sh-eval."
 
 # ─── Final message ──────────────────────────────────────────────────────────
 printf "\n  ${G}${B}Installed successfully.${N}\n\n"
 say "  ${B}Usage:${N}"
-say "    ${C}ai-footprint${N}          Scan this project + machine; print the report and"
-say "                          a link to the cumulative HTML report for the project"
-say "    ${C}ai-footprint --json${N}   Machine-readable JSON output"
-say "    ${C}ai-footprint --no-save${N} Do not write the HTML report (e.g. in CI)"
-say "    ${C}ai-certify${N}            Certify your skills from this project's code"
-say "    ${C}<cmd> --help${N}          Full options for either command"
+say "    ${C}sh-eval${N}               Open the Shakers shell, then type a command:"
+say "      ${C}footprint${N}           Scan this project + machine; print the report and a"
+say "                          link to the cumulative HTML report for the project"
+say "      ${C}footprint --json${N}    Machine-readable JSON output"
+say "      ${C}certify${N}             Certify your skills from this project's code"
+say "      ${C}help${N} / ${C}exit${N}          List commands / leave the shell"
 say ""
-say "  ${B}Getting started:${N} run ${C}ai-footprint${N} in any project, then ${C}ai-certify${N}"
-say "  to certify a skill. Both are local-first; nothing is sent without your consent."
+say "  ${B}Getting started:${N} run ${C}sh-eval${N} in any project, then type ${C}footprint${N}"
+say "  and, once done, ${C}certify${N}. Local-first; nothing is sent without your consent."
 printf "\n"
 # ─── Legal notice (skill-code-certification / ADR-001 + ADR-003) ─────────────
 # NOT FINAL: pending review by a legal/labor expert before production. The
 # account-penalty clause in particular depends on the Shakers Terms of Service.
 say "  ${B}${Y}Before you use these tools:${N}"
-say "  ${Y}These tools run locally. ai-footprint sends only derived signals (never file${N}"
-say "  ${Y}contents) and only if you opt in. ai-certify sends sampled, secret-scrubbed${N}"
+say "  ${Y}These tools run locally inside the sh-eval shell. footprint sends only derived${N}"
+say "  ${Y}signals (never file contents) and only if you opt in. certify sends sampled,${N}"
+say "  ${Y}secret-scrubbed${N}"
 say "  ${Y}source code to a server-side model to assess your skills; that code is${N}"
 say "  ${Y}processed ephemerally and not persisted. You are SOLELY responsible for${N}"
 say "  ${Y}ensuring you own, or are authorized to analyze, this project's code. Shakers${N}"

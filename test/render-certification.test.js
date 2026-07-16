@@ -36,6 +36,32 @@ test('terminal: shows heading, disclaimer, score, rationale, improvements, sampl
   assert.match(out, /Sample: 3\/5 files/);
 });
 
+// Terminal-condense (CPO feedback): a long LLM rationale is trimmed to its
+// essence in the TERMINAL, but the HTML report keeps it in full, and the
+// improvements + remediation prompt stay verbatim (they are the payload).
+test('terminal: a long rationale is trimmed in the terminal but kept whole in HTML; improvements stay verbatim', () => {
+  const LONG =
+    'The component architecture is solid and follows idiomatic React patterns throughout the sampled files. '
+    + 'Hooks are composed cleanly and side effects are well isolated in dedicated modules. '
+    + 'That said, there is a long tail of secondary observations that make this rationale verbose enough to blow past the terminal budget and should be dropped from the terminal view only.';
+  const cert = {
+    items: [{
+      skillId: 1, skillName: 'React', technology: 'React',
+      sampling: { sampleable: true, includedCount: 3, candidateCount: 5, estTokens: 1200, truncated: false, capReason: null },
+      result: { score: 82, rationale: LONG, improvements: ['Extract the data layer into a hook'] },
+    }],
+    model: null,
+  };
+  const term = renderCertificationTerminal(cert, 'en');
+  const html = renderCertificationHtml(cert, 'en');
+
+  assert.match(term, /The component architecture is solid/); // essence kept
+  assert.equal(term.includes('dropped from the terminal view only'), false); // tail trimmed
+  assert.match(term, /Extract the data layer into a hook/); // improvement + remediation prompt verbatim
+
+  assert.ok(html.includes('dropped from the terminal view only')); // HTML keeps the full rationale
+});
+
 test('terminal: partial-sample warning appears only when some sampling.truncated', () => {
   const notTruncated = renderCertificationTerminal(certification(), 'en');
   assert.equal(/Partial sample:/.test(notTruncated), false);

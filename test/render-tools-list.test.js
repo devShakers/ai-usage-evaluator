@@ -90,7 +90,9 @@ test('renderHtml: never throws with an all-undetected tool list', () => {
 test('renderTerminal: only detected tools are listed, no "Not detected: ..." line', () => {
   const out = strip(renderTerminal(BASE_REPORT, MATURITY, 'es'));
   const start = out.indexOf('Detectadas');
-  const end = out.indexOf('Entorno', start);
+  // Terminal-condense: the Environment block was removed from the terminal,
+  // so the section that follows Detected is now Technologies.
+  const end = out.indexOf('Tecnolog', start);
   const section = out.slice(start, end);
   assert.match(section, /Claude Code/);
   assert.equal(section.includes('GitHub Copilot'), false);

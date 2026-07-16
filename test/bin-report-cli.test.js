@@ -127,7 +127,9 @@ test('bin/report.js: declining persistence still shows the full report (denial o
     env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
   });
   assert.match(stdout, /AI FOOTPRINT/);
-  assert.match(stdout, /Environment|Entorno/);
+  // Terminal-condense: the Environment block was dropped from the terminal;
+  // assert the full report still rendered via the always-present score line.
+  assert.match(stdout, /\/100/);
 
   const consentPath = path.join(tmpConfigDir, 'consent.json');
   const state = JSON.parse(fs.readFileSync(consentPath, 'utf8'));
@@ -308,10 +310,15 @@ test('bin/report.js: the plain-text terminal report includes technologies, agent
 
 // talents-ai-score, description-always-present: real-shaped agent files
 // (mirroring shakers-hub-backend/.claude/agents/'s own style — a `name` +
-// a long free-text `description`, no explicit `tools:`) must show that
-// raw description in the terminal report even with no synthesis endpoint
-// configured at all.
-test('bin/report.js: an agent\'s raw frontmatter description shows in the terminal report with no synthesis endpoint configured', async () => {
+// a long free-text `description`, no explicit `tools:`) must still surface the
+// agent even with no synthesis endpoint configured at all.
+//
+// Terminal-summarize (2026-07-16): the condensed terminal now shows the agent
+// name + model badge AND a SHORT description line (the raw frontmatter
+// description, summarized). The full-length description stays in the HTML report
+// (covered by test/render-html-agent-cards.test.js). This fixture's description
+// is under the truncation limit, so it shows verbatim here.
+test('bin/report.js: an agent (name + model + short description) shows in the terminal report with no synthesis endpoint configured', async () => {
   fs.mkdirSync(path.join(tmpProjectDir, '.claude', 'agents'), { recursive: true });
   fs.writeFileSync(
     path.join(tmpProjectDir, '.claude', 'agents', 'ddd-enforcer.md'),
@@ -333,6 +340,10 @@ test('bin/report.js: an agent\'s raw frontmatter description shows in the termin
   });
   assert.equal(code, 0);
   assert.match(stdout, /ddd-enforcer/);
+  // Model badge is part of the agent line ([opus] here).
+  assert.match(stdout, /\[opus\]/);
+  // Short description line now shown in the terminal (summarized; verbatim here
+  // as it's under the limit). The full-length version stays in the HTML report.
   assert.match(stdout, /Scans a module directory for DDD pattern violations and fixes them\./);
 });
 
@@ -394,7 +405,7 @@ test('bin/report.js: the implementation prompt is the primary "next steps" path,
       env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_HOME_DIR: tmpHomeDir },
     });
     const promptIdx = stdout.indexOf('Prompt para implementar');
-    const buildNextIdx = stdout.indexOf('ai-footprint --build-next-level');
+    const buildNextIdx = stdout.indexOf('footprint --build-next-level');
     assert.ok(promptIdx !== -1 && buildNextIdx !== -1);
     assert.ok(promptIdx < buildNextIdx, 'the prompt (primary) should appear before the --build-next-level hint (secondary)');
     assert.match(stdout, /Alternativamente/);
@@ -514,7 +525,7 @@ test('bin/report.js: no roadmap endpoint configured -> curated roadmap shown, pe
   }
 });
 
-test('bin/report.js: a roadmap endpoint returning a valid, count-matching response shows PERSONALIZED prose and the notice', async () => {
+test('bin/report.js: a roadmap endpoint returning a valid, count-matching response shows PERSONALIZED prose + steps in the summarized terminal (personalization notice stays HTML-only)', async () => {
   const tmpHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-footprint-cli-home-'));
   const server = await startRoadmapServer((req, res) => {
     let raw = '';
@@ -544,10 +555,15 @@ test('bin/report.js: a roadmap endpoint returning a valid, count-matching respon
     });
     assert.equal(code, 0);
     assert.match(stderr, /Personalizando roadmap|Personalizing roadmap/);
+    // Terminal-summarize (2026-07-16): the personalized "what it unlocks" prose is
+    // back in the terminal (summarized) and the personalized steps show too.
     assert.match(stdout, /ADAPTED unlocks text for your stack\./);
-    assert.match(stdout, /Contenido adaptado a tu proyecto|Content adapted to your project/);
-    // The criterion line is always curated, personalized or not.
-    assert.match(stdout, /Subes de tier cuando|You level up when/);
+    assert.match(stdout, /ADAPTED:/);
+    // The "content adapted" personalization NOTICE stays HTML-only (not
+    // reintroduced) — HTML coverage in test/render-roadmap-personalization.test.js.
+    assert.equal(/Contenido adaptado a tu proyecto|Content adapted to your project/.test(stdout), false);
+    // The blocking criterion is always curated (deterministic), personalized or not.
+    assert.match(stdout, /Criterio exacto que te impide|Exact criterion blocking/);
   } finally {
     server.close();
     fs.rmSync(tmpHomeDir, { recursive: true, force: true });

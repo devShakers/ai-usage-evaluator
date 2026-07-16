@@ -104,23 +104,31 @@ test('renderHtml: at T7 (max tier), personalization is never applied even if rep
 
 // --- Terminal ------------------------------------------------------------
 
-test('renderTerminal: with a validated personalization, shows the personalized unlocks text and the notice', () => {
+// Terminal-condense (CPO feedback): the roadmap prose (unlocks / upgradeWhen)
+// and the "adapted to your project" notice were dropped from the TERMINAL — the
+// HTML report keeps them (see the renderHtml tests above). Personalization is
+// still observable in the terminal through the ADAPTED *steps* (steps are one
+// of the 4 personalized fields).
+test('renderTerminal: with a validated personalization, the personalized steps show (unlocks prose + notice now HTML-only)', () => {
   const report = { ...BASE_REPORT, roadmapPersonalization: personalizedFor(CURATED_T1, 'ADAPTED') };
   const out = strip(renderTerminal(report, MATURITY_T1, 'es'));
-  assert.match(out, /ADAPTED unlocks text\./);
-  assert.match(out, /Contenido adaptado a tu proyecto/);
+  assert.match(out, /ADAPTED: /); // personalized step text
+  assert.equal(out.includes('ADAPTED unlocks text.'), false); // unlocks prose no longer in terminal
+  assert.equal(out.includes('Contenido adaptado a tu proyecto'), false); // notice no longer in terminal
 });
 
-test('renderTerminal: even when personalized, the criterion and title stay curated', () => {
+test('renderTerminal: even when personalized, the title stays curated; the upgrade criterion is no longer duplicated here', () => {
   const report = { ...BASE_REPORT, roadmapPersonalization: personalizedFor(CURATED_T1, 'ADAPTED') };
   const out = strip(renderTerminal(report, MATURITY_T1, 'es'));
-  assert.match(out, /Subes de tier cuando/);
   assert.match(out, new RegExp(CURATED_T1.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  // The blocking criterion now lives only in the tier-analysis section.
+  assert.equal(out.includes('Subes de tier cuando'), false);
 });
 
-test('renderTerminal: without personalization, renders curated verbatim, no notice', () => {
+test('renderTerminal: without personalization, renders the curated steps, no notice', () => {
   const out = strip(renderTerminal(BASE_REPORT, MATURITY_T1, 'es'));
-  assert.match(out, new RegExp(CURATED_T1.unlocks.slice(0, 30).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  const firstStep = CURATED_T1.steps[0].text;
+  assert.match(out, new RegExp(firstStep.slice(0, 30).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.equal(out.includes('Contenido adaptado a tu proyecto'), false);
 });
 

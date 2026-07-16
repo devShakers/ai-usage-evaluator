@@ -12,7 +12,6 @@ const { detectMcpServers } = require('./mcp-detector');
 const { analyzeMemoryStructure } = require('./memory-structure-detector');
 const { detectAutomations } = require('./automations-detector');
 const { detectBrowserTools } = require('./browser-tools-detector');
-const { collectToolProjectUsage } = require('./tool-project-usage');
 const { getHomeDir } = require('./env-paths');
 
 /* ---------- existence-check utilities (existence only, never content) ---------- */
@@ -477,12 +476,6 @@ function scan(options = {}) {
     agents,
     agentCounts: agentOrgChartCounts(root, agents.length),
     // Projects where each detected AI tool has been used (skill-code-
-    // certification / ADR-011): local, per-tool project history (Claude Code
-    // sessions, Cursor workspaces). Deterministic; STRICTLY LOCAL — never in the
-    // persistence whitelist (share.js#derivePayload). Tools without a local
-    // history are reported honestly as unavailable. getHomeDir honours
-    // AI_FOOTPRINT_HOME_DIR (test seam).
-    toolProjectUsage: collectToolProjectUsage(detectedTools, { home: getHomeDir() }),
     // Project technologies (ADR-012): dependency manifest names only.
     technologies,
     // MCP servers by name/category (issue 015): never the raw config.
