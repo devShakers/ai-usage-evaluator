@@ -30,7 +30,7 @@ const BRAND = {
   violet: [139, 92, 246],  // #8b5cf6 — sparing 2nd accent
   white: [244, 244, 245],  // primary text
   zinc: [113, 113, 122],   // secondary / meta text
-  dark: [14, 14, 16],      // logo tile background
+  dark: [24, 27, 26],      // #181B1A — logo tile background (real asset colour)
 };
 
 function fg(rgb) {
@@ -42,22 +42,28 @@ function bg(rgb) {
 const RESET = '\x1b[0m';
 const BOLD = '\x1b[1m';
 
-// Pixel-art lightning bolt — the logo's hero element (a thick, angular lime
-// bolt on a dark tile, echoing the Shakers mark). Built from DIAGONAL glyphs
-// (◢◣◤◥) + blocks so it reads as a real zigzag bolt: a diagonal upper stroke,
-// a sharp jag across the middle, and a diagonal lower stroke (an S/Z), NOT a
-// symmetric cross. All glyphs are BMP single-width, so alignment holds; plain
-// (no-colour) still renders the shape via the triangle glyphs.
+// Lightning-bolt mark — the FAITHFUL silhouette of the real Shakers logo
+// (shakers-hub-frontend .../images/shakers-logo.svg, viewBox 12×19), rasterised
+// to half-block glyphs at Hpx=18 (11 wide × 9 rows) via scratchpad/rasterize.py.
+// Per row: `█` = both sub-pixels are bolt, `▀` = top sub-pixel bolt, `▄` = bottom
+// sub-pixel bolt, space = tile. tileCell paints the WHOLE cell with the dark
+// tile background and the LIME foreground, so `▀`/`▄` render the bolt half in
+// lime over a dark half — i.e. a lime bolt inside a solid dark tile, exactly
+// like the logo. Do NOT hand-edit the shape; regenerate from the SVG if resized.
 const BOLT_ART = [
-  '   ◢███◤',
-  '  ◢███◤',
-  ' ◢███◤',
-  '◢███████◣',
-  '  ▀▀◥███◣',
-  '     ◥███◣',
-  '      ◥██',
+  '       ▄██',
+  '    ▄████▀',
+  '  ▄███▀',
+  ' ████',
+  ' ▀████████▄',
+  '     █████▀',
+  '   ▄████▀',
+  '▄▄███▀',
+  '██▀▀',
 ];
 const ART_W = Math.max(...BOLT_ART.map((s) => s.length));
+// A dark pad row (top/bottom) so the tile reads as a padded square, per the SVG.
+const TILE_ROWS = ['', ...BOLT_ART, ''];
 
 // ── boxed-header primitives ───────────────────────────────────────────────
 // A "cell" = { t: text, st: {bold?, fg?, bg?} }. Visible width is measured on
@@ -94,14 +100,15 @@ function topBorder(title, inner, color) {
 }
 function bottomBorder(inner, color) { return bd(`╰${'─'.repeat(inner)}╯`, color); }
 
-// One tile row: dark-background tile with the lime bolt. Every row is padded to
-// the same inner width (ART_W) + a 1-space margin each side, so the dark bg
-// forms a clean rectangle behind the bolt. Width = ART_W + 2.
+// One tile row: solid dark tile with the lime bolt. The row string is padded to
+// ART_W + a 1-space margin each side, all painted with the dark background, so
+// the tile is a filled rectangle and the half-block bolt glyphs (`▀`/`▄`) show
+// their bolt sub-pixel in lime over a dark half. Width = ART_W + 2.
 const TILE_W = ART_W + 2;
-function tileCell(i) {
-  const art = BOLT_ART[i] || '';
-  const t = ` ${art}${' '.repeat(ART_W - art.length)} `;
-  return { t, st: { bg: BRAND.dark, fg: BRAND.lime, bold: true } };
+function tileCell(row) {
+  const s = row || '';
+  const t = ` ${s}${' '.repeat(Math.max(0, ART_W - s.length))} `;
+  return { t, st: { bg: BRAND.dark, fg: BRAND.lime } };
 }
 
 // Builds the startup banner (shown ONCE on entry). Deliberately ALWAYS ENGLISH —
@@ -120,16 +127,15 @@ function bannerWide({ title, color }) {
   const RW = 44;         // right (info) column
   const INNER = 1 + LW + 3 + RW + 1; // between the outer borders (73)
 
-  // Left column: welcome, bolt tile, product line.
+  // Left column: welcome, bolt tile (padded dark rows top/bottom), product line.
   const left = [];
   left.push([{ t: 'Welcome to ', st: { bold: true, fg: BRAND.white } }, { t: 'shakers', st: { bold: true, fg: BRAND.lime } }]);
-  for (let i = 0; i < BOLT_ART.length; i++) left.push([tileCell(i)]);
+  for (const row of TILE_ROWS) left.push([tileCell(row)]);
   left.push([{ t: 'AI Usage Evaluator', st: { fg: BRAND.zinc } }]);
 
   // Right column: Commands + Getting started (violet, the sparing 2nd accent).
   const NAME = 11;
   const right = [];
-  right.push([]); // top spacer, aligns "Commands" with the tile top
   right.push([{ t: 'Commands', st: { bold: true, fg: BRAND.lime } }]);
   right.push([{ t: 'footprint'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'score AI setup (T0–T7) + roadmap', st: { fg: BRAND.zinc } }]);
   right.push([{ t: 'certify'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'certify Skills from your code', st: { fg: BRAND.zinc } }]);
@@ -141,12 +147,16 @@ function bannerWide({ title, color }) {
     { t: ' · help · exit', st: { fg: BRAND.zinc } },
   ]);
 
+  // Vertically centre the (shorter) right column against the taller logo column.
   const rows = Math.max(left.length, right.length);
+  const topPad = Math.max(0, (rows - right.length) >> 1);
+  const rightPadded = [...Array(topPad).fill([]), ...right];
+
   const lines = [''];
   lines.push(topBorder(title, INNER, color));
   for (let i = 0; i < rows; i++) {
     const l = centerCells(left[i] || [], LW, color);
-    const r = padRightCells(right[i] || [], RW, color);
+    const r = padRightCells(rightPadded[i] || [], RW, color);
     lines.push(`${bd('│', color)} ${l} ${bd('│', color)} ${r} ${bd('│', color)}`);
   }
   lines.push(bottomBorder(INNER, color));
@@ -173,7 +183,7 @@ function bannerStacked({ title, color, width }) {
 
   const lines = [''];
   lines.push(topBorder(title, INNER, color));
-  for (let i = 0; i < BOLT_ART.length; i++) lines.push(line([tileCell(i)], { center: true }));
+  for (const row of TILE_ROWS) lines.push(line([tileCell(row)], { center: true }));
   lines.push(line([{ t: 'Welcome to ', st: { bold: true, fg: BRAND.white } }, { t: 'shakers', st: { bold: true, fg: BRAND.lime } }], { center: true }));
   lines.push(line([{ t: 'AI Usage Evaluator', st: { fg: BRAND.zinc } }], { center: true }));
   lines.push(line([{ t: '', st: null }]));
