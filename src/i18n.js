@@ -411,7 +411,7 @@ const catalogs = {
       // atribuye la responsabilidad. Aceptación explícita obligatoria.
       disclaimer:
         'AVISO LEGAL — léelo antes de continuar:\n'
-        + '  ai-certify envía datos de tu proyecto a Shakers para certificar tus Skills.\n'
+        + '  certify envía datos de tu proyecto a Shakers para certificar tus Skills.\n'
         + '  En esta fase (resolve) se envían tu correo y los NOMBRES de las tecnologías\n'
         + '  detectadas; la fase de certificación posterior enviará fragmentos de código.\n'
         + '  Eres el ÚNICO responsable de asegurarte de que eres propietario del código de\n'
@@ -839,7 +839,7 @@ const catalogs = {
       resolvingLabel: 'Resolving certifiable Skills…',
       disclaimer:
         'LEGAL DISCLAIMER — read before continuing:\n'
-        + '  ai-certify sends data about your project to Shakers to certify your Skills.\n'
+        + '  certify sends data about your project to Shakers to certify your Skills.\n'
         + '  In this phase (resolve) it sends your email and the NAMES of the detected\n'
         + '  technologies; the later certification phase will send code snippets.\n'
         + '  You are SOLELY responsible for ensuring you own, or are authorized to analyze,\n'

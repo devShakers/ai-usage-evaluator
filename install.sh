@@ -195,8 +195,9 @@ printf "\n"
 # NOT FINAL: pending review by a legal/labor expert before production. The
 # account-penalty clause in particular depends on the Shakers Terms of Service.
 say "  ${B}${Y}Before you use these tools:${N}"
-say "  ${Y}These tools run locally. ai-footprint sends only derived signals (never file${N}"
-say "  ${Y}contents) and only if you opt in. ai-certify sends sampled, secret-scrubbed${N}"
+say "  ${Y}These tools run locally inside the sh-eval shell. footprint sends only derived${N}"
+say "  ${Y}signals (never file contents) and only if you opt in. certify sends sampled,${N}"
+say "  ${Y}secret-scrubbed${N}"
 say "  ${Y}source code to a server-side model to assess your skills; that code is${N}"
 say "  ${Y}processed ephemerally and not persisted. You are SOLELY responsible for${N}"
 say "  ${Y}ensuring you own, or are authorized to analyze, this project's code. Shakers${N}"
