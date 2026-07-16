@@ -47,16 +47,41 @@ function bar(score, width = 24) {
   return '█'.repeat(filled) + '░'.repeat(width - filled);
 }
 
-function formatBytes(n) {
-  if (!n || n <= 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let i = 0;
-  let v = n;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i += 1;
-  }
-  return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
+/*
+ * Terminal-SUMMARIZE (user feedback, 2026-07-16): the earlier condense (commit
+ * 465badb) over-trimmed — it left the terminal as headings + copyable prompts
+ * with the prose stripped out. The user wants the terminal INFORMATIVE but
+ * concise: the same sections as the HTML, but SHORTENED to scannable one-liners
+ * instead of the HTML's full-length prose. `summarize` collapses whitespace and
+ * trims a long string to ~max chars, cutting at a sentence boundary when there
+ * is one past the halfway mark, else at a word boundary, adding an ellipsis.
+ * Copyable prompts are NEVER passed through this — they stay verbatim.
+ */
+function summarize(text, max = 140) {
+  const s = String(text || '').trim().replace(/\s+/g, ' ');
+  if (s.length <= max) return s;
+  const slice = s.slice(0, max);
+  const lastStop = slice.lastIndexOf('. ');
+  if (lastStop >= max * 0.5) return slice.slice(0, lastStop + 1);
+  const lastSpace = slice.lastIndexOf(' ');
+  return (lastSpace > 0 ? slice.slice(0, lastSpace) : slice).replace(/[\s,;:.]+$/, '') + '…';
+}
+
+/* ---------- environment (summarized parity with render-html.js) ----------
+ * A compact readout of the machine: platform (+ arch), Node version, and the
+ * installed editors — one or two short lines, not the HTML's card grid.
+ */
+function printEnvironment(report, t, p) {
+  const env = report.environment || {};
+  const editors = Array.isArray(env.editorsInstalled) ? env.editorsInstalled : [];
+  p(`  ${c.bold}${t.html.environment}${c.reset}`);
+  const machineBits = [];
+  if (env.platform) machineBits.push(`${t.html.platform}: ${env.platform}${env.arch ? ` (${env.arch})` : ''}`);
+  if (env.nodeVersion) machineBits.push(`Node ${env.nodeVersion}`);
+  if (machineBits.length) p(`  ${c.gray}${machineBits.join(' · ')}${c.reset}`);
+  const editorsText = editors.length ? editors.join(', ') : t.html.noEditorsDetected;
+  p(`  ${c.gray}${t.html.installedEditors}: ${editorsText}${c.reset}`);
+  p();
 }
 
 /* ---------- project technologies (parity with render-html.js) ---------- */
@@ -72,26 +97,25 @@ function printTechnologies(report, t, p) {
   p();
 }
 
-/* ---------- agents (parity with render-html.js's card tree) ----------
+/* ---------- agents (summarized terminal view) ----------
  * Same tree (buildAgentCardTree, shared with the HTML renderer), rendered
- * as an indented list with a rail-like connector instead of nested cards
- * — the terminal equivalent of the HTML tree's visual nesting. Guards
- * against a malformed `parent` cycle the same defensive way agentNodeHtml
- * does (a `visited` set), never an infinite loop on bad input.
+ * as an indented list with a rail-like connector to keep the hierarchy
+ * scannable. Terminal-summarize (user feedback, 2026-07-16): the structure
+ * (agent name (+ symbolic name when synthesized) + model) PLUS a SHORT,
+ * one-line description (`whatItDoes`, truncated) — the HTML report keeps the
+ * full-length description and the tools list. Guards against a malformed
+ * `parent` cycle the same defensive way agentNodeHtml does (a `visited` set),
+ * never an infinite loop on bad input.
  */
 
-function agentLine(card, depth, t) {
+function agentLine(card, depth) {
   const indent = '  '.repeat(depth);
   const connector = depth === 0 ? c.green + '●' + c.reset : c.gray + '└─' + c.reset;
-  const hasSymbolicName = !!card.symbolicName;
-  const title = hasSymbolicName
+  const title = card.symbolicName
     ? `${card.symbolicName} ${c.gray}(${card.name})${c.reset}`
     : card.name;
   const modelBit = card.model ? ` ${c.dim}[${card.model}]${c.reset}` : '';
-  const toolsBit = card.tools.length ? ` ${c.gray}· ${card.tools.join(', ')}${c.reset}` : '';
-  const lines = [`  ${indent}${connector} ${c.bold}${c.white}${title}${c.reset}${modelBit}${toolsBit}`];
-  if (card.whatItDoes) lines.push(`  ${indent}   ${c.dim}${card.whatItDoes}${c.reset}`);
-  return lines;
+  return `  ${indent}${connector} ${c.bold}${c.white}${title}${c.reset}${modelBit}`;
 }
 
 function printAgents(report, t, p) {
@@ -107,7 +131,13 @@ function printAgents(report, t, p) {
   const walk = (card, depth) => {
     if (visited.has(card.name)) return;
     visited.add(card.name);
-    for (const line of agentLine(card, depth, t)) p(line);
+    p(agentLine(card, depth));
+    // Short one-line description (summarized whatItDoes) under the agent, kept
+    // in the terminal now (was HTML-only after the condense).
+    if (card.whatItDoes) {
+      const indent = '  '.repeat(depth);
+      p(`  ${indent}   ${c.dim}${summarize(card.whatItDoes, 96)}${c.reset}`);
+    }
     const children = childrenByParent.get(card.name) || [];
     for (const child of children) walk(child, depth + 1);
   };
@@ -115,49 +145,13 @@ function printAgents(report, t, p) {
   p();
 }
 
-/* ---------- projects per AI tool (skill-code-certification / ADR-011) ----------
- * Parity with render-html.js's toolProjectUsageSection. `report.toolProjectUsage`
- * (src/tool-project-usage.js) lists, per detected tool, the projects where it
- * has been used locally. STRICTLY LOCAL — never persisted (not in
- * src/share.js#derivePayload). Prints a project list when available, an honest
- * "no local history" note otherwise; the whole section is skipped when no tool
- * exposes a history at all (never a misleading empty block).
- */
-function printToolProjectUsage(report, t, p) {
-  const usage = Array.isArray(report.toolProjectUsage) ? report.toolProjectUsage : [];
-  if (!usage.length) return;
-  const anyContent = usage.some((u) => u.available || (u.projects && u.projects.length));
-  if (!anyContent) return;
-
-  p(`  ${c.bold}${t.html.toolUsageHeading}${c.reset}`);
-  p(`  ${c.gray}${t.html.toolUsageIntro}${c.reset}`);
-  for (const u of usage) {
-    const sourceLabel =
-      u.sourceKey && t.html.toolUsageSource && t.html.toolUsageSource[u.sourceKey]
-        ? ` ${c.gray}· ${t.html.toolUsageSource[u.sourceKey]}${c.reset}`
-        : '';
-    p(`  ${c.green}●${c.reset} ${c.white}${u.toolName}${c.reset}${sourceLabel}`);
-    if (!u.available) {
-      p(`    ${c.dim}${t.html.toolUsageUnavailable}${c.reset}`);
-    } else if (!u.projects.length) {
-      p(`    ${c.dim}${t.html.toolUsageNoProjects}${c.reset}`);
-    } else {
-      p(`    ${c.dim}${t.html.toolUsageCount(u.projects.length)}${c.reset}`);
-      for (const proj of u.projects) {
-        const approx = proj.approximate ? ` ${c.dim}(${t.html.toolUsageApproxNote})${c.reset}` : '';
-        p(`      ${c.gray}${proj.path}${c.reset}${approx}`);
-      }
-    }
-  }
-  p();
-}
-
-/* ---------- tier analysis: why this tier (parity with render-html.js) ----------
- * Same deterministic source (src/tier-analysis.js) as the HTML report —
- * defends the already-computed tier with the criteria met + the exact
- * blocking criterion, both backed by the actual signal values. Never LLM
- * content, formula-driven, so it's rendered identically (same text) in
- * both outputs.
+/* ---------- tier analysis: why this tier (summarized) ----------
+ * Same deterministic source (src/tier-analysis.js) as the HTML report. The
+ * terminal now shows: the current tier (first sentence of the intro — the rest
+ * is boilerplate about how the engine works, HTML-only), a SHORT met-criteria
+ * checklist (the "criterios" the user asked to see back — each line summarized),
+ * and the EXACT criterion blocking the next tier (or the "you meet every
+ * criterion" note at the max tier). Never LLM content, formula-driven.
  */
 
 function printTierAnalysis(report, t, p) {
@@ -165,13 +159,20 @@ function printTierAnalysis(report, t, p) {
   const tt = t.tierAnalysis;
 
   p(`  ${c.bold}${tt.heading}${c.reset}`);
-  p(`  ${c.gray}${tt.intro(analysis.tierKey, analysis.tierName)}${c.reset}`);
-  if (analysis.metCriteria.length) {
+  // Keep the first sentence of the intro ("Your current tier is X (Name).") —
+  // the rest explains the engine mechanics at length, which stays HTML-only.
+  const introFull = tt.intro(analysis.tierKey, analysis.tierName);
+  const firstStop = introFull.indexOf('. ');
+  const intro = firstStop >= 0 ? introFull.slice(0, firstStop + 1) : introFull;
+  p(`  ${c.gray}${intro}${c.reset}`);
+
+  // Summarized met-criteria checklist (reintroduced 2026-07-16): the criteria
+  // already satisfied, one concise line each. Full-length wording stays in HTML.
+  if (Array.isArray(analysis.metCriteria) && analysis.metCriteria.length) {
     p(`  ${c.dim}${tt.metHeading}${c.reset}`);
-    for (const criterion of analysis.metCriteria) {
-      p(`    ${c.green}✓${c.reset} ${criterion.text}`);
-    }
+    analysis.metCriteria.forEach((m) => p(`    ${c.green}✓${c.reset} ${c.gray}${summarize(m.text, 110)}${c.reset}`));
   }
+
   if (analysis.blockingCriterion) {
     p(`  ${c.bold}${c.yellow}${tt.blockingLabel}${c.reset}`);
     p(`  ${c.white}${analysis.blockingCriterion}${c.reset}`);
@@ -226,30 +227,35 @@ function printRoadmap(report, maturity, t, lang, p) {
 
   const personalization = report && report.roadmapPersonalization;
   const entry = mergeRoadmapPersonalization(curatedEntry, personalization);
-  const wasPersonalized = !curatedEntry.maxTier && !!personalization;
 
+  // Terminal-SUMMARIZE (user feedback, 2026-07-16): the earlier condense left
+  // only the title + steps here. Bring back the motivational prose the user
+  // wants — "you level up when" (jump) / what-remains (T7) and "what it unlocks"
+  // — but SHORTENED to one line each; the HTML keeps the full-length prose.
   p(`  ${c.white}${c.bold}${entry.title}${c.reset}`);
 
   if (entry.maxTier) {
-    // ADR-008 (skill-code-certification): T7 is NOT a dead end. Show the
-    // curated continuous-refinement steps (optimize hooks/agents, contribute
-    // skills, maintain, measure) so the top setups still get actionable
-    // next-steps — parity with the HTML report's terminal card (which
-    // already lists consolidationSteps). Curated content, never LLM.
-    p(`  ${c.gray}${entry.whatRemains}${c.reset}`);
+    // ADR-008 (skill-code-certification): T7 is NOT a dead end. Show a short
+    // "what remains" line + the curated continuous-refinement steps (optimize
+    // hooks/agents, contribute skills, maintain, measure) so the top setups
+    // still get actionable next-steps. Curated content, never LLM.
+    if (entry.whatRemains) p(`  ${c.gray}${summarize(entry.whatRemains, 150)}${c.reset}`);
     if (Array.isArray(entry.consolidationSteps) && entry.consolidationSteps.length) {
       p(`  ${c.dim}${t.html.roadmapConsolidationLabel}:${c.reset}`);
       entry.consolidationSteps.forEach((s) => p(`    ${c.green}•${c.reset} ${s}`));
     }
   } else {
-    p(`  ${c.dim}${t.html.roadmapUpgradeWhenLabel}${c.reset} ${entry.upgradeWhen}`);
-    p(`  ${c.white}${entry.unlocks}${c.reset}`);
+    if (entry.upgradeWhen) {
+      p(`  ${c.dim}${t.html.roadmapUpgradeWhenLabel}${c.reset} ${c.gray}${summarize(entry.upgradeWhen, 120)}${c.reset}`);
+    }
+    if (entry.unlocks) {
+      p(`  ${c.dim}${t.html.roadmapUnlocksLabel}:${c.reset} ${c.gray}${summarize(entry.unlocks, 140)}${c.reset}`);
+    }
     if (Array.isArray(entry.steps) && entry.steps.length) {
       p(`  ${c.dim}${t.html.roadmapStepsLabel}:${c.reset}`);
       entry.steps.forEach((s, i) => p(`    ${i + 1}. ${s.text} ${c.dim}(${s.estimate})${c.reset}`));
     }
   }
-  if (wasPersonalized) p(`  ${c.dim}${t.html.roadmapPersonalizedNotice}${c.reset}`);
 
   // talents-ai-score, "next steps -> prompt": the PRIMARY "how do I
   // implement this" path now — a deterministic, ready-to-paste prompt
@@ -308,22 +314,17 @@ function renderTerminal(report, maturity, lang) {
     p(`  ${c.gray}  ${t.terminal.none}${c.reset}`);
   }
   for (const tool of detected) {
+    // Terminal-condense (CPO feedback): keep the one-line signal (name,
+    // version, category, depth breakdown); the per-tool footprint bytes and
+    // recency detail line is dropped from the terminal (it stays in the HTML
+    // report).
     const depthBits = Object.entries(tool.depth)
       .filter(([, v]) => v > 0)
       .map(([k, v]) => `${v} ${k}`)
       .join(', ');
     const extra = depthBits ? `${c.dim} — ${depthBits}${c.reset}` : '';
     const version = tool.version ? `${c.dim} v${tool.version}${c.reset}` : '';
-    const footprint =
-      tool.footprint && (tool.footprint.files > 0 || tool.footprint.bytes > 0)
-        ? `${c.dim} · ${t.terminal.files(tool.footprint.files)}, ${formatBytes(tool.footprint.bytes)}${c.reset}`
-        : '';
-    const recency =
-      tool.recency && tool.recency.bucket
-        ? `${c.dim} · ${t.terminal.lastModified(t.recency[tool.recency.bucket] || tool.recency.bucket)}${c.reset}`
-        : '';
     p(`  ${c.green}●${c.reset} ${tool.name}${version} ${c.gray}(${categoryLabel(lang, tool.category)})${c.reset}${extra}`);
-    if (footprint || recency) p(`    ${footprint}${recency}`);
   }
   p();
 
@@ -332,25 +333,15 @@ function renderTerminal(report, maturity, lang) {
   // next step is already covered by the tier roadmap section below, never
   // silently dropped, just not repeated here as a name list.
 
-  // Environment
-  if (report.environment) {
-    const env = report.environment;
-    const editors = env.editorsInstalled && env.editorsInstalled.length
-      ? env.editorsInstalled.join(', ')
-      : t.terminal.noEditorsDetected;
-    p(`  ${c.bold}${t.terminal.environment}${c.reset}`);
-    p(`  ${c.gray}${env.platform}/${env.arch} · Node ${env.nodeVersion} · ${t.terminal.editors}: ${editors}${c.reset}`);
-    p();
-  }
+  // Environment (summarized parity with render-html.js): reintroduced
+  // 2026-07-16 in short form (platform/Node/editors on one/two lines).
+  printEnvironment(report, t, p);
 
   // Project technologies (parity with render-html.js's technologiesSection)
   printTechnologies(report, t, p);
 
   // Agents (parity with render-html.js's agentCardsSection)
   printAgents(report, t, p);
-
-  // Projects per AI tool (parity with render-html.js's toolProjectUsageSection)
-  printToolProjectUsage(report, t, p);
 
   // Tier analysis: why this tier (parity with render-html.js's
   // tierAnalysisSection) — defends the already-computed tier before the

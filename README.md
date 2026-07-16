@@ -1,13 +1,23 @@
-# AI Footprint
+# Shakers `sh-eval`
 
-Command-line tool that builds, **locally**, a deterministic profile of a
-developer's AI tool setup: which copilots/agents they have configured, how
-deep that configuration goes, and what "level-up" **tier** (T0-T7) they're
-at — plus a curated roadmap of what unlocks the next tier.
+A branded, **local-first** Shakers shell (`sh-eval`) — a small interactive
+REPL that is the single entrypoint to two commands:
 
-Inspired by the mechanism in `darnoux/claude-code-level-up` (scan local
-signals and classify by level), extended to cover the main AI tools on the
-market (not just Claude) and to a full 8-tier ladder with per-tier roadmap
+- **`footprint`** — builds, **locally**, a deterministic profile of your AI
+  tool setup: which copilots/agents you have configured, how deep that
+  configuration goes, and what "level-up" **tier** (T0-T7) you're at, plus a
+  curated roadmap of what unlocks the next tier.
+- **`certify`** — certifies Skills from your Shakers catalog by analyzing your
+  local project's code.
+
+You run `sh-eval` once; it opens the shell with a Shakers wordmark and a
+`sh-eval ›` prompt, and you type `footprint`, `certify`, `help` or `exit`
+inside it. The former standalone `ai-footprint`/`ai-certify` binaries are
+retired — everything now lives in the one shell (ADR-014).
+
+The footprint mechanism is inspired by `darnoux/claude-code-level-up` (scan
+local signals and classify by level), extended to cover the main AI tools on
+the market (not just Claude) and to a full 8-tier ladder with per-tier roadmap
 content.
 
 ## What it does
@@ -45,9 +55,11 @@ The installer:
 - Requires **Node 18+** (checks and fails clearly if missing/too old).
 - Discovers the CLI's own `src/*.js` modules dynamically (via a local copy
   or the GitHub API) rather than hardcoding a file list.
-- Places the tool in `~/.ai-footprint/` and drops the `ai-footprint`
-  command in `~/.local/bin`. **Zero dependencies** — no `npm install`, no
-  third-party packages fetched.
+- Places the tool in `~/.ai-footprint/` and drops the single `sh-eval`
+  command in `~/.local/bin` (the standalone `ai-footprint`/`ai-certify`
+  launchers are no longer created, and any legacy ones are removed on
+  upgrade). **Zero dependencies** — no `npm install`, no third-party
+  packages fetched.
 - All installer output is in English, unconditionally (it runs before
   Node/the CLI's own i18n layer is available).
 
@@ -64,51 +76,67 @@ Uninstall: `./install.sh --uninstall`.
 
 ## Usage
 
+Run the shell, then type commands at the `sh-eval ›` prompt:
+
 ```bash
-ai-footprint                       # report in the terminal
-ai-footprint --html                # also generates and opens the HTML dashboard
-ai-footprint --json                # report as JSON on stdout
-ai-footprint --root ../other       # scans another directory instead of the current one
-ai-footprint --no-save             # writes nothing to disk (report only, on screen)
-ai-footprint --build-next-level    # secondary path: writes deterministic starter file(s) for the next tier
-ai-footprint --force               # with --build-next-level, overwrite an existing file
-ai-footprint --lang es|en          # force the report's language instead of detecting it from the OS locale
-ai-footprint --consent-status      # view your save decision / email / last send
-ai-footprint --consent-revoke      # revoke consent to save (-> denied), no more sends
-ai-footprint --consent-email E     # change the email on file, without touching the decision
+sh-eval                 # open the Shakers shell (single entrypoint)
+sh-eval --lang es|en    # force the shell chrome language instead of OS-locale detect
 ```
 
-Without installing, from a copy of the repo, this is equivalent to
-`node bin/report.js [options]`.
+Inside the shell:
 
-Results are saved in `~/.config/ai-footprint/` (`latest.json`,
-`report.html`, and a dated history under `history/`). **Nothing is ever
-written to the scanned project** — the report can't slip into a commit by
-accident.
+```
+sh-eval › help          # list the commands
+sh-eval › footprint     # scan this project + machine, print the report
+sh-eval › certify       # certify Skills from this project's code
+sh-eval › clear         # clear the screen
+sh-eval › exit          # (or quit / Ctrl-D) leave the shell
+```
 
-## Skill certification (`ai-certify`)
+Each command keeps all its flags, typed inside the shell:
 
-A second command, installed alongside `ai-footprint`, certifies Skills from
+```
+sh-eval › footprint --json               # report as JSON on stdout
+sh-eval › footprint --root ../other       # scan another directory instead of the current one
+sh-eval › footprint --no-save             # write nothing to disk (report only, on screen)
+sh-eval › footprint --build-next-level    # secondary path: write deterministic starter file(s) for the next tier
+sh-eval › footprint --force               # with --build-next-level, overwrite an existing file
+sh-eval › footprint --lang es|en          # force the report language instead of OS-locale detect
+sh-eval › footprint --consent-status      # view your save decision / email / last send
+sh-eval › footprint --consent-revoke      # revoke consent to save (-> denied), no more sends
+sh-eval › footprint --consent-email E     # change the email on file, without touching the decision
+```
+
+Without installing, from a copy of the repo, `sh-eval` is equivalent to
+`node bin/sh-eval.js`.
+
+Results are saved in `~/.config/ai-footprint/` (a per-project cumulative HTML
+report plus its `report-state.json`). **Nothing is ever written to the
+scanned project** — the report can't slip into a commit by accident.
+
+## Skill certification (`certify`)
+
+The `certify` command (typed inside the `sh-eval` shell) certifies Skills from
 your Shakers catalog by analyzing your local project. V1 ships **phase 1
-(resolve)**: it detects your project technologies, asks the Shakers Hub
-which map to a Skill you can certify, and shows certifiable vs
-non-certifiable — no code leaves your machine in this phase.
+(resolve)**: it detects your project technologies, asks the Shakers Hub which
+map to a Skill you can certify, and shows certifiable vs non-certifiable — no
+code leaves your machine in this phase.
 
-```bash
-ai-certify                       # resolve certifiable Skills for the current project
-ai-certify --root ../other       # analyze another directory
-ai-certify --email you@shakers.com
-ai-certify --lang es|en
-ai-certify --accept-disclaimer   # accept the legal disclaimer non-interactively
+```
+sh-eval › certify                       # resolve certifiable Skills for the current project
+sh-eval › certify --root ../other       # analyze another directory
+sh-eval › certify --email you@shakers.com
+sh-eval › certify --lang es|en
+sh-eval › certify --accept-disclaimer   # accept the legal disclaimer non-interactively
 ```
 
-Unlike `ai-footprint` (which always produces a local report), `ai-certify`
-is inherently server-side: it requires `AI_FOOTPRINT_CERTIFY_ENDPOINT` to be
-set (there is no local-only certification). Before **any** data is sent, a
-legal disclaimer is shown that you must explicitly accept — it assumes the
-project is your own and attributes responsibility to you, so **never run it
-on a third party's code** (e.g. a client under NDA). For local end-to-end
-testing without the real Hub, point it at the reference server's
+Unlike `footprint` (which always produces a local report), `certify` is
+inherently server-side: it requires `AI_FOOTPRINT_CERTIFY_ENDPOINT` to be set
+(there is no local-only certification). Before **any** data is sent, a legal
+disclaimer is shown that you must explicitly accept — it assumes the project is
+your own and attributes responsibility to you, so **never run it on a third
+party's code** (e.g. a client under NDA). For local end-to-end testing without
+the real Hub, point it at the reference server's
 `POST /works/ai-footprint/skill-certification` stub (see below). The real
 implementation lives in `shakers-hub-backend`.
 
@@ -129,22 +157,23 @@ implementation lives in `shakers-hub-backend`.
   project has its OWN report file (`report-<hash>.html` in
   `~/.config/ai-footprint/`), keyed by the project's absolute path, and is
   regenerated whole from `report-state.json` on every run. It fills in over
-  time: the footprint section appears once you've run `ai-footprint` in that
-  project, and the certification section once you've run `ai-certify` there;
+  time: the footprint section appears once you've run `footprint` in that
+  project, and the certification section once you've run `certify` there;
   both appear together when both have run for the **same** project. This is
   intentional (skill-code-certification, reporting redesign) — the report is a
   persistent per-project artifact, not a per-invocation transcript. So running
-  `ai-certify` in a project where you previously ran `ai-footprint` correctly
+  `certify` in a project where you previously ran `footprint` correctly
   still shows the footprint section: that footprint was produced for this
   project and is part of its cumulative record, not stale or leaked data.
   Different projects never mix into one document.
-- **Score scope (ADR-009): the 0-100 score reflects THIS project's AI setup**
-  (signals inside the project directory), so different projects get different
-  scores and your global `~/.claude` setup no longer dominates. The **tier
-  (T0-T7)** keeps the wider project ∪ home scope — it reflects you as a
-  developer, not this one project — so a bare project can show a low score
-  under a high tier. That is by design; the report labels the score
-  accordingly.
+- **Score scope (ADR-010, reverts ADR-009): the 0-100 score is computed over
+  project ∪ home** — your whole developer AI setup (the project's signals plus
+  your global `~/.claude` and machine-level config), not this one project in
+  isolation. It measures the maturity of _you as a developer_, so projects that
+  share a home tend to read similar scores. ADR-009 had briefly scoped the score
+  to the project directory only, but that drove notes too low (project-level AI
+  config is sparse), so ADR-010 reverted it to the earlier project ∪ home
+  behaviour. The **tier (T0-T7)** uses the same project ∪ home scope.
 
 ## What it detects
 
@@ -257,7 +286,7 @@ runs before anything leaves the machine.
   legal/labor go-ahead** for that rollout — this repo doesn't ship a
   production endpoint by default (see below).
 - **⚠️ Legal copy is NOT FINAL (pending validation).** The consent copy
-  (`ai-footprint`, ADR-003), the code-egress disclaimer (`ai-certify`,
+  (`footprint`, ADR-003), the code-egress disclaimer (`certify`,
   ADR-001) and the installer notice all now state that **you are solely
   responsible for owning/being authorized to analyze the code you submit,
   that Shakers assumes no liability for it, and that misuse may lead to
@@ -274,13 +303,13 @@ endpoint or secret. Unset means "nothing to call", and every code path that
 depends on one degrades gracefully (no send / deterministic fallback), it
 never breaks the local report.
 
-| Variable                          | Purpose                                                                                                                                                                                                                                                               |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AI_FOOTPRINT_INGEST_ENDPOINT`    | Where a saved report is sent, if consent is granted.                                                                                                                                                                                                                  |
-| `AI_FOOTPRINT_SYNTHESIS_ENDPOINT` | Agent-card synthesis endpoint (optional).                                                                                                                                                                                                                             |
-| `AI_FOOTPRINT_ROADMAP_ENDPOINT`   | Roadmap personalization endpoint (optional).                                                                                                                                                                                                                          |
-| `AI_FOOTPRINT_CERTIFY_ENDPOINT`   | Skill-certification endpoint for the `ai-certify` command. Unlike the others, this one does **not** degrade silently: `ai-certify` has no local-only product (the Skill catalog and analysis live on the Hub), so an unset value is an actionable error, not a no-op. |
-| `AI_FOOTPRINT_CONFIG_DIR`         | Override `~/.config/ai-footprint/` (mainly for tests).                                                                                                                                                                                                                |
+| Variable                          | Purpose                                                                                                                                                                                                                                                         |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AI_FOOTPRINT_INGEST_ENDPOINT`    | Where a saved report is sent, if consent is granted.                                                                                                                                                                                                            |
+| `AI_FOOTPRINT_SYNTHESIS_ENDPOINT` | Agent-card synthesis endpoint (optional).                                                                                                                                                                                                                       |
+| `AI_FOOTPRINT_ROADMAP_ENDPOINT`   | Roadmap personalization endpoint (optional).                                                                                                                                                                                                                    |
+| `AI_FOOTPRINT_CERTIFY_ENDPOINT`   | Skill-certification endpoint for the `certify` command. Unlike the others, this one does **not** degrade silently: `certify` has no local-only product (the Skill catalog and analysis live on the Hub), so an unset value is an actionable error, not a no-op. |
+| `AI_FOOTPRINT_CONFIG_DIR`         | Override `~/.config/ai-footprint/` (mainly for tests).                                                                                                                                                                                                          |
 
 ## Reference server (not deployed)
 
@@ -297,7 +326,7 @@ node reference-server/server.js
 Routes: `GET /health`, `POST /reports` (`{email, payload}`),
 `POST /works/ai-footprint/agent-synthesis` (deterministic placeholder, not
 a real LLM), `POST /works/ai-footprint/skill-certification` (deterministic
-placeholder for the `ai-certify` resolve/certify contract, not a real LLM),
+placeholder for the `certify` resolve/certify contract, not a real LLM),
 `GET /admin/reports` (`X-Admin-Key`, audit).
 
 ## How to add a new tool
@@ -323,7 +352,11 @@ If you want to measure depth, add a probe in `src/scanner.js` inside
 ## Structure
 
 ```
-bin/report.js                    CLI orchestrator
+bin/sh-eval.js                   Branded REPL — the single entrypoint (ADR-014)
+src/repl-shell.js                REPL loop, banner, prompt, command dispatch
+src/repl-stdin.js                Shared stdin reader (nested-stdin seam for the REPL)
+bin/report.js                    `footprint` command logic (run(args,{ask}))
+bin/certify.js                   `certify` command logic (run(args,{ask}))
 src/detectors.js                 Catalog of tools and signals
 src/scanner.js                   Scan engine -> report object
 src/maturity.js                  0-4 band (derived from the tier)

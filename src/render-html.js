@@ -143,56 +143,6 @@ function mcpSection(report, t) {
   </section>`;
 }
 
-/* ---------- projects per AI tool (skill-code-certification / ADR-011) ----------
- * `report.toolProjectUsage` (src/tool-project-usage.js) lists, per detected
- * tool, the projects where it has been used locally. STRICTLY LOCAL — these
- * paths are never persisted (not in src/share.js#derivePayload). Rendered as a
- * per-tool card: a project list when available, an honest "no local history"
- * note otherwise. Omitted entirely when no tool exposes a history at all, so we
- * never show an empty, misleading card. Deterministic (already sorted upstream).
- */
-function toolProjectUsageSection(report, t) {
-  const usage = Array.isArray(report.toolProjectUsage) ? report.toolProjectUsage : [];
-  if (!usage.length) return '';
-  const anyContent = usage.some((u) => u.available || (u.projects && u.projects.length));
-  if (!anyContent) return '';
-
-  const cards = usage
-    .map((u) => {
-      const sourceLabel =
-        u.sourceKey && t.html.toolUsageSource && t.html.toolUsageSource[u.sourceKey]
-          ? ` <span class="tu-source">· ${esc(t.html.toolUsageSource[u.sourceKey])}</span>`
-          : '';
-      let body;
-      if (!u.available) {
-        body = `<div class="tu-note">${esc(t.html.toolUsageUnavailable)}</div>`;
-      } else if (!u.projects.length) {
-        body = `<div class="tu-note">${esc(t.html.toolUsageNoProjects)}</div>`;
-      } else {
-        const items = u.projects
-          .map(
-            (p) =>
-              `<li${p.approximate ? ' class="approx"' : ''}><code>${esc(p.path)}</code>${
-                p.approximate ? ` <span class="tu-approx">(${esc(t.html.toolUsageApproxNote)})</span>` : ''
-              }</li>`,
-          )
-          .join('');
-        body = `<div class="tu-count">${esc(t.html.toolUsageCount(u.projects.length))}</div><ul class="tu-projects">${items}</ul>`;
-      }
-      return `<div class="card tu-card">
-      <div class="tu-tool">${esc(u.toolName)}${sourceLabel}</div>
-      ${body}
-    </div>`;
-    })
-    .join('');
-
-  return `<section>
-    <div class="h2">${esc(t.html.toolUsageHeading)}</div>
-    <p class="tu-intro">${esc(t.html.toolUsageIntro)}</p>
-    ${cards}
-  </section>`;
-}
-
 /* ---------- agent cards: hierarchical role-card tree, pure HTML/CSS ----------
  * talents-ai-score: Mermaid (a graph rendering) turned out illegible even
  * after tuning; a flat card grid (the step before this one) was clearer but
@@ -843,18 +793,6 @@ const FOOTPRINT_CSS = `
     letter-spacing:.04em;text-transform:uppercase;color:var(--secondary-fg);
     background:var(--secondary);padding:3px 9px;border-radius:var(--r-full)}
 
-  /* ---- Projects per AI tool (skill-code-certification / ADR-011) ---- */
-  .tu-intro{margin:-4px 2px 14px;font-size:13px;color:var(--faint);line-height:1.5}
-  .tu-card{padding:14px 18px;margin-bottom:10px}
-  .tu-tool{font-weight:600;letter-spacing:-.01em;font-size:14px;margin-bottom:8px}
-  .tu-source{font-weight:500;font-size:12px;color:var(--faint)}
-  .tu-count{font-size:12px;color:var(--faint);margin-bottom:8px}
-  .tu-note{font-size:13px;color:var(--faint);font-style:italic}
-  ul.tu-projects{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
-  ul.tu-projects li{font-size:13px;word-break:break-all}
-  ul.tu-projects code{font-family:var(--font-mono);font-size:12px}
-  .tu-approx{color:var(--faint);font-style:italic}
-
   /* ---- Agent cards: hierarchical role-card tree (talents-ai-score) ----
    * Plain HTML/CSS: no vendored library, no script, zero-network by
    * construction. Generous padding/font sizes throughout - legibility over
@@ -1150,8 +1088,6 @@ function footprintSectionsHtml(report, maturity, lang) {
   ${technologiesSection(report, t)}
 
   ${mcpSection(report, t)}
-
-  ${toolProjectUsageSection(report, t)}
 
   ${agentCardsSection(report, t)}
 

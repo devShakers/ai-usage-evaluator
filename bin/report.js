@@ -28,7 +28,6 @@ const { computeConsentSkip } = require('../src/consent-skip');
 const { getRoadmapEntry } = require('../src/roadmap-content');
 const { computeTierResult } = require('../src/tier-engine');
 const { buildRoadmapPersonalizationRequest, requestRoadmapPersonalization } = require('../src/roadmap-personalization');
-const { flattenProjectPaths } = require('../src/tool-project-usage');
 
 // Help text is now localized (skill-code-certification / ADR-003): it lives in
 // the i18n `cli.help` catalog and is resolved via the machine locale (or
@@ -174,53 +173,15 @@ async function maybePersonalizeRoadmap(report, maturity, lang) {
   }
 }
 
-// Interactive "analyse the discovered projects" offer (skill-code-certification
-// / ADR-011). Shown AFTER the report + link, on a TTY only, when tool-project
-// usage discovered at least one project. It NEVER auto-runs an analysis: on a
-// selection it prints the ready-to-copy `ai-footprint`/`ai-certify --root`
-// commands for the chosen project(s) (or "a" for all), matching the ADR's
-// "offer to analyse them, or at least list them so the user can run them".
-// Non-TTY runs skip the prompt entirely (the deterministic report section
-// already listed the projects) so nothing ever hangs a piped invocation.
-async function offerProjectAnalysis(report, catalog) {
-  if (!process.stdin.isTTY) return;
-  const paths = flattenProjectPaths(report.toolProjectUsage);
-  if (!paths.length) return;
-
-  const cli = catalog.cli;
-  process.stdout.write(`\n  ${cli.analyzeHeading}\n`);
-  process.stdout.write(`  ${cli.analyzeIntro(paths.length)}\n`);
-  paths.forEach((p, i) => process.stdout.write(`${cli.analyzeItem(i + 1, p)}\n`));
-
-  process.stdout.write('\n');
-  const ask = createStdinAsk();
-  let answer = '';
-  try {
-    answer = (await ask(cli.analyzePrompt)) || '';
-  } finally {
-    ask.close();
-  }
-
-  const trimmed = answer.trim().toLowerCase();
-  if (trimmed === '') {
-    process.stdout.write(`  ${cli.analyzeSkipped}\n\n`);
-    return;
-  }
-  if (trimmed === 'a' || trimmed === 'all' || trimmed === 'todos') {
-    for (const p of paths) process.stdout.write(`${cli.analyzeCommandsFor(p)}\n`);
-    process.stdout.write('\n');
-    return;
-  }
-  const n = Number.parseInt(trimmed, 10);
-  if (Number.isInteger(n) && n >= 1 && n <= paths.length) {
-    process.stdout.write(`${cli.analyzeCommandsFor(paths[n - 1])}\n\n`);
-  } else {
-    process.stdout.write(`  ${cli.analyzeInvalid}\n\n`);
-  }
-}
-
-async function main() {
-  const opts = parseArgs(process.argv.slice(2));
+// Exposed as `run(argv, { ask })` (ADR-014) so the branded REPL
+// (bin/shakers.js) can invoke the SAME logic the `ai-footprint` binary used to
+// run, without duplicating it. `argv` is the arg array (process.argv.slice(2)
+// when standalone). `ask` is the SHARED stdin reader injected by the REPL — the
+// nested-stdin seam: when present the consent flow reads through it and this
+// function NEVER closes it (the REPL owns its lifecycle). Standalone (no `ask`)
+// it creates and closes its own, exactly as before.
+async function run(argv = process.argv.slice(2), { ask: injectedAsk = null } = {}) {
+  const opts = parseArgs(argv);
 
   // Resolve language FIRST (skill-code-certification / ADR-003) so even --help
   // is localized to the machine locale (or --lang) — no hardcoded Spanish.
@@ -338,11 +299,13 @@ async function main() {
     process.stdout.write(`\n  ${consentSkip.message}\n`);
   }
   if (!consentSkip.skip) {
-    const ask = createStdinAsk();
+    // Reuse the REPL's shared reader when injected (nested stdin); otherwise
+    // own a throwaway one. Only close what we created — never the REPL's.
+    const ask = injectedAsk || createStdinAsk();
     try {
       await runConsentPrompt({ ask, catalog });
     } finally {
-      ask.close();
+      if (!injectedAsk) ask.close();
     }
   }
 
@@ -369,13 +332,16 @@ async function main() {
     doBuildNextLevel(root, maturity, opts.force, catalog);
   }
 
-  // Interactive "analyse the discovered projects" offer (ADR-011): TTY-only,
-  // never auto-runs — prints ready-to-copy commands for the chosen project(s).
-  await offerProjectAnalysis(report, catalog);
-
   // Automatic sending, always at the end and after seeing the local report.
   // Gated by consent + email + throttle + endpoint config (src/share.js).
   await maybeAutoShare(report, maturity);
 }
 
-main();
+module.exports = { run };
+
+// Only auto-run when executed directly (`node bin/report.js`). Guarded so the
+// REPL can `require()` this module and call `run()` without triggering a second
+// execution (ADR-014).
+if (require.main === module) {
+  run();
+}

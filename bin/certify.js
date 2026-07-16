@@ -198,15 +198,19 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
   } else {
     // Dynamic multi-select (issue 011): arrows + space + enter. Uses raw
     // stdin, so release the line-based readline first to avoid two handlers
-    // fighting over the TTY. Consent already ran before this phase, so nothing
-    // reuses `ask` after this point (main()'s finally closes it idempotently).
-    ask.close();
+    // fighting over the TTY. When running inside the REPL (ADR-014) the reader
+    // is SHARED, so suspend/resume it instead of closing it (closing would kill
+    // the REPL's stdin); standalone (`ask.close` only) it's a throwaway reader.
+    // TTY-only path — non-TTY takes the --all/--skills branches above.
+    if (typeof ask.suspend === 'function') ask.suspend();
+    else ask.close();
     const picked = await runInteractiveMultiSelect({
       items: certifiable,
       labelFor: (s) => `${s.skillName}${s.technology ? ` (${s.technology})` : ''}`,
       header: c.selectHeading,
       hint: c.selectHint,
     });
+    if (typeof ask.resume === 'function') ask.resume();
     if (!picked || picked.length === 0) {
       process.stdout.write(`\n  ${c.selectNoneChosen}\n\n`);
       return;
@@ -271,8 +275,15 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
   }
 }
 
-async function main() {
-  const opts = parseCertifyArgs(process.argv.slice(2));
+// Exposed as `run(argv, { ask })` (ADR-014) so the branded REPL
+// (bin/shakers.js) invokes the SAME certify logic the `ai-certify` binary used
+// to run, without duplicating it. `argv` is the arg array; `ask` is the SHARED
+// stdin reader injected by the REPL (nested stdin) — when present, disclaimer /
+// consent / email / OTP / selection all read through it, and this function
+// NEVER closes it (the REPL owns its lifecycle). Standalone (no `ask`) it
+// creates and closes its own, exactly as before.
+async function run(argv = process.argv.slice(2), { ask: injectedAsk = null } = {}) {
+  const opts = parseCertifyArgs(argv);
   const lang = opts.lang || detectReportLang();
   const catalog = getCatalog(lang);
 
@@ -300,7 +311,7 @@ async function main() {
   process.stdout.write(`\n  ${catalog.certify.technologiesDetected(technologies.join(', '))}\n`);
 
   const stdinIsTTY = !!process.stdin.isTTY;
-  const ask = createStdinAsk();
+  const ask = injectedAsk || createStdinAsk();
   try {
     // (3) Legal disclaimer + EXPLICIT acceptance BEFORE any egress (ADR-001).
     const acceptance = await confirmDisclaimerAcceptance({
@@ -358,8 +369,16 @@ async function main() {
       stdinIsTTY,
     });
   } finally {
-    ask.close();
+    // Only close a reader we own; never the REPL's shared one.
+    if (!injectedAsk) ask.close();
   }
 }
 
-main();
+module.exports = { run };
+
+// Only auto-run when executed directly (`node bin/certify.js`). Guarded so the
+// REPL can `require()` this module and call `run()` without a second execution
+// (ADR-014).
+if (require.main === module) {
+  run();
+}

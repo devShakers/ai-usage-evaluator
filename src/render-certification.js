@@ -66,6 +66,21 @@ function escapeHtml(s) {
 
 const RULE = '────────────────────────────────────────';
 
+// Terminal-condense (CPO feedback): the LLM rationale can be several
+// sentences. In the TERMINAL we trim it to its essence — up to the sentence
+// boundary before ~220 chars, else a hard cut with an ellipsis. The HTML
+// report keeps the full rationale untouched. Never touches improvements or the
+// remediation prompt (those stay verbatim, they are the actionable payload).
+const RATIONALE_MAX = 220;
+function conciseRationale(text) {
+  const s = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
+  if (s.length <= RATIONALE_MAX) return s;
+  const window = s.slice(0, RATIONALE_MAX);
+  const lastStop = Math.max(window.lastIndexOf('. '), window.lastIndexOf('! '), window.lastIndexOf('? '));
+  if (lastStop >= 80) return window.slice(0, lastStop + 1);
+  return `${window.replace(/[\s.,;:]+$/, '')}…`;
+}
+
 function renderCertificationTerminal(certification, lang) {
   const r = getCatalog(lang).certify.report;
   const items = Array.isArray(certification && certification.items) ? certification.items : [];
@@ -105,7 +120,7 @@ function renderCertificationTerminal(certification, lang) {
     const band = scoreBand(item.result.score);
     lines.push(`${C.cyan}│${C.reset}  ${C.bold}${bandColor(band)}${r.scoreLine(item.result.score)}${C.reset}`);
     if (item.result.rationale) {
-      lines.push(`${C.cyan}│${C.reset}  ${C.bold}${r.rationaleLabel}:${C.reset} ${item.result.rationale}`);
+      lines.push(`${C.cyan}│${C.reset}  ${C.bold}${r.rationaleLabel}:${C.reset} ${conciseRationale(item.result.rationale)}`);
     }
     if (Array.isArray(item.result.improvements) && item.result.improvements.length > 0) {
       lines.push(`${C.cyan}│${C.reset}  ${C.bold}${r.improvementsLabel}:${C.reset}`);
