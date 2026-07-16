@@ -165,9 +165,10 @@ function mcpSection(report, t) {
  *                         real identifier is never hidden), or as the
  *                         title itself when there's no synthesis.
  *   - phrase (italic)   = agentSynthesis.whatItDoes, only when present.
- *   - chips (pills)     = structural `tools[]` + one chip for `model`
- *                         (ADR-009 data, always available when there's an
- *                         agent at all — never depends on synthesis).
+ *   - chips (pills)     = ONE chip for `model` (ADR-009 data). The structural
+ *                         `tools[]` chips (which surfaced the per-agent MCP
+ *                         servers) were REMOVED on user request — a card shows
+ *                         identity + hierarchy only, not its tool/MCP inventory.
  *   - hierarchy         = VISUAL nesting (indentation + rail connector), not
  *                         a text line anymore. Agents with no `parent`
  *                         nest under an implicit "Orchestrator" root header
@@ -365,9 +366,12 @@ function agentCardHtml(card, t) {
     ? `<span class="agent-badge" title="${esc(t.html.agentRealNameLabel)}">${esc(card.name)}</span>`
     : '';
   const phrase = card.whatItDoes ? `<p class="agent-phrase">${esc(card.whatItDoes)}</p>` : '';
-  const toolChips = card.tools
-    .map((tool) => `<span class="chip pill"><i class="dot" aria-hidden="true"></i>${esc(tool)}</span>`)
-    .join('');
+  // Per-agent tool / MCP-server chips were REMOVED (user request, talents-ai-score):
+  // an agent card now shows only its identity + hierarchy — real name, symbolic
+  // name (when synthesized), one-line description and the MODEL chip. The
+  // structural `tools[]` (which surfaced the per-agent MCP servers) is still in
+  // the data model (buildAgentCardTree) but is no longer rendered in either
+  // surface (HTML here, and the terminal never listed it after the condense).
   const modelChip = card.model
     ? `<span class="chip pill model"><i class="dot" aria-hidden="true"></i>${esc(card.model)}</span>`
     : '';
@@ -383,7 +387,7 @@ function agentCardHtml(card, t) {
       ${badge}
     </div>
     ${phrase}
-    <div class="agent-chips">${toolChips}${modelChip}</div>
+    <div class="agent-chips">${modelChip}</div>
   </div>`;
 }
 

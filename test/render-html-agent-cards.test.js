@@ -18,8 +18,8 @@ const { renderHtml } = require('../src/render-html');
  *   badge = the real (structural) agent name — always present when a
  *           symbolic title is shown
  *   phrase = whatItDoes (only when synthesis exists)
- *   chips  = tools[] + one chip for model (ADR-009 structural data, never
- *            depends on synthesis)
+ *   chips  = one chip for model (ADR-009 structural data). The per-agent
+ *            tools[]/MCP-server chips were removed on user request.
  *   hierarchy = nesting under an implicit "Orchestrator" root header when
  *               no parent is declared, or under the named parent card when
  *               one is, recursively for deeper explicit chains.
@@ -69,7 +69,7 @@ test('renderHtml: missing report.agents entirely (older report) does not throw, 
 
 // --- fallback: agents present, no synthesis ----------------------------------
 
-test('renderHtml: agents without synthesis -> title is the real name, chips are tools+model, no badge', () => {
+test('renderHtml: agents without synthesis -> title is the real name, only the model chip (tools/MCP chips removed), no badge', () => {
   const report = {
     ...BASE_REPORT,
     agents: [{ name: 'backend-developer', tools: ['Read', 'Write'], model: 'sonnet', parent: null }],
@@ -78,9 +78,12 @@ test('renderHtml: agents without synthesis -> title is the real name, chips are 
   const section = treeSectionOf(html);
   assert.match(section, /agent-title">backend-developer</);
   assert.equal(section.includes('agent-badge'), false);
-  assert.match(section, /Read/);
-  assert.match(section, /Write/);
-  assert.match(section, /sonnet/);
+  // Per-agent tool / MCP-server chips were removed on user request — the card
+  // shows identity + hierarchy only. The tools must NOT appear as chips.
+  assert.equal(/<span class="chip pill"><i class="dot"[^>]*><\/i>Read</.test(section), false);
+  assert.equal(/<span class="chip pill"><i class="dot"[^>]*><\/i>Write</.test(section), false);
+  // The model chip stays.
+  assert.match(section, /chip pill model[^>]*>[\s\S]*?sonnet/);
 });
 
 // talents-ai-score: an earlier fix forced a deterministic FILLER phrase
