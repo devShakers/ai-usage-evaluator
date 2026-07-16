@@ -143,8 +143,8 @@ function bannerWide({ title, color }) {
   // (violet, the sparing 2nd accent).
   const NAME = 11;
   const right = [];
-  right.push([{ t: 'A local-first CLI to understand and', st: { fg: BRAND.white } }]);
-  right.push([{ t: 'level up how you work with AI.', st: { fg: BRAND.white } }]);
+  right.push([{ t: 'A local-first CLI to level up how you work', st: { fg: BRAND.white } }]);
+  right.push([{ t: 'with AI, and certify skills from your code.', st: { fg: BRAND.white } }]);
   right.push([]);
   right.push([{ t: 'Commands', st: { bold: true, fg: BRAND.lime } }]);
   right.push([{ t: 'footprint'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'score AI setup (T0–T7) + roadmap', st: { fg: BRAND.zinc } }]);
@@ -199,8 +199,8 @@ function bannerStacked({ title, color, width }) {
   lines.push(line([{ t: 'Welcome to ', st: { bold: true, fg: BRAND.white } }, { t: 'shakers', st: { bold: true, fg: BRAND.lime } }], { center: true }));
   lines.push(line([{ t: 'AI Usage Evaluator', st: { fg: BRAND.zinc } }], { center: true }));
   lines.push(line([{ t: '', st: null }]));
-  lines.push(line([{ t: 'A local-first CLI to understand and', st: { fg: BRAND.white } }]));
-  lines.push(line([{ t: 'level up how you work with AI.', st: { fg: BRAND.white } }]));
+  lines.push(line([{ t: 'A local-first CLI to level up how you work', st: { fg: BRAND.white } }]));
+  lines.push(line([{ t: 'with AI, and certify skills from your code.', st: { fg: BRAND.white } }]));
   lines.push(line([{ t: '', st: null }]));
   lines.push(line([{ t: 'Commands', st: { bold: true, fg: BRAND.lime } }]));
   lines.push(line([{ t: 'footprint  ', st: { bold: true, fg: BRAND.white } }, { t: 'score AI setup (T0–T7)', st: { fg: BRAND.zinc } }]));

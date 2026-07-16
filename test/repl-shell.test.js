@@ -112,8 +112,8 @@ test('renderBanner (wide): colour off yields a plain, accent-free boxed header',
   // summary + Commands/Getting started on the right.
   assert.match(banner, /Welcome to shakers/);
   assert.match(banner, /AI Usage Evaluator/);
-  assert.match(banner, /A local-first CLI to understand and/);
-  assert.match(banner, /level up how you work with AI\./);
+  assert.match(banner, /A local-first CLI to level up how you work/);
+  assert.match(banner, /with AI, and certify skills from your code\./);
   assert.match(banner, /Commands/);
   assert.match(banner, /footprint/);
   assert.match(banner, /certify/);
