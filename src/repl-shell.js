@@ -42,16 +42,22 @@ function bg(rgb) {
 const RESET = '\x1b[0m';
 const BOLD = '\x1b[1m';
 
-// Pixel-art lightning bolt (the logo's hero element). Full blocks only, for max
-// terminal compatibility; reads as an angular bolt. Rendered lime on a dark
-// tile (see tileRow). 5 wide × 5 tall.
+// Pixel-art lightning bolt — the logo's hero element (a thick, angular lime
+// bolt on a dark tile, echoing the Shakers mark). Built from DIAGONAL glyphs
+// (◢◣◤◥) + blocks so it reads as a real zigzag bolt: a diagonal upper stroke,
+// a sharp jag across the middle, and a diagonal lower stroke (an S/Z), NOT a
+// symmetric cross. All glyphs are BMP single-width, so alignment holds; plain
+// (no-colour) still renders the shape via the triangle glyphs.
 const BOLT_ART = [
-  '   ██',
-  '  ██ ',
-  '█████',
-  ' ██  ',
-  '██   ',
+  '   ◢███◤',
+  '  ◢███◤',
+  ' ◢███◤',
+  '◢███████◣',
+  '  ▀▀◥███◣',
+  '     ◥███◣',
+  '      ◥██',
 ];
+const ART_W = Math.max(...BOLT_ART.map((s) => s.length));
 
 // ── boxed-header primitives ───────────────────────────────────────────────
 // A "cell" = { t: text, st: {bold?, fg?, bg?} }. Visible width is measured on
@@ -78,14 +84,6 @@ function centerCells(cells, width, color) {
 }
 function bd(ch, color) { return color ? `${fg(BRAND.lime)}${ch}${RESET}` : ch; }
 
-// `~/…`-shorten + tail-truncate the cwd so it fits a column.
-function formatCwd(cwd, home, max) {
-  let s = String(cwd || '');
-  if (home && (s === home || s.startsWith(home + '/'))) s = '~' + s.slice(home.length);
-  if (s.length > max) s = '…' + s.slice(s.length - (max - 1));
-  return s;
-}
-
 // Rounded top border with the title embedded, Claude-Code style:
 //   ╭─ sh-eval · v0.1.0 ───────…───────╮
 function topBorder(title, inner, color) {
@@ -96,10 +94,13 @@ function topBorder(title, inner, color) {
 }
 function bottomBorder(inner, color) { return bd(`╰${'─'.repeat(inner)}╯`, color); }
 
-// One tile row (dark background + lime bolt), padded to `tileW`.
-function tileCell(i, tileW) {
+// One tile row: dark-background tile with the lime bolt. Every row is padded to
+// the same inner width (ART_W) + a 1-space margin each side, so the dark bg
+// forms a clean rectangle behind the bolt. Width = ART_W + 2.
+const TILE_W = ART_W + 2;
+function tileCell(i) {
   const art = BOLT_ART[i] || '';
-  const t = art.padEnd(tileW - 1, ' ').padStart(tileW, ' ').slice(0, tileW);
+  const t = ` ${art}${' '.repeat(ART_W - art.length)} `;
   return { t, st: { bg: BRAND.dark, fg: BRAND.lime, bold: true } };
 }
 
@@ -107,25 +108,23 @@ function tileCell(i, tileW) {
 // a brand/product surface like the installer notice (functional footprint/
 // certify output still respects the OS locale). Two-column boxed layout on wide
 // terminals, degrading to a single stacked column under ~76 columns.
-function renderBanner({ version = '', color = true, width = 80, cwd = process.cwd(), home = process.env.HOME || '' } = {}) {
+function renderBanner({ version = '', color = true, width = 80 } = {}) {
   const title = version ? `sh-eval · v${version}` : 'sh-eval';
   return width >= 76
-    ? bannerWide({ title, color, cwd, home })
-    : bannerStacked({ title, color, cwd, home, width });
+    ? bannerWide({ title, color })
+    : bannerStacked({ title, color, width });
 }
 
-function bannerWide({ title, color, cwd, home }) {
+function bannerWide({ title, color }) {
   const LW = 24;         // left (logo) column
   const RW = 44;         // right (info) column
   const INNER = 1 + LW + 3 + RW + 1; // between the outer borders (73)
-  const TILE = 7;
 
-  // Left column: welcome, bolt tile, product line, cwd.
+  // Left column: welcome, bolt tile, product line.
   const left = [];
   left.push([{ t: 'Welcome to ', st: { bold: true, fg: BRAND.white } }, { t: 'shakers', st: { bold: true, fg: BRAND.lime } }]);
-  for (let i = 0; i < BOLT_ART.length; i++) left.push([tileCell(i, TILE)]);
+  for (let i = 0; i < BOLT_ART.length; i++) left.push([tileCell(i)]);
   left.push([{ t: 'AI Usage Evaluator', st: { fg: BRAND.zinc } }]);
-  left.push([{ t: formatCwd(cwd, home, LW), st: { fg: BRAND.zinc } }]);
 
   // Right column: Commands + Getting started (violet, the sparing 2nd accent).
   const NAME = 11;
@@ -155,10 +154,9 @@ function bannerWide({ title, color, cwd, home }) {
   return lines.join('\n') + '\n';
 }
 
-function bannerStacked({ title, color, cwd, home, width }) {
+function bannerStacked({ title, color, width }) {
   const INNER = Math.max(20, Math.min(width - 2, 56));
   const W = INNER - 2; // content width inside the "│ … │" padding
-  const TILE = 7;
   const line = (cellsOrStr, { center = false } = {}) => {
     const cells = Array.isArray(cellsOrStr) ? cellsOrStr : [cellsOrStr];
     // truncate on plain length
@@ -175,10 +173,9 @@ function bannerStacked({ title, color, cwd, home, width }) {
 
   const lines = [''];
   lines.push(topBorder(title, INNER, color));
-  for (let i = 0; i < BOLT_ART.length; i++) lines.push(line([tileCell(i, TILE)], { center: true }));
+  for (let i = 0; i < BOLT_ART.length; i++) lines.push(line([tileCell(i)], { center: true }));
   lines.push(line([{ t: 'Welcome to ', st: { bold: true, fg: BRAND.white } }, { t: 'shakers', st: { bold: true, fg: BRAND.lime } }], { center: true }));
   lines.push(line([{ t: 'AI Usage Evaluator', st: { fg: BRAND.zinc } }], { center: true }));
-  lines.push(line([{ t: formatCwd(cwd, home, W), st: { fg: BRAND.zinc } }], { center: true }));
   lines.push(line([{ t: '', st: null }]));
   lines.push(line([{ t: 'Commands', st: { bold: true, fg: BRAND.lime } }]));
   lines.push(line([{ t: 'footprint  ', st: { bold: true, fg: BRAND.white } }, { t: 'score AI setup (T0–T7)', st: { fg: BRAND.zinc } }]));
@@ -259,13 +256,7 @@ async function runRepl({ stdin, deps, lang = 'en', version = '', out = process.s
   const useColor = color === undefined ? !!out.isTTY : color;
 
   // Banner is always English; boxed layout adapts to the terminal width.
-  out.write(renderBanner({
-    version,
-    color: useColor,
-    width: out.columns || 80,
-    cwd: process.cwd(),
-    home: process.env.HOME || '',
-  }));
+  out.write(renderBanner({ version, color: useColor, width: out.columns || 80 }));
 
   for (;;) {
     out.write(renderPrompt({ lang, color: useColor }));
