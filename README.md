@@ -51,6 +51,7 @@ curl -fsSL https://raw.githubusercontent.com/devShakers/ai-usage-evaluator/main/
 ```
 
 The installer:
+
 - Requires **Node 18+** (checks and fails clearly if missing/too old).
 - Discovers the CLI's own `src/*.js` modules dynamically (via a local copy
   or the GitHub API) rather than hardcoding a file list.
@@ -168,7 +169,7 @@ implementation lives in `shakers-hub-backend`.
 - **Score scope (ADR-010, reverts ADR-009): the 0-100 score is computed over
   project ∪ home** — your whole developer AI setup (the project's signals plus
   your global `~/.claude` and machine-level config), not this one project in
-  isolation. It measures the maturity of *you as a developer*, so projects that
+  isolation. It measures the maturity of _you as a developer_, so projects that
   share a home tend to read similar scores. ADR-009 had briefly scoped the score
   to the project directory only, but that drove notes too low (project-level AI
   config is sparse), so ADR-010 reverted it to the earlier project ∪ home
@@ -206,7 +207,7 @@ configuration — never your project's business logic or source code:
   a curated name map — never a raw dependency dump.
 - **Hooks**: hook-based automation configured for a tool.
 
-**Never** read, stored or sent: file *contents* beyond what's needed to
+**Never** read, stored or sent: file _contents_ beyond what's needed to
 compute a count, absolute paths, environment variables, or credentials.
 
 ## Tier ladder (T0-T7)
@@ -215,16 +216,16 @@ The tier is "the highest tier whose criteria you ALL meet, checked strictly
 bottom-up". The 0-4 band used elsewhere (e.g. Shakers direction views) is
 derived from the tier — the tier is the single source of truth.
 
-| Tier | Name | Criterion |
-|------|------|-----------|
-| T0 | Empty bench | no tool detected |
-| T1 | First tool | at least one tool detected |
-| T2 | Bench with notes | T1 + project instructions/rules/config exist |
-| T3 | Connected bench | T2 + at least one MCP server configured |
-| T4 | Own tooling | T3 + own skills/commands/rules |
-| T5 | Agentic operator | agentic CLI + MCP + own tooling together |
-| T6 | Multi-agent | T5 + 2 or more agents defined |
-| T7 | Orchestrated workshop | T6 + at least one hook configured |
+| Tier | Name                  | Criterion                                    |
+| ---- | --------------------- | -------------------------------------------- |
+| T0   | Empty bench           | no tool detected                             |
+| T1   | First tool            | at least one tool detected                   |
+| T2   | Bench with notes      | T1 + project instructions/rules/config exist |
+| T3   | Connected bench       | T2 + at least one MCP server configured      |
+| T4   | Own tooling           | T3 + own skills/commands/rules               |
+| T5   | Agentic operator      | agentic CLI + MCP + own tooling together     |
+| T6   | Multi-agent           | T5 + 2 or more agents defined                |
+| T7   | Orchestrated workshop | T6 + at least one hook configured            |
 
 File recency (`mtime`) is informative only — it is never a gating signal
 for any tier.
@@ -302,13 +303,13 @@ endpoint or secret. Unset means "nothing to call", and every code path that
 depends on one degrades gracefully (no send / deterministic fallback), it
 never breaks the local report.
 
-| Variable | Purpose |
-|---|---|
-| `AI_FOOTPRINT_INGEST_ENDPOINT` | Where a saved report is sent, if consent is granted. |
-| `AI_FOOTPRINT_SYNTHESIS_ENDPOINT` | Agent-card synthesis endpoint (optional). |
-| `AI_FOOTPRINT_ROADMAP_ENDPOINT` | Roadmap personalization endpoint (optional). |
-| `AI_FOOTPRINT_CERTIFY_ENDPOINT` | Skill-certification endpoint for the `certify` command. Unlike the others, this one does **not** degrade silently: `certify` has no local-only product (the Skill catalog and analysis live on the Hub), so an unset value is an actionable error, not a no-op. |
-| `AI_FOOTPRINT_CONFIG_DIR` | Override `~/.config/ai-footprint/` (mainly for tests). |
+| Variable                          | Purpose                                                                                                                                                                                                                                                         |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AI_FOOTPRINT_INGEST_ENDPOINT`    | Where a saved report is sent, if consent is granted.                                                                                                                                                                                                            |
+| `AI_FOOTPRINT_SYNTHESIS_ENDPOINT` | Agent-card synthesis endpoint (optional).                                                                                                                                                                                                                       |
+| `AI_FOOTPRINT_ROADMAP_ENDPOINT`   | Roadmap personalization endpoint (optional).                                                                                                                                                                                                                    |
+| `AI_FOOTPRINT_CERTIFY_ENDPOINT`   | Skill-certification endpoint for the `certify` command. Unlike the others, this one does **not** degrade silently: `certify` has no local-only product (the Skill catalog and analysis live on the Hub), so an unset value is an actionable error, not a no-op. |
+| `AI_FOOTPRINT_CONFIG_DIR`         | Override `~/.config/ai-footprint/` (mainly for tests).                                                                                                                                                                                                          |
 
 ## Reference server (not deployed)
 
