@@ -134,7 +134,7 @@ test('renderTerminal: with maturity.tierKey, shows the tier roadmap (current -> 
 test('renderTerminal: --build-next-level is announced when there is a next tier to build', () => {
   const maturity = { level: 3, key: 'power', name: 'Power user', score: 70, emoji: 'x', next: 'x', tier: 5, tierKey: 'T5' };
   const html = strip(renderTerminal(BASE_REPORT, maturity, 'es'));
-  assert.match(html, /ai-footprint --build-next-level/);
+  assert.match(html, /footprint --build-next-level/);
   // Now framed as a SECONDARY alternative — the prompt below is primary.
   assert.match(html, /Alternativamente/);
 });
@@ -184,7 +184,7 @@ test('renderTerminal: the implementation prompt reflects detected frameworks fro
 test('renderTerminal: at the max tier (T7), does NOT announce --build-next-level (nothing left to build)', () => {
   const maturity = { level: 4, key: 'orchestrator', name: 'Orquestador', score: 100, emoji: 'x', next: 'x', tier: 7, tierKey: 'T7' };
   const html = strip(renderTerminal(BASE_REPORT, maturity, 'es'));
-  assert.equal(html.includes('ai-footprint --build-next-level'), false);
+  assert.equal(html.includes('footprint --build-next-level'), false);
 });
 
 test('renderTerminal: without maturity.tierKey (older report shape), falls back to the generic band next-step text — a next step is never silently dropped', () => {

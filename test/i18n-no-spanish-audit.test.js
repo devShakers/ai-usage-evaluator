@@ -118,7 +118,12 @@ test('renderHtml (en): the English tier name and section headings ARE present (p
 test('renderTerminal (en): the English tier name and section headings ARE present', () => {
   const out = stripAnsi(renderTerminal(reportAt('T2'), MATURITY_BY_TIER.T2, 'en'));
   assert.match(out, /Detected/);
-  assert.match(out, /Environment/);
+  // The terminal was condensed (CPO, 2026-07-16): the "Environment" block was
+  // dropped from the terminal (it stays in the HTML — see the renderHtml check
+  // above). Anchor on the EN header subtitle instead, which is EN-only ("perfil
+  // de uso de IA" in es) and always present, so this still verifies the EN
+  // render carries English copy, not Spanish.
+  assert.match(out, /AI usage profile/);
   assert.match(out, /Project technologies/);
   assert.match(out, /Agents/);
   assert.match(out, /Your next level/);

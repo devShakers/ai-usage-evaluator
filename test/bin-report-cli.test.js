@@ -396,7 +396,7 @@ test('bin/report.js: the implementation prompt is the primary "next steps" path,
       env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_HOME_DIR: tmpHomeDir },
     });
     const promptIdx = stdout.indexOf('Prompt para implementar');
-    const buildNextIdx = stdout.indexOf('ai-footprint --build-next-level');
+    const buildNextIdx = stdout.indexOf('footprint --build-next-level');
     assert.ok(promptIdx !== -1 && buildNextIdx !== -1);
     assert.ok(promptIdx < buildNextIdx, 'the prompt (primary) should appear before the --build-next-level hint (secondary)');
     assert.match(stdout, /Alternativamente/);

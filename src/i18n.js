@@ -258,13 +258,13 @@ const catalogs = {
       // "Construir el siguiente nivel ahora" (issue 021): now a SECONDARY,
       // opt-in alternative — the copyable implementation prompt (below) is
       // the PRIMARY "how do I implement this" path.
-      buildNextLevelHint: 'Alternativamente, ejecuta `ai-footprint --build-next-level` para generar el fichero de partida directamente en tu proyecto.',
+      buildNextLevelHint: 'Alternativamente, ejecuta `footprint --build-next-level` para generar el fichero de partida directamente en tu proyecto.',
       // Ayuda localizada (skill-code-certification / ADR-003): antes estaba
       // hardcodeada en español en bin/report.js; ahora pasa por i18n y respeta
       // la locale de la máquina.
       help:
         '\nAI Footprint — perfil local de uso de herramientas de IA\n\n'
-        + 'Uso:\n  ai-footprint [opciones]\n\n'
+        + 'Uso:\n  footprint [opciones]\n\n'
         + 'Opciones:\n'
         + '      --json             Imprime el informe en JSON por stdout\n'
         + '      --no-save          No escribe el informe en disco (solo muestra)\n'
@@ -323,7 +323,7 @@ const catalogs = {
       persistIntro:
         'Este informe se ha generado y mostrado en tu equipo, siempre. '
         + 'Guardarlo en Shakers es opcional y revocable en cualquier momento '
-        + '(ai-footprint --consent-revoke): guarda tu nivel/tier y señales '
+        + '(footprint --consent-revoke): guarda tu nivel/tier y señales '
         + 'estructuradas derivadas (herramientas, MCP, memoria, '
         + 'automatizaciones, agentes, tecnologías) — nunca el contenido de '
         + 'tus ficheros, prompts, rutas ni credenciales. Dato indicativo, no '
@@ -363,7 +363,7 @@ const catalogs = {
       revoked: 'Consentimiento revocado. No se guardará nada más automáticamente.',
       reset: 'Decisión de consentimiento reiniciada. Se te preguntará de nuevo en la próxima ejecución.',
       emailChanged: (email) => `Correo actualizado a ${email}. Se usará en el próximo guardado.`,
-      emailInvalidCli: 'Correo no válido. Uso: ai-footprint --consent-email tu@correo.com',
+      emailInvalidCli: 'Correo no válido. Uso: footprint --consent-email tu@correo.com',
     },
     // Email-ownership verification (skill-code-certification / ADR-006): the
     // OTP "modo espera" copy, shared by both binaries. Shown only when the
@@ -393,7 +393,7 @@ const catalogs = {
       help:
         'AI Certify — certifica Skills de tu catálogo de Shakers analizando tu proyecto local\n\n'
         + 'Uso:\n'
-        + '  ai-certify [opciones]\n\n'
+        + '  certify [opciones]\n\n'
         + 'Opciones:\n'
         + '      --root DIR           Analiza DIR en vez del directorio actual\n'
         + '      --email CORREO       Tu correo de Talent (si no, se usa el guardado o se te pregunta)\n'
@@ -453,7 +453,7 @@ const catalogs = {
       },
       errorNoEndpoint:
         'No hay endpoint de certificación configurado. Define AI_FOOTPRINT_CERTIFY_ENDPOINT '
-        + 'con la URL del Hub de Shakers y vuelve a ejecutar ai-certify. (No hay certificación '
+        + 'con la URL del Hub de Shakers y vuelve a ejecutar certify. (No hay certificación '
         + 'en local: el catálogo de Skills y el análisis viven en el Hub.)',
       errorIntro: 'No se han podido resolver las Skills certificables:',
       errorNetwork: 'no se pudo contactar con el servicio de certificación (error de red).',
@@ -704,13 +704,13 @@ const catalogs = {
       scanningLabel: 'Scanning environment and detectors…',
       synthesizingLabel: 'Synthesizing agents with AI…',
       personalizingRoadmapLabel: 'Personalizing roadmap…',
-      buildNextLevelHint: 'Alternatively, run `ai-footprint --build-next-level` to generate the starter file directly in your project.',
+      buildNextLevelHint: 'Alternatively, run `footprint --build-next-level` to generate the starter file directly in your project.',
       // Localized help (skill-code-certification / ADR-003): previously
       // hardcoded Spanish in bin/report.js; now routed through i18n so it
       // respects the machine locale.
       help:
         '\nAI Footprint — local profile of your AI-tool usage\n\n'
-        + 'Usage:\n  ai-footprint [options]\n\n'
+        + 'Usage:\n  footprint [options]\n\n'
         + 'Options:\n'
         + '      --json             Print the report as JSON on stdout\n'
         + '      --no-save          Do not write the report to disk (show only)\n'
@@ -761,7 +761,7 @@ const catalogs = {
       persistIntro:
         'This report has already been generated and shown on your machine, '
         + 'always. Saving it in Shakers is optional and revocable at any '
-        + "time (ai-footprint --consent-revoke): it saves your level/tier and "
+        + "time (footprint --consent-revoke): it saves your level/tier and "
         + 'structured signals derived across categories (tools, MCP, memory, '
         + 'automations, agents, technologies) — never the content of your '
         + 'files, prompts, paths or credentials. Indicative data, not verified, '
@@ -796,7 +796,7 @@ const catalogs = {
       revoked: 'Consent revoked. Nothing will be saved automatically anymore.',
       reset: 'Consent decision reset. You will be asked again on the next run.',
       emailChanged: (email) => `Email updated to ${email}. It will be used on the next save.`,
-      emailInvalidCli: 'Invalid email. Usage: ai-footprint --consent-email you@example.com',
+      emailInvalidCli: 'Invalid email. Usage: footprint --consent-email you@example.com',
     },
     // Email-ownership verification (skill-code-certification / ADR-006): the
     // OTP "wait mode" copy, shared by both binaries. Gates PERSISTENCE ONLY —
@@ -823,7 +823,7 @@ const catalogs = {
       help:
         'AI Certify — certify Skills from your Shakers catalog by analyzing your local project\n\n'
         + 'Usage:\n'
-        + '  ai-certify [options]\n\n'
+        + '  certify [options]\n\n'
         + 'Options:\n'
         + '      --root DIR           Analyze DIR instead of the current directory\n'
         + '      --email EMAIL        Your Talent email (else the stored one, else you are asked)\n'
@@ -881,7 +881,7 @@ const catalogs = {
       },
       errorNoEndpoint:
         'No certification endpoint configured. Set AI_FOOTPRINT_CERTIFY_ENDPOINT to the '
-        + 'Shakers Hub URL and run ai-certify again. (There is no local-only certification: '
+        + 'Shakers Hub URL and run certify again. (There is no local-only certification: '
         + 'the Skill catalog and the analysis live on the Hub.)',
       errorIntro: 'Could not resolve certifiable Skills:',
       errorNetwork: 'the certification service could not be reached (network error).',
