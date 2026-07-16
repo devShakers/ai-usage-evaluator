@@ -9,7 +9,7 @@
 #   ./install.sh
 #
 # The script detects whether the files are local (installs by copying) or
-# not (downloads them from the repo). When done it leaves the `shakers`
+# not (downloads them from the repo). When done it leaves the `sh-eval`
 # command available. Uninstall: ./install.sh --uninstall
 #
 set -euo pipefail
@@ -42,14 +42,14 @@ fi
 # this installer by being left off a hardcoded list) never goes missing from
 # an install again. If a file is ever added to src/ that must NOT ship (none
 # today), exclude it explicitly at the discovery step below and say why.
-# ADR-014: `shakers` (the branded REPL) is the ONLY installed command. The
+# ADR-014: `sh-eval` (the branded REPL) is the ONLY installed command. The
 # per-command binaries (bin/report.js / bin/certify.js) are still SHIPPED — the
 # REPL imports them (run(args,{ask})) — but no launcher is created for them, so
 # they aren't invoked directly.
 FILES=(
   "package.json"
   "README.md"
-  "bin/shakers.js"
+  "bin/sh-eval.js"
   "bin/report.js"
   "bin/certify.js"
 )
@@ -60,7 +60,7 @@ die()  { printf "  ${R}✗ %b${N}\n" "$1" >&2; exit 1; }
 uninstall() {
   printf "\n  ${B}${C}Shakers — uninstall${N}\n\n"
   rm -rf "$INSTALL_DIR" && say "${G}+${N} removed $INSTALL_DIR"
-  rm -f "$BIN_DIR/shakers" && say "${G}+${N} removed $BIN_DIR/shakers"
+  rm -f "$BIN_DIR/sh-eval" && say "${G}+${N} removed $BIN_DIR/sh-eval"
   # Legacy launchers from installs before ADR-014's single-entrypoint REPL.
   rm -f "$BIN_DIR/ai-footprint" && say "${G}+${N} removed legacy $BIN_DIR/ai-footprint"
   rm -f "$BIN_DIR/ai-certify" && say "${G}+${N} removed legacy $BIN_DIR/ai-certify"
@@ -72,7 +72,7 @@ uninstall() {
 
 printf "\n  ${B}${C}Shakers — installer v${VERSION}${N}\n"
 say  "${C}local-first developer AI tools, in one branded shell${N}"
-say  "  ${B}shakers${N}       opens an interactive Shakers shell with two commands:"
+say  "  ${B}sh-eval${N}       opens an interactive Shakers shell with two commands:"
 say  "  ${B}footprint${N}     scans your machine and current project for AI tooling"
 say  "                (assistants, MCP servers, agents, hooks, custom skills/"
 say  "                commands) and scores your setup on a T0-T7 maturity ladder,"
@@ -92,7 +92,7 @@ say "${G}+${N} Node $(node -v) detected"
 # Local install (cloned repo) or remote (curl)?
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo '')"
 LOCAL=0
-if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/bin/shakers.js" ]; then
+if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/bin/sh-eval.js" ]; then
   LOCAL=1
   say "${G}+${N} Files found locally — installing by copy"
 else
@@ -156,13 +156,13 @@ for f in "${SRC_FILES[@]}"; do
   say "    ${G}+${N} src/$f"
 done
 
-# ─── Create the single `shakers` launcher (ADR-014) ─────────────────────────
+# ─── Create the single `sh-eval` launcher (ADR-014) ─────────────────────────
 # The branded REPL is the ONLY command. bin/report.js / bin/certify.js are
 # shipped (the REPL imports them) but get NO standalone launcher.
-SHIM="$BIN_DIR/shakers"
+SHIM="$BIN_DIR/sh-eval"
 cat > "$SHIM" <<EOF
 #!/usr/bin/env bash
-exec node "$INSTALL_DIR/bin/shakers.js" "\$@"
+exec node "$INSTALL_DIR/bin/sh-eval.js" "\$@"
 EOF
 chmod +x "$SHIM"
 say "\n  ${G}+${N} Command created at $SHIM"
@@ -174,21 +174,21 @@ rm -f "$BIN_DIR/ai-footprint" "$BIN_DIR/ai-certify" 2>/dev/null || true
 
 # ─── Verification ───────────────────────────────────────────────────────────
 # Drive the REPL non-interactively (pipe `exit`) so verification never hangs.
-printf 'exit\n' | node "$INSTALL_DIR/bin/shakers.js" >/dev/null 2>&1 \
-  && say "  ${G}+${N} Verification OK (shakers)" \
-  || die "Verification failed while running shakers."
+printf 'exit\n' | node "$INSTALL_DIR/bin/sh-eval.js" >/dev/null 2>&1 \
+  && say "  ${G}+${N} Verification OK (sh-eval)" \
+  || die "Verification failed while running sh-eval."
 
 # ─── Final message ──────────────────────────────────────────────────────────
 printf "\n  ${G}${B}Installed successfully.${N}\n\n"
 say "  ${B}Usage:${N}"
-say "    ${C}shakers${N}               Open the Shakers shell, then type a command:"
+say "    ${C}sh-eval${N}               Open the Shakers shell, then type a command:"
 say "      ${C}footprint${N}           Scan this project + machine; print the report and a"
 say "                          link to the cumulative HTML report for the project"
 say "      ${C}footprint --json${N}    Machine-readable JSON output"
 say "      ${C}certify${N}             Certify your skills from this project's code"
 say "      ${C}help${N} / ${C}exit${N}          List commands / leave the shell"
 say ""
-say "  ${B}Getting started:${N} run ${C}shakers${N} in any project, then type ${C}footprint${N}"
+say "  ${B}Getting started:${N} run ${C}sh-eval${N} in any project, then type ${C}footprint${N}"
 say "  and, once done, ${C}certify${N}. Local-first; nothing is sent without your consent."
 printf "\n"
 # ─── Legal notice (skill-code-certification / ADR-001 + ADR-003) ─────────────

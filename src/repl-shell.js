@@ -4,12 +4,12 @@ const { getCatalog } = require('./i18n');
 
 /*
  * Branded mini-shell (ADR-014). The REPL is the SINGLE entrypoint of the tool
- * (`shakers`): it prints a Shakers wordmark, shows a prompt, and dispatches the
+ * (`sh-eval`): it prints a Shakers wordmark, shows a prompt, and dispatches the
  * SAME command logic that used to live behind the `ai-footprint`/`ai-certify`
  * binaries — no behaviour change, the commands are just wrapped.
  *
  * Zero-dependency: node stdlib + ANSI only (no TUI framework), honouring the
- * repo invariant. Logic lives here (testable) so bin/shakers.js stays a thin
+ * repo invariant. Logic lives here (testable) so bin/sh-eval.js stays a thin
  * entrypoint (bin/*.js call their entry on load and can't be require()d).
  *
  * The commands are injected as `deps.runFootprint(args, { ask })` /
@@ -61,7 +61,7 @@ function renderBanner({ lang = 'en', version = '', color = true } = {}) {
   return lines.join('\n') + '\n';
 }
 
-// The coloured prompt string (e.g. "shakers ›"). No trailing newline.
+// The coloured prompt string (e.g. "sh-eval ›"). No trailing newline.
 function renderPrompt({ lang = 'en', color = true } = {}) {
   const label = getCatalog(lang).repl.prompt;
   return color ? `  ${BOLD}${fg(BRAND.teal500)}${label}${RESET} ` : `  ${label} `;

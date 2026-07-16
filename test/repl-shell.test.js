@@ -109,7 +109,7 @@ test('renderBanner/renderPrompt: colour off yields plain, accent-free chrome', (
   assert.match(banner, /v1\.0\.0/);
 
   const prompt = renderPrompt({ lang: 'en', color: false });
-  assert.match(prompt, /shakers ›/);
+  assert.match(prompt, /sh-eval ›/);
   assert.ok(!prompt.includes('\x1b['));
 
   // Colour on emits truecolour escapes.

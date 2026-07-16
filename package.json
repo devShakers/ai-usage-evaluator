@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "description": "Perfil local de uso de herramientas de IA para desarrolladores. Escanea, clasifica y muestra un informe. Cero dependencias.",
   "bin": {
-    "shakers": "bin/shakers.js"
+    "sh-eval": "bin/sh-eval.js"
   },
   "scripts": {
-    "start": "node bin/shakers.js",
-    "shakers": "node bin/shakers.js",
+    "start": "node bin/sh-eval.js",
+    "sh-eval": "node bin/sh-eval.js",
     "test": "node --test test/*.test.js"
   },
   "engines": {

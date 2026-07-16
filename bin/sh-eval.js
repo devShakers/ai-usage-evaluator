@@ -2,8 +2,8 @@
 'use strict';
 
 /*
- * `shakers` — the SINGLE entrypoint of this tool (ADR-014). Opens a branded
- * mini-shell (REPL, Claude-Code style) where the commands run:
+ * `sh-eval` — the SINGLE entrypoint of this tool (ADR-014). Opens a branded
+ * Shakers mini-shell (REPL, Claude-Code style) where the commands run:
  *   footprint [args]   scan this project + machine, score the AI setup
  *   certify   [args]   certify Skills from this project's code
  *   help | clear | exit/quit
@@ -11,7 +11,7 @@
  * No behaviour change to the commands — they're the SAME `run(args,{ask})` from
  * bin/report.js / bin/certify.js, just wrapped in the REPL. The former
  * `ai-footprint`/`ai-certify` binaries are no longer installed (install.sh only
- * exposes `shakers`); their logic stays here for the REPL to import.
+ * exposes `sh-eval`); their logic stays here for the REPL to import.
  *
  * Zero-dependency: readline + ANSI (src/repl-shell.js / src/repl-stdin.js).
  *

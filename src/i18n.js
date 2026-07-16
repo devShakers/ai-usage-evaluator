@@ -526,7 +526,7 @@ const catalogs = {
     repl: {
       tagline: 'Herramientas locales de IA para desarrolladores',
       hint: 'Escribe "help" para ver los comandos, "exit" para salir.',
-      prompt: 'shakers ›',
+      prompt: 'sh-eval ›',
       goodbye: 'Hasta pronto.',
       unknown: (cmd) => `Comando no reconocido: "${cmd}". Escribe "help" para ver los comandos disponibles.`,
       help:
@@ -951,7 +951,7 @@ const catalogs = {
     repl: {
       tagline: 'Local AI tooling for developers',
       hint: 'Type "help" to list commands, "exit" to quit.',
-      prompt: 'shakers ›',
+      prompt: 'sh-eval ›',
       goodbye: 'See you soon.',
       unknown: (cmd) => `Unknown command: "${cmd}". Type "help" to list the available commands.`,
       help:
