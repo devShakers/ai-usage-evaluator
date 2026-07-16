@@ -165,13 +165,14 @@ implementation lives in `shakers-hub-backend`.
   still shows the footprint section: that footprint was produced for this
   project and is part of its cumulative record, not stale or leaked data.
   Different projects never mix into one document.
-- **Score scope (ADR-009): the 0-100 score reflects THIS project's AI setup**
-  (signals inside the project directory), so different projects get different
-  scores and your global `~/.claude` setup no longer dominates. The **tier
-  (T0-T7)** keeps the wider project ∪ home scope — it reflects you as a
-  developer, not this one project — so a bare project can show a low score
-  under a high tier. That is by design; the report labels the score
-  accordingly.
+- **Score scope (ADR-010, reverts ADR-009): the 0-100 score is computed over
+  project ∪ home** — your whole developer AI setup (the project's signals plus
+  your global `~/.claude` and machine-level config), not this one project in
+  isolation. It measures the maturity of *you as a developer*, so projects that
+  share a home tend to read similar scores. ADR-009 had briefly scoped the score
+  to the project directory only, but that drove notes too low (project-level AI
+  config is sparse), so ADR-010 reverted it to the earlier project ∪ home
+  behaviour. The **tier (T0-T7)** uses the same project ∪ home scope.
 
 ## What it detects
 
