@@ -47,6 +47,43 @@ function bar(score, width = 24) {
   return '█'.repeat(filled) + '░'.repeat(width - filled);
 }
 
+/*
+ * Terminal-SUMMARIZE (user feedback, 2026-07-16): the earlier condense (commit
+ * 465badb) over-trimmed — it left the terminal as headings + copyable prompts
+ * with the prose stripped out. The user wants the terminal INFORMATIVE but
+ * concise: the same sections as the HTML, but SHORTENED to scannable one-liners
+ * instead of the HTML's full-length prose. `summarize` collapses whitespace and
+ * trims a long string to ~max chars, cutting at a sentence boundary when there
+ * is one past the halfway mark, else at a word boundary, adding an ellipsis.
+ * Copyable prompts are NEVER passed through this — they stay verbatim.
+ */
+function summarize(text, max = 140) {
+  const s = String(text || '').trim().replace(/\s+/g, ' ');
+  if (s.length <= max) return s;
+  const slice = s.slice(0, max);
+  const lastStop = slice.lastIndexOf('. ');
+  if (lastStop >= max * 0.5) return slice.slice(0, lastStop + 1);
+  const lastSpace = slice.lastIndexOf(' ');
+  return (lastSpace > 0 ? slice.slice(0, lastSpace) : slice).replace(/[\s,;:.]+$/, '') + '…';
+}
+
+/* ---------- environment (summarized parity with render-html.js) ----------
+ * A compact readout of the machine: platform (+ arch), Node version, and the
+ * installed editors — one or two short lines, not the HTML's card grid.
+ */
+function printEnvironment(report, t, p) {
+  const env = report.environment || {};
+  const editors = Array.isArray(env.editorsInstalled) ? env.editorsInstalled : [];
+  p(`  ${c.bold}${t.html.environment}${c.reset}`);
+  const machineBits = [];
+  if (env.platform) machineBits.push(`${t.html.platform}: ${env.platform}${env.arch ? ` (${env.arch})` : ''}`);
+  if (env.nodeVersion) machineBits.push(`Node ${env.nodeVersion}`);
+  if (machineBits.length) p(`  ${c.gray}${machineBits.join(' · ')}${c.reset}`);
+  const editorsText = editors.length ? editors.join(', ') : t.html.noEditorsDetected;
+  p(`  ${c.gray}${t.html.installedEditors}: ${editorsText}${c.reset}`);
+  p();
+}
+
 /* ---------- project technologies (parity with render-html.js) ---------- */
 
 function printTechnologies(report, t, p) {
@@ -60,15 +97,15 @@ function printTechnologies(report, t, p) {
   p();
 }
 
-/* ---------- agents (condensed terminal view) ----------
+/* ---------- agents (summarized terminal view) ----------
  * Same tree (buildAgentCardTree, shared with the HTML renderer), rendered
  * as an indented list with a rail-like connector to keep the hierarchy
- * scannable. Terminal-condense (CPO feedback): only the STRUCTURE is kept
- * here — agent name (+ symbolic name when synthesized) and model. The
- * per-agent description prose and the full tools list are dropped from the
- * terminal (they stay in the HTML report, which keeps every detail). Guards
- * against a malformed `parent` cycle the same defensive way agentNodeHtml
- * does (a `visited` set), never an infinite loop on bad input.
+ * scannable. Terminal-summarize (user feedback, 2026-07-16): the structure
+ * (agent name (+ symbolic name when synthesized) + model) PLUS a SHORT,
+ * one-line description (`whatItDoes`, truncated) — the HTML report keeps the
+ * full-length description and the tools list. Guards against a malformed
+ * `parent` cycle the same defensive way agentNodeHtml does (a `visited` set),
+ * never an infinite loop on bad input.
  */
 
 function agentLine(card, depth) {
@@ -95,6 +132,12 @@ function printAgents(report, t, p) {
     if (visited.has(card.name)) return;
     visited.add(card.name);
     p(agentLine(card, depth));
+    // Short one-line description (summarized whatItDoes) under the agent, kept
+    // in the terminal now (was HTML-only after the condense).
+    if (card.whatItDoes) {
+      const indent = '  '.repeat(depth);
+      p(`  ${indent}   ${c.dim}${summarize(card.whatItDoes, 96)}${c.reset}`);
+    }
     const children = childrenByParent.get(card.name) || [];
     for (const child of children) walk(child, depth + 1);
   };
@@ -102,12 +145,13 @@ function printAgents(report, t, p) {
   p();
 }
 
-/* ---------- tier analysis: what blocks the next tier (condensed) ----------
- * Same deterministic source (src/tier-analysis.js) as the HTML report, but
- * the terminal now shows ONLY the essentials the user acts on: the current
- * tier and the EXACT criterion blocking the next one (or the "you meet every
- * criterion" note at the top). The full met-criteria checklist stays in the
- * HTML report. Never LLM content, formula-driven.
+/* ---------- tier analysis: why this tier (summarized) ----------
+ * Same deterministic source (src/tier-analysis.js) as the HTML report. The
+ * terminal now shows: the current tier (first sentence of the intro — the rest
+ * is boilerplate about how the engine works, HTML-only), a SHORT met-criteria
+ * checklist (the "criterios" the user asked to see back — each line summarized),
+ * and the EXACT criterion blocking the next tier (or the "you meet every
+ * criterion" note at the max tier). Never LLM content, formula-driven.
  */
 
 function printTierAnalysis(report, t, p) {
@@ -115,13 +159,20 @@ function printTierAnalysis(report, t, p) {
   const tt = t.tierAnalysis;
 
   p(`  ${c.bold}${tt.heading}${c.reset}`);
-  // Terminal-condense: keep only the first sentence of the intro ("Your current
-  // tier is X (Name).") — the rest describes the criterion-by-criterion
-  // breakdown, which is HTML-only now, so it would be misleading here.
+  // Keep the first sentence of the intro ("Your current tier is X (Name).") —
+  // the rest explains the engine mechanics at length, which stays HTML-only.
   const introFull = tt.intro(analysis.tierKey, analysis.tierName);
   const firstStop = introFull.indexOf('. ');
   const intro = firstStop >= 0 ? introFull.slice(0, firstStop + 1) : introFull;
   p(`  ${c.gray}${intro}${c.reset}`);
+
+  // Summarized met-criteria checklist (reintroduced 2026-07-16): the criteria
+  // already satisfied, one concise line each. Full-length wording stays in HTML.
+  if (Array.isArray(analysis.metCriteria) && analysis.metCriteria.length) {
+    p(`  ${c.dim}${tt.metHeading}${c.reset}`);
+    analysis.metCriteria.forEach((m) => p(`    ${c.green}✓${c.reset} ${c.gray}${summarize(m.text, 110)}${c.reset}`));
+  }
+
   if (analysis.blockingCriterion) {
     p(`  ${c.bold}${c.yellow}${tt.blockingLabel}${c.reset}`);
     p(`  ${c.white}${analysis.blockingCriterion}${c.reset}`);
@@ -177,24 +228,33 @@ function printRoadmap(report, maturity, t, lang, p) {
   const personalization = report && report.roadmapPersonalization;
   const entry = mergeRoadmapPersonalization(curatedEntry, personalization);
 
-  // Terminal-condense (CPO feedback): keep the title + the concise step list
-  // only. The motivational prose (unlocks / whatRemains / "you level up when")
-  // is dropped from the terminal — it stays in the HTML report. The blocking
-  // criterion is already shown by the tier-analysis section above.
+  // Terminal-SUMMARIZE (user feedback, 2026-07-16): the earlier condense left
+  // only the title + steps here. Bring back the motivational prose the user
+  // wants — "you level up when" (jump) / what-remains (T7) and "what it unlocks"
+  // — but SHORTENED to one line each; the HTML keeps the full-length prose.
   p(`  ${c.white}${c.bold}${entry.title}${c.reset}`);
 
   if (entry.maxTier) {
-    // ADR-008 (skill-code-certification): T7 is NOT a dead end. Show the
-    // curated continuous-refinement steps (optimize hooks/agents, contribute
-    // skills, maintain, measure) so the top setups still get actionable
-    // next-steps. Curated content, never LLM.
+    // ADR-008 (skill-code-certification): T7 is NOT a dead end. Show a short
+    // "what remains" line + the curated continuous-refinement steps (optimize
+    // hooks/agents, contribute skills, maintain, measure) so the top setups
+    // still get actionable next-steps. Curated content, never LLM.
+    if (entry.whatRemains) p(`  ${c.gray}${summarize(entry.whatRemains, 150)}${c.reset}`);
     if (Array.isArray(entry.consolidationSteps) && entry.consolidationSteps.length) {
       p(`  ${c.dim}${t.html.roadmapConsolidationLabel}:${c.reset}`);
       entry.consolidationSteps.forEach((s) => p(`    ${c.green}•${c.reset} ${s}`));
     }
-  } else if (Array.isArray(entry.steps) && entry.steps.length) {
-    p(`  ${c.dim}${t.html.roadmapStepsLabel}:${c.reset}`);
-    entry.steps.forEach((s, i) => p(`    ${i + 1}. ${s.text} ${c.dim}(${s.estimate})${c.reset}`));
+  } else {
+    if (entry.upgradeWhen) {
+      p(`  ${c.dim}${t.html.roadmapUpgradeWhenLabel}${c.reset} ${c.gray}${summarize(entry.upgradeWhen, 120)}${c.reset}`);
+    }
+    if (entry.unlocks) {
+      p(`  ${c.dim}${t.html.roadmapUnlocksLabel}:${c.reset} ${c.gray}${summarize(entry.unlocks, 140)}${c.reset}`);
+    }
+    if (Array.isArray(entry.steps) && entry.steps.length) {
+      p(`  ${c.dim}${t.html.roadmapStepsLabel}:${c.reset}`);
+      entry.steps.forEach((s, i) => p(`    ${i + 1}. ${s.text} ${c.dim}(${s.estimate})${c.reset}`));
+    }
   }
 
   // talents-ai-score, "next steps -> prompt": the PRIMARY "how do I
@@ -272,10 +332,10 @@ function renderTerminal(report, maturity, lang) {
   // removed — undetected tools added noise without signal, and a relevant
   // next step is already covered by the tier roadmap section below, never
   // silently dropped, just not repeated here as a name list.
-  //
-  // Terminal-condense (CPO feedback): the Environment block (platform / Node /
-  // editors) is dropped from the terminal — low signal for the actionable
-  // view; it stays in the HTML report.
+
+  // Environment (summarized parity with render-html.js): reintroduced
+  // 2026-07-16 in short form (platform/Node/editors on one/two lines).
+  printEnvironment(report, t, p);
 
   // Project technologies (parity with render-html.js's technologiesSection)
   printTechnologies(report, t, p);

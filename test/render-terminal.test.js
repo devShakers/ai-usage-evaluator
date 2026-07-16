@@ -76,7 +76,7 @@ test('renderTerminal: renders each agent name, its model, and hierarchy (visual 
   assert.equal(html.includes('Reporta a:'), false);
 });
 
-test('renderTerminal: agent synthesis symbolic name is shown when present, real name kept as a badge; the phrase is HTML-only', () => {
+test('renderTerminal: agent synthesis symbolic name is shown when present, real name kept as a badge; a short description phrase shows too', () => {
   const report = {
     ...BASE_REPORT,
     agents: [{ name: 'orchestrator', tools: ['Read'], model: 'opus', parent: null }],
@@ -85,14 +85,15 @@ test('renderTerminal: agent synthesis symbolic name is shown when present, real 
   const html = strip(renderTerminal(report, MATURITY_NO_TIER, 'es'));
   assert.match(html, /El Jefe/);
   assert.match(html, /\(orchestrator\)/); // real structural name kept visible
-  // the synthesized description phrase is no longer rendered in the terminal
-  assert.equal(html.includes('Coordina el trabajo.'), false);
+  // Terminal-summarize (2026-07-16): the synthesized description phrase is back
+  // in the terminal, in short form (verbatim here as it's under the limit).
+  assert.match(html, /Coordina el trabajo\./);
 });
 
-// Terminal-condense: agent descriptions (synthesized or raw) are no longer
-// rendered in the terminal — names + model + hierarchy only. The descriptions
-// still render in the HTML report.
-test('renderTerminal: agent names + model render; their descriptions do NOT appear in the terminal', () => {
+// Terminal-summarize (2026-07-16): agent descriptions (synthesized or raw) are
+// back in the terminal in SHORT form (one line, truncated). The full-length
+// prose stays in the HTML report.
+test('renderTerminal: agent names + model render, with a short description line each', () => {
   const report = {
     ...BASE_REPORT,
     agents: [
@@ -110,9 +111,10 @@ test('renderTerminal: agent names + model render; their descriptions do NOT appe
   assert.match(html, /ddd-enforcer/);
   assert.match(html, /hub-mr-reviewer/);
   assert.match(html, /test-writer/);
-  assert.equal(html.includes('Scans a module directory for DDD pattern violations.'), false);
-  assert.equal(html.includes('Revisor experto de Merge Requests.'), false);
-  assert.equal(html.includes('Creates comprehensive unit tests.'), false);
+  // Short descriptions now shown (each is under the truncation limit here).
+  assert.match(html, /Scans a module directory for DDD pattern violations\./);
+  assert.match(html, /Revisor experto de Merge Requests\./);
+  assert.match(html, /Creates comprehensive unit tests\./);
 });
 
 test('renderTerminal: an agent with neither synthesis nor a declared description still shows its name (no blank, no description block)', () => {
@@ -215,13 +217,14 @@ test('renderTerminal: never throws on a malformed/cyclical agent parent chain', 
 
 // --- tier analysis: why this tier (parity with render-html.js) -------------
 
-// Terminal-condense (CPO feedback): the tier-analysis section keeps only the
-// heading + the blocking criterion (below). The full met-criteria checklist
-// with its signal values (e.g. "totalDetected = 1") is now HTML-only.
-test('renderTerminal: tier analysis section always present; the met-criteria checklist is HTML-only now', () => {
+// Terminal-summarize (2026-07-16): the tier-analysis section shows the heading,
+// a SHORT met-criteria checklist (with its signal values, e.g. "totalDetected =
+// 1") and the blocking criterion (below). The full-length wording stays in HTML.
+test('renderTerminal: tier analysis section always present, with a summarized met-criteria checklist', () => {
   const html = strip(renderTerminal(BASE_REPORT, MATURITY_NO_TIER, 'es'));
   assert.match(html, /An[aá]lisis de tier/);
-  assert.equal(html.includes('totalDetected = 1'), false);
+  assert.match(html, /Criterios que cumples/);
+  assert.match(html, /totalDetected = 1/);
 });
 
 test('renderTerminal: shows the exact blocking criterion for the next tier', () => {
