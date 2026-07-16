@@ -6,6 +6,7 @@ const path = require('path');
 const { getCatalog } = require('./i18n');
 const { renderDocument } = require('./report-theme');
 const { loadState, configDir, projectSlug, fileUrl } = require('./report-store');
+const { WORDMARK_VIEWBOX, WORDMARK_PATHS } = require('./shakers-wordmark');
 
 /*
  * `share` command (skill-code-certification): a branded, self-contained card
@@ -16,11 +17,13 @@ const { loadState, configDir, projectSlug, fileUrl } = require('./report-store')
  *
  * Invariants (same discipline as the HTML reports, src/report-theme.js):
  *   - ZERO network: every asset is inline. The Shakers bolt is the REAL logo
- *     path (shakers-hub-frontend .../images/shakers-logo.svg) inlined as an
- *     SVG <path> — never a remote <image> or data-URI fetch. Fonts are the
- *     system sans stack (no @font-face, no CDN). This is also what keeps the
- *     browser-side SVG->canvas->PNG export from TAINTING the canvas (an
- *     external ref would make toDataURL throw a SecurityError).
+ *     path (shakers-hub-frontend .../images/shakers-logo.svg) and the "shakers"
+ *     wordmark is the REAL hand-drawn logotype (…/shakers-text-logo.svg), BOTH
+ *     inlined as SVG <path>s (src/shakers-wordmark.js) — never a remote <image>,
+ *     <use>, url() or data-URI fetch. The remaining texts (headline/tier/score)
+ *     use the system sans stack (no @font-face, no CDN). This is what keeps the
+ *     browser-side SVG->canvas->PNG export from TAINTING the canvas (an external
+ *     ref would make toDataURL throw a SecurityError).
  *   - Deterministic: the card content is a pure function of the stored
  *     footprint (tier/score/band) — same footprint always yields the same card.
  *   - The CARD ITSELF is ENGLISH-FIXED (a brand surface, like the sh-eval
@@ -152,6 +155,14 @@ function renderCardSvg(model, { id = 'share-card-svg' } = {}) {
 
   // Bolt: scale the 12×19 asset up to ~46px tall, top-left, in lime.
   const boltScale = 46 / BOLT_H; // ≈ 2.42
+  // Wordmark: the REAL hand-drawn "shakers" logotype (87×18 asset), scaled to
+  // ~38px tall so it reads as a header next to the bolt, painted white. Inlined
+  // <path>s (self-contained — see shakers-wordmark.js), so the card's canvas
+  // export never taints.
+  const wordmarkScale = 38 / WORDMARK_VIEWBOX.h; // ≈ 2.11
+  const wordmark = WORDMARK_PATHS
+    .map((d) => `<path d="${d}" fill="${BRAND.white}"/>`)
+    .join('');
 
   // Score donut ring (right side). Deterministic geometry from the score.
   const cx = 958;
@@ -165,10 +176,11 @@ function renderCardSvg(model, { id = 'share-card-svg' } = {}) {
   <rect width="${CARD_W}" height="${CARD_H}" fill="${BRAND.dark}"/>
   <rect x="0" y="0" width="10" height="${CARD_H}" fill="${BRAND.lime}"/>
 
-  <!-- brand lockup: real Shakers bolt + wordmark -->
+  <!-- brand lockup: real Shakers bolt + real hand-drawn shakers wordmark,
+       both inline vector paths, fully self-contained -->
   <g transform="translate(80,64)">
     <g transform="scale(${boltScale.toFixed(4)})"><path d="${BOLT_PATH}" fill="${BRAND.lime}"/></g>
-    <text x="72" y="36" font-size="34" font-weight="700" letter-spacing="0.5" fill="${BRAND.white}">shakers</text>
+    <g transform="translate(48,4) scale(${wordmarkScale.toFixed(4)})">${wordmark}</g>
   </g>
 
   <!-- headline -->
