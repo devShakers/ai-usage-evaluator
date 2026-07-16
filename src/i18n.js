@@ -521,12 +521,12 @@ const catalogs = {
       },
     },
     // Branded mini-shell chrome (skill-code-certification / ADR-014). The
-    // `shakers` REPL is the single entrypoint; this covers the banner tagline,
-    // prompt and command help — the commands themselves keep their own copy.
+    // `sh-eval` REPL is the single entrypoint; this covers the prompt, the
+    // in-shell command help and messages — the commands keep their own copy.
+    // The STARTUP BANNER is intentionally NOT here: it's always English (a
+    // brand/product surface, like the installer), built in src/repl-shell.js.
     repl: {
-      tagline: 'Herramientas locales de IA para desarrolladores',
-      hint: 'Escribe "help" para ver los comandos, "exit" para salir.',
-      prompt: 'sh-eval ›',
+      prompt: 'ϟ sh-eval ›',
       goodbye: 'Hasta pronto.',
       unknown: (cmd) => `Comando no reconocido: "${cmd}". Escribe "help" para ver los comandos disponibles.`,
       help:
@@ -946,12 +946,12 @@ const catalogs = {
       },
     },
     // Branded mini-shell chrome (skill-code-certification / ADR-014). The
-    // `shakers` REPL is the single entrypoint; this covers the banner tagline,
-    // prompt and command help — the commands themselves keep their own copy.
+    // `sh-eval` REPL is the single entrypoint; this covers the prompt, the
+    // in-shell command help and messages — the commands keep their own copy.
+    // The STARTUP BANNER is intentionally NOT here: it's always English (a
+    // brand/product surface, like the installer), built in src/repl-shell.js.
     repl: {
-      tagline: 'Local AI tooling for developers',
-      hint: 'Type "help" to list commands, "exit" to quit.',
-      prompt: 'sh-eval ›',
+      prompt: 'ϟ sh-eval ›',
       goodbye: 'See you soon.',
       unknown: (cmd) => `Unknown command: "${cmd}". Type "help" to list the available commands.`,
       help:

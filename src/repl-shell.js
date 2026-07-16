@@ -42,26 +42,58 @@ const WORDMARK = [
   ' |____/|_| |_/_/   \\_\\_|\\_\\_____|_| \\_\\____/ ',
 ];
 
-// Builds the startup banner: coloured wordmark + a lime underline spark +
-// tagline and version. `color=false` yields a plain, accent-free banner.
-function renderBanner({ lang = 'en', version = '', color = true } = {}) {
-  const catalog = getCatalog(lang);
-  const r = catalog.repl;
+// Shakers lightning bolt — a monochrome, angular Unicode glyph (U+03DF) that
+// echoes the bolt in the Shakers logo. Rendered in brand teal (never the
+// emoji ⚡, which most terminals force to colour). Used in the REPL prompt
+// (via the i18n string) and as a banner accent.
+const BOLT = 'ϟ';
+
+// Builds the startup banner (shown ONCE on entry, not per prompt). Deliberately
+// ALWAYS ENGLISH — this is a brand/product surface, like the installer notice
+// (the functional footprint/certify output still respects the OS locale). It's
+// informative: what the tool is + a one-liner per command + how to start.
+// `color=false` yields a plain, accent-free banner (piped / non-TTY).
+const SPARK = ' ────────────────────────────────────────── ';
+
+function renderBanner({ version = '', color = true } = {}) {
+  const teal = (s) => (color ? `${BOLD}${fg(BRAND.teal500)}${s}${RESET}` : s);
+  const zinc = (s) => (color ? `${fg(BRAND.zinc)}${s}${RESET}` : s);
   const lines = [];
   lines.push('');
-  for (const row of WORDMARK) {
-    lines.push(color ? `${BOLD}${fg(BRAND.teal500)}${row}${RESET}` : row);
-  }
-  const spark = ' ────────────────────────────────────────── ';
-  lines.push(color ? `${fg(BRAND.lime)}${spark}${RESET}` : spark);
-  const tagline = `  ${r.tagline}${version ? `  ·  v${version}` : ''}`;
-  lines.push(color ? `${fg(BRAND.zinc)}${tagline}${RESET}` : tagline);
-  lines.push(color ? `${fg(BRAND.zinc)}  ${r.hint}${RESET}` : `  ${r.hint}`);
+  for (const row of WORDMARK) lines.push(color ? `${BOLD}${fg(BRAND.teal500)}${row}${RESET}` : row);
+  lines.push(color ? `${fg(BRAND.lime)}${SPARK}${RESET}` : SPARK);
+
+  // Title: bolt + product name (+ version).
+  lines.push(`  ${teal(`${BOLT}  Shakers · AI Usage Evaluator`)}${version ? zinc(`  ·  v${version}`) : ''}`);
+  lines.push('');
+  lines.push(`  ${zinc('A local-first CLI to understand and level up how you work with AI.')}`);
+  lines.push('');
+
+  // One indented block per command: teal name padded to a column, zinc wrapped
+  // description. Continuation lines align under the description.
+  const COL = 12; // 2 leading spaces + name padded to 10
+  const cmd = (name, descLines) => {
+    const pad = ' '.repeat(Math.max(1, COL - 2 - name.length));
+    lines.push(`  ${teal(name)}${pad}${zinc(descLines[0])}`);
+    for (const extra of descLines.slice(1)) lines.push(`${' '.repeat(COL)}${zinc(extra)}`);
+  };
+  cmd('footprint', [
+    'Scan your machine and project for AI tooling (assistants, MCP servers,',
+    'agents, hooks, custom skills) and score your setup on a T0–T7 maturity',
+    'ladder — with a roadmap and a copy-paste prompt to reach the next level.',
+  ]);
+  cmd('certify', [
+    "Analyze your project's code to certify your Shakers Skills:",
+    'a score, the rationale, and concrete improvements.',
+  ]);
+  lines.push('');
+  lines.push(`  ${zinc('Type `footprint` or `certify` to start · `help` for details · `exit` to leave.')}`);
   lines.push('');
   return lines.join('\n') + '\n';
 }
 
-// The coloured prompt string (e.g. "sh-eval ›"). No trailing newline.
+// The coloured prompt string (e.g. "ϟ sh-eval ›", the bolt from the i18n
+// prompt text). Whole prompt in brand teal. No trailing newline.
 function renderPrompt({ lang = 'en', color = true } = {}) {
   const label = getCatalog(lang).repl.prompt;
   return color ? `  ${BOLD}${fg(BRAND.teal500)}${label}${RESET} ` : `  ${label} `;
@@ -128,7 +160,7 @@ async function runRepl({ stdin, deps, lang = 'en', version = '', out = process.s
   const catalog = getCatalog(lang);
   const useColor = color === undefined ? !!out.isTTY : color;
 
-  out.write(renderBanner({ lang, version, color: useColor }));
+  out.write(renderBanner({ version, color: useColor })); // banner is always English
 
   for (;;) {
     out.write(renderPrompt({ lang, color: useColor }));
@@ -155,4 +187,5 @@ module.exports = {
   runRepl,
   WORDMARK,
   BRAND,
+  BOLT,
 };

@@ -103,13 +103,21 @@ test('runRepl: EOF (no explicit exit) ends cleanly', async () => {
 });
 
 test('renderBanner/renderPrompt: colour off yields plain, accent-free chrome', () => {
-  const banner = renderBanner({ lang: 'en', version: '1.0.0', color: false });
+  const banner = renderBanner({ version: '1.0.0', color: false });
   assert.ok(!banner.includes('\x1b['), 'no ANSI when colour is off');
-  assert.match(banner, /Local AI tooling/);
+  // Always-English, informative banner: product name, both commands, version,
+  // and the how-to-start footer.
+  assert.match(banner, /Shakers · AI Usage Evaluator/);
+  assert.match(banner, /A local-first CLI to understand and level up/);
+  assert.match(banner, /footprint/);
+  assert.match(banner, /certify/);
+  assert.match(banner, /Type `footprint` or `certify` to start/);
+  assert.match(banner, /ϟ/); // brand lightning bolt
   assert.match(banner, /v1\.0\.0/);
 
   const prompt = renderPrompt({ lang: 'en', color: false });
-  assert.match(prompt, /sh-eval ›/);
+  // Shakers lightning bolt (ϟ) precedes the command prompt.
+  assert.match(prompt, /ϟ sh-eval ›/);
   assert.ok(!prompt.includes('\x1b['));
 
   // Colour on emits truecolour escapes.
