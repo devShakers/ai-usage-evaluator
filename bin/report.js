@@ -7,6 +7,7 @@ const { renderTerminal } = require('../src/render-terminal');
 const { upsertFootprint } = require('../src/report-store');
 const { detectReportLang, getCatalog } = require('../src/i18n');
 const { parseArgs } = require('../src/cli-args');
+const { oscLink } = require('../src/osc-link');
 const {
   loadConsentState,
   getConsentDecision,
@@ -320,7 +321,9 @@ async function run(argv = process.argv.slice(2), { ask: injectedAsk = null } = {
   if (opts.save) {
     try {
       const paths = upsertFootprint({ root, report, maturity, lang });
-      process.stdout.write(`\n  ${catalog.cli.reportLink(paths.fileUrl)}\n\n`);
+      // OSC 8: the file:// URL is clickable in iTerm2 &c.; other terminals show
+      // the plain URL (label = the URL itself). pathToFileURL already encoded it.
+      process.stdout.write(`\n  ${catalog.cli.reportLink(oscLink(paths.fileUrl))}\n\n`);
     } catch {
       // Never break the local run over a failed report write.
     }

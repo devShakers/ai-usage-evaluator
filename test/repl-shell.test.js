@@ -109,7 +109,13 @@ test('renderGoodbye: i18n goodbye line + Shakers web link, in both languages', (
   const en = renderGoodbye({ lang: 'en', color: false });
   assert.match(en, /See you soon\./);
   assert.match(en, /https:\/\/www\.shakersworks\.com\/en\//);
-  assert.ok(!en.includes('\x1b['), 'no ANSI when colour is off');
+  assert.ok(!en.includes('\x1b['), 'no ANSI SGR (colour) when colour is off');
+  // The Shakers URL is an OSC 8 hyperlink (clickable in iTerm2 &c.) REGARDLESS
+  // of colour — OSC 8 (\x1b]8) is a link, not colour. Present even colour-off.
+  assert.ok(
+    en.includes('\x1b]8;;https://www.shakersworks.com/en/\x1b\\'),
+    'OSC 8 hyperlink wraps the Shakers URL even when colour is off',
+  );
 
   const es = renderGoodbye({ lang: 'es', color: false });
   assert.match(es, /Hasta pronto\./);

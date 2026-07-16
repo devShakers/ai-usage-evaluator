@@ -1,6 +1,7 @@
 'use strict';
 
 const { getCatalog } = require('./i18n');
+const { oscLink } = require('./osc-link');
 
 /*
  * Branded mini-shell (ADR-014). The REPL is the SINGLE entrypoint of the tool
@@ -317,9 +318,12 @@ async function runRepl({ stdin, deps, lang = 'en', version = '', out = process.s
 // exit/quit, Ctrl-D and Ctrl-C seams stay identical.
 function renderGoodbye({ lang = 'en', color = false } = {}) {
   const catalog = getCatalog(lang);
-  const link = color
-    ? `${fg(BRAND.lime)}ϟ${RESET} ${fg(BRAND.teal500)}${SHAKERS_URL}${RESET}`
-    : `ϟ ${SHAKERS_URL}`;
+  // OSC 8: make the Shakers URL clickable in iTerm2 &c. The label carries the
+  // colour (teal500 when colour is on); terminals without OSC 8 just show the
+  // coloured/plain URL. The lime bolt stays OUTSIDE the link.
+  const label = color ? `${fg(BRAND.teal500)}${SHAKERS_URL}${RESET}` : SHAKERS_URL;
+  const bolt = color ? `${fg(BRAND.lime)}ϟ${RESET}` : 'ϟ';
+  const link = `${bolt} ${oscLink(SHAKERS_URL, label)}`;
   return `\n  ${catalog.repl.goodbye}\n  ${link}\n\n`;
 }
 

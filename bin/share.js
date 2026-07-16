@@ -20,6 +20,7 @@
 
 const { detectReportLang, getCatalog } = require('./../src/i18n');
 const { generateShareCard } = require('./../src/share-card');
+const { oscLink } = require('./../src/osc-link');
 
 const VALID_LANGS = new Set(['es', 'en']);
 
@@ -68,7 +69,8 @@ async function run(argv = process.argv.slice(2), { ask } = {}) { // eslint-disab
     return;
   }
 
-  process.stdout.write(`\n  ${s.ready(result.fileUrl)}\n`);
+  // OSC 8: clickable file:// link to the card in iTerm2 &c.; plain URL elsewhere.
+  process.stdout.write(`\n  ${s.ready(oscLink(result.fileUrl))}\n`);
   process.stdout.write(`  ${s.hint}\n\n`);
 }
 

@@ -31,6 +31,7 @@
 const { parseCertifyArgs } = require('../src/certify-args');
 const { detectReportLang, getCatalog } = require('../src/i18n');
 const { getCertifyEndpoint } = require('../src/config');
+const { oscLink } = require('../src/osc-link');
 const { detectTechnologies } = require('../src/tech-detector');
 const { confirmDisclaimerAcceptance } = require('../src/certify-disclaimer');
 const {
@@ -264,7 +265,8 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
   // opt-in behind --html. Writing the local report must never break the run.
   try {
     const paths = upsertCertification({ root, items, lang });
-    process.stdout.write(`  ${c.reportLink(paths.fileUrl)}\n\n`);
+    // OSC 8 clickable file:// link (iTerm2 &c.); plain URL elsewhere.
+    process.stdout.write(`  ${c.reportLink(oscLink(paths.fileUrl))}\n\n`);
   } catch {
     // Never break the local run over a failed report write.
   }
