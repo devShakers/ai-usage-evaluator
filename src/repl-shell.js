@@ -89,9 +89,9 @@ function centerCells(cells, width, color) {
   const left = Math.max(0, (width - len) >> 1);
   return ' '.repeat(left) + cellsColored(cells, color) + ' '.repeat(Math.max(0, width - len - left));
 }
-// Box borders/corners/divider in the darker brand green (teal-700). Single
-// constant so the shade is trivial to swap (e.g. to lime) if the user prefers.
-const BORDER = BRAND.teal700;
+// Box borders/corners/divider in brand lime (#d8e637). Single constant so the
+// shade is trivial to swap (was teal-700 briefly; user prefers lime).
+const BORDER = BRAND.lime;
 function bd(ch, color) { return color ? `${fg(BORDER)}${ch}${RESET}` : ch; }
 
 // Rounded top border with the title embedded, Claude-Code style:
