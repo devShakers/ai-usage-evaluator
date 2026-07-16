@@ -310,10 +310,16 @@ test('bin/report.js: the plain-text terminal report includes technologies, agent
 
 // talents-ai-score, description-always-present: real-shaped agent files
 // (mirroring shakers-hub-backend/.claude/agents/'s own style — a `name` +
-// a long free-text `description`, no explicit `tools:`) must show that
-// raw description in the terminal report even with no synthesis endpoint
-// configured at all.
-test('bin/report.js: an agent\'s raw frontmatter description shows in the terminal report with no synthesis endpoint configured', async () => {
+// a long free-text `description`, no explicit `tools:`) must still surface the
+// agent even with no synthesis endpoint configured at all.
+//
+// CPO terminal-condense (2026-07-16): the agent's free-text description
+// (whatItDoes) was DROPPED from the condensed terminal (agent line = name +
+// model badge + hierarchy only) and now lives in the HTML report — that verbatim
+// description is covered by test/render-html-agent-cards.test.js. So the terminal
+// assertion here re-anchors to what the condensed terminal actually shows: the
+// agent name and its model badge.
+test('bin/report.js: an agent (name + model) shows in the condensed terminal report with no synthesis endpoint configured (full description is HTML-only)', async () => {
   fs.mkdirSync(path.join(tmpProjectDir, '.claude', 'agents'), { recursive: true });
   fs.writeFileSync(
     path.join(tmpProjectDir, '.claude', 'agents', 'ddd-enforcer.md'),
@@ -335,7 +341,9 @@ test('bin/report.js: an agent\'s raw frontmatter description shows in the termin
   });
   assert.equal(code, 0);
   assert.match(stdout, /ddd-enforcer/);
-  assert.match(stdout, /Scans a module directory for DDD pattern violations and fixes them\./);
+  // Model badge is part of the condensed agent line ([opus] here). The full
+  // frontmatter description is HTML-only now (render-html-agent-cards.test.js).
+  assert.match(stdout, /\[opus\]/);
 });
 
 // --- --lang override + implementation prompt (talents-ai-score) -----------
@@ -516,7 +524,7 @@ test('bin/report.js: no roadmap endpoint configured -> curated roadmap shown, pe
   }
 });
 
-test('bin/report.js: a roadmap endpoint returning a valid, count-matching response shows PERSONALIZED prose and the notice', async () => {
+test('bin/report.js: a roadmap endpoint returning a valid, count-matching response shows PERSONALIZED steps in the condensed terminal (unlocks prose + notice are HTML-only)', async () => {
   const tmpHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-footprint-cli-home-'));
   const server = await startRoadmapServer((req, res) => {
     let raw = '';
@@ -546,10 +554,17 @@ test('bin/report.js: a roadmap endpoint returning a valid, count-matching respon
     });
     assert.equal(code, 0);
     assert.match(stderr, /Personalizando roadmap|Personalizing roadmap/);
-    assert.match(stdout, /ADAPTED unlocks text for your stack\./);
-    assert.match(stdout, /Contenido adaptado a tu proyecto|Content adapted to your project/);
-    // The criterion line is always curated, personalized or not.
-    assert.match(stdout, /Subes de tier cuando|You level up when/);
+    // CPO terminal-condense (2026-07-16): the personalized unlocks prose and the
+    // "content adapted" notice were dropped from the condensed terminal (both kept
+    // in the HTML — see test/render-roadmap-personalization.test.js). The
+    // personalization surface that survives in the terminal is the ADAPTED step
+    // text, so assert that the steps were personalized end to end.
+    assert.match(stdout, /ADAPTED:/);
+    // Curated scaffolding survives personalization. The roadmap "you level up
+    // when" prose was dropped from the condensed terminal (HTML-only), so anchor
+    // the "curated stays curated" check on the deterministic tier-analysis
+    // blocking criterion, which is always curated and still shown in the terminal.
+    assert.match(stdout, /Criterio exacto que te impide|Exact criterion blocking/);
   } finally {
     server.close();
     fs.rmSync(tmpHomeDir, { recursive: true, force: true });
