@@ -44,27 +44,25 @@ const BOLD = '\x1b[1m';
 
 // Lightning-bolt mark — the FAITHFUL silhouette of the real Shakers logo
 // (shakers-hub-frontend .../images/shakers-logo.svg, viewBox 12×19), rasterised
-// to half-block glyphs at Hpx=12 (8 wide × 6 rows) via scratchpad/rasterize.py.
+// to half-block glyphs at Hpx=14 (9 wide × 7 rows) via scratchpad/rasterize.py.
 // Per row: `█` = both sub-pixels are bolt, `▀` = top sub-pixel bolt, `▄` = bottom
 // sub-pixel bolt, space = tile. tileCell paints the WHOLE cell with the dark
 // tile background and the LIME foreground, so `▀`/`▄` render the bolt half in
 // lime over a dark half — a lime bolt inside a solid dark tile, like the logo.
 // Do NOT hand-edit the shape; regenerate from the SVG (adjust Hpx) if resized.
 const BOLT_ART = [
-  '    ▄▄█',
-  '  ▄██▀',
-  ' ██▄▄▄▄',
-  '  ▀▀████',
-  ' ▄▄██▀',
+  '     ▄██',
+  '  ▄███▀',
+  ' ██▀▀',
+  ' ▀██████▄',
+  '    ▄███▀',
+  ' ▄███▀',
   '██▀',
 ];
-const ART_W = Math.max(...BOLT_ART.map((s) => s.length)); // 8
-// Terminal cells are ~2:1 (taller than wide), so a visually SQUARE tile needs
-// width ≈ 2 × rows. 6 rows -> a 12-char-wide tile. The bolt block (ART_W=8) is
-// centred inside it as a UNIT (same left offset on every row, so the silhouette
-// is never distorted). Result: a small square dark tile with a centred bolt.
-const TILE_W = 12;
-const TILE_OFFSET = Math.max(0, (TILE_W - ART_W) >> 1); // 2 cells each side
+const ART_W = Math.max(...BOLT_ART.map((s) => s.length)); // 9
+// Natural tile: the bolt wrapped by a 1-cell dark margin each side (NOT forced
+// square — that padding shifted it off-centre). The whole tile is then centred
+// in the left column by centerCells. Width = ART_W + 2.
 const TILE_ROWS = BOLT_ART;
 
 // ── boxed-header primitives ───────────────────────────────────────────────
@@ -102,14 +100,14 @@ function topBorder(title, inner, color) {
 }
 function bottomBorder(inner, color) { return bd(`╰${'─'.repeat(inner)}╯`, color); }
 
-// One tile row: solid dark tile with the lime bolt. The bolt block is placed at
-// a fixed left offset (TILE_OFFSET, same on every row so the silhouette holds)
-// and the row is filled to TILE_W, all painted with the dark background — so the
-// tile is a filled square and the half-block bolt glyphs (`▀`/`▄`) show their
-// bolt sub-pixel in lime over a dark half.
+// One tile row: solid dark tile with the lime bolt. The row keeps the bolt's own
+// leading spaces (intra-shape alignment) and is padded to ART_W + a 1-cell dark
+// margin each side, all painted with the dark background — a natural tile that
+// wraps the bolt. The half-block glyphs (`▀`/`▄`) show their bolt sub-pixel in
+// lime over a dark half. Width = ART_W + 2. Centred in the column by centerCells.
 function tileCell(row) {
   const s = row || '';
-  const t = ' '.repeat(TILE_OFFSET) + s + ' '.repeat(Math.max(0, TILE_W - TILE_OFFSET - s.length));
+  const t = ` ${s}${' '.repeat(Math.max(0, ART_W - s.length))} `;
   return { t, st: { bg: BRAND.dark, fg: BRAND.lime } };
 }
 
@@ -129,10 +127,12 @@ function bannerWide({ title, color }) {
   const RW = 44;         // right (info) column
   const INNER = 1 + LW + 3 + RW + 1; // between the outer borders (73)
 
-  // Left column: welcome, bolt tile (padded dark rows top/bottom), product line.
+  // Left column, with breathing room: welcome, blank, bolt tile, blank, product.
   const left = [];
   left.push([{ t: 'Welcome to ', st: { bold: true, fg: BRAND.white } }, { t: 'shakers', st: { bold: true, fg: BRAND.lime } }]);
+  left.push([]);
   for (const row of TILE_ROWS) left.push([tileCell(row)]);
+  left.push([]);
   left.push([{ t: 'AI Usage Evaluator', st: { fg: BRAND.zinc } }]);
 
   // Right column: Commands + Getting started (violet, the sparing 2nd accent).
@@ -185,7 +185,9 @@ function bannerStacked({ title, color, width }) {
 
   const lines = [''];
   lines.push(topBorder(title, INNER, color));
+  lines.push(line([{ t: '', st: null }]));
   for (const row of TILE_ROWS) lines.push(line([tileCell(row)], { center: true }));
+  lines.push(line([{ t: '', st: null }]));
   lines.push(line([{ t: 'Welcome to ', st: { bold: true, fg: BRAND.white } }, { t: 'shakers', st: { bold: true, fg: BRAND.lime } }], { center: true }));
   lines.push(line([{ t: 'AI Usage Evaluator', st: { fg: BRAND.zinc } }], { center: true }));
   lines.push(line([{ t: '', st: null }]));
