@@ -47,18 +47,6 @@ function bar(score, width = 24) {
   return '█'.repeat(filled) + '░'.repeat(width - filled);
 }
 
-function formatBytes(n) {
-  if (!n || n <= 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let i = 0;
-  let v = n;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i += 1;
-  }
-  return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${units[i]}`;
-}
-
 /* ---------- project technologies (parity with render-html.js) ---------- */
 
 function printTechnologies(report, t, p) {
@@ -72,26 +60,25 @@ function printTechnologies(report, t, p) {
   p();
 }
 
-/* ---------- agents (parity with render-html.js's card tree) ----------
+/* ---------- agents (condensed terminal view) ----------
  * Same tree (buildAgentCardTree, shared with the HTML renderer), rendered
- * as an indented list with a rail-like connector instead of nested cards
- * — the terminal equivalent of the HTML tree's visual nesting. Guards
+ * as an indented list with a rail-like connector to keep the hierarchy
+ * scannable. Terminal-condense (CPO feedback): only the STRUCTURE is kept
+ * here — agent name (+ symbolic name when synthesized) and model. The
+ * per-agent description prose and the full tools list are dropped from the
+ * terminal (they stay in the HTML report, which keeps every detail). Guards
  * against a malformed `parent` cycle the same defensive way agentNodeHtml
  * does (a `visited` set), never an infinite loop on bad input.
  */
 
-function agentLine(card, depth, t) {
+function agentLine(card, depth) {
   const indent = '  '.repeat(depth);
   const connector = depth === 0 ? c.green + '●' + c.reset : c.gray + '└─' + c.reset;
-  const hasSymbolicName = !!card.symbolicName;
-  const title = hasSymbolicName
+  const title = card.symbolicName
     ? `${card.symbolicName} ${c.gray}(${card.name})${c.reset}`
     : card.name;
   const modelBit = card.model ? ` ${c.dim}[${card.model}]${c.reset}` : '';
-  const toolsBit = card.tools.length ? ` ${c.gray}· ${card.tools.join(', ')}${c.reset}` : '';
-  const lines = [`  ${indent}${connector} ${c.bold}${c.white}${title}${c.reset}${modelBit}${toolsBit}`];
-  if (card.whatItDoes) lines.push(`  ${indent}   ${c.dim}${card.whatItDoes}${c.reset}`);
-  return lines;
+  return `  ${indent}${connector} ${c.bold}${c.white}${title}${c.reset}${modelBit}`;
 }
 
 function printAgents(report, t, p) {
@@ -107,7 +94,7 @@ function printAgents(report, t, p) {
   const walk = (card, depth) => {
     if (visited.has(card.name)) return;
     visited.add(card.name);
-    for (const line of agentLine(card, depth, t)) p(line);
+    p(agentLine(card, depth));
     const children = childrenByParent.get(card.name) || [];
     for (const child of children) walk(child, depth + 1);
   };
@@ -115,45 +102,12 @@ function printAgents(report, t, p) {
   p();
 }
 
-/* ---------- projects per AI tool (skill-code-certification / ADR-011) ----------
- * Parity with render-html.js's toolProjectUsageSection. `report.toolProjectUsage`
- * (src/tool-project-usage.js) lists, per detected tool, the projects where it
- * has been used locally. STRICTLY LOCAL — never persisted (not in
- * src/share.js#derivePayload). Prints a project list when available, an honest
- * "no local history" note otherwise; the whole section is skipped when no tool
- * exposes a history at all (never a misleading empty block).
- */
-function printToolProjectUsage(report, t, p) {
-  const usage = Array.isArray(report.toolProjectUsage) ? report.toolProjectUsage : [];
-  // Show ONLY tools that actually have projects (user request, ADR-011 follow-up):
-  // drop `available:false` tools AND `available:true` ones with an empty list.
-  // If nothing survives the filter, the section is omitted entirely.
-  const withProjects = usage.filter((u) => Array.isArray(u.projects) && u.projects.length > 0);
-  if (!withProjects.length) return;
-
-  p(`  ${c.bold}${t.html.toolUsageHeading}${c.reset}`);
-  p(`  ${c.gray}${t.html.toolUsageIntro}${c.reset}`);
-  for (const u of withProjects) {
-    const sourceLabel =
-      u.sourceKey && t.html.toolUsageSource && t.html.toolUsageSource[u.sourceKey]
-        ? ` ${c.gray}· ${t.html.toolUsageSource[u.sourceKey]}${c.reset}`
-        : '';
-    p(`  ${c.green}●${c.reset} ${c.white}${u.toolName}${c.reset}${sourceLabel}`);
-    p(`    ${c.dim}${t.html.toolUsageCount(u.projects.length)}${c.reset}`);
-    for (const proj of u.projects) {
-      const approx = proj.approximate ? ` ${c.dim}(${t.html.toolUsageApproxNote})${c.reset}` : '';
-      p(`      ${c.gray}${proj.path}${c.reset}${approx}`);
-    }
-  }
-  p();
-}
-
-/* ---------- tier analysis: why this tier (parity with render-html.js) ----------
- * Same deterministic source (src/tier-analysis.js) as the HTML report —
- * defends the already-computed tier with the criteria met + the exact
- * blocking criterion, both backed by the actual signal values. Never LLM
- * content, formula-driven, so it's rendered identically (same text) in
- * both outputs.
+/* ---------- tier analysis: what blocks the next tier (condensed) ----------
+ * Same deterministic source (src/tier-analysis.js) as the HTML report, but
+ * the terminal now shows ONLY the essentials the user acts on: the current
+ * tier and the EXACT criterion blocking the next one (or the "you meet every
+ * criterion" note at the top). The full met-criteria checklist stays in the
+ * HTML report. Never LLM content, formula-driven.
  */
 
 function printTierAnalysis(report, t, p) {
@@ -161,13 +115,13 @@ function printTierAnalysis(report, t, p) {
   const tt = t.tierAnalysis;
 
   p(`  ${c.bold}${tt.heading}${c.reset}`);
-  p(`  ${c.gray}${tt.intro(analysis.tierKey, analysis.tierName)}${c.reset}`);
-  if (analysis.metCriteria.length) {
-    p(`  ${c.dim}${tt.metHeading}${c.reset}`);
-    for (const criterion of analysis.metCriteria) {
-      p(`    ${c.green}✓${c.reset} ${criterion.text}`);
-    }
-  }
+  // Terminal-condense: keep only the first sentence of the intro ("Your current
+  // tier is X (Name).") — the rest describes the criterion-by-criterion
+  // breakdown, which is HTML-only now, so it would be misleading here.
+  const introFull = tt.intro(analysis.tierKey, analysis.tierName);
+  const firstStop = introFull.indexOf('. ');
+  const intro = firstStop >= 0 ? introFull.slice(0, firstStop + 1) : introFull;
+  p(`  ${c.gray}${intro}${c.reset}`);
   if (analysis.blockingCriterion) {
     p(`  ${c.bold}${c.yellow}${tt.blockingLabel}${c.reset}`);
     p(`  ${c.white}${analysis.blockingCriterion}${c.reset}`);
@@ -222,30 +176,26 @@ function printRoadmap(report, maturity, t, lang, p) {
 
   const personalization = report && report.roadmapPersonalization;
   const entry = mergeRoadmapPersonalization(curatedEntry, personalization);
-  const wasPersonalized = !curatedEntry.maxTier && !!personalization;
 
+  // Terminal-condense (CPO feedback): keep the title + the concise step list
+  // only. The motivational prose (unlocks / whatRemains / "you level up when")
+  // is dropped from the terminal — it stays in the HTML report. The blocking
+  // criterion is already shown by the tier-analysis section above.
   p(`  ${c.white}${c.bold}${entry.title}${c.reset}`);
 
   if (entry.maxTier) {
     // ADR-008 (skill-code-certification): T7 is NOT a dead end. Show the
     // curated continuous-refinement steps (optimize hooks/agents, contribute
     // skills, maintain, measure) so the top setups still get actionable
-    // next-steps — parity with the HTML report's terminal card (which
-    // already lists consolidationSteps). Curated content, never LLM.
-    p(`  ${c.gray}${entry.whatRemains}${c.reset}`);
+    // next-steps. Curated content, never LLM.
     if (Array.isArray(entry.consolidationSteps) && entry.consolidationSteps.length) {
       p(`  ${c.dim}${t.html.roadmapConsolidationLabel}:${c.reset}`);
       entry.consolidationSteps.forEach((s) => p(`    ${c.green}•${c.reset} ${s}`));
     }
-  } else {
-    p(`  ${c.dim}${t.html.roadmapUpgradeWhenLabel}${c.reset} ${entry.upgradeWhen}`);
-    p(`  ${c.white}${entry.unlocks}${c.reset}`);
-    if (Array.isArray(entry.steps) && entry.steps.length) {
-      p(`  ${c.dim}${t.html.roadmapStepsLabel}:${c.reset}`);
-      entry.steps.forEach((s, i) => p(`    ${i + 1}. ${s.text} ${c.dim}(${s.estimate})${c.reset}`));
-    }
+  } else if (Array.isArray(entry.steps) && entry.steps.length) {
+    p(`  ${c.dim}${t.html.roadmapStepsLabel}:${c.reset}`);
+    entry.steps.forEach((s, i) => p(`    ${i + 1}. ${s.text} ${c.dim}(${s.estimate})${c.reset}`));
   }
-  if (wasPersonalized) p(`  ${c.dim}${t.html.roadmapPersonalizedNotice}${c.reset}`);
 
   // talents-ai-score, "next steps -> prompt": the PRIMARY "how do I
   // implement this" path now — a deterministic, ready-to-paste prompt
@@ -304,22 +254,17 @@ function renderTerminal(report, maturity, lang) {
     p(`  ${c.gray}  ${t.terminal.none}${c.reset}`);
   }
   for (const tool of detected) {
+    // Terminal-condense (CPO feedback): keep the one-line signal (name,
+    // version, category, depth breakdown); the per-tool footprint bytes and
+    // recency detail line is dropped from the terminal (it stays in the HTML
+    // report).
     const depthBits = Object.entries(tool.depth)
       .filter(([, v]) => v > 0)
       .map(([k, v]) => `${v} ${k}`)
       .join(', ');
     const extra = depthBits ? `${c.dim} — ${depthBits}${c.reset}` : '';
     const version = tool.version ? `${c.dim} v${tool.version}${c.reset}` : '';
-    const footprint =
-      tool.footprint && (tool.footprint.files > 0 || tool.footprint.bytes > 0)
-        ? `${c.dim} · ${t.terminal.files(tool.footprint.files)}, ${formatBytes(tool.footprint.bytes)}${c.reset}`
-        : '';
-    const recency =
-      tool.recency && tool.recency.bucket
-        ? `${c.dim} · ${t.terminal.lastModified(t.recency[tool.recency.bucket] || tool.recency.bucket)}${c.reset}`
-        : '';
     p(`  ${c.green}●${c.reset} ${tool.name}${version} ${c.gray}(${categoryLabel(lang, tool.category)})${c.reset}${extra}`);
-    if (footprint || recency) p(`    ${footprint}${recency}`);
   }
   p();
 
@@ -327,26 +272,16 @@ function renderTerminal(report, maturity, lang) {
   // removed — undetected tools added noise without signal, and a relevant
   // next step is already covered by the tier roadmap section below, never
   // silently dropped, just not repeated here as a name list.
-
-  // Environment
-  if (report.environment) {
-    const env = report.environment;
-    const editors = env.editorsInstalled && env.editorsInstalled.length
-      ? env.editorsInstalled.join(', ')
-      : t.terminal.noEditorsDetected;
-    p(`  ${c.bold}${t.terminal.environment}${c.reset}`);
-    p(`  ${c.gray}${env.platform}/${env.arch} · Node ${env.nodeVersion} · ${t.terminal.editors}: ${editors}${c.reset}`);
-    p();
-  }
+  //
+  // Terminal-condense (CPO feedback): the Environment block (platform / Node /
+  // editors) is dropped from the terminal — low signal for the actionable
+  // view; it stays in the HTML report.
 
   // Project technologies (parity with render-html.js's technologiesSection)
   printTechnologies(report, t, p);
 
   // Agents (parity with render-html.js's agentCardsSection)
   printAgents(report, t, p);
-
-  // Projects per AI tool (parity with render-html.js's toolProjectUsageSection)
-  printToolProjectUsage(report, t, p);
 
   // Tier analysis: why this tier (parity with render-html.js's
   // tierAnalysisSection) — defends the already-computed tier before the

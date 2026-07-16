@@ -127,7 +127,9 @@ test('bin/report.js: declining persistence still shows the full report (denial o
     env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
   });
   assert.match(stdout, /AI FOOTPRINT/);
-  assert.match(stdout, /Environment|Entorno/);
+  // Terminal-condense: the Environment block was dropped from the terminal;
+  // assert the full report still rendered via the always-present score line.
+  assert.match(stdout, /\/100/);
 
   const consentPath = path.join(tmpConfigDir, 'consent.json');
   const state = JSON.parse(fs.readFileSync(consentPath, 'utf8'));

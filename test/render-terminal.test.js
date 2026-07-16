@@ -52,7 +52,11 @@ test('renderTerminal: agents heading always present; empty state when no agents'
   assert.match(html, /No se han detectado agentes/);
 });
 
-test('renderTerminal: renders each agent, its tools, model, and hierarchy (visual nesting, not "Reports to:")', () => {
+// Terminal-condense (CPO feedback): the terminal agents view keeps only the
+// STRUCTURE — name (+ symbolic name), model, and hierarchy nesting. The
+// per-agent tools list and the description prose were dropped from the terminal
+// (they stay in the HTML report; see test/render-html-agent-cards.test.js).
+test('renderTerminal: renders each agent name, its model, and hierarchy (visual nesting, not "Reports to:"); tools list is HTML-only now', () => {
   const report = {
     ...BASE_REPORT,
     agents: [
@@ -65,13 +69,14 @@ test('renderTerminal: renders each agent, its tools, model, and hierarchy (visua
   assert.match(html, /backend-dev/);
   assert.match(html, /claude-opus-4/);
   assert.match(html, /claude-sonnet-4/);
-  assert.match(html, /Read, Task/);
+  // tools list no longer rendered in the condensed terminal
+  assert.equal(html.includes('Read, Task'), false);
   // hierarchy shown as visual nesting (indentation/connector), never the
   // retired "Reports to:" text line.
   assert.equal(html.includes('Reporta a:'), false);
 });
 
-test('renderTerminal: agent synthesis symbolic name + phrase are shown when present, real name kept as a badge', () => {
+test('renderTerminal: agent synthesis symbolic name is shown when present, real name kept as a badge; the phrase is HTML-only', () => {
   const report = {
     ...BASE_REPORT,
     agents: [{ name: 'orchestrator', tools: ['Read'], model: 'opus', parent: null }],
@@ -80,16 +85,14 @@ test('renderTerminal: agent synthesis symbolic name + phrase are shown when pres
   const html = strip(renderTerminal(report, MATURITY_NO_TIER, 'es'));
   assert.match(html, /El Jefe/);
   assert.match(html, /\(orchestrator\)/); // real structural name kept visible
-  assert.match(html, /Coordina el trabajo\./);
+  // the synthesized description phrase is no longer rendered in the terminal
+  assert.equal(html.includes('Coordina el trabajo.'), false);
 });
 
-// talents-ai-score: description is ALWAYS present now (real-browser user
-// feedback rejected "no phrase at all" too — see render-html.js's
-// buildAgentCardTree header for the full history of approaches tried).
-// Without synthesis, priority is: raw frontmatter description, then a
-// minimal name-derived last resort — never the old repetitive filler
-// sentence, and never a blank card.
-test('renderTerminal: agents without synthesis but WITH raw descriptions show those descriptions, not identical filler text', () => {
+// Terminal-condense: agent descriptions (synthesized or raw) are no longer
+// rendered in the terminal — names + model + hierarchy only. The descriptions
+// still render in the HTML report.
+test('renderTerminal: agent names + model render; their descriptions do NOT appear in the terminal', () => {
   const report = {
     ...BASE_REPORT,
     agents: [
@@ -105,41 +108,20 @@ test('renderTerminal: agents without synthesis but WITH raw descriptions show th
   };
   const html = strip(renderTerminal(report, MATURITY_NO_TIER, 'es'));
   assert.match(html, /ddd-enforcer/);
-  assert.match(html, /Scans a module directory for DDD pattern violations\./);
-  assert.match(html, /Revisor experto de Merge Requests\./);
-  assert.match(html, /Creates comprehensive unit tests\./);
-  assert.equal(html.includes('sin descripción sintetizada'), false);
-  assert.equal(html.includes('Sin descripción disponible'), false);
+  assert.match(html, /hub-mr-reviewer/);
+  assert.match(html, /test-writer/);
+  assert.equal(html.includes('Scans a module directory for DDD pattern violations.'), false);
+  assert.equal(html.includes('Revisor experto de Merge Requests.'), false);
+  assert.equal(html.includes('Creates comprehensive unit tests.'), false);
 });
 
-// talents-ai-score: raw description cleanup + truncation (shared
-// buildAgentCardTree, exercised in full in test/render-html-agent-
-// cards.test.js) must apply in the terminal report too — a raw
-// description with YAML escape artifacts and a long multi-sentence
-// system-prompt body must render as a clean, short excerpt here as well.
-test('renderTerminal: a raw description with YAML escape artifacts and a long multi-sentence body is cleaned AND cut down to only its first sentence', () => {
-  const longDescription =
-    'Revisor experto de Merge Requests del repo shakers-hub-backend.\\n\\n'
-    + 'Ejemplos:\\n- User: "Revisa la MR !1234"\\n  Assistant: "Lanzo hub-mr-reviewer..."';
-  const report = {
-    ...BASE_REPORT,
-    agents: [{ name: 'hub-mr-reviewer', tools: [], model: 'opus', parent: null }],
-    agentDescriptions: [{ name: 'hub-mr-reviewer', description: longDescription }],
-  };
-  const html = strip(renderTerminal(report, MATURITY_NO_TIER, 'es'));
-  assert.match(html, /Revisor experto de Merge Requests del repo shakers-hub-backend\./);
-  assert.equal(html.includes('\\n'), false);
-  assert.equal(html.includes('Ejemplos'), false);
-  assert.equal(html.includes('Assistant'), false);
-});
-
-test('renderTerminal: an agent with neither synthesis nor a declared description gets the minimal name-derived last-resort line, never blank', () => {
+test('renderTerminal: an agent with neither synthesis nor a declared description still shows its name (no blank, no description block)', () => {
   const report = {
     ...BASE_REPORT,
     agents: [{ name: 'bare-agent', tools: [], model: null, parent: null }],
   };
   const html = strip(renderTerminal(report, MATURITY_NO_TIER, 'es'));
-  assert.match(html, /Bare agent/i);
+  assert.match(html, /bare-agent/);
 });
 
 test('renderTerminal: with maturity.tierKey, shows the tier roadmap (current -> next) instead of the generic band next-step', () => {
@@ -233,10 +215,13 @@ test('renderTerminal: never throws on a malformed/cyclical agent parent chain', 
 
 // --- tier analysis: why this tier (parity with render-html.js) -------------
 
-test('renderTerminal: tier analysis section always present, lists met criteria with signal values', () => {
+// Terminal-condense (CPO feedback): the tier-analysis section keeps only the
+// heading + the blocking criterion (below). The full met-criteria checklist
+// with its signal values (e.g. "totalDetected = 1") is now HTML-only.
+test('renderTerminal: tier analysis section always present; the met-criteria checklist is HTML-only now', () => {
   const html = strip(renderTerminal(BASE_REPORT, MATURITY_NO_TIER, 'es'));
   assert.match(html, /An[aá]lisis de tier/);
-  assert.match(html, /totalDetected = 1/);
+  assert.equal(html.includes('totalDetected = 1'), false);
 });
 
 test('renderTerminal: shows the exact blocking criterion for the next tier', () => {
