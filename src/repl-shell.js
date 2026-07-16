@@ -44,26 +44,28 @@ const BOLD = '\x1b[1m';
 
 // Lightning-bolt mark — the FAITHFUL silhouette of the real Shakers logo
 // (shakers-hub-frontend .../images/shakers-logo.svg, viewBox 12×19), rasterised
-// to half-block glyphs at Hpx=18 (11 wide × 9 rows) via scratchpad/rasterize.py.
+// to half-block glyphs at Hpx=12 (8 wide × 6 rows) via scratchpad/rasterize.py.
 // Per row: `█` = both sub-pixels are bolt, `▀` = top sub-pixel bolt, `▄` = bottom
 // sub-pixel bolt, space = tile. tileCell paints the WHOLE cell with the dark
 // tile background and the LIME foreground, so `▀`/`▄` render the bolt half in
-// lime over a dark half — i.e. a lime bolt inside a solid dark tile, exactly
-// like the logo. Do NOT hand-edit the shape; regenerate from the SVG if resized.
+// lime over a dark half — a lime bolt inside a solid dark tile, like the logo.
+// Do NOT hand-edit the shape; regenerate from the SVG (adjust Hpx) if resized.
 const BOLT_ART = [
-  '       ▄██',
-  '    ▄████▀',
-  '  ▄███▀',
-  ' ████',
-  ' ▀████████▄',
-  '     █████▀',
-  '   ▄████▀',
-  '▄▄███▀',
-  '██▀▀',
+  '    ▄▄█',
+  '  ▄██▀',
+  ' ██▄▄▄▄',
+  '  ▀▀████',
+  ' ▄▄██▀',
+  '██▀',
 ];
-const ART_W = Math.max(...BOLT_ART.map((s) => s.length));
-// A dark pad row (top/bottom) so the tile reads as a padded square, per the SVG.
-const TILE_ROWS = ['', ...BOLT_ART, ''];
+const ART_W = Math.max(...BOLT_ART.map((s) => s.length)); // 8
+// Terminal cells are ~2:1 (taller than wide), so a visually SQUARE tile needs
+// width ≈ 2 × rows. 6 rows -> a 12-char-wide tile. The bolt block (ART_W=8) is
+// centred inside it as a UNIT (same left offset on every row, so the silhouette
+// is never distorted). Result: a small square dark tile with a centred bolt.
+const TILE_W = 12;
+const TILE_OFFSET = Math.max(0, (TILE_W - ART_W) >> 1); // 2 cells each side
+const TILE_ROWS = BOLT_ART;
 
 // ── boxed-header primitives ───────────────────────────────────────────────
 // A "cell" = { t: text, st: {bold?, fg?, bg?} }. Visible width is measured on
@@ -100,14 +102,14 @@ function topBorder(title, inner, color) {
 }
 function bottomBorder(inner, color) { return bd(`╰${'─'.repeat(inner)}╯`, color); }
 
-// One tile row: solid dark tile with the lime bolt. The row string is padded to
-// ART_W + a 1-space margin each side, all painted with the dark background, so
-// the tile is a filled rectangle and the half-block bolt glyphs (`▀`/`▄`) show
-// their bolt sub-pixel in lime over a dark half. Width = ART_W + 2.
-const TILE_W = ART_W + 2;
+// One tile row: solid dark tile with the lime bolt. The bolt block is placed at
+// a fixed left offset (TILE_OFFSET, same on every row so the silhouette holds)
+// and the row is filled to TILE_W, all painted with the dark background — so the
+// tile is a filled square and the half-block bolt glyphs (`▀`/`▄`) show their
+// bolt sub-pixel in lime over a dark half.
 function tileCell(row) {
   const s = row || '';
-  const t = ` ${s}${' '.repeat(Math.max(0, ART_W - s.length))} `;
+  const t = ' '.repeat(TILE_OFFSET) + s + ' '.repeat(Math.max(0, TILE_W - TILE_OFFSET - s.length));
   return { t, st: { bg: BRAND.dark, fg: BRAND.lime } };
 }
 
