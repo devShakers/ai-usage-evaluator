@@ -139,7 +139,12 @@ test('renderShareCardHtml: self-contained page with the card, PNG export and Lin
   // No external stylesheet/script/font/image on the page either.
   assert.ok(!/<link /i.test(html), 'no <link>');
   assert.ok(!/src="http/i.test(html), 'no remote script/image src');
-  assert.ok(!/@font-face/i.test(html), 'no @font-face');
+  // Match the real CSS RULE (`@font-face {`), not the bare substring: the page
+  // embeds report-theme's TOKENS_CSS, which carries a descriptive CSS comment
+  // ("Inter with a system fallback (no @font-face, no network)…"). A substring
+  // check false-positives on that comment; the rule form still guarantees no
+  // actual @font-face declaration (i.e. no network/webfont on the page).
+  assert.ok(!/@font-face\s*\{/i.test(html), 'no @font-face rule');
 });
 
 test('generateShareCard: no footprint -> {ok:false, reason:no-footprint}, writes nothing', () => {
