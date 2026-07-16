@@ -173,8 +173,15 @@ async function maybePersonalizeRoadmap(report, maturity, lang) {
   }
 }
 
-async function main() {
-  const opts = parseArgs(process.argv.slice(2));
+// Exposed as `run(argv, { ask })` (ADR-014) so the branded REPL
+// (bin/shakers.js) can invoke the SAME logic the `ai-footprint` binary used to
+// run, without duplicating it. `argv` is the arg array (process.argv.slice(2)
+// when standalone). `ask` is the SHARED stdin reader injected by the REPL — the
+// nested-stdin seam: when present the consent flow reads through it and this
+// function NEVER closes it (the REPL owns its lifecycle). Standalone (no `ask`)
+// it creates and closes its own, exactly as before.
+async function run(argv = process.argv.slice(2), { ask: injectedAsk = null } = {}) {
+  const opts = parseArgs(argv);
 
   // Resolve language FIRST (skill-code-certification / ADR-003) so even --help
   // is localized to the machine locale (or --lang) — no hardcoded Spanish.
@@ -292,11 +299,13 @@ async function main() {
     process.stdout.write(`\n  ${consentSkip.message}\n`);
   }
   if (!consentSkip.skip) {
-    const ask = createStdinAsk();
+    // Reuse the REPL's shared reader when injected (nested stdin); otherwise
+    // own a throwaway one. Only close what we created — never the REPL's.
+    const ask = injectedAsk || createStdinAsk();
     try {
       await runConsentPrompt({ ask, catalog });
     } finally {
-      ask.close();
+      if (!injectedAsk) ask.close();
     }
   }
 
@@ -328,4 +337,11 @@ async function main() {
   await maybeAutoShare(report, maturity);
 }
 
-main();
+module.exports = { run };
+
+// Only auto-run when executed directly (`node bin/report.js`). Guarded so the
+// REPL can `require()` this module and call `run()` without triggering a second
+// execution (ADR-014).
+if (require.main === module) {
+  run();
+}

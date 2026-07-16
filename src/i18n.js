@@ -520,6 +520,26 @@ const catalogs = {
         remediationCopiedLabel: 'Copiado ✓',
       },
     },
+    // Branded mini-shell chrome (skill-code-certification / ADR-014). The
+    // `shakers` REPL is the single entrypoint; this covers the banner tagline,
+    // prompt and command help — the commands themselves keep their own copy.
+    repl: {
+      tagline: 'Herramientas locales de IA para desarrolladores',
+      hint: 'Escribe "help" para ver los comandos, "exit" para salir.',
+      prompt: 'shakers ›',
+      goodbye: 'Hasta pronto.',
+      unknown: (cmd) => `Comando no reconocido: "${cmd}". Escribe "help" para ver los comandos disponibles.`,
+      help:
+        'Shakers — comandos disponibles\n\n'
+        + '  footprint [opciones]   Escanea este proyecto y tu equipo; puntúa tu setup de IA (T0-T7)\n'
+        + '  certify   [opciones]   Certifica tus Skills a partir del código de este proyecto\n'
+        + '  help                   Muestra esta ayuda\n'
+        + '  clear                  Limpia la pantalla\n'
+        + '  exit | quit            Cierra la shell\n\n'
+        + 'Los flags de cada comando siguen funcionando dentro de la shell\n'
+        + '(p.ej. `footprint --root <dir>`, `certify --all`). Usa `footprint --help`\n'
+        + 'o `certify --help` para ver todas sus opciones.',
+    },
   },
   en: {
     categories: {
@@ -924,6 +944,26 @@ const catalogs = {
         remediationCopyLabel: 'Copy',
         remediationCopiedLabel: 'Copied ✓',
       },
+    },
+    // Branded mini-shell chrome (skill-code-certification / ADR-014). The
+    // `shakers` REPL is the single entrypoint; this covers the banner tagline,
+    // prompt and command help — the commands themselves keep their own copy.
+    repl: {
+      tagline: 'Local AI tooling for developers',
+      hint: 'Type "help" to list commands, "exit" to quit.',
+      prompt: 'shakers ›',
+      goodbye: 'See you soon.',
+      unknown: (cmd) => `Unknown command: "${cmd}". Type "help" to list the available commands.`,
+      help:
+        'Shakers — available commands\n\n'
+        + '  footprint [options]   Scan this project + your machine; score your AI setup (T0-T7)\n'
+        + '  certify   [options]   Certify your Skills from this project\'s code\n'
+        + '  help                  Show this help\n'
+        + '  clear                 Clear the screen\n'
+        + '  exit | quit           Close the shell\n\n'
+        + 'Each command\'s flags still work inside the shell\n'
+        + '(e.g. `footprint --root <dir>`, `certify --all`). Use `footprint --help`\n'
+        + 'or `certify --help` for all their options.',
     },
   },
 };

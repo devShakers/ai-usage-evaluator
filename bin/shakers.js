@@ -1,0 +1,80 @@
+#!/usr/bin/env node
+'use strict';
+
+/*
+ * `shakers` — the SINGLE entrypoint of this tool (ADR-014). Opens a branded
+ * mini-shell (REPL, Claude-Code style) where the commands run:
+ *   footprint [args]   scan this project + machine, score the AI setup
+ *   certify   [args]   certify Skills from this project's code
+ *   help | clear | exit/quit
+ *
+ * No behaviour change to the commands — they're the SAME `run(args,{ask})` from
+ * bin/report.js / bin/certify.js, just wrapped in the REPL. The former
+ * `ai-footprint`/`ai-certify` binaries are no longer installed (install.sh only
+ * exposes `shakers`); their logic stays here for the REPL to import.
+ *
+ * Zero-dependency: readline + ANSI (src/repl-shell.js / src/repl-stdin.js).
+ *
+ * Nested stdin (the delicate bit): a SINGLE shared reader (src/repl-stdin.js)
+ * drives both the prompt loop and the running command, so piped input is never
+ * lost between them. See src/repl-stdin.js's header for the full rationale.
+ */
+
+const { detectReportLang, getCatalog } = require('../src/i18n');
+const { createReplStdin } = require('../src/repl-stdin');
+const { runRepl } = require('../src/repl-shell');
+const { run: runFootprint } = require('./report');
+const { run: runCertify } = require('./certify');
+
+let VERSION = '';
+try {
+  VERSION = require('../package.json').version || '';
+} catch {
+  VERSION = '';
+}
+
+// `--lang es|en` before opening the shell forces the chrome language; otherwise
+// the OS locale decides (same detection the reports use). Env vars (endpoints,
+// config dir) are inherited by the child command logic straight from
+// process.env — the REPL adds nothing and strips nothing.
+function parseLang(argv) {
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--lang' && (argv[i + 1] === 'es' || argv[i + 1] === 'en')) return argv[i + 1];
+    if (a === '--lang=es') return 'es';
+    if (a === '--lang=en') return 'en';
+  }
+  return null;
+}
+
+async function main() {
+  const argv = process.argv.slice(2);
+  const lang = parseLang(argv) || detectReportLang();
+
+  let stdin;
+  const onInterrupt = () => {
+    // Ctrl-C on a TTY: say goodbye and exit cleanly rather than dumping a stack.
+    process.stdout.write(`\n\n  ${getCatalog(lang).repl.goodbye}\n\n`);
+    if (stdin) stdin.close();
+    process.exit(0);
+  };
+  stdin = createReplStdin({ onInterrupt });
+
+  await runRepl({
+    stdin,
+    lang,
+    version: VERSION,
+    deps: { runFootprint, runCertify },
+  });
+
+  stdin.close();
+
+  // A cleanly-closed interactive shell exits 0. A command run inside may have
+  // set process.exitCode (e.g. certify with no endpoint) to signal ITS failure
+  // in-band; that must not become a sticky, misleading exit code for the whole
+  // session. CI/scripting on per-command exit codes is out of scope now that
+  // the REPL is the only entrypoint (ADR-014) — the error was already shown.
+  process.exitCode = 0;
+}
+
+main();
