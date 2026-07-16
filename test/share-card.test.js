@@ -19,8 +19,10 @@ const {
 } = require('../src/share-card');
 
 // A stored state with a footprint for one project, mirroring report-store's
-// schema-v2 shape (projects keyed by absolute path).
-function stateWithFootprint(absRoot, maturity) {
+// schema-v2 shape (projects keyed by absolute path). `report` defaults to a
+// minimal footprint report (no signals -> zeroed stats); pass a richer one to
+// exercise the card's stats strip.
+function stateWithFootprint(absRoot, maturity, report = { tools: [] }) {
   return {
     schemaVersion: 2,
     updatedAt: '2026-07-16T10:00:00.000Z',
@@ -28,12 +30,24 @@ function stateWithFootprint(absRoot, maturity) {
       [absRoot]: {
         root: absRoot,
         updatedAt: '2026-07-16T10:00:00.000Z',
-        footprint: { generatedAt: '2026-07-16T10:00:00.000Z', report: { tools: [] }, maturity },
+        footprint: { generatedAt: '2026-07-16T10:00:00.000Z', report, maturity },
         certifications: {},
       },
     },
   };
 }
+
+// A footprint report with real signals for the stats strip.
+const RICH_REPORT = {
+  tools: [
+    { name: 'Claude Code', detected: true },
+    { name: 'Cursor', detected: true },
+    { name: 'Copilot', detected: false },
+  ],
+  agentCounts: { agents: 3, skills: 4, commands: 2, mcpServers: 5, hooks: 1 },
+  mcp: { total: 5, countsByCategory: { data: 2, comms: 1, dev: 2, browser: 0, other: 0 } },
+  technologies: ['NestJS', 'Prisma', 'React', 'Tailwind', 'TypeScript'],
+};
 
 const MATURITY = {
   level: 4, key: 'orchestrator', name: 'Orquestador', emoji: '●',
@@ -74,6 +88,79 @@ test('buildCardModel: clamps/rounds the score into 0-100', () => {
   assert.strictEqual(buildCardModel({ tierKey: 'T3', levelKey: 'power', score: 63.6 }).score, 64);
 });
 
+test('loadProjectFootprint: derives the stats signals from the persisted report', () => {
+  const absRoot = path.resolve('/tmp/proj-rich');
+  const fp = loadProjectFootprint(absRoot, { load: () => stateWithFootprint(absRoot, MATURITY, RICH_REPORT) });
+  assert.ok(fp && fp.signals);
+  assert.strictEqual(fp.signals.toolsDetected, 2); // only detected:true tools counted
+  assert.strictEqual(fp.signals.mcpServers, 5); // report.mcp.total
+  assert.strictEqual(fp.signals.agents, 3);
+  assert.strictEqual(fp.signals.skills, 4);
+  assert.strictEqual(fp.signals.commands, 2);
+  assert.strictEqual(fp.signals.hooks, 1);
+  assert.deepStrictEqual(fp.signals.technologies, ['NestJS', 'Prisma', 'React', 'Tailwind', 'TypeScript']);
+});
+
+test('loadProjectFootprint: an older report with no signal fields yields zeroed stats, never throws', () => {
+  const absRoot = path.resolve('/tmp/proj-bare');
+  const fp = loadProjectFootprint(absRoot, { load: () => stateWithFootprint(absRoot, MATURITY) }); // report {tools:[]}
+  assert.ok(fp && fp.signals);
+  assert.strictEqual(fp.signals.toolsDetected, 0);
+  assert.strictEqual(fp.signals.mcpServers, 0);
+  assert.strictEqual(fp.signals.agents, 0);
+  assert.deepStrictEqual(fp.signals.technologies, []);
+});
+
+test('buildCardModel: builds the 6-stat strip, capped technologies and the next tier', () => {
+  const model = buildCardModel({
+    tierKey: 'T5', tier: 5, levelKey: 'orchestrator', score: 78,
+    signals: { toolsDetected: 2, mcpServers: 5, agents: 3, skills: 4, commands: 2, hooks: 1, technologies: ['NestJS', 'Prisma', 'React', 'Tailwind', 'TypeScript'] },
+  });
+  assert.deepStrictEqual(model.stats.map((s) => `${s.value} ${s.label}`), [
+    '2 AI TOOLS', '5 MCP', '3 AGENTS', '4 SKILLS', '2 COMMANDS', '1 HOOKS',
+  ]);
+  assert.strictEqual(model.technologies.length, 4); // capped at MAX_TECHNOLOGIES
+  assert.deepStrictEqual(model.technologies, ['NestJS', 'Prisma', 'React', 'Tailwind']);
+  assert.strictEqual(model.nextTierKey, 'T6'); // one above the current tier
+});
+
+test('buildCardModel: no "next" tier at the ceiling (T7); bare model (no signals) zeroes the stats', () => {
+  assert.strictEqual(buildCardModel({ tierKey: 'T7', tier: 7, levelKey: 'orchestrator', score: 100 }).nextTierKey, null);
+  // tier parsed from tierKey when the numeric tier is absent.
+  assert.strictEqual(buildCardModel({ tierKey: 'T2', levelKey: 'power', score: 40 }).nextTierKey, 'T3');
+  const bare = buildCardModel({ tierKey: 'T1', levelKey: 'exploring', score: 20 });
+  assert.deepStrictEqual(bare.stats.map((s) => s.value), [0, 0, 0, 0, 0, 0]);
+  assert.deepStrictEqual(bare.technologies, []);
+});
+
+test('renderCardSvg: renders the stats strip (teal panel, lime numbers), technologies and next tier', () => {
+  const model = buildCardModel({
+    tierKey: 'T5', tier: 5, levelKey: 'orchestrator', score: 78,
+    signals: { toolsDetected: 2, mcpServers: 5, agents: 3, skills: 4, commands: 2, hooks: 1, technologies: ['NestJS', 'Prisma', 'React'] },
+  });
+  const svg = renderCardSvg(model);
+  // Teal green surfaces are present (green + lime, not lime-only).
+  assert.match(svg, /#08473c/); // teal-700 stats panel
+  assert.match(svg, /#0e7d69/); // teal-500 accent stripe
+  // Stat labels + a couple of values render.
+  for (const label of ['AI TOOLS', 'MCP', 'AGENTS', 'SKILLS', 'COMMANDS', 'HOOKS']) {
+    assert.ok(svg.includes(label), `stat label ${label} present`);
+  }
+  assert.match(svg, /Top: NestJS · Prisma · React/);
+  assert.match(svg, /Next:/);
+  assert.match(svg, />T6<\/tspan>/); // next tier, lime
+  // The logo is the wordmark, the bolt is gone.
+  assert.match(svg, /<path d="M19\.2845 8\.74573/);
+  assert.ok(!svg.includes('M4.21721'), 'bolt removed');
+});
+
+test('renderCardSvg: omits the technologies line when there are none, still valid', () => {
+  const model = buildCardModel({ tierKey: 'T1', tier: 1, levelKey: 'exploring', score: 20 });
+  const svg = renderCardSvg(model);
+  assert.ok(!svg.includes('Top:'), 'no technologies line when none detected');
+  assert.match(svg, /Next: <tspan[^>]*>T2<\/tspan>/); // still shows the next tier
+});
+
 test('renderCardSvg: correct dimensions and the tier/score/band content', () => {
   const svg = renderCardSvg(buildCardModel({ tierKey: 'T5', levelKey: 'orchestrator', score: 78 }));
   assert.match(svg, new RegExp(`width="${CARD_W}"`));
@@ -98,14 +185,16 @@ test('renderCardSvg: is SELF-CONTAINED — no external refs (would taint the can
   // (a namespace URI, never fetched) — any other would be an external asset.
   const httpHits = svg.match(/https?:\/\//g) || [];
   assert.strictEqual(httpHits.length, 1, 'only the xmlns namespace URI');
-  // The real Shakers bolt is inlined as a <path>, not referenced.
-  assert.match(svg, /<path d="M4\.21721 7\.63625/);
+  // The real hand-drawn "shakers" wordmark is inlined as <path>s (first glyph),
+  // and the lightning bolt was removed (its path must NOT appear).
+  assert.match(svg, /<path d="M19\.2845 8\.74573/);
+  assert.ok(!svg.includes('M4.21721'), 'the removed bolt path is gone');
 });
 
 test('renderCardSvg: score ring dashoffset is deterministic from the score', () => {
   const svg0 = renderCardSvg(buildCardModel({ tierKey: 'T0', levelKey: 'none', score: 0 }));
   const svg100 = renderCardSvg(buildCardModel({ tierKey: 'T7', levelKey: 'orchestrator', score: 100 }));
-  const circ = 2 * Math.PI * 128;
+  const circ = 2 * Math.PI * 115;
   // score 0 -> the lime arc is fully offset (empty ring); 100 -> offset 0 (full).
   assert.match(svg0, new RegExp(`stroke-dashoffset="${circ.toFixed(2)}"`));
   assert.match(svg100, /stroke-dashoffset="0.00"/);

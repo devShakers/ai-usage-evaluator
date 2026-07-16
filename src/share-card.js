@@ -16,16 +16,17 @@ const { WORDMARK_VIEWBOX, WORDMARK_PATHS } = require('./shakers-wordmark');
  * nunca rasteriza, solo escribe un HTML self-contained y imprime su enlace.
  *
  * Invariants (same discipline as the HTML reports, src/report-theme.js):
- *   - ZERO network: every asset is inline. The Shakers bolt is the REAL logo
- *     path (shakers-hub-frontend .../images/shakers-logo.svg) and the "shakers"
- *     wordmark is the REAL hand-drawn logotype (…/shakers-text-logo.svg), BOTH
- *     inlined as SVG <path>s (src/shakers-wordmark.js) — never a remote <image>,
- *     <use>, url() or data-URI fetch. The remaining texts (headline/tier/score)
- *     use the system sans stack (no @font-face, no CDN). This is what keeps the
- *     browser-side SVG->canvas->PNG export from TAINTING the canvas (an external
- *     ref would make toDataURL throw a SecurityError).
+ *   - ZERO network: every asset is inline. The logo is the REAL hand-drawn
+ *     "shakers" wordmark (…/images/shakers-text-logo.svg), inlined as SVG
+ *     <path>s (src/shakers-wordmark.js) — never a remote <image>, <use>, url()
+ *     or data-URI fetch. (The lightning bolt was removed; the wordmark is the
+ *     logo.) The remaining texts (headline/tier/score/stats) use the system
+ *     sans stack (no @font-face, no CDN). This is what keeps the browser-side
+ *     SVG->canvas->PNG export from TAINTING the canvas (an external ref would
+ *     make toDataURL throw a SecurityError).
  *   - Deterministic: the card content is a pure function of the stored
- *     footprint (tier/score/band) — same footprint always yields the same card.
+ *     footprint (tier/score/band + derived signal counts) — same footprint
+ *     always yields the same card.
  *   - The CARD ITSELF is ENGLISH-FIXED (a brand surface, like the sh-eval
  *     banner and the installer). The CLI copy around it (bin/share.js) is
  *     localized (es/en). Tier/band labels come from the `en` i18n catalog
@@ -41,36 +42,23 @@ const { WORDMARK_VIEWBOX, WORDMARK_PATHS } = require('./shakers-wordmark');
 const CARD_W = 1200;
 const CARD_H = 627;
 
-// The REAL Shakers lightning bolt — copied VERBATIM from the design asset
-// (shakers-hub-frontend/apps/hub/public/images/shakers-logo.svg, viewBox
-// 0 0 12 19). Inlined as an SVG <path> (no remote image, no data-URI) so the
-// card stays self-contained and the canvas export never taints.
-const BOLT_PATH =
-  'M4.21721 7.63625C5.37214 7.86417 6.19709 8.03512 7.07704 8.14908C8.06698 8.32002 9.05692 '
-  + '8.37701 10.1019 8.49097C10.9268 8.60493 11.6418 8.94682 11.9168 9.85852C12.1917 10.8272 '
-  + '11.7518 11.511 11.0918 12.0808C10.7618 12.3657 10.3768 12.6506 10.0469 12.9355C7.57201 '
-  + '14.7589 5.09716 16.5823 2.62231 18.4057C2.45732 18.5197 2.29233 18.6906 2.07234 18.8046C1.46737 '
-  + '19.1465 0.807414 19.0325 0.36744 18.5197C-0.0725338 18.0068 -0.12753 17.3231 0.257447 '
-  + '16.6963C0.53243 16.2404 0.917407 15.8985 1.30238 15.6136C3.11728 14.2461 4.93217 12.9355 '
-  + '6.96705 11.397C6.36208 11.2261 5.97711 11.1691 5.59213 11.0551C4.54719 10.8272 3.50225 '
-  + '10.6563 2.51231 10.3144C0.69742 9.63059 0.257446 7.97814 1.52237 6.38266C2.34732 5.357 '
-  + '3.33726 4.4453 4.3272 3.59058C5.70212 2.50794 7.18703 1.53926 8.67194 0.570575C9.82688 '
-  + '-0.227162 10.6518 -0.170181 11.1468 0.627556C11.6418 1.42529 11.3118 2.22303 10.2119 '
-  + '3.07775C8.83694 4.10341 7.40702 5.07209 6.0321 6.09776C5.48213 6.49662 4.98716 6.95248 '
-  + '4.21721 7.63625Z';
-const BOLT_H = 19; // asset viewBox height (width 12)
-
 // Brand palette (from shakers-design-system/design-spec/tokens.css). The card
-// is a DARK surface with a lime hero accent — the same visual language as the
-// sh-eval banner (a lime bolt on a dark tile), which reads well on a social feed.
+// is a DARK surface that reads GREEN + LIME: brand teal for the secondary
+// surfaces (accent stripe, stats panel) and LIME reserved for the HERO data
+// (tier, score ring, stat numbers). The lightning bolt was dropped — the logo
+// is now the hand-drawn wordmark alone (user request).
 const BRAND = {
-  lime: '#d8e637',
-  dark: '#181B1A',
+  lime: '#d8e637',      // hero accent (tier, score ring, stat numbers)
+  dark: '#181B1A',      // card background
   white: '#ffffff',
   zinc400: '#a1a1aa',
   zinc500: '#71717a',
-  track: '#27272a',
-  teal: '#0e7d69',
+  track: '#0b3a31',     // score-ring track: a dark teal (ties the ring into the green)
+  teal500: '#0e7d69',   // teal-500 — accent stripe
+  teal700: '#08473c',   // teal-700 — the stats panel surface
+  primary: '#05342c',   // darkest brand green (reserved / deep accents)
+  mint: '#bfe0d7',      // pale teal-tint for labels on the teal panel
+  mintSoft: '#dcefe9',  // slightly brighter mint for the secondary line
 };
 
 // Font stack shared with the reports (Inter -> system fallback). Pure font
@@ -86,10 +74,14 @@ function esc(s) {
 }
 
 /*
- * Loads THIS project's stored footprint (tier/score/band) from the report
- * store. Returns null when the project has no footprint yet (the caller turns
- * that into an actionable "run footprint first" message). `load` is injectable
- * purely for tests; production reads report-state.json via report-store.
+ * Loads THIS project's stored footprint from the report store: the maturity
+ * (tier/score/band) PLUS a compact set of derived signals for the card's stats
+ * strip (AI tools detected, MCP servers, agents/skills/commands/hooks, top
+ * technologies). Everything is read from what's ALREADY persisted in
+ * report-state.json (`project.footprint.{maturity,report}`) — never a fresh
+ * scan, never fabricated. Returns null when the project has no footprint yet
+ * (the caller turns that into an actionable "run footprint first" message).
+ * `load` is injectable purely for tests; production reads via report-store.
  */
 function loadProjectFootprint(root, { load = loadState } = {}) {
   const absRoot = path.resolve(root || process.cwd());
@@ -103,6 +95,21 @@ function loadProjectFootprint(root, { load = loadState } = {}) {
   const fp = project && project.footprint;
   const m = fp && fp.maturity;
   if (!m || m.tierKey == null || typeof m.score !== 'number') return null;
+
+  // Derived signals from the persisted report (defensive: any missing piece
+  // reads as 0 / empty — an older stored report never crashes the card).
+  const report = (fp && fp.report) || {};
+  const counts = report.agentCounts || {};
+  const toolsDetected = Array.isArray(report.tools)
+    ? report.tools.filter((tl) => tl && tl.detected).length
+    : 0;
+  const mcpTotal = report.mcp && typeof report.mcp.total === 'number'
+    ? report.mcp.total
+    : (typeof counts.mcpServers === 'number' ? counts.mcpServers : 0);
+  const technologies = Array.isArray(report.technologies)
+    ? report.technologies.filter((s) => typeof s === 'string' && s.trim())
+    : [];
+
   return {
     root: absRoot,
     tier: m.tier,
@@ -111,25 +118,70 @@ function loadProjectFootprint(root, { load = loadState } = {}) {
     level: m.level,
     levelKey: m.key,
     generatedAt: fp.generatedAt || null,
+    signals: {
+      toolsDetected,
+      mcpServers: mcpTotal,
+      agents: typeof counts.agents === 'number' ? counts.agents : 0,
+      skills: typeof counts.skills === 'number' ? counts.skills : 0,
+      commands: typeof counts.commands === 'number' ? counts.commands : 0,
+      hooks: typeof counts.hooks === 'number' ? counts.hooks : 0,
+      technologies,
+    },
   };
 }
+
+// Max tier in the ladder (T0..T7). "Next" is only shown below the ceiling.
+const MAX_TIER = 7;
+// How many top technologies to name on the card (kept small — social card).
+const MAX_TECHNOLOGIES = 4;
 
 /*
  * Maps the raw footprint into the card's display model. English-fixed: tier and
  * band names are resolved through the `en` catalog (never tier-engine.js's
  * Spanish `tierName`), so the branded surface reads in English regardless of
  * the machine locale.
+ *
+ * The model also carries a compact `stats` strip (labels English-fixed too),
+ * the `technologies` shortlist and the `nextTierKey` — all derived from
+ * `fp.signals` (from loadProjectFootprint). Every field is defensive: a bare
+ * `{tierKey,levelKey,score}` (no signals) still yields a valid model with
+ * zeroed stats, so callers/tests that don't provide signals never break.
  */
 function buildCardModel(fp) {
   const en = getCatalog('en');
   const tierKey = fp.tierKey;
   const tierName = (en.tierNames && en.tierNames[tierKey]) || tierKey;
   const bandName = (en.levelNames && en.levelNames[fp.levelKey]) || '';
+
+  const s = fp.signals || {};
+  const n = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
+  const stats = [
+    { value: n(s.toolsDetected), label: 'AI TOOLS' },
+    { value: n(s.mcpServers), label: 'MCP' },
+    { value: n(s.agents), label: 'AGENTS' },
+    { value: n(s.skills), label: 'SKILLS' },
+    { value: n(s.commands), label: 'COMMANDS' },
+    { value: n(s.hooks), label: 'HOOKS' },
+  ];
+  const technologies = Array.isArray(s.technologies) ? s.technologies.slice(0, MAX_TECHNOLOGIES) : [];
+
+  // "Next" tier: the immediate step above the current one, when below the
+  // ceiling. Prefer the numeric tier; fall back to parsing "T<n>" from tierKey.
+  let tierNum = typeof fp.tier === 'number' ? fp.tier : NaN;
+  if (!isFinite(tierNum)) {
+    const m = /^T(\d+)$/.exec(String(tierKey || ''));
+    tierNum = m ? Number(m[1]) : NaN;
+  }
+  const nextTierKey = isFinite(tierNum) && tierNum < MAX_TIER ? `T${tierNum + 1}` : null;
+
   return {
     tierKey,
     tierName,
     bandName,
     score: Math.max(0, Math.min(100, Math.round(fp.score))),
+    stats,
+    technologies,
+    nextTierKey,
   };
 }
 
@@ -145,68 +197,93 @@ function buildSuggestedText(model) {
 
 /*
  * Builds the branded card as a SELF-CONTAINED SVG (1200×627). Everything is
- * inline: the bolt is an SVG <path>, text uses the system font stack, the score
- * is a stroked donut ring. No <image>, no url(), no xlink:href, no @font-face —
- * so the browser can serialize it, draw it to a <canvas> and toDataURL() a PNG
- * without tainting.
+ * inline: the logo is the hand-drawn "shakers" wordmark (SVG <path>s), text
+ * uses the system font stack, the score is a stroked donut ring, the stats
+ * strip is a teal panel. NO <image>, url(), xlink:href, @font-face or
+ * foreignObject — so the browser can serialize it, draw it to a <canvas> and
+ * toDataURL() a PNG without tainting.
+ *
+ * Palette reads GREEN + LIME on dark: teal-500 accent stripe + teal-700 stats
+ * panel (the green), with LIME reserved for the hero data (tier, score ring,
+ * stat numbers). The lightning bolt was removed — the wordmark is the logo.
  */
 function renderCardSvg(model, { id = 'share-card-svg' } = {}) {
-  const { tierKey, tierName, bandName, score } = model;
+  const { tierKey, tierName, bandName, score, stats, technologies, nextTierKey } = model;
 
-  // Bolt: scale the 12×19 asset up to ~46px tall, top-left, in lime.
-  const boltScale = 46 / BOLT_H; // ≈ 2.42
-  // Wordmark: the REAL hand-drawn "shakers" logotype (87×18 asset), scaled to
-  // ~38px tall so it reads as a header next to the bolt, painted white. Inlined
-  // <path>s (self-contained — see shakers-wordmark.js), so the card's canvas
-  // export never taints.
-  const wordmarkScale = 38 / WORDMARK_VIEWBOX.h; // ≈ 2.11
+  // Logo: the REAL hand-drawn "shakers" wordmark (87×18 asset), ~44px tall,
+  // top-left, in white. Inlined <path>s (self-contained — see
+  // shakers-wordmark.js), so the card's canvas export never taints.
+  const wordmarkScale = 44 / WORDMARK_VIEWBOX.h; // ≈ 2.44
   const wordmark = WORDMARK_PATHS
     .map((d) => `<path d="${d}" fill="${BRAND.white}"/>`)
     .join('');
 
-  // Score donut ring (right side). Deterministic geometry from the score.
-  const cx = 958;
-  const cy = 292;
-  const r = 128;
-  const circ = 2 * Math.PI * r; // ≈ 804.25
+  // Score donut ring (upper right). Deterministic geometry from the score.
+  const cx = 980;
+  const cy = 250;
+  const r = 115;
+  const circ = 2 * Math.PI * r;
   const dashOffset = (circ * (1 - score / 100)).toFixed(2);
+
+  // Stats strip: 6 evenly spaced cells inside the teal panel (number in lime,
+  // label in a pale teal-tint). Centres chosen to sit comfortably inside the
+  // 1200-wide panel with side padding.
+  const statCx = [140, 324, 508, 692, 876, 1060];
+  const statCells = (Array.isArray(stats) ? stats : [])
+    .slice(0, statCx.length)
+    .map((st, i) => `<text x="${statCx[i]}" y="524" text-anchor="middle" font-size="42" font-weight="800" fill="${BRAND.lime}">${esc(st.value)}</text>
+    <text x="${statCx[i]}" y="551" text-anchor="middle" font-size="15" font-weight="600" letter-spacing="1" fill="${BRAND.mint}">${esc(st.label)}</text>`)
+    .join('\n    ');
+
+  // Secondary line inside the panel: top technologies (left) + "Next: T<n>"
+  // (right). Each shown only when there's something to say.
+  const techLine = Array.isArray(technologies) && technologies.length
+    ? `<text x="140" y="598" font-size="19" fill="${BRAND.mintSoft}">Top: ${esc(technologies.join(' · '))}</text>`
+    : '';
+  const nextLine = nextTierKey
+    ? `<text x="1060" y="598" text-anchor="end" font-size="19" fill="${BRAND.mint}">Next: <tspan font-weight="800" fill="${BRAND.lime}">${esc(nextTierKey)}</tspan></text>`
+    : '';
+
+  const pillWidth = Math.max(150, 42 + bandName.length * 14);
 
   return `<svg id="${id}" width="${CARD_W}" height="${CARD_H}" viewBox="0 0 ${CARD_W} ${CARD_H}"`
     + ` xmlns="http://www.w3.org/2000/svg" font-family="${esc(FONT_STACK)}">
   <rect width="${CARD_W}" height="${CARD_H}" fill="${BRAND.dark}"/>
-  <rect x="0" y="0" width="10" height="${CARD_H}" fill="${BRAND.lime}"/>
+  <rect x="0" y="0" width="12" height="${CARD_H}" fill="${BRAND.teal500}"/>
 
-  <!-- brand lockup: real Shakers bolt + real hand-drawn shakers wordmark,
-       both inline vector paths, fully self-contained -->
-  <g transform="translate(80,64)">
-    <g transform="scale(${boltScale.toFixed(4)})"><path d="${BOLT_PATH}" fill="${BRAND.lime}"/></g>
-    <g transform="translate(48,4) scale(${wordmarkScale.toFixed(4)})">${wordmark}</g>
-  </g>
+  <!-- logo: real hand-drawn shakers wordmark (inline vector paths, self-contained) -->
+  <g transform="translate(80,54) scale(${wordmarkScale.toFixed(4)})">${wordmark}</g>
+  <text x="1160" y="90" text-anchor="end" font-size="19" fill="${BRAND.zinc500}">shakersworks.com</text>
 
   <!-- headline -->
-  <text x="82" y="212" font-size="27" letter-spacing="4" font-weight="600" fill="${BRAND.zinc400}">MY AI TOOLING MATURITY</text>
+  <text x="82" y="166" font-size="26" letter-spacing="4" font-weight="600" fill="${BRAND.zinc400}">MY AI TOOLING MATURITY</text>
 
-  <!-- tier -->
-  <text x="76" y="378" font-size="176" font-weight="800" fill="${BRAND.lime}">${esc(tierKey)}</text>
-  <text x="82" y="446" font-size="46" font-weight="700" fill="${BRAND.white}">${esc(tierName)}</text>
+  <!-- tier (hero, lime) -->
+  <text x="76" y="322" font-size="150" font-weight="800" fill="${BRAND.lime}">${esc(tierKey)}</text>
+  <text x="82" y="384" font-size="40" font-weight="700" fill="${BRAND.white}">${esc(tierName)}</text>
 
   <!-- maturity band pill -->
-  <g transform="translate(82,480)">
-    <rect x="0" y="0" rx="16" ry="16" width="${Math.max(160, 44 + bandName.length * 15)}" height="42" fill="${BRAND.lime}"/>
-    <text x="22" y="28" font-size="20" font-weight="700" fill="${BRAND.dark}">${esc(bandName)}</text>
+  <g transform="translate(82,406)">
+    <rect x="0" y="0" rx="14" ry="14" width="${pillWidth}" height="40" fill="${BRAND.lime}"/>
+    <text x="20" y="27" font-size="19" font-weight="700" fill="${BRAND.dark}">${esc(bandName)}</text>
   </g>
 
-  <!-- score donut -->
+  <!-- score donut (hero, lime ring on a dark-teal track) -->
   <g transform="translate(${cx},${cy})">
-    <circle r="${r}" fill="none" stroke="${BRAND.track}" stroke-width="24"/>
-    <circle r="${r}" fill="none" stroke="${BRAND.lime}" stroke-width="24" stroke-linecap="round"
+    <circle r="${r}" fill="none" stroke="${BRAND.track}" stroke-width="22"/>
+    <circle r="${r}" fill="none" stroke="${BRAND.lime}" stroke-width="22" stroke-linecap="round"
       stroke-dasharray="${circ.toFixed(2)}" stroke-dashoffset="${dashOffset}" transform="rotate(-90)"/>
-    <text text-anchor="middle" y="18" font-size="96" font-weight="800" fill="${BRAND.white}">${score}</text>
-    <text text-anchor="middle" y="64" font-size="26" letter-spacing="2" fill="${BRAND.zinc400}">/ 100</text>
+    <text text-anchor="middle" y="14" font-size="86" font-weight="800" fill="${BRAND.white}">${score}</text>
+    <text text-anchor="middle" y="56" font-size="24" letter-spacing="2" fill="${BRAND.zinc400}">/ 100</text>
   </g>
 
-  <!-- footer -->
-  <text x="82" y="582" font-size="21" fill="${BRAND.zinc500}">measured with Shakers AI Usage Evaluator &#183; shakersworks.com</text>
+  <!-- stats strip: teal panel with derived footprint signals -->
+  <rect x="0" y="462" width="${CARD_W}" height="${CARD_H - 462}" fill="${BRAND.teal700}"/>
+  <g>
+    ${statCells}
+  </g>
+  ${techLine}
+  ${nextLine}
 </svg>`;
 }
 
