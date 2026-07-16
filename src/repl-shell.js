@@ -43,6 +43,10 @@ function bg(rgb) {
 const RESET = '\x1b[0m';
 const BOLD = '\x1b[1m';
 
+// Shakers web, shown on the way out of the REPL. Language-neutral URL (the
+// same in es/en), so it lives here rather than in the i18n catalog.
+const SHAKERS_URL = 'https://www.shakersworks.com/en/';
+
 // Lightning-bolt mark — the FAITHFUL silhouette of the real Shakers logo
 // (shakers-hub-frontend .../images/shakers-logo.svg, viewBox 12×19), rasterised
 // to half-block glyphs at Hpx=14 (9 wide × 7 rows) via scratchpad/rasterize.py.
@@ -296,12 +300,27 @@ async function runRepl({ stdin, deps, lang = 'en', version = '', out = process.s
     if (result.exit) break;
   }
 
-  out.write(`\n  ${catalog.repl.goodbye}\n\n`);
+  // Goodbye + a branded link to the Shakers web. `exit`/`quit` and EOF
+  // (Ctrl-D / end of piped input) both flow through here; the Ctrl-C path in
+  // bin/sh-eval.js reuses the same renderGoodbye so every exit looks the same.
+  out.write(renderGoodbye({ lang, color: useColor }));
+}
+
+// The farewell block shown on EVERY way out of the REPL: the i18n goodbye
+// line plus a branded link to the Shakers web. Single source of truth so the
+// exit/quit, Ctrl-D and Ctrl-C seams stay identical.
+function renderGoodbye({ lang = 'en', color = false } = {}) {
+  const catalog = getCatalog(lang);
+  const link = color
+    ? `${fg(BRAND.lime)}ϟ${RESET} ${fg(BRAND.teal500)}${SHAKERS_URL}${RESET}`
+    : `ϟ ${SHAKERS_URL}`;
+  return `\n  ${catalog.repl.goodbye}\n  ${link}\n\n`;
 }
 
 module.exports = {
   renderBanner,
   renderPrompt,
+  renderGoodbye,
   tokenize,
   parseCommandLine,
   dispatchCommand,

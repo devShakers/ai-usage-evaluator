@@ -10,6 +10,7 @@ const {
   runRepl,
   renderBanner,
   renderPrompt,
+  renderGoodbye,
 } = require('../src/repl-shell');
 const { getCatalog } = require('../src/i18n');
 
@@ -87,6 +88,7 @@ test('runRepl: banner, dispatch, clean exit on "exit"', async () => {
   assert.deepStrictEqual(fpArgs, [['--json']]);
   assert.match(out.buf, /Welcome to shakers/); // boxed header present
   assert.match(out.buf, /See you soon\./); // goodbye
+  assert.match(out.buf, /https:\/\/www\.shakersworks\.com\/en\//); // Shakers web link on the way out
 });
 
 test('runRepl: EOF (no explicit exit) ends cleanly', async () => {
@@ -100,6 +102,21 @@ test('runRepl: EOF (no explicit exit) ends cleanly', async () => {
   });
   assert.match(out.buf, /available commands/);
   assert.match(out.buf, /See you soon\./);
+  assert.match(out.buf, /https:\/\/www\.shakersworks\.com\/en\//);
+});
+
+test('renderGoodbye: i18n goodbye line + Shakers web link, in both languages', () => {
+  const en = renderGoodbye({ lang: 'en', color: false });
+  assert.match(en, /See you soon\./);
+  assert.match(en, /https:\/\/www\.shakersworks\.com\/en\//);
+  assert.ok(!en.includes('\x1b['), 'no ANSI when colour is off');
+
+  const es = renderGoodbye({ lang: 'es', color: false });
+  assert.match(es, /Hasta pronto\./);
+  assert.match(es, /https:\/\/www\.shakersworks\.com\/en\//); // URL is language-neutral
+
+  const colored = renderGoodbye({ lang: 'en', color: true });
+  assert.ok(colored.includes('\x1b['), 'ANSI present when colour is on');
 });
 
 test('renderBanner (wide): colour off yields a plain, accent-free boxed header', () => {
