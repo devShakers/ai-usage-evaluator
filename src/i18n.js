@@ -248,6 +248,18 @@ const catalogs = {
       // (se retira --html). En cada ejecución se actualiza el informe acumulado
       // y se imprime SIEMPRE su enlace file:// para abrirlo en el navegador.
       reportLink: (url) => `Abre tu informe en el navegador:\n  ${url}`,
+      // `share` command (skill-code-certification): copy del CLI que envuelve a
+      // la tarjeta branded para LinkedIn. La TARJETA en sí es siempre en inglés
+      // (superficie de marca); esto es solo el copy del terminal, localizado.
+      share: {
+        help: 'share — crea una tarjeta branded con tu resultado de footprint (tier + nota) para compartir en LinkedIn.\n'
+          + '  Usa `footprint` primero; `share` toma el último footprint de este proyecto.\n'
+          + '  Opciones: --root <dir>, --lang es|en',
+        noFootprint: 'Aún no hay footprint para este proyecto. Ejecuta `footprint` primero y luego `share`.',
+        ready: (url) => `Tu tarjeta para compartir está lista — ábrela para descargar el PNG y publicarla:\n  ${url}`,
+        hint: 'LinkedIn no permite adjuntar la imagen por URL: descarga el PNG desde la tarjeta y luego adjúntalo en tu publicación.',
+        error: 'No se pudo generar la tarjeta para compartir.',
+      },
       // Terminal progress feedback (talents-ai-score): stderr-only status
       // during the two slow phases (see src/terminal-progress.js).
       scanningLabel: 'Escaneando entorno y detectores…',
@@ -533,6 +545,7 @@ const catalogs = {
         'Shakers — comandos disponibles\n\n'
         + '  footprint [opciones]   Escanea este proyecto y tu equipo; puntúa tu setup de IA (T0-T7)\n'
         + '  certify   [opciones]   Certifica tus Skills a partir del código de este proyecto\n'
+        + '  share     [opciones]   Crea una tarjeta branded de tu footprint para compartir en LinkedIn\n'
         + '  help                   Muestra esta ayuda\n'
         + '  clear                  Limpia la pantalla\n'
         + '  exit | quit            Cierra la shell\n\n'
@@ -701,6 +714,18 @@ const catalogs = {
       // (--html retired). Every run updates the cumulative report and ALWAYS
       // prints its file:// link to open in the browser.
       reportLink: (url) => `Open your report in your browser:\n  ${url}`,
+      // `share` command (skill-code-certification): CLI copy wrapping the
+      // branded LinkedIn card. The CARD itself is always English (brand
+      // surface); this is only the localized terminal copy.
+      share: {
+        help: 'share — build a branded card with your footprint result (tier + score) to post on LinkedIn.\n'
+          + '  Run `footprint` first; `share` uses this project\'s latest footprint.\n'
+          + '  Options: --root <dir>, --lang es|en',
+        noFootprint: 'No footprint for this project yet. Run `footprint` first, then `share`.',
+        ready: (url) => `Your shareable card is ready — open it to download the PNG and post it:\n  ${url}`,
+        hint: 'LinkedIn can\'t attach an image from a URL: download the PNG from the card, then attach it to your post.',
+        error: 'Could not generate the shareable card.',
+      },
       scanningLabel: 'Scanning environment and detectors…',
       synthesizingLabel: 'Synthesizing agents with AI…',
       personalizingRoadmapLabel: 'Personalizing roadmap…',
@@ -958,6 +983,7 @@ const catalogs = {
         'Shakers — available commands\n\n'
         + '  footprint [options]   Scan this project + your machine; score your AI setup (T0-T7)\n'
         + '  certify   [options]   Certify your Skills from this project\'s code\n'
+        + '  share     [options]   Build a branded card of your footprint to share on LinkedIn\n'
         + '  help                  Show this help\n'
         + '  clear                 Clear the screen\n'
         + '  exit | quit           Close the shell\n\n'

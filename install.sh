@@ -52,6 +52,7 @@ FILES=(
   "bin/sh-eval.js"
   "bin/report.js"
   "bin/certify.js"
+  "bin/share.js"
 )
 
 say()  { printf "  %b\n" "$1"; }
@@ -81,6 +82,8 @@ say  "  ${B}certify${N}       certifies your skills from your actual project cod
 say  "                maps your stack to Shakers Skills and returns a per-skill"
 say  "                assessment. Code is sampled, secret-scrubbed, sent for"
 say  "                analysis, and never stored."
+say  "  ${B}share${N}         turns your footprint result into a branded card (built"
+say  "                offline; PNG exported in your browser) to post on LinkedIn."
 say  ""
 
 # ─── Requirements ───────────────────────────────────────────────────────────

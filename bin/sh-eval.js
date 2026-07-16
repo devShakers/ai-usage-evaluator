@@ -25,6 +25,7 @@ const { createReplStdin } = require('../src/repl-stdin');
 const { runRepl, renderGoodbye } = require('../src/repl-shell');
 const { run: runFootprint } = require('./report');
 const { run: runCertify } = require('./certify');
+const { run: runShare } = require('./share');
 
 let VERSION = '';
 try {
@@ -65,7 +66,7 @@ async function main() {
     stdin,
     lang,
     version: VERSION,
-    deps: { runFootprint, runCertify },
+    deps: { runFootprint, runCertify, runShare },
   });
 
   stdin.close();
