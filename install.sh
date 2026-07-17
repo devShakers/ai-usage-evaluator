@@ -241,12 +241,51 @@ say "  ${Y}qualification.${N}"
 say "  ${Y}[This notice is pending review by a legal/labor expert and is NOT FINAL.]${N}"
 printf "\n"
 
-# Notice if ~/.local/bin is not in the PATH
-case ":$PATH:" in
-  *":$BIN_DIR:"*) ;;
-  *)
-    say "  ${Y}Note:${N} $BIN_DIR is not in your PATH. Add it with:"
-    say "    ${C}echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc && source ~/.bashrc${N}"
-    say "  (or zsh: ~/.zshrc). Meanwhile you can run: ${C}$SHIM${N}\n"
-    ;;
-esac
+# ─── Ensure BIN_DIR is on PATH ──────────────────────────────────────────────
+# The launcher lives in $BIN_DIR (default ~/.local/bin), which is NOT on the
+# default macOS/zsh PATH (/etc/paths ships /usr/local/bin, not ~/.local/bin).
+# Previous installs only PRINTED a hint here — easy to miss, and it pointed at
+# ~/.bashrc even for zsh users — which is exactly how `sh-eval: command not
+# found` kept happening despite a "successful" install (verification runs node
+# directly, so it never exercises PATH). Now we append the export to the user's
+# shell rc, idempotently, and only when the dir isn't already reachable — and we
+# ALWAYS print what we changed plus the one line to run in the current shell.
+# We keep the tool user-scoped in ~/.local/bin (no sudo) rather than dropping it
+# in /usr/local/bin (already on PATH, but system-wide and usually root-owned).
+ensure_on_path() {
+  case ":$PATH:" in
+    *":$BIN_DIR:"*) return 0 ;;   # already reachable this session
+  esac
+
+  local shell_name rc export_line marker
+  shell_name="$(basename "${SHELL:-}")"
+  case "$shell_name" in
+    zsh)  rc="$HOME/.zshrc" ;;
+    bash) if [ -f "$HOME/.bash_profile" ]; then rc="$HOME/.bash_profile"; else rc="$HOME/.bashrc"; fi ;;
+    *)    rc="" ;;   # unknown shell — don't guess, just print the hint
+  esac
+
+  export_line="export PATH=\"$BIN_DIR:\$PATH\""
+  marker="# added by ai-footprint installer (sh-eval on PATH)"
+
+  if [ -n "$rc" ]; then
+    if [ -f "$rc" ] && grep -qF "$marker" "$rc" 2>/dev/null; then
+      say "\n  ${G}+${N} $BIN_DIR already on PATH via $rc (left as-is)"
+    else
+      if printf '\n%s\n%s\n' "$marker" "$export_line" >> "$rc" 2>/dev/null; then
+        say "\n  ${G}+${N} Added $BIN_DIR to your PATH in ${B}$rc${N}"
+      else
+        say "\n  ${Y}Note:${N} couldn't write $rc. Add this line yourself:"
+        say "    ${C}$export_line${N}"
+      fi
+    fi
+    say "  To use ${C}sh-eval${N} in ${B}this${N} terminal right now, run:"
+    say "    ${C}$export_line${N}"
+    say "  New terminals pick it up automatically. Or run it directly: ${C}$SHIM${N}\n"
+  else
+    say "\n  ${Y}Note:${N} $BIN_DIR is not in your PATH. Add it with:"
+    say "    ${C}$export_line${N}"
+    say "  then restart your shell. Meanwhile you can run: ${C}$SHIM${N}\n"
+  fi
+}
+ensure_on_path
