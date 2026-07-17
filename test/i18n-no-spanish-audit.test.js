@@ -95,7 +95,10 @@ for (const tierKey of ['T2', 'T7']) {
   });
 
   test(`renderTerminal (en, ${tierKey}): no Spanish text anywhere in the report chrome`, () => {
-    const out = stripAnsi(renderTerminal(reportAt(tierKey), MATURITY_BY_TIER[tierKey], 'en'));
+    // Sweep BOTH the default report and the --roadmap-only output (each has its
+    // own copy) so no Spanish leaks in either mode.
+    const out = stripAnsi(renderTerminal(reportAt(tierKey), MATURITY_BY_TIER[tierKey], 'en'))
+      + '\n' + stripAnsi(renderTerminal(reportAt(tierKey), MATURITY_BY_TIER[tierKey], 'en', { showRoadmap: true }));
     assert.equal(SPANISH_CHAR_RE.test(out), false, 'found an accented/Spanish-punctuation character in the English report');
     for (const spanish of KNOWN_SPANISH_STRINGS) {
       assert.equal(out.includes(spanish), false, `found the Spanish string "${spanish}" in the English terminal report`);
@@ -116,21 +119,20 @@ test('renderHtml (en): the English tier name and section headings ARE present (p
 });
 
 test('renderTerminal (en): the English tier name and section headings ARE present', () => {
-  // ADR-016: pass { showRoadmap } so the roadmap section (and its EN tier name)
-  // is rendered too — it's hidden by default now, behind --roadmap.
-  const out = stripAnsi(renderTerminal(reportAt('T2'), MATURITY_BY_TIER.T2, 'en', { showRoadmap: true }));
-  assert.match(out, /Detected/);
-  // The terminal was condensed (CPO, 2026-07-16): the "Environment" block was
-  // dropped from the terminal (it stays in the HTML — see the renderHtml check
-  // above). Anchor on the EN header subtitle instead, which is EN-only ("perfil
-  // de uso de IA" in es) and always present, so this still verifies the EN
-  // render carries English copy, not Spanish.
-  assert.match(out, /AI usage profile/);
-  assert.match(out, /Project technologies/);
-  assert.match(out, /Agents/);
-  assert.match(out, /Your next level/);
-  assert.match(out, /Tier analysis: why this level/);
-  assert.match(out, /Bench with notes/);
+  // Default mode carries the report headings + tier name (Environment is
+  // HTML-only after the CPO condense; "AI usage profile" is the EN-only header
+  // subtitle, always present).
+  const def = stripAnsi(renderTerminal(reportAt('T2'), MATURITY_BY_TIER.T2, 'en'));
+  assert.match(def, /Detected/);
+  assert.match(def, /AI usage profile/);
+  assert.match(def, /Project technologies/);
+  assert.match(def, /Agents/);
+  assert.match(def, /Tier analysis: why this level/);
+  // ADR-016: the roadmap heading + the (English) next-tier name live in the
+  // --roadmap-only output.
+  const road = stripAnsi(renderTerminal(reportAt('T2'), MATURITY_BY_TIER.T2, 'en', { showRoadmap: true }));
+  assert.match(road, /Your next level/);
+  assert.match(road, /Bench with notes/); // English tierNames.T2, in the roadmap title
 });
 
 test('renderHtml/renderTerminal (es): Spanish locale is unaffected — Spanish headings still present', () => {

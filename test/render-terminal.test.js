@@ -161,6 +161,26 @@ test('renderTerminal: the roadmap / next-steps is HIDDEN by default (ADR-016)', 
   assert.equal(html.includes('Prompt para implementar'), false);
 });
 
+// ADR-016 (TASK B): the default output carries a dim hint pointing at --roadmap.
+test('renderTerminal: default output includes the --roadmap discoverability hint', () => {
+  const html = strip(renderTerminal(BASE_REPORT, MATURITY_NO_TIER, 'es'));
+  assert.match(html, /footprint --roadmap/);
+});
+
+// ADR-016 (TASK B): --roadmap renders ONLY the roadmap section, NOT the rest of
+// the report (no score meter / tools / technologies / agents), and no hint.
+test('renderTerminal: { showRoadmap } renders ONLY the roadmap, not the full report', () => {
+  const maturity = { level: 3, key: 'power', name: 'Power user', score: 70, emoji: 'x', next: 'x', tier: 5, tierKey: 'T5' };
+  const report = { ...BASE_REPORT, technologies: ['React'], agents: [{ name: 'a', tools: [], model: null, parent: null }] };
+  const html = strip(renderTerminal(report, maturity, 'es', ROADMAP));
+  assert.match(html, /Tu próximo nivel/); // roadmap present
+  assert.equal(html.includes('/100'), false, 'no score meter');
+  assert.equal(html.includes('Detectadas'), false, 'no detected-tools section');
+  assert.equal(html.includes('Tecnologías del proyecto'), false, 'no technologies section');
+  assert.equal(html.includes('Análisis de tier'), false, 'no tier-analysis section');
+  assert.equal(html.includes('footprint --roadmap'), false, 'no self-referential hint in roadmap mode');
+});
+
 test('renderTerminal: with { showRoadmap }, shows the tier roadmap (current -> next) instead of the generic band next-step', () => {
   const maturity = { level: 3, key: 'power', name: 'Power user', score: 70, emoji: 'x', next: 'generic band text', tier: 5, tierKey: 'T5' };
   const html = strip(renderTerminal(BASE_REPORT, maturity, 'es', ROADMAP));
@@ -224,13 +244,16 @@ test('renderTerminal: without maturity.tierKey (older shape, under --roadmap), f
   assert.match(html, /CLAUDE\.md|\.cursorrules|copilot-instructions\.md/);
 });
 
-test('renderTerminal: renders in English too (technologies/agents/roadmap headings translated)', () => {
+test('renderTerminal: renders in English too (default headings + roadmap heading translated)', () => {
   const maturity = { level: 3, key: 'power', name: 'Power user', score: 70, emoji: 'x', next: 'x', tier: 5, tierKey: 'T5' };
   const report = { ...BASE_REPORT, technologies: ['React'] };
-  const html = strip(renderTerminal(report, maturity, 'en', ROADMAP));
-  assert.match(html, /Project technologies/);
-  assert.match(html, /Agents/);
-  assert.match(html, /Your next level/);
+  // Default mode carries the report section headings...
+  const def = strip(renderTerminal(report, maturity, 'en'));
+  assert.match(def, /Project technologies/);
+  assert.match(def, /Agents/);
+  // ...and the --roadmap mode carries the roadmap heading.
+  const road = strip(renderTerminal(report, maturity, 'en', ROADMAP));
+  assert.match(road, /Your next level/);
 });
 
 test('renderTerminal: never throws on a malformed/cyclical agent parent chain', () => {

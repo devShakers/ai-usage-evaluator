@@ -146,6 +146,8 @@ const catalogs = {
       agentUsed: (n) => `usado ${n}×`,
       agentUnused: 'sin uso local',
       agentUsageUnavailable: '(sin historial local de Claude Code: uso no disponible)',
+      // ADR-016: discoverability hint for the next-steps section (behind --roadmap).
+      roadmapHint: 'Ejecuta `footprint --roadmap` para ver los siguientes pasos recomendados.',
       nextStep: 'Siguiente paso',
       files: (n) => `${n} ${n === 1 ? 'fichero' : 'ficheros'}`,
       lastModified: (label) => `última modificación: ${label}`,
@@ -701,6 +703,8 @@ const catalogs = {
       agentUsed: (n) => `used ${n}×`,
       agentUnused: 'no local use',
       agentUsageUnavailable: '(no local Claude Code history: usage unavailable)',
+      // ADR-016: discoverability hint for the next-steps section (behind --roadmap).
+      roadmapHint: 'Run `footprint --roadmap` to see recommended next steps.',
       nextStep: 'Next step',
       files: (n) => `${n} ${n === 1 ? 'file' : 'files'}`,
       lastModified: (label) => `last modified: ${label}`,

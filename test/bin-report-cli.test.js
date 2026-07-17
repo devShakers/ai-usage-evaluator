@@ -291,8 +291,8 @@ test('bin/report.js: the plain-text terminal report includes technologies, agent
   );
 
   const { code, stdout } = await runCli({
-    // ADR-016: --roadmap to also render the next-steps block (hidden by default).
-    args: ['--no-save', '--root', tmpProjectDir, '--roadmap'],
+    // Default report (ADR-016): technologies + agents shown, roadmap hidden.
+    args: ['--no-save', '--root', tmpProjectDir],
     stdin: 'n\n',
     env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
   });
@@ -304,8 +304,8 @@ test('bin/report.js: the plain-text terminal report includes technologies, agent
   // Agents section (structural org chart, always available even without a
   // reachable synthesis endpoint).
   assert.match(stdout, /backend-dev/);
-  // Under --roadmap, some next-step framing is shown (tier roadmap or fallback).
-  assert.match(stdout, /Tu próximo nivel|Your next level|Next step|Siguiente paso/);
+  // The default output points at --roadmap for the next-steps section.
+  assert.match(stdout, /footprint --roadmap/);
 });
 
 // talents-ai-score, description-always-present: real-shaped agent files
@@ -560,8 +560,9 @@ test('bin/report.js: a roadmap endpoint returning a valid, count-matching respon
     // The "content adapted" personalization NOTICE stays HTML-only (not
     // reintroduced) — HTML coverage in test/render-roadmap-personalization.test.js.
     assert.equal(/Contenido adaptado a tu proyecto|Content adapted to your project/.test(stdout), false);
-    // The blocking criterion is always curated (deterministic), personalized or not.
-    assert.match(stdout, /Criterio exacto que te impide|Exact criterion blocking/);
+    // ADR-016: --roadmap prints ONLY the roadmap — the tier-analysis blocking
+    // criterion is part of the DEFAULT report, not this output, so it's absent here.
+    assert.equal(/Criterio exacto que te impide|Exact criterion blocking/.test(stdout), false);
   } finally {
     server.close();
     fs.rmSync(tmpHomeDir, { recursive: true, force: true });

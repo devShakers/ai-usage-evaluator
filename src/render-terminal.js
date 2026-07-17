@@ -320,9 +320,22 @@ function renderTerminal(report, maturity, lang, opts = {}) {
 
   const levelName = t.levelNames[maturity.key] || maturity.name;
 
+  // A compact brand header in BOTH modes for orientation.
   p();
   p(`${c.bold}${c.cyan}  AI FOOTPRINT${c.reset}${c.gray}  ·  ${t.terminal.brandSub}${c.reset}`);
   p(`${c.gray}  ${new Date(report.generatedAt).toLocaleString()}  ·  ${t.terminal.toolsDetected(report.tools.filter((x) => x.detected).length, report.tools.length)}${c.reset}`);
+
+  // `--roadmap` (opts.showRoadmap): render ONLY the next-steps/roadmap section
+  // (header + steps + the copyable implementation prompt) — NOT the rest of the
+  // report. The default report doesn't reprint here.
+  if (opts.showRoadmap) {
+    sep(p);
+    printRoadmap(report, maturity, t, lang, p);
+    return lines.join('\n');
+  }
+
+  // Default report: score -> why -> tools -> technologies -> agents, then a
+  // dim hint pointing at --roadmap (so the next-steps section is discoverable).
 
   // 1. The score / level meter — the "nota" FIRST.
   sep(p);
@@ -357,12 +370,9 @@ function renderTerminal(report, maturity, lang, opts = {}) {
   // 5. Agents — one line per agent, ↓ nesting, compact score + usage.
   printAgents(report, t, p);
 
-  // 6. Tier roadmap / next steps — ONLY behind --roadmap (ADR-016), never in
-  // the default output. Environment is gone entirely.
-  if (opts.showRoadmap) {
-    sep(p);
-    printRoadmap(report, maturity, t, lang, p);
-  }
+  // Discoverability hint (dim): how to see the next-steps/roadmap section.
+  p(`  ${c.dim}${t.terminal.roadmapHint}${c.reset}`);
+  p();
 
   return lines.join('\n');
 }

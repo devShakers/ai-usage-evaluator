@@ -6,6 +6,7 @@ const http = require('http');
 
 const {
   PROMPT_VERSION,
+  MAX_DEFINITION_CHARS,
   buildAgentEvaluationRequest,
   requestAgentEvaluation,
 } = require('../src/agent-evaluation');
@@ -36,6 +37,22 @@ test('buildAgentEvaluationRequest: frozen-contract shape — definition (scrubbe
   assert.equal(a.parent, null);
   assert.ok('definition' in a && !('description' in a), 'field is `definition`, not `description`');
   assert.equal(/secret@example\.com|AKIA1234567890ABCDEF/.test(a.definition), false, 'secrets scrubbed');
+});
+
+test('buildAgentEvaluationRequest: caps each definition to MAX_DEFINITION_CHARS (prefix, no ellipsis)', () => {
+  assert.equal(MAX_DEFINITION_CHARS, 2000);
+  // Long, secret-free text (spaced words so scrub's long-token rule doesn't fire).
+  const long = 'clear boundaries and structure. '.repeat(300); // ~9600 chars
+  assert.ok(long.length > MAX_DEFINITION_CHARS);
+  const body = buildAgentEvaluationRequest([{ name: 'a' }], [{ name: 'a', definition: long }]);
+  assert.equal(body.agents[0].definition.length, MAX_DEFINITION_CHARS);
+  assert.equal(body.agents[0].definition, long.slice(0, MAX_DEFINITION_CHARS)); // plain prefix, no ellipsis
+  assert.equal(body.agents[0].definition.endsWith('…'), false);
+});
+
+test('buildAgentEvaluationRequest: a short definition is sent whole (under the cap)', () => {
+  const body = buildAgentEvaluationRequest([{ name: 'a' }], [{ name: 'a', definition: 'short and clear' }]);
+  assert.equal(body.agents[0].definition, 'short and clear');
 });
 
 test('requestAgentEvaluation: null when no endpoint (graceful degrade)', async () => {

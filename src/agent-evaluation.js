@@ -40,16 +40,35 @@ const { scrubSecrets } = require('./agent-synthesis');
 const DEFAULT_TIMEOUT_MS = 8000;
 const PROMPT_VERSION = 'agent-eval-v1';
 
+// Cap each agent definition to a prefix before sending. Full agent bodies can be
+// 5-8k chars each; sending 8 of them overflows the model's output budget (502s
+// the endpoint) and needlessly widens egress. Definition-QUALITY (clarity,
+// boundaries, structure) is well-assessable from a substantial prefix — the
+// frontmatter description + the start of the body. Cut on a character boundary
+// (no ellipsis); truncation is fine. Applied AFTER scrub so a secret straddling
+// the cut can't leak a half-redacted fragment.
+const MAX_DEFINITION_CHARS = 2000;
+
 /* ---------- request builder ---------- */
 
 // Builds the frozen-contract body from the deterministic org chart (structure)
-// + the raw descriptions (ADR-010's gated parse), scrubbing each definition.
-function buildAgentEvaluationRequest(structuralAgents, descriptionsByName) {
-  const descMap = new Map((descriptionsByName || []).map((d) => [d.name, d.description]));
+// + the per-agent definition text, scrubbing each definition. The list carries
+// `.definition` (full frontmatter description + body — src/agent-org-chart.js#
+// parseAgentDefinitions); `.description` is accepted as a fallback for callers/
+// tests passing the frontmatter-only shape. An agent with no text yields an
+// empty definition, which the backend OMITS (degrade-by-omission) → no score —
+// so callers SHOULD pass the full definition (description + body), not just the
+// one-line description, or the agent gets no score.
+function buildAgentEvaluationRequest(structuralAgents, definitionsByName) {
+  const defMap = new Map(
+    (definitionsByName || []).map((d) => [d.name, d.definition != null ? d.definition : d.description]),
+  );
   return {
     agents: (structuralAgents || []).map((a) => ({
       name: a.name,
-      definition: scrubSecrets(descMap.get(a.name) || ''),
+      // Scrub first, THEN cap to the prefix — so a secret straddling the cut is
+      // already redacted and can't leak a half-matched fragment.
+      definition: scrubSecrets(defMap.get(a.name) || '').slice(0, MAX_DEFINITION_CHARS),
       tools: Array.isArray(a.tools) ? a.tools : [],
       model: a.model || null,
       parent: a.parent || null,
@@ -151,6 +170,7 @@ async function requestAgentEvaluation(requestBody, { endpoint, timeoutMs = DEFAU
 
 module.exports = {
   PROMPT_VERSION,
+  MAX_DEFINITION_CHARS,
   buildAgentEvaluationRequest,
   requestAgentEvaluation,
 };

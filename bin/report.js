@@ -19,7 +19,7 @@ const {
 } = require('../src/share');
 const { runConsentPrompt } = require('../src/consent-flow');
 const { createStdinAsk } = require('../src/stdin-ask');
-const { parseAgentDescriptions } = require('../src/agent-org-chart');
+const { parseAgentDescriptions, parseAgentDefinitions } = require('../src/agent-org-chart');
 const { buildSynthesisRequest, requestAgentSynthesis } = require('../src/agent-synthesis');
 const { collectAgentUsage } = require('../src/agent-usage');
 const { buildAgentEvaluationRequest, requestAgentEvaluation } = require('../src/agent-evaluation');
@@ -204,10 +204,12 @@ async function maybeEvaluateAgents(report, root) {
   if (!endpoint) return null;
 
   try {
-    const descriptions = Array.isArray(report.agentDescriptions)
-      ? report.agentDescriptions
-      : parseAgentDescriptions(root);
-    const requestBody = buildAgentEvaluationRequest(report.agents, descriptions);
+    // Evaluate the FULL definition (frontmatter description + body), not just
+    // the one-line description — a body-defined agent has an empty frontmatter
+    // description, which the backend would omit (no score). See
+    // src/agent-org-chart.js#parseAgentDefinitions.
+    const definitions = parseAgentDefinitions(root);
+    const requestBody = buildAgentEvaluationRequest(report.agents, definitions);
     return await requestAgentEvaluation(requestBody, { endpoint });
   } catch {
     return null; // never breaks the local report

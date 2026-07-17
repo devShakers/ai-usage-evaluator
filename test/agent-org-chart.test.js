@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { parseAgentOrgChart, parseAgentDescriptions } = require('../src/agent-org-chart');
+const { parseAgentOrgChart, parseAgentDescriptions, parseAgentDefinitions } = require('../src/agent-org-chart');
 
 /*
  * talents-ai-score, issue 009 (ADR-009): deterministic (no-LLM) parser of the
@@ -54,6 +54,45 @@ function writeAgentFile(root, relPath, content) {
   fs.writeFileSync(full, content);
   return full;
 }
+
+// ADR-016 agent evaluation: parseAgentDefinitions must return the FULL authored
+// definition (frontmatter description + body). This is the bug fix for "no agent
+// scores": body-defined agents (thin/absent frontmatter description) previously
+// sent an empty definition to the evaluation backend, which then omitted them.
+test('parseAgentDefinitions: a BODY-defined agent (no frontmatter description) still yields a non-empty definition (the body)', () => {
+  writeAgentFile(
+    tmpDir,
+    'body-only.md',
+    [
+      '---',
+      'name: body-only',
+      'model: opus',
+      'tools: Read, Edit',
+      '---',
+      'You are a refactoring agent. Boundaries: never change public APIs;',
+      'always keep tests green. Structure output as findings, diff, risks.',
+    ].join('\n'),
+  );
+  // The frontmatter-only view is empty for this agent...
+  const desc = parseAgentDescriptions(tmpDir).find((d) => d.name === 'body-only');
+  assert.equal(desc.description, '');
+  // ...but the definition view carries the body.
+  const def = parseAgentDefinitions(tmpDir).find((d) => d.name === 'body-only');
+  assert.ok(def.definition.length > 0, 'definition is not empty');
+  assert.match(def.definition, /refactoring agent/);
+  assert.match(def.definition, /never change public APIs/);
+});
+
+test('parseAgentDefinitions: concatenates the frontmatter description AND the body', () => {
+  writeAgentFile(
+    tmpDir,
+    'both.md',
+    ['---', 'name: both', 'description: One-line summary.', 'model: sonnet', '---', 'Detailed body instructions here.'].join('\n'),
+  );
+  const def = parseAgentDefinitions(tmpDir).find((d) => d.name === 'both');
+  assert.match(def.definition, /One-line summary\./);
+  assert.match(def.definition, /Detailed body instructions here\./);
+});
 
 test('parseAgentOrgChart: no .claude/agents directory -> empty array, never throws', () => {
   const agents = parseAgentOrgChart(tmpDir);
