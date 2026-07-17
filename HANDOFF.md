@@ -1,10 +1,23 @@
 # AI Footprint — Handoff document (context for another agent)
 
-This document summarizes the project's current architecture and status so
-another agent can continue without the conversation history. It reflects
-the code on `feat/level-up-framework` and the decisions in
-`active-work/talents-ai-score/decisions.md` (ADRs referenced by number
-below; **read that file for full rationale**, this is a summary).
+> **⚠️ PARTIALLY STALE — read `README.md` first for the current surface.**
+> This handoff predates three later changes and has NOT been fully rewritten:
+> (1) the single entrypoint is now the branded `sh-eval` REPL (`bin/sh-eval.js`,
+> ADR-014) — the standalone `ai-footprint`/`ai-certify` binaries are retired;
+> (2) a second command, **`certify`** (`bin/certify.js`, skill-code-certification
+> issues 004/005), certifies Skills by resolving then sampling + scrubbing +
+> sending code; (3) a third command, **`share`** (`bin/share.js`), builds a
+> branded LinkedIn card from a stored footprint. The `--html` flag is retired
+> (the HTML report is now cumulative, per-project, and always written — see
+> `src/report-store.js`). The sections below on the footprint scan/tier/consent
+> model remain accurate; treat the file list in §3 and the "known gap" in §5 as
+> superseded by `README.md`'s Structure map.
+
+This document summarizes the project's footprint architecture so another agent
+can continue without the conversation history. It reflects the decisions in
+`active-work/talents-ai-score/decisions.md` (ADRs referenced by number below;
+**read that file for full rationale**, this is a summary). The branch it was
+originally written against (`feat/level-up-framework`) is historical.
 
 ## 1. What it is and where it comes from
 
@@ -273,12 +286,11 @@ network).
   Node is available, so it's unconditionally English regardless of OS
   locale (translated as a standalone pass, see git history on this
   branch).
-- **Known gap, not yet fixed**: `bin/report.js#help()`'s `--help` text is a
-  hardcoded Spanish string, not routed through `src/i18n.js` — unlike every
-  other CLI-owned string, it does not respect `--lang`/OS locale. It's also
-  missing the `--consent-status`/`--consent-revoke`/`--consent-email`
-  flags from its own listing. Flagged here for whoever picks this up next;
-  out of scope for the docs-only pass that produced this file.
+- **Resolved (was a known gap)**: `--help` for `footprint`/`certify` is now
+  routed through `src/i18n.js` (`cli.help` / `certify.help`), respects
+  `--lang`/OS locale, and lists the consent flags (`--consent-status`/
+  `-revoke`/`-reset`/`-email`). `install.sh` is still English-only by design
+  (it runs before Node/i18n is available).
 
 ## 6. Data flow and payload (`src/share.js#derivePayload`)
 

@@ -415,8 +415,11 @@ const catalogs = {
         + '      --skills 1,3         Certifica las Skills en esas posiciones (sin selección interactiva)\n'
         + '  -h, --help               Muestra esta ayuda\n\n'
         + 'Fase 1 (resolve): detecta las tecnologías de tu proyecto y consulta al Hub de\n'
-        + 'Shakers qué Skills son certificables. Requiere AI_FOOTPRINT_CERTIFY_ENDPOINT\n'
-        + 'configurado. Antes de cualquier envío se muestra un aviso legal que debes aceptar.',
+        + 'Shakers qué Skills son certificables. Fase 2 (certify): eliges qué Skills\n'
+        + 'certificar, se toma una muestra de código, se depuran los secretos y se envía\n'
+        + 'para una evaluación por Skill (las notas son indicativas, no una cualificación\n'
+        + 'oficial). Requiere AI_FOOTPRINT_CERTIFY_ENDPOINT configurado. Antes de cualquier\n'
+        + 'envío se muestra un aviso legal que debes aceptar.',
       scanningLabel: 'Detectando tecnologías del proyecto…',
       resolvingLabel: 'Consultando Skills certificables…',
       // Aviso legal (ADR-001): asume el proyecto propiedad del Talent y le
@@ -858,8 +861,11 @@ const catalogs = {
         + '      --skills 1,3         Certify the Skills at these positions (no interactive selection)\n'
         + '  -h, --help               Show this help\n\n'
         + 'Phase 1 (resolve): detects your project technologies and asks the Shakers Hub\n'
-        + 'which Skills are certifiable. Requires AI_FOOTPRINT_CERTIFY_ENDPOINT to be set.\n'
-        + 'A legal disclaimer is shown and must be accepted before anything is sent.',
+        + 'which Skills are certifiable. Phase 2 (certify): you pick which Skills to\n'
+        + 'certify, a code sample is taken, secrets are scrubbed, and it is sent for a\n'
+        + 'per-Skill assessment (scores are indicative, not an official qualification).\n'
+        + 'Requires AI_FOOTPRINT_CERTIFY_ENDPOINT to be set. A legal disclaimer is shown\n'
+        + 'and must be accepted before anything is sent.',
       scanningLabel: 'Detecting project technologies…',
       resolvingLabel: 'Resolving certifiable Skills…',
       disclaimer:

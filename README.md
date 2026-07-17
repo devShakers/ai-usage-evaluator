@@ -1,19 +1,23 @@
 # Shakers `sh-eval`
 
 A branded, **local-first** Shakers shell (`sh-eval`) — a small interactive
-REPL that is the single entrypoint to two commands:
+REPL that is the single entrypoint to three commands:
 
 - **`footprint`** — builds, **locally**, a deterministic profile of your AI
   tool setup: which copilots/agents you have configured, how deep that
   configuration goes, and what "level-up" **tier** (T0-T7) you're at, plus a
   curated roadmap of what unlocks the next tier.
 - **`certify`** — certifies Skills from your Shakers catalog by analyzing your
-  local project's code.
+  local project's code (resolve which Skills apply, then sample and send
+  secret-scrubbed code for a per-Skill assessment).
+- **`share`** — turns the project's latest `footprint` result (tier + score)
+  into a branded card you can post on LinkedIn (built offline; the PNG is
+  exported in your browser).
 
 You run `sh-eval` once; it opens the shell with a Shakers wordmark and a
-`sh-eval ›` prompt, and you type `footprint`, `certify`, `help` or `exit`
-inside it. The former standalone `ai-footprint`/`ai-certify` binaries are
-retired — everything now lives in the one shell (ADR-014).
+`sh-eval ›` prompt, and you type `footprint`, `certify`, `share`, `help` or
+`exit` inside it. The former standalone `ai-footprint`/`ai-certify` binaries
+are retired — everything now lives in the one shell (ADR-014).
 
 The footprint mechanism is inspired by `darnoux/claude-code-level-up` (scan
 local signals and classify by level), extended to cover the main AI tools on
@@ -89,6 +93,7 @@ Inside the shell:
 sh-eval › help          # list the commands
 sh-eval › footprint     # scan this project + machine, print the report
 sh-eval › certify       # certify Skills from this project's code
+sh-eval › share         # branded LinkedIn card from this project's footprint
 sh-eval › clear         # clear the screen
 sh-eval › exit          # (or quit / Ctrl-D) leave the shell
 ```
@@ -104,7 +109,16 @@ sh-eval › footprint --force               # with --build-next-level, overwrite
 sh-eval › footprint --lang es|en          # force the report language instead of OS-locale detect
 sh-eval › footprint --consent-status      # view your save decision / email / last send
 sh-eval › footprint --consent-revoke      # revoke consent to save (-> denied), no more sends
+sh-eval › footprint --consent-reset       # clear the decision (-> undecided), ask again next run
 sh-eval › footprint --consent-email E     # change the email on file, without touching the decision
+```
+
+The `share` command reuses the last footprint stored for the project:
+
+```
+sh-eval › share                           # build the LinkedIn card for this project's footprint
+sh-eval › share --root ../other           # card for another project's footprint
+sh-eval › share --lang es|en              # force the surrounding CLI copy language (the card is English)
 ```
 
 Without installing, from a copy of the repo, `sh-eval` is equivalent to
@@ -117,14 +131,25 @@ scanned project** — the report can't slip into a commit by accident.
 ## Skill certification (`certify`)
 
 The `certify` command (typed inside the `sh-eval` shell) certifies Skills from
-your Shakers catalog by analyzing your local project. V1 ships **phase 1
-(resolve)**: it detects your project technologies, asks the Shakers Hub which
-map to a Skill you can certify, and shows certifiable vs non-certifiable — no
-code leaves your machine in this phase.
+your Shakers catalog by analyzing your local project. It runs in two phases,
+back to back:
+
+1. **Resolve** — detects your project technologies, asks the Shakers Hub which
+   map to a Skill you can certify, and shows certifiable vs non-certifiable.
+   Only your email and the detected **technology names** leave the machine here.
+2. **Certify** — you pick which certifiable Skills to certify (interactive
+   multi-select, or `--all` / `--skills 1,3` non-interactively); the CLI takes
+   a deterministic **code sample** for each, runs a secret-scrub pass, sends it
+   for a per-Skill assessment, and shows the result. The assessment report is
+   **always shown**; the analyzed result is persisted to Shakers only if you
+   granted consent up front. Skill scores are **indicative and not
+   reproducible** — not an official qualification.
 
 ```
-sh-eval › certify                       # resolve certifiable Skills for the current project
+sh-eval › certify                       # resolve + certify Skills for the current project
 sh-eval › certify --root ../other       # analyze another directory
+sh-eval › certify --all                 # certify all certifiable Skills (no interactive select)
+sh-eval › certify --skills 1,3          # certify the Skills at these positions
 sh-eval › certify --email you@shakers.com
 sh-eval › certify --lang es|en
 sh-eval › certify --accept-disclaimer   # accept the legal disclaimer non-interactively
@@ -132,11 +157,14 @@ sh-eval › certify --accept-disclaimer   # accept the legal disclaimer non-inte
 
 Unlike `footprint` (which always produces a local report), `certify` is
 inherently server-side: it requires `AI_FOOTPRINT_CERTIFY_ENDPOINT` to be set
-(there is no local-only certification). Before **any** data is sent, a legal
-disclaimer is shown that you must explicitly accept — it assumes the project is
-your own and attributes responsibility to you, so **never run it on a third
-party's code** (e.g. a client under NDA). For local end-to-end testing without
-the real Hub, point it at the reference server's
+(there is no local-only certification). The flow is deliberately front-loaded:
+before **any** data is sent, a legal disclaimer is shown that you must
+explicitly accept (the code-egress gate), and — the first time — the
+save-to-Shakers consent, your email and an email OTP verification are all
+handled up front, **before** you choose Skills. The disclaimer assumes the
+project is your own and attributes responsibility to you, so **never run it on
+a third party's code** (e.g. a client under NDA). For local end-to-end testing
+without the real Hub, point it at the reference server's
 `POST /works/ai-footprint/skill-certification` stub (see below). The real
 implementation lives in `shakers-hub-backend`.
 
@@ -327,6 +355,9 @@ Routes: `GET /health`, `POST /reports` (`{email, payload}`),
 `POST /works/ai-footprint/agent-synthesis` (deterministic placeholder, not
 a real LLM), `POST /works/ai-footprint/skill-certification` (deterministic
 placeholder for the `certify` resolve/certify contract, not a real LLM),
+`POST /works/ai-footprint/email-verification/request` and
+`.../email-verification/verify` (OTP stub — accepts the fixed code `123456`,
+the real backend sends via HubSpot with a Redis TTL/single-use code),
 `GET /admin/reports` (`X-Admin-Key`, audit).
 
 ## How to add a new tool
@@ -353,34 +384,68 @@ If you want to measure depth, add a probe in `src/scanner.js` inside
 
 ```
 bin/sh-eval.js                   Branded REPL — the single entrypoint (ADR-014)
-src/repl-shell.js                REPL loop, banner, prompt, command dispatch
-src/repl-stdin.js                Shared stdin reader (nested-stdin seam for the REPL)
 bin/report.js                    `footprint` command logic (run(args,{ask}))
 bin/certify.js                   `certify` command logic (run(args,{ask}))
+bin/share.js                     `share` command logic (run(args,{ask}))
+src/repl-shell.js                REPL loop, banner, prompt, command dispatch
+src/repl-stdin.js                Shared stdin reader (nested-stdin seam for the REPL)
+
+── footprint: detection & classification ──
 src/detectors.js                 Catalog of tools and signals
 src/scanner.js                   Scan engine -> report object
-src/maturity.js                  0-4 band (derived from the tier)
-src/tier-engine.js               T0-T7 ladder computation
+src/scan-exclusions.js           Paths/dirs excluded from the scan
+src/tier-engine.js               T0-T7 ladder computation (single source of truth)
 src/tier-analysis.js             "Why this tier" deterministic breakdown
-src/roadmap-content.js           Curated per-tier roadmap content (es/en)
-src/roadmap-prompt.js            Ready-to-paste implementation prompt
-src/roadmap-personalization.js   Optional LLM roadmap-prose personalization client
-src/build-next-level.js          Secondary: writes deterministic starter files
-src/agent-org-chart.js           Deterministic agent org chart parser
-src/agent-synthesis.js           Optional LLM agent-card synthesis client
+src/maturity.js                  0-4 band + 0-100 score (derived from the tier)
 src/mcp-detector.js              MCP server name/category detector
 src/memory-structure-detector.js Context-file import/structure detector
 src/automations-detector.js      Scripts/scheduler automation detector
 src/browser-tools-detector.js    Browser-automation tooling detector
 src/tech-detector.js             Project technologies (frameworks) detector
-src/render-terminal.js           Terminal output
-src/render-html.js               Self-contained HTML dashboard
-src/store.js                     Persistence in the user's home
-src/share.js                     Consent state + derived-payload whitelist + sending
+src/tech-extensions.js           Technology name map / extensions
+src/agent-org-chart.js           Deterministic agent org chart parser (+ hierarchy)
+src/agent-synthesis.js           Optional LLM agent-card synthesis client
+src/roadmap-content.js           Curated per-tier roadmap content (es/en)
+src/roadmap-prompt.js            Ready-to-paste implementation prompt
+src/roadmap-personalization.js   Optional LLM roadmap-prose personalization client
+src/build-next-level.js          Secondary: writes deterministic starter files
+
+── certify: Skill certification ──
+src/certify-args.js              `certify` flag parsing
+src/certify-client.js            Resolve/certify HTTP client (discriminated results)
+src/certify-disclaimer.js        Legal disclaimer + explicit acceptance (egress gate)
+src/certify-render.js            Resolve report renderer
+src/certify-remediation-prompt.js Copyable remediation prompt per Skill
+src/skill-sampler.js             Deterministic per-Skill code sampling (+ scrub)
+src/skill-selection.js           --skills selection parsing
+src/interactive-select.js        Interactive multi-select for Skills
+src/render-certification.js      Certification report (terminal + HTML sections)
+
+── share: LinkedIn card ──
+src/share-card.js                Builds the self-contained branded SVG/HTML card
+src/shakers-wordmark.js          Inlined "shakers" logotype (auto-generated from SVG)
+
+── consent, identity, persistence, reporting ──
 src/consent-flow.js              Short, one-time "save to Shakers?" prompt
+src/consent-skip.js              Explicit reasons the consent prompt is/isn't shown
+src/email-verification.js        Email OTP verification client (gates persistence)
+src/share.js                     Consent state + derived-payload whitelist + sending
+src/report-store.js              Per-project cumulative report state + HTML (persistence)
+src/report-theme.js              Shared Shakers HTML theme (tokens/base/copy script)
+src/store.js                     Legacy latest/history store — UNUSED (kept on disk)
+src/render-terminal.js           Terminal output (condensed view)
+src/render-html.js               Self-contained HTML dashboard (full detail)
+src/osc-link.js                  OSC 8 clickable terminal links
+
+── shared plumbing ──
+src/cli-args.js                  `footprint` flag parsing
 src/config.js                    Endpoint configuration from env vars, never hardcoded
+src/env-paths.js                 Home-directory resolution (test-overridable)
+src/stdin-ask.js                 Injectable stdin question/answer helper
+src/terminal-progress.js         Status line + spinner for slow calls
 src/locale.js                    OS locale detection
-src/i18n.js                      Report text catalogs (es/en)
+src/i18n.js                      Text catalogs (es/en) — report, CLI, REPL, certify
+
 reference-server/server.js       Reference (stub) ingestion server, not deployed
 install.sh                       Installer (curl | bash, or local)
 ```

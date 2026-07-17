@@ -175,7 +175,7 @@ async function maybePersonalizeRoadmap(report, maturity, lang) {
 }
 
 // Exposed as `run(argv, { ask })` (ADR-014) so the branded REPL
-// (bin/shakers.js) can invoke the SAME logic the `ai-footprint` binary used to
+// (bin/sh-eval.js) can invoke the SAME logic the `footprint` command used to
 // run, without duplicating it. `argv` is the arg array (process.argv.slice(2)
 // when standalone). `ask` is the SHARED stdin reader injected by the REPL — the
 // nested-stdin seam: when present the consent flow reads through it and this

@@ -2,13 +2,16 @@
 'use strict';
 
 /*
- * `ai-certify` — the SECOND binary of this repo (skill-code-certification,
- * issue 004). Sibling of `ai-footprint` (bin/report.js), NOT a subcommand.
+ * `certify` — the certification command of this repo (skill-code-certification,
+ * issues 004/005). Runs as an internal command of the `sh-eval` REPL (ADR-014)
+ * and is still require()-able standalone (`node bin/certify.js`). Historically
+ * the standalone `ai-certify` binary (retired); the logic is unchanged.
  *
- * V1 ships ONLY the RESOLVE phase (ADR-001, phase 1): detect the local
- * project's technologies, ask the Shakers Hub which map to a Skill the
- * Talent can certify, and show certifiable vs non-certifiable. The sampling +
- * code egress + LLM certify phase is issue 005 — deliberately NOT here.
+ * BOTH phases now ship: phase 1 RESOLVE (ADR-001) detects the local project's
+ * technologies and asks the Shakers Hub which map to a certifiable Skill; phase
+ * 2 CERTIFY (issue 005) samples + secret-scrubs + sends code for a per-Skill
+ * assessment (runCertifyPhase below). No egress happens before the explicit
+ * disclaimer acceptance.
  *
  * Zero-dependency invariant (node stdlib only) preserved: every helper is a
  * local src/ module, no third-party package.
@@ -278,7 +281,7 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
 }
 
 // Exposed as `run(argv, { ask })` (ADR-014) so the branded REPL
-// (bin/shakers.js) invokes the SAME certify logic the `ai-certify` binary used
+// (bin/sh-eval.js) invokes the SAME certify logic the `certify` command used
 // to run, without duplicating it. `argv` is the arg array; `ask` is the SHARED
 // stdin reader injected by the REPL (nested stdin) — when present, disclaimer /
 // consent / email / OTP / selection all read through it, and this function
