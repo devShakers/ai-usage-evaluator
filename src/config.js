@@ -82,11 +82,15 @@ function validateEndpoint(value) {
   if (u.protocol !== 'http:' && u.protocol !== 'https:') {
     return { ok: false, reason: 'bad-protocol' };
   }
-  const isLocal = LOCAL_HOSTS.has(u.hostname);
+  // WHATWG URL keeps the brackets on an IPv6 literal (`hostname === '[::1]'`),
+  // but LOCAL_HOSTS stores the bare address (`::1`) — strip the brackets so an
+  // IPv6 loopback endpoint (http://[::1]:PORT/...) is correctly treated as local.
+  const host = u.hostname.replace(/^\[|\]$/g, '');
+  const isLocal = LOCAL_HOSTS.has(host);
   if (!isLocal && u.protocol !== 'https:') {
     return { ok: false, reason: 'insecure-remote' };
   }
-  return { ok: true, value: raw, host: u.hostname, isLocal };
+  return { ok: true, value: raw, host, isLocal };
 }
 
 // Persists the ingest endpoint into config.json after validating it. Returns
