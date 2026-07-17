@@ -288,11 +288,17 @@ const catalogs = {
         + '      --consent-revoke   Revoca el guardado (→ denegado); deja de enviar\n'
         + '      --consent-reset    Borra la decisión (→ sin decidir); vuelve a preguntar\n'
         + '      --consent-email C  Cambia el correo guardado, sin tocar la decisión\n'
+        + '      --set-endpoint URL Guarda el endpoint de ingesta en ~/.config/ai-footprint/config.json\n'
+        + '                         (un host no-local debe ser https). La env var tiene prioridad\n'
+        + '      --show-endpoint    Muestra el endpoint efectivo y de dónde sale (env / config / ninguno)\n'
         + '  -h, --help             Muestra esta ayuda\n\n'
         + 'El informe se genera y se muestra SIEMPRE en tu equipo, y se guarda un informe\n'
         + 'HTML acumulado en local cuyo enlace se imprime en cada ejecución. Antes de\n'
         + 'mostrarlo, la primera vez se te pregunta si quieres GUARDARLO en Shakers (con tu\n'
-        + 'correo); se pregunta una sola vez. Reabre la pregunta con --consent-reset.\n',
+        + 'correo); se pregunta una sola vez. Reabre la pregunta con --consent-reset.\n\n'
+        + 'El destino de envío se resuelve así: AI_FOOTPRINT_INGEST_ENDPOINT (env) > el fichero\n'
+        + 'de config (--set-endpoint) > ninguno. Sin endpoint, el informe se muestra pero no se\n'
+        + 'envía a Shakers.\n',
     },
     // "Construir el siguiente nivel ahora" (talents-ai-score, issue 021):
     // optional, explicit phase — writes the deterministic starter for the
@@ -353,6 +359,11 @@ const catalogs = {
       notObtained: 'No se ha podido registrar tu respuesta; se te volverá a preguntar la próxima vez.',
       deniedSaved: 'Entendido, no se guardará nada. Puedes cambiar de opinión más adelante volviendo a ejecutar el comando.',
       grantedSaved: (email) => `Gracias. A partir de ahora este informe se guardará automáticamente en Shakers (correo: ${email}, máx. 1 vez por hora).`,
+      // Grant persisted pero verificación de correo NO completada (ADR-006): la
+      // decisión se guarda igual (no se vuelve a preguntar), pero no se envía
+      // nada a Shakers hasta verificar el correo. Evita el re-preguntado
+      // infinito cuando el backend de OTP no está disponible.
+      grantedUnverified: (email) => `Gracias. Tu decisión y tu correo (${email}) se han guardado, así que no se te volverá a preguntar. El informe se sigue mostrando siempre, pero no se enviará a Shakers hasta verificar el correo. Vuelve a ejecutar con --consent-reset para reintentar la verificación.`,
       // DX visibility (talents-ai-score): the prompt runs exactly ONCE per
       // talent by design (ADR-007/ADR-011) — a talent who already answered
       // (even in an earlier test run) will never see it again, which read
@@ -370,12 +381,26 @@ const catalogs = {
         decisionDenied: 'Decisión: rechazado (denied)',
         decisionNone: 'Decisión: sin decisión todavía',
         email: (value) => `Correo: ${value || '(sin correo)'}`,
+        verificationPending: 'Correo pendiente de verificar: no se enviará nada a Shakers hasta verificarlo (usa --consent-reset para reintentar).',
         lastSentAt: (value) => `Último guardado: ${value || '(nunca)'}`,
       },
       revoked: 'Consentimiento revocado. No se guardará nada más automáticamente.',
       reset: 'Decisión de consentimiento reiniciada. Se te preguntará de nuevo en la próxima ejecución.',
       emailChanged: (email) => `Correo actualizado a ${email}. Se usará en el próximo guardado.`,
       emailInvalidCli: 'Correo no válido. Uso: footprint --consent-email tu@correo.com',
+    },
+    // Endpoint config (endpoint-config task): --set-endpoint / --show-endpoint
+    // copy. The endpoint decide adónde va el código muestreado, de ahí la regla
+    // https-para-hosts-no-locales. No barre el no-spanish-audit (solo informe).
+    endpoint: {
+      setOk: (url, path) => `Endpoint de ingesta guardado: ${url}\n  (en ${path}). La variable de entorno AI_FOOTPRINT_INGEST_ENDPOINT, si está definida, tiene prioridad.`,
+      errInsecureRemote: 'Endpoint rechazado: un host que no sea localhost/127.0.0.1 debe usar https:// (el endpoint decide adónde se envía tu código). Usa una URL https o un host local.',
+      errInvalidUrl: 'Endpoint rechazado: URL no válida. Debe ser una URL http(s) completa, p.ej. https://tu-hub/api/v1/works/ai-footprint/reports',
+      errEmpty: 'Endpoint rechazado: no se indicó ninguna URL. Uso: footprint --set-endpoint https://tu-hub/api/v1/works/ai-footprint/reports',
+      showEnv: (url) => `Endpoint de ingesta efectivo: ${url}\n  Origen: variable de entorno AI_FOOTPRINT_INGEST_ENDPOINT.`,
+      showConfigFile: (url, path) => `Endpoint de ingesta efectivo: ${url}\n  Origen: fichero de config (${path}).`,
+      showConfigInvalid: (path) => `El fichero de config (${path}) tiene un endpoint no válido o inseguro; se ignora. Corrígelo con footprint --set-endpoint <url>.`,
+      showNone: 'No hay endpoint de ingesta configurado. Define AI_FOOTPRINT_INGEST_ENDPOINT o usa footprint --set-endpoint <url>. Sin él, el informe se sigue mostrando pero no se envía a Shakers.',
     },
     // Email-ownership verification (skill-code-certification / ADR-006): the
     // OTP "modo espera" copy, shared by both binaries. Shown only when the
@@ -750,11 +775,17 @@ const catalogs = {
         + '      --consent-revoke   Revoke saving (→ denied); stops sending\n'
         + '      --consent-reset    Clear the decision (→ undecided); asks again\n'
         + '      --consent-email C  Change the stored email, decision untouched\n'
+        + '      --set-endpoint URL Save the ingest endpoint to ~/.config/ai-footprint/config.json\n'
+        + '                         (a non-local host must be https). The env var takes precedence\n'
+        + '      --show-endpoint    Show the effective endpoint and where it comes from (env / config / none)\n'
         + '  -h, --help             Show this help\n\n'
         + 'The report is ALWAYS generated and shown on your machine, and a cumulative HTML\n'
         + 'report is saved locally whose link is printed on every run. Before showing it,\n'
         + 'the first time you are asked whether to SAVE it in Shakers (with your email);\n'
-        + 'you are asked only once. Reopen the question with --consent-reset.\n',
+        + 'you are asked only once. Reopen the question with --consent-reset.\n\n'
+        + 'The send destination resolves as: AI_FOOTPRINT_INGEST_ENDPOINT (env) > the config\n'
+        + 'file (--set-endpoint) > none. Without an endpoint, the report is shown but not sent\n'
+        + 'to Shakers.\n',
     },
     // Cumulative report (skill-code-certification, reporting redesign) —
     // English mirror. Same content/invariants as the Spanish catalog.
@@ -807,6 +838,11 @@ const catalogs = {
       notObtained: "Couldn't record your answer; you'll be asked again next time.",
       deniedSaved: 'Understood, nothing will be saved. You can change your mind later by running the command again.',
       grantedSaved: (email) => `Thanks. From now on this report will be saved in Shakers automatically (email: ${email}, max. once per hour).`,
+      // Grant persisted but email verification NOT completed (ADR-006): the
+      // decision is saved anyway (you won't be asked again), but nothing is
+      // sent to Shakers until the email is verified. Prevents the infinite
+      // re-prompt when the OTP backend is unavailable.
+      grantedUnverified: (email) => `Thanks. Your decision and email (${email}) have been saved, so you won't be asked again. The report is still always shown, but it won't be sent to Shakers until your email is verified. Re-run with --consent-reset to retry verification.`,
       skipAlreadyDecided: (decision, path) =>
         `Consent already answered (${decision}) — stored at ${path}. `
         + 'Use --consent-status to view it, --consent-revoke to deny, or --consent-reset to be asked again.',
@@ -819,12 +855,26 @@ const catalogs = {
         decisionDenied: 'Decision: denied',
         decisionNone: 'Decision: no decision yet',
         email: (value) => `Email: ${value || '(none)'}`,
+        verificationPending: 'Email pending verification: nothing is sent to Shakers until verified (use --consent-reset to retry).',
         lastSentAt: (value) => `Last saved: ${value || '(never)'}`,
       },
       revoked: 'Consent revoked. Nothing will be saved automatically anymore.',
       reset: 'Consent decision reset. You will be asked again on the next run.',
       emailChanged: (email) => `Email updated to ${email}. It will be used on the next save.`,
       emailInvalidCli: 'Invalid email. Usage: footprint --consent-email you@example.com',
+    },
+    // Endpoint config (endpoint-config task): --set-endpoint / --show-endpoint
+    // copy. The endpoint decides where the sampled code is sent, hence the
+    // https-for-non-local-hosts rule.
+    endpoint: {
+      setOk: (url, path) => `Ingest endpoint saved: ${url}\n  (at ${path}). The AI_FOOTPRINT_INGEST_ENDPOINT environment variable, if set, takes precedence.`,
+      errInsecureRemote: 'Endpoint rejected: a host other than localhost/127.0.0.1 must use https:// (the endpoint decides where your code is sent). Use an https URL or a local host.',
+      errInvalidUrl: 'Endpoint rejected: invalid URL. It must be a full http(s) URL, e.g. https://your-hub/api/v1/works/ai-footprint/reports',
+      errEmpty: 'Endpoint rejected: no URL provided. Usage: footprint --set-endpoint https://your-hub/api/v1/works/ai-footprint/reports',
+      showEnv: (url) => `Effective ingest endpoint: ${url}\n  Source: AI_FOOTPRINT_INGEST_ENDPOINT environment variable.`,
+      showConfigFile: (url, path) => `Effective ingest endpoint: ${url}\n  Source: config file (${path}).`,
+      showConfigInvalid: (path) => `The config file (${path}) has an invalid or insecure endpoint; it is ignored. Fix it with footprint --set-endpoint <url>.`,
+      showNone: 'No ingest endpoint configured. Set AI_FOOTPRINT_INGEST_ENDPOINT or use footprint --set-endpoint <url>. Without it, the report is still shown but not sent to Shakers.',
     },
     // Email-ownership verification (skill-code-certification / ADR-006): the
     // OTP "wait mode" copy, shared by both binaries. Gates PERSISTENCE ONLY —

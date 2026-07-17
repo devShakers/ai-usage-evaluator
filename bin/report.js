@@ -22,7 +22,12 @@ const { runConsentPrompt } = require('../src/consent-flow');
 const { createStdinAsk } = require('../src/stdin-ask');
 const { parseAgentDescriptions } = require('../src/agent-org-chart');
 const { buildSynthesisRequest, requestAgentSynthesis } = require('../src/agent-synthesis');
-const { getSynthesisEndpoint, getRoadmapEndpoint } = require('../src/config');
+const {
+  getSynthesisEndpoint,
+  getRoadmapEndpoint,
+  setIngestEndpoint,
+  resolveIngestEndpoint,
+} = require('../src/config');
 const { buildNextLevelStarter } = require('../src/build-next-level');
 const { withStaticStatus, withSpinner } = require('../src/terminal-progress');
 const { computeConsentSkip } = require('../src/consent-skip');
@@ -47,6 +52,11 @@ function doConsentStatus(catalog) {
     : s.decisionNone;
   process.stdout.write(`  ${decisionLine}\n`);
   process.stdout.write(`  ${s.email(status.email)}\n`);
+  // Surface a granted-but-unverified email (ADR-006): the decision is saved
+  // (no re-prompt) but nothing is sent to Shakers until it's verified.
+  if (status.consent === 'granted' && status.email && !status.emailVerified) {
+    process.stdout.write(`  ${s.verificationPending}\n`);
+  }
   process.stdout.write(`  ${s.lastSentAt(status.lastSentAt)}\n\n`);
 }
 
@@ -70,6 +80,41 @@ function doConsentEmail(newEmail, catalog) {
   } else {
     process.stdout.write(`\n  ${catalog.consent.emailInvalidCli}\n\n`);
     process.exitCode = 1;
+  }
+}
+
+// Endpoint config (endpoint-config task): one-shot, don't scan. Persist the
+// ingest endpoint into ~/.config/ai-footprint/config.json after validating it
+// (a non-local host must be https). The env var still wins at runtime.
+function doSetEndpoint(url, catalog) {
+  const e = catalog.endpoint;
+  const r = setIngestEndpoint(url);
+  if (r.ok) {
+    process.stdout.write(`\n  ${e.setOk(r.value, r.path)}\n\n`);
+  } else {
+    const msg =
+      r.reason === 'insecure-remote' ? e.errInsecureRemote
+      : r.reason === 'invalid-url' || r.reason === 'bad-protocol' ? e.errInvalidUrl
+      : e.errEmpty;
+    process.stdout.write(`\n  ${msg}\n\n`);
+    process.exitCode = 1;
+  }
+}
+
+// Print the effective ingest endpoint and where it resolved from (env var >
+// config file > none), so a Talent can see what's configured without editing
+// or exporting anything.
+function doShowEndpoint(catalog) {
+  const e = catalog.endpoint;
+  const r = resolveIngestEndpoint();
+  if (r.source === 'env') {
+    process.stdout.write(`\n  ${e.showEnv(r.endpoint)}\n\n`);
+  } else if (r.source === 'config-file') {
+    process.stdout.write(`\n  ${e.showConfigFile(r.endpoint, r.path)}\n\n`);
+  } else if (r.source === 'config-file-invalid') {
+    process.stdout.write(`\n  ${e.showConfigInvalid(r.path)}\n\n`);
+  } else {
+    process.stdout.write(`\n  ${e.showNone}\n\n`);
   }
 }
 
@@ -211,6 +256,16 @@ async function run(argv = process.argv.slice(2), { ask: injectedAsk = null } = {
   }
   if (opts.consentEmail) {
     doConsentEmail(opts.consentEmail, catalog);
+    return;
+  }
+
+  // Endpoint config commands: one-shot, don't scan (endpoint-config task).
+  if (opts.setEndpoint !== null) {
+    doSetEndpoint(opts.setEndpoint, catalog);
+    return;
+  }
+  if (opts.showEndpoint) {
+    doShowEndpoint(catalog);
     return;
   }
 

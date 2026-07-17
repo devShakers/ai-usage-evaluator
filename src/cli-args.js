@@ -15,6 +15,14 @@
  *   --consent-reset           clear the decision (-> null), asks again next run
  *   --consent-email <correo>  change the persisted email, decision untouched
  *
+ * skill-code-certification (endpoint-config task): the ingest endpoint can be
+ * persisted in ~/.config/ai-footprint/config.json instead of re-`export`ing
+ * AI_FOOTPRINT_INGEST_ENDPOINT every session. Two one-shot flags manage it
+ * (they act immediately and do NOT scan):
+ *   --set-endpoint <url>  validate + persist the ingest endpoint (a non-local
+ *                         host must be https); env var still wins at runtime
+ *   --show-endpoint       print the effective endpoint and where it came from
+ *
  * skill-code-certification / ADR-003: `--consent-reset` is distinct from
  * `--consent-revoke`. Revoke sets `denied` (a real "no", which also silences
  * the prompt); reset clears the decision back to "no decision yet" so the
@@ -46,6 +54,8 @@ function parseArgs(argv) {
     consentRevoke: false,
     consentReset: false,
     consentEmail: null,
+    setEndpoint: null,
+    showEndpoint: false,
     buildNextLevel: false,
     force: false,
     lang: null,
@@ -60,6 +70,9 @@ function parseArgs(argv) {
     else if (a === '--consent-reset') opts.consentReset = true;
     else if (a === '--consent-email') opts.consentEmail = argv[++i];
     else if (a.startsWith('--consent-email=')) opts.consentEmail = a.slice('--consent-email='.length);
+    else if (a === '--set-endpoint') opts.setEndpoint = argv[++i];
+    else if (a.startsWith('--set-endpoint=')) opts.setEndpoint = a.slice('--set-endpoint='.length);
+    else if (a === '--show-endpoint') opts.showEndpoint = true;
     else if (a === '--build-next-level') opts.buildNextLevel = true;
     else if (a === '--force') opts.force = true;
     else if (a === '--lang') opts.lang = VALID_LANGS.has(argv[++i]) ? argv[i] : null;

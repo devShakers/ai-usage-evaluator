@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 
 const { runConsentPrompt } = require('../src/consent-flow');
-const { loadConsentState, getConsentDecision } = require('../src/share');
+const { loadConsentState, getConsentDecision, getConsentStatus } = require('../src/share');
 const { getCatalog } = require('../src/i18n');
 
 /*
@@ -44,31 +44,54 @@ function scriptedAsk(answers) {
   };
 }
 
-// skill-code-certification / ADR-006: granting now requires a VERIFIED email.
-// `verifyEmail` is injected in these tests so they never touch the network;
-// `passVerify` simulates a successful OTP verification, `failVerify` a
-// cancelled/failed one. The full wait-mode loop is covered in
-// test/email-verification.test.js.
+// skill-code-certification / ADR-006 (revised — re-prompt bug fix): the GRANT
+// DECISION + email are persisted UP-FRONT, before verification. Verification
+// gates only whether anything is SENT to Shakers (autoShare/shareCertification
+// refuse while emailVerified===false) — NOT the local decision. This is what
+// stops the infinite re-prompt when the OTP backend is unavailable: a granted
+// answer sticks and later runs skip the prompt (computeConsentSkip).
+// `verifyEmail` is injected so these tests never touch the network; `passVerify`
+// simulates a successful OTP round, `failVerify` a cancelled/failed one. The
+// full wait-mode loop is covered in test/email-verification.test.js.
 const passVerify = async () => ({ verified: true });
 const failVerify = async () => ({ verified: false, reason: 'cancelled' });
 
-test('runConsentPrompt: accept -> asks for email -> verifies -> persists granted + email', async () => {
+test('runConsentPrompt: accept -> asks for email -> verifies -> persists granted + email + emailVerified:true', async () => {
   const ask = scriptedAsk(['s', 'talent@example.com']);
   const decision = await runConsentPrompt({ ask, catalog: catalogEs, verifyEmail: passVerify });
   assert.equal(decision, 'granted');
   const state = loadConsentState();
   assert.equal(getConsentDecision(state), 'granted');
   assert.equal(state.email, 'talent@example.com');
+  assert.equal(state.emailVerified, true);
 });
 
-// --- ADR-006: email verification gates PERSISTENCE only ---
+// --- ADR-006 (revised): verification gates SENDING, not the local decision ---
 
-test('runConsentPrompt: accept + valid email but verification NOT passed -> nothing persisted, decision null (asked again next run)', async () => {
+test('runConsentPrompt: accept + valid email but verification FAILS -> decision STILL persisted (granted, unverified) so it is NOT asked again', async () => {
   const ask = scriptedAsk(['s', 'talent@example.com']);
   const decision = await runConsentPrompt({ ask, catalog: catalogEs, verifyEmail: failVerify });
-  assert.equal(decision, null);
-  // Nothing persisted: no granted decision, no email saved.
-  assert.equal(loadConsentState(), null);
+  // The grant sticks (no infinite re-prompt) ...
+  assert.equal(decision, 'granted');
+  const state = loadConsentState();
+  assert.equal(getConsentDecision(state), 'granted');
+  assert.equal(state.email, 'talent@example.com');
+  // ... but the email is marked unverified, so autoShare won't send under it.
+  assert.equal(state.emailVerified, false);
+  assert.equal(getConsentStatus().emailVerified, false);
+});
+
+test('runConsentPrompt: grant is recorded BEFORE verification runs (persisted even if verification never resolves the flag)', async () => {
+  let stateAtVerifyTime = null;
+  const spyVerify = async () => {
+    // At this point the decision must already be on disk (recorded up-front).
+    stateAtVerifyTime = loadConsentState();
+    return { verified: false, reason: 'technical' };
+  };
+  const ask = scriptedAsk(['s', 'talent@example.com']);
+  await runConsentPrompt({ ask, catalog: catalogEs, verifyEmail: spyVerify });
+  assert.equal(stateAtVerifyTime && stateAtVerifyTime.consent, 'granted');
+  assert.equal(stateAtVerifyTime.emailVerified, false);
 });
 
 test('runConsentPrompt: verification is only reached AFTER a valid email is captured (never on decline)', async () => {

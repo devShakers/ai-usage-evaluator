@@ -1,6 +1,6 @@
 'use strict';
 
-const { isValidEmail, recordConsent } = require('./share');
+const { isValidEmail, recordConsent, setEmailVerified } = require('./share');
 const { getEmailVerificationRequestUrl, getEmailVerificationVerifyUrl } = require('./config');
 const { runEmailVerification } = require('./email-verification');
 
@@ -104,18 +104,28 @@ async function runConsentPrompt({ ask, catalog, verifyEmail = defaultVerifyEmail
     return null;
   }
 
-  // Prove ownership of the email before persisting anything under it. The
-  // report is already on screen; a non-verified outcome persists NOTHING and
-  // re-asks next run (reusing the `notObtained` closure). runEmailVerification
-  // already printed the specific reason (invalid/expired/network/unavailable).
+  // Persist the GRANT + email UP-FRONT, before verification, as UNVERIFIED.
+  // ADR-006 gates SENDING to Shakers on a proven email — NOT the local consent
+  // decision. Recording the decision now makes a granted answer STICK: later
+  // runs skip the prompt (computeConsentSkip) instead of re-asking
+  // consent+email+OTP every single time when the OTP backend is unavailable
+  // (the bug this fixes — infinite re-prompt). Nothing is SENT yet: autoShare/
+  // shareCertification refuse to send while `emailVerified === false`.
+  recordConsent('granted', email, { verified: false });
+
+  // Prove ownership before anything is SENT under this email. The report is
+  // already on screen. On success we flip the flag so sending is unlocked; on
+  // any failure (backend down, cancelled, expired, exhausted) the DECISION
+  // still stands — no re-prompt next run — but nothing is sent until verified.
+  // runEmailVerification already printed the specific reason.
   const verification = await verifyEmail({ email, ask, catalog });
-  if (!verification || !verification.verified) {
-    process.stdout.write(`  ${c.notObtained}\n\n`);
-    return null;
+  if (verification && verification.verified) {
+    setEmailVerified(true);
+    process.stdout.write(`  ${c.grantedSaved(email)}\n\n`);
+    return 'granted';
   }
 
-  recordConsent('granted', email);
-  process.stdout.write(`  ${c.grantedSaved(email)}\n\n`);
+  process.stdout.write(`  ${c.grantedUnverified(email)}\n\n`);
   return 'granted';
 }
 
