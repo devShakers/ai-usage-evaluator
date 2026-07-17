@@ -37,15 +37,17 @@ const BASE_REPORT = {
 const MATURITY_NO_TIER = { level: 1, key: 'exploring', name: 'Exploring', score: 20, emoji: 'x', next: 'algo' };
 const ROADMAP = { showRoadmap: true };
 
-test('renderTerminal: technologies heading always present; empty state when none detected', () => {
+// ADR-016 (2026-07-18): empty sections are PRUNED — no header, no placeholder.
+test('renderTerminal: the technologies section is OMITTED entirely when none recognized (no empty placeholder)', () => {
   const html = strip(renderTerminal(BASE_REPORT, MATURITY_NO_TIER, 'es'));
-  assert.match(html, /Tecnolog[íi]as del proyecto/);
-  assert.match(html, /No se reconoci[óo] ningún framework/);
+  assert.equal(html.includes('Tecnologías del proyecto'), false);
+  assert.equal(html.includes('No se reconoció ningún framework'), false);
 });
 
 test('renderTerminal: recognized framework technologies are listed', () => {
   const report = { ...BASE_REPORT, technologies: ['React', 'NestJS'] };
   const html = strip(renderTerminal(report, MATURITY_NO_TIER, 'es'));
+  assert.match(html, /Tecnolog[íi]as del proyecto/);
   assert.match(html, /React/);
   assert.match(html, /NestJS/);
 });
@@ -59,10 +61,10 @@ test('renderTerminal: no Environment section in the terminal (ADR-016)', () => {
   assert.equal(html.includes('v22.0.0'), false);
 });
 
-test('renderTerminal: agents heading always present; empty state when no agents', () => {
+test('renderTerminal: the agents section is OMITTED entirely when there are no agents (no empty placeholder)', () => {
   const html = strip(renderTerminal(BASE_REPORT, MATURITY_NO_TIER, 'es'));
-  assert.match(html, /Agentes/);
-  assert.match(html, /No se han detectado agentes/);
+  assert.equal(html.includes('Agentes'), false);
+  assert.equal(html.includes('No se han detectado agentes'), false);
 });
 
 // ADR-016: one line per agent — name (+ symbolic name) + model + hierarchy. NO
@@ -130,7 +132,7 @@ test('renderTerminal: a note is shown when local usage history is unavailable', 
   assert.match(html, /sin historial local de Claude Code/);
 });
 
-test('renderTerminal: agent synthesis symbolic name is shown when present, real name kept as a badge', () => {
+test('renderTerminal: agent synthesis symbolic name shown, real name as badge, summarized description shown', () => {
   const report = {
     ...BASE_REPORT,
     agents: [{ name: 'orchestrator', tools: ['Read'], model: 'opus', parent: null }],
@@ -139,8 +141,19 @@ test('renderTerminal: agent synthesis symbolic name is shown when present, real 
   const html = strip(renderTerminal(report, MATURITY_NO_TIER, 'es'));
   assert.match(html, /El Jefe/);
   assert.match(html, /\(orchestrator\)/); // real structural name kept visible
-  // ADR-016: the description phrase is NOT shown in the terminal anymore (HTML only).
-  assert.equal(html.includes('Coordina el trabajo.'), false);
+  // ADR-016 (2026-07-18): a summarized description IS shown per agent again (dim line).
+  assert.match(html, /Coordina el trabajo/);
+});
+
+// ADR-016 (2026-07-18): a summarized frontmatter description shows under each agent.
+test('renderTerminal: a summarized frontmatter description shows under each agent', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'a', tools: [], model: 'opus', parent: null }],
+    agentDescriptions: [{ name: 'a', description: 'Does a very specific thing with clear boundaries and structure.' }],
+  };
+  const html = strip(renderTerminal(report, MATURITY_NO_TIER, 'es'));
+  assert.match(html, /Does a very specific thing/);
 });
 
 test('renderTerminal: an agent with neither synthesis nor a declared description still shows its name', () => {
@@ -246,7 +259,8 @@ test('renderTerminal: without maturity.tierKey (older shape, under --roadmap), f
 
 test('renderTerminal: renders in English too (default headings + roadmap heading translated)', () => {
   const maturity = { level: 3, key: 'power', name: 'Power user', score: 70, emoji: 'x', next: 'x', tier: 5, tierKey: 'T5' };
-  const report = { ...BASE_REPORT, technologies: ['React'] };
+  // Include data for both sections so neither is pruned (ADR-016).
+  const report = { ...BASE_REPORT, technologies: ['React'], agents: [{ name: 'a', tools: [], model: 'opus', parent: null }] };
   // Default mode carries the report section headings...
   const def = strip(renderTerminal(report, maturity, 'en'));
   assert.match(def, /Project technologies/);

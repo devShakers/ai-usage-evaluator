@@ -37,7 +37,13 @@ const { scrubSecrets } = require('./agent-synthesis');
  *      because the evaluation endpoint is slow, down, or misbehaving.
  */
 
-const DEFAULT_TIMEOUT_MS = 8000;
+// Definition-quality scoring runs a real model with a raised token/thinking
+// budget server-side, so it is INHERENTLY slow — ~15-16s for 8 agents on the
+// live backend. The timeout must comfortably exceed that or the CLI aborts
+// early → null → no scores render (this was the "scores never show" bug: the
+// old 8s default fired before the ~15.7s response arrived). 60s leaves ample
+// head-room. (agent-synthesis.js keeps its own short 8s default — it's fast.)
+const DEFAULT_TIMEOUT_MS = 60000;
 const PROMPT_VERSION = 'agent-eval-v1';
 
 // Cap each agent definition to a prefix before sending. Full agent bodies can be

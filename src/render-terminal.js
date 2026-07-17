@@ -135,6 +135,15 @@ function agentLine(card, depth, t) {
     + `${agentScoreBit(card)}${agentUsageBit(card, t)}`;
 }
 
+// A compact, dim, summarized description under each agent (frontmatter
+// `description` via buildAgentCardTree's whatItDoes), truncated to ~90 chars on
+// a clean boundary. Full-length detail stays in the report HTML.
+function agentDescLine(card, depth) {
+  if (!card.whatItDoes) return null;
+  const indent = '  '.repeat(depth);
+  return `  ${indent}   ${c.dim}${summarize(card.whatItDoes, 90)}${c.reset}`;
+}
+
 function printAgents(report, t, p) {
   const { childrenByParent, roots } = buildAgentCardTree(report, t);
   p(`  ${c.bold}${t.html.diagramHeading}${c.reset}`);
@@ -148,6 +157,8 @@ function printAgents(report, t, p) {
     if (visited.has(card.name)) return;
     visited.add(card.name);
     p(agentLine(card, depth, t));
+    const desc = agentDescLine(card, depth);
+    if (desc) p(desc);
     const children = childrenByParent.get(card.name) || [];
     for (const child of children) walk(child, depth + 1);
   };
@@ -336,6 +347,10 @@ function renderTerminal(report, maturity, lang, opts = {}) {
 
   // Default report: score -> why -> tools -> technologies -> agents, then a
   // dim hint pointing at --roadmap (so the next-steps section is discoverable).
+  // EMPTY sections are pruned entirely (no header, no "none" placeholder) —
+  // only sections with actual data are printed. (Agents are NOT pruned for
+  // "no local use" — an unused agent still carries a quality score + a
+  // description; the agents section is omitted only when there are zero agents.)
 
   // 1. The score / level meter — the "nota" FIRST.
   sep(p);
@@ -346,29 +361,36 @@ function renderTerminal(report, maturity, lang, opts = {}) {
   sep(p);
   printTierAnalysis(report, t, p);
 
-  // 3. Detected tools.
-  sep(p);
-  p(`  ${c.bold}${t.terminal.detectedHeading}${c.reset}`);
+  // 3. Detected tools — omitted entirely if none detected.
   const detected = report.tools.filter((tool) => tool.detected);
-  if (detected.length === 0) {
-    p(`  ${c.gray}  ${t.terminal.none}${c.reset}`);
-  }
-  for (const tool of detected) {
-    const depthBits = Object.entries(tool.depth)
-      .filter(([, v]) => v > 0)
-      .map(([k, v]) => `${v} ${k}`)
-      .join(', ');
-    const extra = depthBits ? `${c.dim} — ${depthBits}${c.reset}` : '';
-    const version = tool.version ? `${c.dim} v${tool.version}${c.reset}` : '';
-    p(`  ${c.green}●${c.reset} ${tool.name}${version} ${c.gray}(${categoryLabel(lang, tool.category)})${c.reset}${extra}`);
+  if (detected.length) {
+    sep(p);
+    p(`  ${c.bold}${t.terminal.detectedHeading}${c.reset}`);
+    for (const tool of detected) {
+      const depthBits = Object.entries(tool.depth)
+        .filter(([, v]) => v > 0)
+        .map(([k, v]) => `${v} ${k}`)
+        .join(', ');
+      const extra = depthBits ? `${c.dim} — ${depthBits}${c.reset}` : '';
+      const version = tool.version ? `${c.dim} v${tool.version}${c.reset}` : '';
+      p(`  ${c.green}●${c.reset} ${tool.name}${version} ${c.gray}(${categoryLabel(lang, tool.category)})${c.reset}${extra}`);
+    }
   }
 
-  // 4. Project technologies.
-  sep(p);
-  printTechnologies(report, t, p);
+  // 4. Project technologies — omitted entirely if none recognized.
+  const technologies = Array.isArray(report.technologies) ? report.technologies : [];
+  if (technologies.length) {
+    sep(p);
+    printTechnologies(report, t, p);
+  }
 
-  // 5. Agents — one line per agent, ↓ nesting, compact score + usage.
-  printAgents(report, t, p);
+  // 5. Agents — one line per agent (+ summarized description, ↓ nesting,
+  // compact score + usage). Omitted entirely when there are no agents at all.
+  const hasAgents = Array.isArray(report.agents) && report.agents.length > 0;
+  if (hasAgents) {
+    sep(p);
+    printAgents(report, t, p);
+  }
 
   // Discoverability hint (dim): how to see the next-steps/roadmap section.
   p(`  ${c.dim}${t.terminal.roadmapHint}${c.reset}`);

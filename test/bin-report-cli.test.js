@@ -340,8 +340,9 @@ test('bin/report.js: an agent (name + model) shows in the terminal report with n
   assert.match(stdout, /ddd-enforcer/);
   // Model badge is part of the agent line ([opus] here).
   assert.match(stdout, /\[opus\]/);
-  // ADR-016: the description is NOT shown in the terminal anymore (HTML only).
-  assert.equal(stdout.includes('Scans a module directory for DDD pattern violations'), false);
+  // ADR-016 (2026-07-18): a SUMMARIZED description shows under the agent
+  // (dim line, truncated ~90 chars). The fixture's description starts with this.
+  assert.match(stdout, /Scans a module directory for DDD pattern violations/);
 });
 
 // --- --lang override + implementation prompt (talents-ai-score) -----------
