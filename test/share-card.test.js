@@ -111,54 +111,64 @@ test('loadProjectFootprint: an older report with no signal fields yields zeroed 
   assert.deepStrictEqual(fp.signals.technologies, []);
 });
 
-test('buildCardModel: builds the 6-stat strip, capped technologies and the next tier', () => {
+test('buildCardModel: stats list ONLY the signals with value > 0 (no zeros), capped technologies, NO next tier', () => {
   const model = buildCardModel({
     tierKey: 'T5', tier: 5, levelKey: 'orchestrator', score: 78,
-    signals: { toolsDetected: 2, mcpServers: 5, agents: 3, skills: 4, commands: 2, hooks: 1, technologies: ['NestJS', 'Prisma', 'React', 'Tailwind', 'TypeScript'] },
+    signals: { toolsDetected: 12, mcpServers: 3, agents: 5, skills: 0, commands: 0, hooks: 2, technologies: ['NestJS', 'Prisma', 'React', 'Tailwind', 'TypeScript'] },
   });
+  // skills:0 and commands:0 are dropped — never a "0 skills" filler.
   assert.deepStrictEqual(model.stats.map((s) => `${s.value} ${s.label}`), [
-    '2 AI TOOLS', '5 MCP', '3 AGENTS', '4 SKILLS', '2 COMMANDS', '1 HOOKS',
+    '12 AI tools', '3 MCP', '5 agents', '2 hooks',
   ]);
   assert.strictEqual(model.technologies.length, 4); // capped at MAX_TECHNOLOGIES
   assert.deepStrictEqual(model.technologies, ['NestJS', 'Prisma', 'React', 'Tailwind']);
-  assert.strictEqual(model.nextTierKey, 'T6'); // one above the current tier
+  assert.ok(!('nextTierKey' in model), 'next-tier hint removed entirely');
 });
 
-test('buildCardModel: no "next" tier at the ceiling (T7); bare model (no signals) zeroes the stats', () => {
-  assert.strictEqual(buildCardModel({ tierKey: 'T7', tier: 7, levelKey: 'orchestrator', score: 100 }).nextTierKey, null);
-  // tier parsed from tierKey when the numeric tier is absent.
-  assert.strictEqual(buildCardModel({ tierKey: 'T2', levelKey: 'power', score: 40 }).nextTierKey, 'T3');
+test('buildCardModel: bare model (no signals) yields an EMPTY stats list, never zeros', () => {
   const bare = buildCardModel({ tierKey: 'T1', levelKey: 'exploring', score: 20 });
-  assert.deepStrictEqual(bare.stats.map((s) => s.value), [0, 0, 0, 0, 0, 0]);
+  assert.deepStrictEqual(bare.stats, []);
   assert.deepStrictEqual(bare.technologies, []);
+  assert.ok(!('nextTierKey' in bare));
 });
 
-test('renderCardSvg: renders the stats strip (teal panel, lime numbers), technologies and next tier', () => {
+test('renderCardSvg: light stats line (lime numbers, only >0) + technologies; teal green + lime; no panel/next', () => {
   const model = buildCardModel({
     tierKey: 'T5', tier: 5, levelKey: 'orchestrator', score: 78,
-    signals: { toolsDetected: 2, mcpServers: 5, agents: 3, skills: 4, commands: 2, hooks: 1, technologies: ['NestJS', 'Prisma', 'React'] },
+    signals: { toolsDetected: 12, mcpServers: 3, agents: 5, skills: 0, commands: 0, hooks: 2, technologies: ['NestJS', 'Prisma', 'React'] },
   });
   const svg = renderCardSvg(model);
-  // Teal green surfaces are present (green + lime, not lime-only).
-  assert.match(svg, /#08473c/); // teal-700 stats panel
-  assert.match(svg, /#0e7d69/); // teal-500 accent stripe
-  // Stat labels + a couple of values render.
-  for (const label of ['AI TOOLS', 'MCP', 'AGENTS', 'SKILLS', 'COMMANDS', 'HOOKS']) {
-    assert.ok(svg.includes(label), `stat label ${label} present`);
-  }
-  assert.match(svg, /Top: NestJS · Prisma · React/);
-  assert.match(svg, /Next:/);
-  assert.match(svg, />T6<\/tspan>/); // next tier, lime
+  // Teal green surfaces present (green + lime, not lime-only): stripe + pill/track + eyebrow.
+  assert.match(svg, /#0e7d69/); // teal-500 stripe/eyebrow
+  assert.match(svg, /#08473c/); // teal-700 pill + score-ring track
+  // Stats render as a light line: only the >0 signals, values in lime tspans.
+  assert.match(svg, /12<\/tspan><tspan[^>]*> AI tools<\/tspan>/);
+  assert.match(svg, /3<\/tspan><tspan[^>]*> MCP<\/tspan>/);
+  assert.match(svg, /5<\/tspan><tspan[^>]*> agents<\/tspan>/);
+  assert.match(svg, /2<\/tspan><tspan[^>]*> hooks<\/tspan>/);
+  assert.ok(!/ skills<\/tspan>/.test(svg), 'zero-valued skills not shown');
+  assert.ok(!/ commands<\/tspan>/.test(svg), 'zero-valued commands not shown');
+  // Technologies line present.
+  assert.match(svg, /Top: <tspan[^>]*>NestJS · Prisma · React<\/tspan>/);
+  // No "Next: T<n>" element, no stats PANEL rect, no footer.
+  assert.ok(!/Next:/.test(svg), 'no next-tier line');
+  assert.ok(!/measured with/i.test(svg), 'no footer');
+  assert.ok(!/y="462"/.test(svg), 'no full-width stats panel');
+  // Eyebrow is the shorter "AI TOOLING MATURITY" (no "MY").
+  assert.match(svg, />AI TOOLING MATURITY</);
+  assert.ok(!/MY AI TOOLING/.test(svg));
   // The logo is the wordmark, the bolt is gone.
   assert.match(svg, /<path d="M19\.2845 8\.74573/);
   assert.ok(!svg.includes('M4.21721'), 'bolt removed');
 });
 
-test('renderCardSvg: omits the technologies line when there are none, still valid', () => {
-  const model = buildCardModel({ tierKey: 'T1', tier: 1, levelKey: 'exploring', score: 20 });
-  const svg = renderCardSvg(model);
+test('renderCardSvg: omits the technologies line when there are none; no stats line when all zero', () => {
+  const svg = renderCardSvg(buildCardModel({ tierKey: 'T1', tier: 1, levelKey: 'exploring', score: 20 }));
   assert.ok(!svg.includes('Top:'), 'no technologies line when none detected');
-  assert.match(svg, /Next: <tspan[^>]*>T2<\/tspan>/); // still shows the next tier
+  assert.ok(!/Next:/.test(svg), 'never a next-tier line');
+  // Still a valid, dimensioned card.
+  assert.match(svg, /id="share-card-svg"/);
+  assert.match(svg, />T1</);
 });
 
 test('renderCardSvg: correct dimensions and the tier/score/band content', () => {
@@ -194,7 +204,7 @@ test('renderCardSvg: is SELF-CONTAINED — no external refs (would taint the can
 test('renderCardSvg: score ring dashoffset is deterministic from the score', () => {
   const svg0 = renderCardSvg(buildCardModel({ tierKey: 'T0', levelKey: 'none', score: 0 }));
   const svg100 = renderCardSvg(buildCardModel({ tierKey: 'T7', levelKey: 'orchestrator', score: 100 }));
-  const circ = 2 * Math.PI * 115;
+  const circ = 2 * Math.PI * 118;
   // score 0 -> the lime arc is fully offset (empty ring); 100 -> offset 0 (full).
   assert.match(svg0, new RegExp(`stroke-dashoffset="${circ.toFixed(2)}"`));
   assert.match(svg100, /stroke-dashoffset="0.00"/);
