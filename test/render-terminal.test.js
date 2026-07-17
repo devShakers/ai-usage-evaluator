@@ -253,10 +253,10 @@ test('renderTerminal: tier analysis section always present, with a summarized me
   assert.match(html, /totalDetected = 1/);
 });
 
-// ADR-016: the WHY (tier analysis) comes BEFORE the score meter.
-test('renderTerminal: tier analysis appears before the score meter', () => {
+// ADR-016 (reordered 2026-07-17): the SCORE meter comes FIRST, then the WHY.
+test('renderTerminal: the score meter appears before the tier analysis (score-first)', () => {
   const html = strip(renderTerminal(BASE_REPORT, MATURITY_NO_TIER, 'es'));
-  assert.ok(html.indexOf('Análisis de tier') < html.indexOf('/100'), 'why-first ordering');
+  assert.ok(html.indexOf('/100') < html.indexOf('Análisis de tier'), 'score-first ordering');
 });
 
 test('renderTerminal: shows the exact blocking criterion for the next tier', () => {

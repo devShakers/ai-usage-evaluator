@@ -306,14 +306,13 @@ function printRoadmap(report, maturity, t, lang, p) {
 // category via categoryLabel) without touching maturity.js/detectors.js —
 // see the header of src/i18n.js.
 //
-// ADR-016 reorders the terminal view and trims it:
-//   1. WHY the score is what it is comes FIRST, with prominence (tier
-//      analysis) — this adjusts ADR-008's ordering (next-steps at the top).
-//   2. Then the tier / score meter, detected tools, technologies, and a
-//      ONE-LINE-PER-AGENT summary (with ↓ nesting + compact score/usage).
-//   3. The Environment section is GONE from the terminal.
-//   4. The tier roadmap / next-steps is behind `--roadmap` (opts.showRoadmap),
-//      not in the default output.
+// Terminal view order (ADR-016, reordered per user feedback 2026-07-17):
+//   1. The SCORE / tier meter (the "nota") FIRST.
+//   2. Immediately followed by the WHY — the tier-analysis rationale.
+//   3. Detected tools, technologies, and a ONE-LINE-PER-AGENT summary (with ↓
+//      nesting + compact score/usage).
+//   4. No Environment section; the tier roadmap / next-steps is behind
+//      `--roadmap` (opts.showRoadmap), not in the default output.
 function renderTerminal(report, maturity, lang, opts = {}) {
   const t = getCatalog(lang);
   const lines = [];
@@ -325,15 +324,14 @@ function renderTerminal(report, maturity, lang, opts = {}) {
   p(`${c.bold}${c.cyan}  AI FOOTPRINT${c.reset}${c.gray}  ·  ${t.terminal.brandSub}${c.reset}`);
   p(`${c.gray}  ${new Date(report.generatedAt).toLocaleString()}  ·  ${t.terminal.toolsDetected(report.tools.filter((x) => x.detected).length, report.tools.length)}${c.reset}`);
 
-  // 1. WHY this score/tier — FIRST and prominent (ADR-016). The rationale for
-  // the deterministic score leads the report, before the number itself.
-  sep(p);
-  printTierAnalysis(report, t, p);
-
-  // 2. The score / level meter.
+  // 1. The score / level meter — the "nota" FIRST.
   sep(p);
   p(`  ${c.bold}${c.white}${t.terminal.level(maturity.level, levelName)}${c.reset}`);
   p(`  ${c.cyan}${bar(maturity.score)}${c.reset} ${c.dim}${maturity.score}/100${c.reset}`);
+
+  // 2. WHY that score/tier — the rationale, right after the number.
+  sep(p);
+  printTierAnalysis(report, t, p);
 
   // 3. Detected tools.
   sep(p);
