@@ -24,7 +24,7 @@ const { EXCLUDED_DIRS } = require('./scan-exclusions');
  *     so the same tree always yields the same sample.
  *   - Budget: estTokens ~= bytes/4; cap ~150k tokens/Skill and ~500k/run
  *     (skill-code-certification issue 012 — raised from 50k/150k now that the
- *     certify model `claude-sonnet-5` has a 1M context window, leaving ample
+ *     certify model has a large (~1M-token) context window, leaving ample
  *     room for prompt + output; the trade-off is higher $ per run, surfaced
  *     in the report/help).
  *   - SamplingMeta declares candidateCount/includedCount/estTokens/
@@ -36,11 +36,11 @@ const { EXCLUDED_DIRS } = require('./scan-exclusions');
  * -free (only reads the filesystem) so determinism is directly testable.
  */
 
-// skill-code-certification issue 012: raised from 50k/150k. `claude-sonnet-5`
-// has a 1M-token context window (not 200k), so ~150k/Skill and ~500k/run stay
-// well within budget for prompt + up to 128k output, while analyzing far more
-// code per Skill. Higher input tokens = higher cost per run (documented in the
-// report's cost note and `ai-certify --help`).
+// skill-code-certification issue 012: raised from 50k/150k. The certify model
+// has a large (~1M-token) context window, so ~150k/Skill and ~500k/run stay
+// well within budget for prompt + output, while analyzing far more code per
+// Skill. Higher input tokens = higher cost per run (documented in the report's
+// cost note and the `certify` help).
 const PER_SKILL_TOKEN_CAP = 150000;
 const RUN_TOKEN_BUDGET = 500000;
 const GENERATED_HEAD_BYTES = 512;

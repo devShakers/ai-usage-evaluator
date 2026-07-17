@@ -234,7 +234,7 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
   let results = [];
   if (sendable.length > 0) {
     const requestBody = buildCertifyRequest(email, sendable);
-    // Spinner while sonnet-5 runs (issue 011): the call takes ~15-25s — make
+    // Spinner while the model analyzes your code (issue 011): the call takes ~15-25s — make
     // it clear the CLI is working, not hung. withSpinner degrades to a single
     // stderr line on non-TTY.
     const outcome = await withSpinner(c.certifyingLabel, () => requestCertify(requestBody, { endpoint }));
