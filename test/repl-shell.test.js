@@ -10,6 +10,7 @@ const {
   runRepl,
   renderBanner,
   renderPrompt,
+  renderGoodbye,
 } = require('../src/repl-shell');
 const { getCatalog } = require('../src/i18n');
 
@@ -85,8 +86,9 @@ test('runRepl: banner, dispatch, clean exit on "exit"', async () => {
     color: false,
   });
   assert.deepStrictEqual(fpArgs, [['--json']]);
-  assert.match(out.buf, /SHAKERS|S H A K E R S|____/); // wordmark present
+  assert.match(out.buf, /Welcome to shakers/); // boxed header present
   assert.match(out.buf, /See you soon\./); // goodbye
+  assert.match(out.buf, /https:\/\/www\.shakersworks\.com\/en\//); // Shakers web link on the way out
 });
 
 test('runRepl: EOF (no explicit exit) ends cleanly', async () => {
@@ -100,21 +102,61 @@ test('runRepl: EOF (no explicit exit) ends cleanly', async () => {
   });
   assert.match(out.buf, /available commands/);
   assert.match(out.buf, /See you soon\./);
+  assert.match(out.buf, /https:\/\/www\.shakersworks\.com\/en\//);
 });
 
-test('renderBanner/renderPrompt: colour off yields plain, accent-free chrome', () => {
-  const banner = renderBanner({ version: '1.0.0', color: false });
+test('renderGoodbye: i18n goodbye line + Shakers web link, in both languages', () => {
+  const en = renderGoodbye({ lang: 'en', color: false });
+  assert.match(en, /See you soon\./);
+  assert.match(en, /https:\/\/www\.shakersworks\.com\/en\//);
+  assert.ok(!en.includes('\x1b['), 'no ANSI SGR (colour) when colour is off');
+  // The Shakers URL is an OSC 8 hyperlink (clickable in iTerm2 &c.) REGARDLESS
+  // of colour — OSC 8 (\x1b]8) is a link, not colour. Present even colour-off.
+  assert.ok(
+    en.includes('\x1b]8;;https://www.shakersworks.com/en/\x1b\\'),
+    'OSC 8 hyperlink wraps the Shakers URL even when colour is off',
+  );
+
+  const es = renderGoodbye({ lang: 'es', color: false });
+  assert.match(es, /Hasta pronto\./);
+  assert.match(es, /https:\/\/www\.shakersworks\.com\/en\//); // URL is language-neutral
+
+  const colored = renderGoodbye({ lang: 'en', color: true });
+  assert.ok(colored.includes('\x1b['), 'ANSI present when colour is on');
+});
+
+test('renderBanner (wide): colour off yields a plain, accent-free boxed header', () => {
+  const banner = renderBanner({ version: '1.0.0', color: false, width: 90 });
   assert.ok(!banner.includes('\x1b['), 'no ANSI when colour is off');
-  // Always-English, informative banner: product name, both commands, version,
-  // and the how-to-start footer.
-  assert.match(banner, /Shakers · AI Usage Evaluator/);
-  assert.match(banner, /A local-first CLI to understand and level up/);
+  // Rounded box with the title embedded in the top border.
+  assert.match(banner, /╭─ sh-eval · v1\.0\.0 ─+╮/);
+  assert.match(banner, /╰─+╯/);
+  // Two-column content: welcome + product line on the left, a "what it is"
+  // summary + Commands/Getting started on the right.
+  assert.match(banner, /Welcome to shakers/);
+  assert.match(banner, /AI Usage Evaluator/);
+  assert.match(banner, /A local-first CLI to level up how you work/);
+  assert.match(banner, /with AI, and certify skills from your code\./);
+  assert.match(banner, /Commands/);
   assert.match(banner, /footprint/);
   assert.match(banner, /certify/);
-  assert.match(banner, /Type `footprint` or `certify` to start/);
-  assert.match(banner, /ϟ/); // brand lightning bolt
-  assert.match(banner, /v1\.0\.0/);
+  assert.match(banner, /Getting started/);
+  assert.match(banner, /Type footprint or certify · help · exit/);
+});
 
+test('renderBanner (narrow): degrades to a single stacked column without crashing', () => {
+  const banner = renderBanner({ version: '1.0.0', color: false, width: 60 });
+  assert.ok(!banner.includes('\x1b['));
+  assert.match(banner, /╭─ sh-eval · v1\.0\.0 ─+╮/);
+  assert.match(banner, /Welcome to shakers/);
+  assert.match(banner, /Commands/);
+  assert.match(banner, /footprint/);
+  assert.match(banner, /certify/);
+  // Every visible line stays within the terminal width (no overflow).
+  for (const l of banner.split('\n')) assert.ok(l.length <= 60, `line too wide: ${JSON.stringify(l)}`);
+});
+
+test('renderPrompt: the Shakers bolt precedes the command prompt, teal when coloured', () => {
   const prompt = renderPrompt({ lang: 'en', color: false });
   // Shakers lightning bolt (ϟ) precedes the command prompt.
   assert.match(prompt, /ϟ sh-eval ›/);

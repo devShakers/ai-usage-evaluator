@@ -2,13 +2,16 @@
 'use strict';
 
 /*
- * `ai-certify` — the SECOND binary of this repo (skill-code-certification,
- * issue 004). Sibling of `ai-footprint` (bin/report.js), NOT a subcommand.
+ * `certify` — the certification command of this repo (skill-code-certification,
+ * issues 004/005). Runs as an internal command of the `sh-eval` REPL (ADR-014)
+ * and is still require()-able standalone (`node bin/certify.js`). Historically
+ * the standalone `ai-certify` binary (retired); the logic is unchanged.
  *
- * V1 ships ONLY the RESOLVE phase (ADR-001, phase 1): detect the local
- * project's technologies, ask the Shakers Hub which map to a Skill the
- * Talent can certify, and show certifiable vs non-certifiable. The sampling +
- * code egress + LLM certify phase is issue 005 — deliberately NOT here.
+ * BOTH phases now ship: phase 1 RESOLVE (ADR-001) detects the local project's
+ * technologies and asks the Shakers Hub which map to a certifiable Skill; phase
+ * 2 CERTIFY (issue 005) samples + secret-scrubs + sends code for a per-Skill
+ * assessment (runCertifyPhase below). No egress happens before the explicit
+ * disclaimer acceptance.
  *
  * Zero-dependency invariant (node stdlib only) preserved: every helper is a
  * local src/ module, no third-party package.
@@ -31,6 +34,7 @@
 const { parseCertifyArgs } = require('../src/certify-args');
 const { detectReportLang, getCatalog } = require('../src/i18n');
 const { getCertifyEndpoint } = require('../src/config');
+const { oscLink } = require('../src/osc-link');
 const { detectTechnologies } = require('../src/tech-detector');
 const { confirmDisclaimerAcceptance } = require('../src/certify-disclaimer');
 const {
@@ -230,7 +234,7 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
   let results = [];
   if (sendable.length > 0) {
     const requestBody = buildCertifyRequest(email, sendable);
-    // Spinner while sonnet-5 runs (issue 011): the call takes ~15-25s — make
+    // Spinner while the model analyzes your code (issue 011): the call takes ~15-25s — make
     // it clear the CLI is working, not hung. withSpinner degrades to a single
     // stderr line on non-TTY.
     const outcome = await withSpinner(c.certifyingLabel, () => requestCertify(requestBody, { endpoint }));
@@ -264,7 +268,8 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
   // opt-in behind --html. Writing the local report must never break the run.
   try {
     const paths = upsertCertification({ root, items, lang });
-    process.stdout.write(`  ${c.reportLink(paths.fileUrl)}\n\n`);
+    // OSC 8 clickable file:// link (iTerm2 &c.); plain URL elsewhere.
+    process.stdout.write(`  ${c.reportLink(oscLink(paths.fileUrl))}\n\n`);
   } catch {
     // Never break the local run over a failed report write.
   }
@@ -276,7 +281,7 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
 }
 
 // Exposed as `run(argv, { ask })` (ADR-014) so the branded REPL
-// (bin/shakers.js) invokes the SAME certify logic the `ai-certify` binary used
+// (bin/sh-eval.js) invokes the SAME certify logic the `certify` command used
 // to run, without duplicating it. `argv` is the arg array; `ask` is the SHARED
 // stdin reader injected by the REPL (nested stdin) — when present, disclaimer /
 // consent / email / OTP / selection all read through it, and this function

@@ -230,6 +230,93 @@ test('parseAgentOrgChart: no declared hierarchy -> every agent is a child of the
   assert.ok(agents.every((a) => a.parent === null));
 });
 
+// --- talents-ai-score bugfix: derive orchestrator->subagent edges from prose ---
+// Claude Code's subagent schema has no `parent` field, so real multi-agent
+// setups declare the hierarchy in each agent's own prose. Without derivation
+// every card rendered flat (no edges). The rule: an edge is derived only when
+// a sentence names EXACTLY ONE other known agent AND carries BOTH a direction
+// cue (that agent defines/sets/coordinates the work) and an execution cue
+// (THIS agent executes it), and is not a negation line.
+
+test('parseAgentOrgChart: derives parent from prose when a child names its coordinator (direction + execution cue)', () => {
+  writeAgentFile(tmpDir, 'growth-manager.md', ['---', 'name: growth-manager', 'model: opus', '---', 'You own growth strategy.'].join('\n'));
+  writeAgentFile(
+    tmpDir,
+    'content-creator.md',
+    ['---', 'name: content-creator', 'model: sonnet', '---', 'You own social content. The growth-manager defines the strategy; you execute it.'].join('\n'),
+  );
+
+  const byName = Object.fromEntries(parseAgentOrgChart(tmpDir).map((a) => [a.name, a]));
+  assert.equal(byName['content-creator'].parent, 'growth-manager');
+  assert.equal(byName['growth-manager'].parent, null); // top-level, child of the implicit root
+});
+
+test('parseAgentOrgChart: a "do NOT touch" line naming another agent does NOT create a parent edge', () => {
+  writeAgentFile(tmpDir, 'growth-manager.md', ['---', 'name: growth-manager', '---', 'Strategy owner.'].join('\n'));
+  writeAgentFile(
+    tmpDir,
+    'product-manager.md',
+    ['---', 'name: product-manager', '---', 'You own product. You do NOT touch growth strategy (growth-manager); they execute their own plan.'].join('\n'),
+  );
+
+  const byName = Object.fromEntries(parseAgentOrgChart(tmpDir).map((a) => [a.name, a]));
+  assert.equal(byName['product-manager'].parent, null); // negation line -> no edge
+});
+
+test('parseAgentOrgChart: a peer hand-off (direction cue but no execution cue) does NOT create a parent edge', () => {
+  writeAgentFile(tmpDir, 'project-manager.md', ['---', 'name: project-manager', '---', 'Roadmap owner.'].join('\n'));
+  writeAgentFile(
+    tmpDir,
+    'cfo.md',
+    ['---', 'name: cfo', '---', 'You set the financial targets. Handoff to project-manager with an inline summary.'].join('\n'),
+  );
+
+  const byName = Object.fromEntries(parseAgentOrgChart(tmpDir).map((a) => [a.name, a]));
+  assert.equal(byName['cfo'].parent, null); // no "you execute" cue tying cfo under project-manager
+  assert.equal(byName['project-manager'].parent, null);
+});
+
+test('parseAgentOrgChart: explicit `parent` frontmatter wins over a prose-derived one', () => {
+  writeAgentFile(tmpDir, 'growth-manager.md', ['---', 'name: growth-manager', '---', ''].join('\n'));
+  writeAgentFile(tmpDir, 'ceo.md', ['---', 'name: ceo', '---', ''].join('\n'));
+  writeAgentFile(
+    tmpDir,
+    'seo-writer.md',
+    ['---', 'name: seo-writer', 'parent: ceo', '---', 'The growth-manager defines the SEO strategy; you execute it.'].join('\n'),
+  );
+
+  const byName = Object.fromEntries(parseAgentOrgChart(tmpDir).map((a) => [a.name, a]));
+  assert.equal(byName['seo-writer'].parent, 'ceo'); // explicit frontmatter, not the prose-derived growth-manager
+});
+
+test('parseAgentOrgChart: two agents named in one directive sentence is ambiguous -> no derived edge', () => {
+  writeAgentFile(tmpDir, 'growth-manager.md', ['---', 'name: growth-manager', '---', ''].join('\n'));
+  writeAgentFile(tmpDir, 'product-manager.md', ['---', 'name: product-manager', '---', ''].join('\n'));
+  writeAgentFile(
+    tmpDir,
+    'content-creator.md',
+    ['---', 'name: content-creator', '---', 'The growth-manager and product-manager define the strategy; you execute it.'].join('\n'),
+  );
+
+  const byName = Object.fromEntries(parseAgentOrgChart(tmpDir).map((a) => [a.name, a]));
+  assert.equal(byName['content-creator'].parent, null); // ambiguous -> skipped, not guessed
+});
+
+test('parseAgentOrgChart: derivation never leaks prose — returned agents carry only name/tools/model/parent', () => {
+  writeAgentFile(tmpDir, 'growth-manager.md', ['---', 'name: growth-manager', '---', 'Secret business framing here.'].join('\n'));
+  writeAgentFile(
+    tmpDir,
+    'crm-manager.md',
+    ['---', 'name: crm-manager', 'model: sonnet', '---', 'Confidential pipeline notes. The growth-manager defines the sales strategy; you execute it.'].join('\n'),
+  );
+
+  for (const a of parseAgentOrgChart(tmpDir)) {
+    assert.deepEqual(Object.keys(a).sort(), ['model', 'name', 'parent', 'tools']);
+    assert.equal(JSON.stringify(a).includes('Confidential'), false);
+    assert.equal(JSON.stringify(a).includes('Secret'), false);
+  }
+});
+
 test('parseAgentOrgChart: quoted scalar values are unquoted', () => {
   writeAgentFile(
     tmpDir,

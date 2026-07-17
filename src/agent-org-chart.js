@@ -28,14 +28,19 @@ const { getHomeDir } = require('./env-paths');
  * documented precedence rule for project vs. personal subagents).
  *
  * What's extracted (structure + names ONLY): per agent -> name/role, wired
- * tools, model, and the parent it declares (if any) — the orchestrator ->
- * subagent hierarchy. Every other frontmatter key, and CRUCIALLY
- * `description` (which in practice is a long free-text prompt that can leak
- * project/business framing), is walked over structurally to keep the parser
- * in sync but its content is NEVER captured, stored, or returned by
+ * tools, model, and the parent — the orchestrator -> subagent hierarchy. The
+ * parent comes from an explicit `parent` frontmatter key when present, and
+ * otherwise is DERIVED deterministically from the agent's own prose (see
+ * `deriveParentFromText`): real Claude Code setups declare the hierarchy in
+ * natural language, not a structured field, so without this the chart was
+ * always flat. Every other frontmatter key, and CRUCIALLY `description`
+ * (which in practice is a long free-text prompt that can leak project/
+ * business framing), is walked over structurally to keep the parser in sync
+ * but its content is NEVER captured, stored, or returned by
  * `parseAgentOrgChart` — this invariant (ADR-009) is unchanged. The markdown
- * body below the frontmatter (the system prompt itself) is never read at
- * all, by either function below.
+ * body below the frontmatter is read TRANSIENTLY only to derive the parent
+ * EDGE (a name->name relationship); only the resolved parent NAME is written
+ * back, never any prose — so "structure + names only" still holds.
  *
  * talents-ai-score, ADR-010 (deliberate, gated exception to the invariant
  * above): `parseAgentDescriptions` is a SEPARATE, explicitly-named function
@@ -192,16 +197,7 @@ function parseFrontmatter(content, { includeDescription = false } = {}) {
 // than showing with a name. Every agent must show a name — falls back to
 // the file's own basename (extension stripped) when the frontmatter
 // doesn't supply one, so a card is NEVER rendered with no name.
-function parseAgentFile(filePath) {
-  let content;
-  try {
-    content = fs.readFileSync(filePath, 'utf8');
-  } catch {
-    return null;
-  }
-  const fm = parseFrontmatter(content);
-  if (!fm) return null; // no frontmatter block at all: not a valid agent definition
-
+function buildAgentFromFrontmatter(fm, filePath) {
   const fallbackName = path.basename(filePath, path.extname(filePath));
   const name = typeof fm.name === 'string' && fm.name.trim() ? fm.name.trim() : fallbackName;
 
@@ -211,15 +207,85 @@ function parseAgentFile(filePath) {
     name,
     tools,
     model: typeof fm.model === 'string' && fm.model ? fm.model : null,
-    // Hierarchy (ADR-009): only set if the frontmatter declares `parent`
-    // explicitly ("si es inferible"). Claude Code's own subagent schema has
-    // no standard `parent` field, so in practice this resolves to `null`
-    // for every discovered agent, which the shape treats as "child of the
-    // root orchestrator" — the root orchestrator itself (e.g. the main
-    // Claude Code assistant) isn't a `.md` file, so it's never listed as an
-    // agent of its own.
+    // Hierarchy (ADR-009): first honour an explicit `parent` frontmatter key
+    // when a project declares one. Claude Code's own subagent schema has NO
+    // standard `parent` field, so in practice this is `null` here for almost
+    // every real agent file — the orchestrator->subagent edges are instead
+    // DERIVED deterministically from the agent's own prose in
+    // `parseAgentOrgChart` (see `deriveParentFromText`). `null` after both
+    // steps means "child of the implicit root orchestrator" (the root
+    // orchestrator — the main Claude Code assistant — isn't a `.md` file, so
+    // it's never listed as an agent of its own).
     parent: typeof fm.parent === 'string' && fm.parent ? fm.parent : null,
   };
+}
+
+function parseAgentFile(filePath) {
+  let content;
+  try {
+    content = fs.readFileSync(filePath, 'utf8');
+  } catch {
+    return null;
+  }
+  const fm = parseFrontmatter(content);
+  if (!fm) return null; // no frontmatter block at all: not a valid agent definition
+  return buildAgentFromFrontmatter(fm, filePath);
+}
+
+// Markdown body (everything after the closing `---` of the frontmatter).
+// Read TRANSIENTLY only to derive orchestrator->subagent edges (see
+// deriveParentFromText) — never captured onto an agent, never returned by
+// parseAgentOrgChart, so the ADR-009 "structure + names only" invariant holds.
+function bodyAfterFrontmatter(content) {
+  const m = content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
+  return m ? content.slice(m[0].length) : '';
+}
+
+// talents-ai-score bugfix (orchestrated hierarchy not drawn): Claude Code's
+// subagent schema has no `parent` field, so real multi-agent setups express
+// the orchestrator->subagent hierarchy in each agent's OWN prose (e.g. nuply:
+// "The growth-manager defines the strategy; you execute it."), not in a
+// structured key. Left unresolved, EVERY agent was `parent: null` -> every
+// card rendered as a flat root -> the renderers (which already draw nesting
+// from `parent`) had no edges to draw. We derive an edge ONLY when an agent's
+// text names EXACTLY ONE other known agent inside a single sentence that
+// carries BOTH:
+//   - a DIRECTION cue (that other agent defines/sets/coordinates the work), and
+//   - an EXECUTION cue (THIS agent carries it out),
+// and that sentence is NOT a negation line. Requiring both cues in the same
+// sentence is what separates a genuine subordination from a sibling boundary
+// ("You do NOT touch growth strategy (growth-manager)") or a peer hand-off
+// ("Handoff a `project-manager` ...") — both of which name other agents too
+// but are NOT parent/child. Two+ named agents in one directive sentence is
+// ambiguous (could be a peer list) and is deliberately skipped rather than
+// guessed.
+//
+// PRIVACY (ADR-009 preserved): the prose is inspected TRANSIENTLY here; the
+// ONLY thing ever written back to the org chart is the resolved parent's
+// NAME (itself another whitelisted agent name). No description/body text is
+// stored or returned.
+const HIERARCHY_DIRECTS = /\b(defines?|sets?|directs?|approves?|coordinat\w+|orchestrat\w+|owns?)\b/i;
+const HIERARCHY_EXECUTES = /\byou\s+(execute|produce|implement|carry\s+out)\b|\byou\s+don'?t\s+strateg|passes?\s+through\s+you|execution\s+agent/i;
+const HIERARCHY_NEGATION = /\b(do\s+not|don'?t\s+touch|not\s+touch|never|nunca|no\s+toques)\b/i;
+
+function deriveParentFromText(selfName, text, knownNames) {
+  if (!text) return null;
+  // Split on line breaks and sentence-ending punctuation, but NOT on `;` —
+  // the canonical subordination phrasing ("X defines the strategy; you
+  // execute it") keeps the direction and execution cues in one clause.
+  const units = text.split(/\r?\n|(?<=[.!?])\s+/);
+  for (const unit of units) {
+    if (HIERARCHY_NEGATION.test(unit)) continue;
+    if (!HIERARCHY_DIRECTS.test(unit) || !HIERARCHY_EXECUTES.test(unit)) continue;
+    const matches = [];
+    for (const other of knownNames) {
+      if (other === selfName) continue;
+      const re = new RegExp('\\b' + other.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b');
+      if (re.test(unit)) matches.push(other);
+    }
+    if (matches.length === 1) return matches[0]; // exactly one -> unambiguous
+  }
+  return null;
 }
 
 // Both `.claude/agents/` locations in scope order (project first, so it
@@ -237,14 +303,52 @@ function agentDirs(root) {
 function parseAgentOrgChart(root) {
   const seen = new Set();
   const agents = [];
+  // TRANSIENT prose (description + body) per agent, kept LOCAL to this
+  // function purely to derive parent edges below. Never returned. Discarded
+  // when this function returns, so the org chart itself stays "names +
+  // structure only" (ADR-009).
+  const textByName = new Map();
+
   for (const dir of agentDirs(root)) {
     for (const file of listAgentMarkdownFiles(dir)) {
-      const agent = parseAgentFile(file);
-      if (!agent || seen.has(agent.name)) continue;
+      let content;
+      try {
+        content = fs.readFileSync(file, 'utf8');
+      } catch {
+        continue;
+      }
+      const fm = parseFrontmatter(content);
+      if (!fm) continue; // no frontmatter block: not a valid agent definition
+      const agent = buildAgentFromFrontmatter(fm, file);
+      if (seen.has(agent.name)) continue; // project wins on a name collision (dir order)
       seen.add(agent.name);
       agents.push(agent);
+      const fmWithDesc = parseFrontmatter(content, { includeDescription: true });
+      const desc = fmWithDesc && typeof fmWithDesc.description === 'string' ? fmWithDesc.description : '';
+      textByName.set(agent.name, `${desc}\n${bodyAfterFrontmatter(content)}`);
     }
   }
+
+  // Derive orchestrator->subagent edges from prose for agents that declare no
+  // explicit `parent` (the common case). Explicit frontmatter `parent` always
+  // wins over a derived one.
+  const knownNames = agents.map((a) => a.name);
+  for (const agent of agents) {
+    if (agent.parent) continue;
+    const derived = deriveParentFromText(agent.name, textByName.get(agent.name), knownNames);
+    if (derived && derived !== agent.name) agent.parent = derived;
+  }
+
+  // Defensive: break a direct 2-cycle from mutual cues (A<->B). The renderers
+  // already guard cycles with a `visited` set (never an infinite loop), but a
+  // self-consistent chart is cleaner: root the one processed later.
+  const byName = new Map(agents.map((a) => [a.name, a]));
+  for (const agent of agents) {
+    if (!agent.parent) continue;
+    const p = byName.get(agent.parent);
+    if (p && p.parent === agent.name) p.parent = null;
+  }
+
   return agents;
 }
 

@@ -20,11 +20,12 @@
  * lost between them. See src/repl-stdin.js's header for the full rationale.
  */
 
-const { detectReportLang, getCatalog } = require('../src/i18n');
+const { detectReportLang } = require('../src/i18n');
 const { createReplStdin } = require('../src/repl-stdin');
-const { runRepl } = require('../src/repl-shell');
+const { runRepl, renderGoodbye } = require('../src/repl-shell');
 const { run: runFootprint } = require('./report');
 const { run: runCertify } = require('./certify');
+const { run: runShare } = require('./share');
 
 let VERSION = '';
 try {
@@ -54,7 +55,8 @@ async function main() {
   let stdin;
   const onInterrupt = () => {
     // Ctrl-C on a TTY: say goodbye and exit cleanly rather than dumping a stack.
-    process.stdout.write(`\n\n  ${getCatalog(lang).repl.goodbye}\n\n`);
+    // Same farewell (goodbye + Shakers link) as exit/quit/Ctrl-D.
+    process.stdout.write(`\n${renderGoodbye({ lang, color: !!process.stdout.isTTY })}`);
     if (stdin) stdin.close();
     process.exit(0);
   };
@@ -64,7 +66,7 @@ async function main() {
     stdin,
     lang,
     version: VERSION,
-    deps: { runFootprint, runCertify },
+    deps: { runFootprint, runCertify, runShare },
   });
 
   stdin.close();

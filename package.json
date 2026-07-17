@@ -1,7 +1,7 @@
 {
   "name": "ai-footprint",
   "version": "0.1.0",
-  "description": "Perfil local de uso de herramientas de IA para desarrolladores. Escanea, clasifica y muestra un informe. Cero dependencias.",
+  "description": "Shakers sh-eval: local-first shell for developers. Commands: footprint (scan + classify your AI-tool setup, T0-T7), certify (certify Skills from your code), share (branded LinkedIn card). Zero dependencies.",
   "bin": {
     "sh-eval": "bin/sh-eval.js"
   },
