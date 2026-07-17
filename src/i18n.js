@@ -492,9 +492,10 @@ const catalogs = {
         notCertifiable: 'no es certificable',
       },
       errorNoEndpoint:
-        'No hay endpoint de certificación configurado. Define AI_FOOTPRINT_CERTIFY_ENDPOINT '
-        + 'con la URL del Hub de Shakers y vuelve a ejecutar certify. (No hay certificación '
-        + 'en local: el catálogo de Skills y el análisis viven en el Hub.)',
+        'No hay endpoint configurado. certify usa la misma base que footprint: define el endpoint '
+        + 'con footprint --set-endpoint <url> (o la variable AI_FOOTPRINT_INGEST_ENDPOINT), y la ruta '
+        + 'de certificación se deriva automáticamente. (No hay certificación en local: el catálogo de '
+        + 'Skills y el análisis viven en el Hub.)',
       errorIntro: 'No se han podido resolver las Skills certificables:',
       errorNetwork: 'no se pudo contactar con el servicio de certificación (error de red).',
       errorTimeout: 'el servicio de certificación agotó el tiempo de espera.',
@@ -961,9 +962,10 @@ const catalogs = {
         notCertifiable: 'not certifiable',
       },
       errorNoEndpoint:
-        'No certification endpoint configured. Set AI_FOOTPRINT_CERTIFY_ENDPOINT to the '
-        + 'Shakers Hub URL and run certify again. (There is no local-only certification: '
-        + 'the Skill catalog and the analysis live on the Hub.)',
+        'No endpoint configured. certify uses the same base as footprint: set it with '
+        + 'footprint --set-endpoint <url> (or the AI_FOOTPRINT_INGEST_ENDPOINT variable), and the '
+        + 'certification path is derived automatically. (There is no local-only certification: the '
+        + 'Skill catalog and the analysis live on the Hub.)',
       errorIntro: 'Could not resolve certifiable Skills:',
       errorNetwork: 'the certification service could not be reached (network error).',
       errorTimeout: 'the certification service timed out.',

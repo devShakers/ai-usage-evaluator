@@ -198,10 +198,22 @@ function getRoadmapEndpoint(env = process.env) {
  * degrade, never a deterministic fallback (ADR-001: there is no offline way
  * to "judge code"). This helper stays a pure getter; the caller decides what
  * a null means for its own flow.
+ *
+ * RESOLUTION (unified with ingest, endpoint-config task): the certify route
+ * lives in the SAME Hub `ai-footprint` module, next to `reports`
+ * (`.../works/ai-footprint/skill-certification`), so it is DERIVED as a
+ * sibling of the resolved ingest endpoint — exactly like the OTP routes. That
+ * means a single configured `ingestEndpoint` (env var OR config.json, incl.
+ * the installer's baked default) makes footprint + OTP + certify all resolve
+ * to the same base, no separate config needed. `AI_FOOTPRINT_CERTIFY_ENDPOINT`
+ * is kept ONLY as an explicit override (highest precedence) for the rare case
+ * of a certify service mounted somewhere else; unset, it derives from ingest.
  */
 function getCertifyEndpoint(env = process.env) {
-  const value = env.AI_FOOTPRINT_CERTIFY_ENDPOINT;
-  return value && value.trim() ? value.trim() : null;
+  const explicit = env.AI_FOOTPRINT_CERTIFY_ENDPOINT;
+  if (explicit && explicit.trim()) return explicit.trim();
+  // Fall back to a sibling of the resolved ingest endpoint (env > config.json).
+  return deriveFromIngest(env, 'skill-certification');
 }
 
 /*
@@ -228,15 +240,25 @@ function getCertifyEndpoint(env = process.env) {
  * there is nothing to verify FOR, so the caller (consent-flow.js) skips
  * verification, still shows the report, and simply persists nothing.
  */
-function deriveEmailVerificationUrl(env, segment) {
+// Sibling-of-ingest resolution shared by the OTP and certify endpoints: the
+// resolved ingest endpoint's LAST path segment (`reports`) is replaced by
+// `relativePath` via `new URL(relative, base)`. Trailing slashes are stripped
+// first so `reports` stays the segment being replaced. `getIngestEndpoint`
+// already honours the env var > config.json precedence, so anything derived
+// here follows the same single source of truth. Unset ingest -> null.
+function deriveFromIngest(env, relativePath) {
   const ingest = getIngestEndpoint(env);
   if (!ingest) return null;
   const base = ingest.replace(/\/+$/, '');
   try {
-    return new URL(`email-verification/${segment}`, base).href;
+    return new URL(relativePath, base).href;
   } catch {
     return null;
   }
+}
+
+function deriveEmailVerificationUrl(env, segment) {
+  return deriveFromIngest(env, `email-verification/${segment}`);
 }
 
 function getEmailVerificationRequestUrl(env = process.env) {

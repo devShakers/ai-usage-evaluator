@@ -66,23 +66,46 @@ test('getRoadmapEndpoint: empty/whitespace-only value -> null', () => {
   assert.equal(getRoadmapEndpoint({ AI_FOOTPRINT_ROADMAP_ENDPOINT: '   ' }), null);
 });
 
-// skill-code-certification, ADR-001: certify endpoint, same no-hardcode/
-// no-default/env-var-only pattern. The DIFFERENCE is in how the caller
-// treats null (actionable error vs silent degrade) — that lives in
-// bin/certify.js, not here; this getter is a plain reader like the rest.
+// skill-code-certification, ADR-001 + endpoint-config unification: certify
+// resolves from the explicit AI_FOOTPRINT_CERTIFY_ENDPOINT override first, then
+// derives as a sibling of the resolved ingest endpoint (env > config.json), so
+// a single ingest config drives certify too. `unset` here means: no certify
+// var AND no ingest configured -> null (bin/certify.js turns that into an
+// actionable error). Isolated config dir so the derivation can't read the
+// dev's real ~/.config/ai-footprint.
 
-test('getCertifyEndpoint: unset env var -> null', () => {
-  assert.equal(getCertifyEndpoint({}), null);
+test('getCertifyEndpoint: no certify var and no ingest -> null', () => {
+  assert.equal(getCertifyEndpoint({ AI_FOOTPRINT_CONFIG_DIR: freshConfigDir() }), null);
 });
 
-test('getCertifyEndpoint: reads AI_FOOTPRINT_CERTIFY_ENDPOINT, trimmed', () => {
-  const env = { AI_FOOTPRINT_CERTIFY_ENDPOINT: '  https://hub.example.com/works/ai-footprint/skill-certification  ' };
-  assert.equal(getCertifyEndpoint(env), 'https://hub.example.com/works/ai-footprint/skill-certification');
+test('getCertifyEndpoint: explicit AI_FOOTPRINT_CERTIFY_ENDPOINT wins, trimmed', () => {
+  const env = {
+    AI_FOOTPRINT_CERTIFY_ENDPOINT: '  https://certify.example.com/skill-certification  ',
+    AI_FOOTPRINT_INGEST_ENDPOINT: 'https://ingest.example.com/works/ai-footprint/reports',
+  };
+  assert.equal(getCertifyEndpoint(env), 'https://certify.example.com/skill-certification');
 });
 
-test('getCertifyEndpoint: empty/whitespace-only value -> null', () => {
-  assert.equal(getCertifyEndpoint({ AI_FOOTPRINT_CERTIFY_ENDPOINT: '' }), null);
-  assert.equal(getCertifyEndpoint({ AI_FOOTPRINT_CERTIFY_ENDPOINT: '   ' }), null);
+test('getCertifyEndpoint: empty/whitespace certify var falls through to ingest derivation', () => {
+  const env = {
+    AI_FOOTPRINT_CERTIFY_ENDPOINT: '   ',
+    AI_FOOTPRINT_INGEST_ENDPOINT: 'https://hub.example.com/api/v1/works/ai-footprint/reports',
+  };
+  assert.equal(getCertifyEndpoint(env), 'https://hub.example.com/api/v1/works/ai-footprint/skill-certification');
+});
+
+test('getCertifyEndpoint: derives sibling skill-certification from the ingest env var', () => {
+  const env = { AI_FOOTPRINT_INGEST_ENDPOINT: 'http://localhost:3001/api/v1/works/ai-footprint/reports' };
+  assert.equal(getCertifyEndpoint(env), 'http://localhost:3001/api/v1/works/ai-footprint/skill-certification');
+});
+
+test('getCertifyEndpoint: derives from the config-file ingest endpoint when no env var is set', () => {
+  const dir = freshConfigDir();
+  setIngestEndpoint('http://localhost:3001/api/v1/works/ai-footprint/reports', { AI_FOOTPRINT_CONFIG_DIR: dir });
+  assert.equal(
+    getCertifyEndpoint({ AI_FOOTPRINT_CONFIG_DIR: dir }),
+    'http://localhost:3001/api/v1/works/ai-footprint/skill-certification',
+  );
 });
 
 // skill-code-certification / ADR-006: the email-verification URLs introduce NO
@@ -223,4 +246,16 @@ test('resolveIngestEndpoint: reports the source (env / config-file / config-file
   const invalid = resolveIngestEndpoint(env);
   assert.equal(invalid.source, 'config-file-invalid');
   assert.equal(invalid.endpoint, null);
+});
+
+test('audit: a single ingestEndpoint in config.json drives footprint + OTP + certify to the same base', () => {
+  const dir = freshConfigDir();
+  const env = { AI_FOOTPRINT_CONFIG_DIR: dir };
+  // The installer's baked default — localhost, so it passes https-for-non-local.
+  setIngestEndpoint('http://localhost:3001/api/v1/works/ai-footprint/reports', env);
+
+  assert.equal(getIngestEndpoint(env), 'http://localhost:3001/api/v1/works/ai-footprint/reports');
+  assert.equal(getEmailVerificationRequestUrl(env), 'http://localhost:3001/api/v1/works/ai-footprint/email-verification/request');
+  assert.equal(getEmailVerificationVerifyUrl(env), 'http://localhost:3001/api/v1/works/ai-footprint/email-verification/verify');
+  assert.equal(getCertifyEndpoint(env), 'http://localhost:3001/api/v1/works/ai-footprint/skill-certification');
 });

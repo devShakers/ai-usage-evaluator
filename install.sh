@@ -29,6 +29,18 @@ INSTALL_DIR="${AI_FOOTPRINT_HOME:-$HOME/.ai-footprint}"
 BIN_DIR="${AI_FOOTPRINT_BIN:-$HOME/.local/bin}"
 VERSION="0.1.0"
 
+# Baked default ingest endpoint (endpoint-config task). The whole team runs the
+# backend on :3001, so a fresh install writes this into config.json when the
+# user has none yet — footprint (persist), OTP (email-verification/*) and
+# certify (skill-certification) all DERIVE from this single URL (siblings of
+# `reports`), so nothing else needs configuring. It's localhost, so it passes
+# the CLI's https-for-non-local rule. Change this ONE line to point installs at
+# prod later. The config dir mirrors src/config.js (AI_FOOTPRINT_CONFIG_DIR
+# override, else ~/.config/ai-footprint).
+DEFAULT_INGEST_ENDPOINT="http://localhost:3001/api/v1/works/ai-footprint/reports"
+CONFIG_DIR="${AI_FOOTPRINT_CONFIG_DIR:-$HOME/.config/ai-footprint}"
+CONFIG_FILE="$CONFIG_DIR/config.json"
+
 # Colors (only if output is a terminal)
 if [ -t 1 ]; then
   C='\033[0;36m'; G='\033[0;32m'; Y='\033[0;33m'; R='\033[0;31m'; B='\033[1m'; N='\033[0m'
@@ -174,6 +186,23 @@ say "\n  ${G}+${N} Command created at $SHIM"
 # an upgrade doesn't leave the retired `ai-footprint`/`ai-certify` commands
 # lying around pointing at the old direct binaries.
 rm -f "$BIN_DIR/ai-footprint" "$BIN_DIR/ai-certify" 2>/dev/null || true
+
+# ─── Baked default endpoint config ──────────────────────────────────────────
+# Write the team default into config.json ONLY if the user has no config yet —
+# never clobber an existing one (they may have run --set-endpoint or point at
+# prod). This makes a fresh curl|bash / ./install.sh install work against :3001
+# with no export and no --set-endpoint: footprint, OTP and certify all derive
+# from this single ingestEndpoint.
+if [ -f "$CONFIG_FILE" ]; then
+  say "\n  ${G}+${N} Existing config kept ($CONFIG_FILE) — not overwritten"
+else
+  mkdir -p "$CONFIG_DIR"
+  printf '{\n  "ingestEndpoint": "%s"\n}\n' "$DEFAULT_INGEST_ENDPOINT" > "$CONFIG_FILE" \
+    && chmod 600 "$CONFIG_FILE" 2>/dev/null || true
+  say "\n  ${G}+${N} Default endpoint written to $CONFIG_FILE"
+  say "    ${C}$DEFAULT_INGEST_ENDPOINT${N}"
+  say "    Change it anytime with ${C}sh-eval${N} → ${C}footprint --set-endpoint <url>${N}"
+fi
 
 # ─── Verification ───────────────────────────────────────────────────────────
 # Drive the REPL non-interactively (pipe `exit`) so verification never hangs.
