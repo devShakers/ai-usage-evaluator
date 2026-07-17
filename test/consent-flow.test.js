@@ -44,31 +44,51 @@ function scriptedAsk(answers) {
   };
 }
 
-// skill-code-certification / ADR-006: granting now requires a VERIFIED email.
-// `verifyEmail` is injected in these tests so they never touch the network;
-// `passVerify` simulates a successful OTP verification, `failVerify` a
-// cancelled/failed one. The full wait-mode loop is covered in
-// test/email-verification.test.js.
+// skill-code-certification / ADR-006 (revised — terminal-state bug fix): a
+// consent decision is persisted ONLY once it reaches a TERMINAL state — an
+// explicit DECLINE, or a GRANT whose email ownership was actually VERIFIED. A
+// grant whose OTP round is aborted/failed persists NOTHING and is re-asked next
+// run (an interrupted consent is not a decision). This is what fixes the bug
+// where aborting at the OTP prompt left a skippable granted-but-unverified
+// consent. `verifyEmail` is injected so these tests never touch the network;
+// `passVerify` simulates a successful OTP round, `failVerify` a cancelled/failed
+// one. The full wait-mode loop is covered in test/email-verification.test.js.
 const passVerify = async () => ({ verified: true });
 const failVerify = async () => ({ verified: false, reason: 'cancelled' });
 
-test('runConsentPrompt: accept -> asks for email -> verifies -> persists granted + email', async () => {
+test('runConsentPrompt: accept -> asks for email -> verifies -> persists granted + email + emailVerified:true', async () => {
   const ask = scriptedAsk(['s', 'talent@example.com']);
   const decision = await runConsentPrompt({ ask, catalog: catalogEs, verifyEmail: passVerify });
   assert.equal(decision, 'granted');
   const state = loadConsentState();
   assert.equal(getConsentDecision(state), 'granted');
   assert.equal(state.email, 'talent@example.com');
+  assert.equal(state.emailVerified, true);
 });
 
-// --- ADR-006: email verification gates PERSISTENCE only ---
+// --- ADR-006 (revised): a grant is terminal (persisted) ONLY once verified ---
 
-test('runConsentPrompt: accept + valid email but verification NOT passed -> nothing persisted, decision null (asked again next run)', async () => {
+test('runConsentPrompt: accept + valid email but verification FAILS -> NOTHING persisted, decision null (re-asked next run)', async () => {
   const ask = scriptedAsk(['s', 'talent@example.com']);
   const decision = await runConsentPrompt({ ask, catalog: catalogEs, verifyEmail: failVerify });
+  // An unverified grant is not a terminal decision: nothing is written, so the
+  // prompt runs again next time (computeConsentSkip only skips terminal state).
   assert.equal(decision, null);
-  // Nothing persisted: no granted decision, no email saved.
   assert.equal(loadConsentState(), null);
+});
+
+test('runConsentPrompt: the grant is persisted ONLY AFTER verification succeeds (nothing on disk while verification runs)', async () => {
+  let stateAtVerifyTime = 'unset';
+  const spyVerify = async () => {
+    // Nothing must be persisted yet — the grant is recorded only on success.
+    stateAtVerifyTime = loadConsentState();
+    return { verified: true };
+  };
+  const ask = scriptedAsk(['s', 'talent@example.com']);
+  const decision = await runConsentPrompt({ ask, catalog: catalogEs, verifyEmail: spyVerify });
+  assert.equal(stateAtVerifyTime, null, 'consent must not be persisted before verification succeeds');
+  assert.equal(decision, 'granted');
+  assert.equal(loadConsentState().emailVerified, true);
 });
 
 test('runConsentPrompt: verification is only reached AFTER a valid email is captured (never on decline)', async () => {
@@ -179,8 +199,10 @@ test('persistIntro (es): mentions the expanded scope (tier/level + structured si
   assert.match(text, /nivel|tier/i);
   assert.match(text, /señales (estructuradas|derivadas)/i);
   assert.match(text, /nunca.*(contenido|ficheros|prompts)/i);
-  // Still short: not an itemized wall (issue 022: "sin muralla ni flags").
-  assert.ok(text.length < 700, `expected a short intro, got ${text.length} chars`);
+  // Bounded: not an itemized wall (issue 022: "sin muralla ni flags"). The bound
+  // was relaxed from 700 to 1200 for the intentionally-hardened legal copy
+  // (liability/penalty clauses, PENDING LEGAL review) — still guards runaway copy.
+  assert.ok(text.length <= 1200, `expected a bounded intro, got ${text.length} chars`);
 });
 
 test('persistIntro (en): mentions the expanded scope (tier/level + structured signals) and explicitly never raw content', () => {
@@ -189,7 +211,9 @@ test('persistIntro (en): mentions the expanded scope (tier/level + structured si
   assert.match(text, /level|tier/i);
   assert.match(text, /structured signals/i);
   assert.match(text, /never.*(content|files|prompts)/i);
-  assert.ok(text.length < 700, `expected a short intro, got ${text.length} chars`);
+  // Bounded (see the es case): relaxed from 700 to 1200 for the hardened legal
+  // copy, still guarding against runaway copy.
+  assert.ok(text.length <= 1200, `expected a bounded intro, got ${text.length} chars`);
 });
 
 test('persistIntro: still opt-in/optional and revocable in both languages (ADR-011 model unchanged)', () => {

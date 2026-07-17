@@ -23,8 +23,12 @@ const { handle } = require('../reference-server/server');
  * path itself 404s here (the stub mounts ingest at root `/reports`), but that
  * is silent by design and never affects the persisted consent decision.
  *
- * INVARIANT under test (ADR-003/ADR-006): verification gates PERSISTENCE only.
- * The report is shown in BOTH the verified and the not-verified runs.
+ * INVARIANT under test (ADR-003/ADR-006, revised by the terminal-state bug
+ * fix): the report is shown in BOTH the verified and the not-verified runs
+ * (persistence never gates the report). A consent decision is persisted ONLY
+ * once terminal — a grant only after email verification SUCCEEDS. An aborted /
+ * failed verification persists NOTHING, so the prompt is re-asked next run; a
+ * verified grant sticks and is skipped thereafter.
  */
 
 const BIN = path.join(__dirname, '..', 'bin', 'report.js');
@@ -99,9 +103,10 @@ test('e2e: accept + correct OTP code -> report shown AND consent persisted grant
   const consent = readConsent();
   assert.equal(consent && consent.consent, 'granted');
   assert.equal(consent.email, 'talent@example.com');
+  assert.equal(consent.emailVerified, true);
 });
 
-test('e2e: accept but never provide a valid code (cancel) -> report STILL shown, nothing persisted', async () => {
+test('e2e: accept but verification cancelled -> report shown, NOTHING persisted (re-asked next run)', async () => {
   const { code, stdout } = await runCli({
     // one wrong code, then EOF -> the next code read resolves '' -> cancel.
     stdin: 's\ntalent@example.com\n000000\n',
@@ -109,9 +114,27 @@ test('e2e: accept but never provide a valid code (cancel) -> report STILL shown,
   });
   assert.equal(code, 0);
   assert.match(stdout, /AI FOOTPRINT/); // report shown regardless
-  const consent = readConsent();
-  // No granted decision persisted (no consent file, or not granted).
-  assert.notEqual(consent && consent.consent, 'granted');
+  // An aborted/unverified grant is not a terminal decision: nothing is
+  // persisted, so the prompt is re-asked next run.
+  assert.equal(readConsent(), null);
+});
+
+test('e2e: a second run after a granted decision does NOT re-ask consent/email (skip explained)', async () => {
+  // First run: grant + verify.
+  await runCli({
+    stdin: 's\ntalent@example.com\n123456\n',
+    env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_INGEST_ENDPOINT: ingestEndpoint, __ROOT: tmpProjectDir },
+  });
+  // Second run: no stdin answers at all; must NOT prompt again.
+  const { code, stdout } = await runCli({
+    stdin: '',
+    env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_INGEST_ENDPOINT: ingestEndpoint, __ROOT: tmpProjectDir },
+  });
+  assert.equal(code, 0);
+  assert.match(stdout, /AI FOOTPRINT/);
+  // The consent question is NOT re-asked; the skip is explained instead.
+  assert.doesNotMatch(stdout, /Save this report in Shakers|Guardar este informe en Shakers/);
+  assert.match(stdout, /already answered|ya respondido/);
 });
 
 test('e2e: the pasted OTP code never appears in the CLI output', async () => {

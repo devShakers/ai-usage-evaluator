@@ -162,7 +162,7 @@ function normalizeEmail(value) {
 // Throws on invalid input — callers (consent-flow.js, bin/report.js) are
 // expected to validate interactively before calling this, this is the last
 // guard against ever persisting a half-formed decision.
-function recordConsent(decision, email = null) {
+function recordConsent(decision, email = null, { verified } = {}) {
   if (decision !== 'granted' && decision !== 'denied') {
     throw new Error(`Decisión de consentimiento no válida: ${decision}`);
   }
@@ -173,6 +173,16 @@ function recordConsent(decision, email = null) {
   state.consent = decision;
   if (email !== null) state.email = normalizeEmail(email);
   if (state.lastSentAt === undefined) state.lastSentAt = null;
+  // Email-ownership verification flag (skill-code-certification / ADR-006).
+  // When explicitly provided on a grant, persist it. A grant is only ever
+  // persisted once TERMINAL — i.e. with `verified:true` — by consent-flow.js
+  // (an aborted/unverified consent is not persisted at all). `undefined`
+  // leaves the field untouched, so legacy grants (which predate this flag)
+  // keep sending — see autoShare's `=== false` gate. `setEmail` sets it to
+  // false when the address changes (the new address is unverified).
+  if (decision === 'granted' && verified !== undefined) {
+    state.emailVerified = verified === true;
+  }
   saveConsentState(state);
   return state;
 }
@@ -190,6 +200,10 @@ function getConsentStatus() {
   return {
     consent: getConsentDecision(state),
     email: state && state.email ? state.email : null,
+    // `emailVerified === false` = explicitly pending an OTP round (new model);
+    // undefined = a legacy grant that predates the flag (was verified to reach
+    // `granted` under the old model), so it counts as verified for display.
+    emailVerified: state ? state.emailVerified !== false : false,
     lastSentAt: state && state.lastSentAt ? state.lastSentAt : null,
   };
 }
@@ -214,6 +228,10 @@ function revokeConsent() {
 function resetConsent() {
   const state = loadConsentState() || {};
   delete state.consent;
+  // A re-grant is "concede de cero" (ADR-006): drop the verification flag so
+  // the OTP runs again from scratch and nothing is sent under the old email
+  // until it's re-verified.
+  delete state.emailVerified;
   if (state.lastSentAt === undefined) state.lastSentAt = null;
   saveConsentState(state);
   return { ok: true, state };
@@ -229,6 +247,9 @@ function setEmail(newEmail) {
   }
   const state = loadConsentState() || {};
   state.email = normalizeEmail(newEmail);
+  // A new email is unverified until proven (ADR-006): reset the flag so
+  // autoShare won't send under an address whose ownership wasn't checked.
+  state.emailVerified = false;
   saveConsentState(state);
   return { ok: true, state };
 }
@@ -435,6 +456,14 @@ async function autoShare(report, maturity) {
   if (!state.email) {
     return { ok: false, skipped: true, reason: 'no-email' };
   }
+  // ADR-006: never SEND under an email whose ownership wasn't proven. The
+  // local decision may be `granted` yet unverified (OTP backend down at grant
+  // time) — that stops the re-prompt but must not send. `=== false` is
+  // deliberate: legacy grants (undefined flag) were verified under the old
+  // model, so they keep sending.
+  if (state.emailVerified === false) {
+    return { ok: false, skipped: true, reason: 'email-unverified' };
+  }
   if (isThrottled(state)) {
     return { ok: false, skipped: true, reason: 'throttled' };
   }
@@ -529,6 +558,10 @@ async function shareCertification(items, { model = null } = {}) {
   }
   if (!state.email) {
     return { ok: false, skipped: true, reason: 'no-email' };
+  }
+  // ADR-006 (mirror of autoShare): don't persist under an unverified email.
+  if (state.emailVerified === false) {
+    return { ok: false, skipped: true, reason: 'email-unverified' };
   }
   if (isCertifyThrottled(state)) {
     return { ok: false, skipped: true, reason: 'throttled' };

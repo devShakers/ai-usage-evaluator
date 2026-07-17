@@ -11,16 +11,20 @@
  *      before the consent block is ever reached, because stdout must stay
  *      a single parseable JSON document (an explanatory line would corrupt
  *      it). Not this module's concern; listed here for completeness.
- *   2. A consent decision is ALREADY persisted (`granted` or `denied`).
- *      BY FAR the most likely real-world cause in a normal, interactive
- *      terminal: the prompt is designed to run exactly ONCE per talent
- *      (issue 007 / ADR-007 / ADR-011) — any subsequent run on the same
- *      machine (same consent file, `AI_FOOTPRINT_CONFIG_DIR` or the
- *      default `~/.config/ai-footprint/consent.json`) never asks again.
- *      This is a deliberate design decision, not a bug — but it was never
- *      explained, so it read as "broken". `computeConsentSkip` returns
- *      `skip: true` and a message naming the exact file and the flags to
- *      inspect/change it (`--consent-status` / `--consent-revoke`).
+ *   2. A TERMINAL consent decision is already persisted: an explicit
+ *      `denied`, or a `granted` whose email ownership was VERIFIED
+ *      (`emailVerified !== false`). BY FAR the most likely real-world cause
+ *      in a normal, interactive terminal: the prompt is designed to run
+ *      exactly ONCE per talent (issue 007 / ADR-007 / ADR-011) — any
+ *      subsequent run on the same machine (same consent file,
+ *      `AI_FOOTPRINT_CONFIG_DIR` or the default
+ *      `~/.config/ai-footprint/consent.json`) never asks again. This is a
+ *      deliberate design decision, not a bug — but it was never explained, so
+ *      it read as "broken". `computeConsentSkip` returns `skip: true` and a
+ *      message naming the exact file and the flags to inspect/change it
+ *      (`--consent-status` / `--consent-revoke`). A grant left UNVERIFIED
+ *      (`emailVerified === false`, e.g. the OTP step was aborted mid-flow) is
+ *      NOT terminal — it is re-asked, never skipped.
  *   3. stdin is not a TTY (piped/redirected/non-interactive). Deliberately
  *      NOT a blanket "non-TTY -> skip" rule: piping a scripted answer
  *      (`printf "y\nme@x.com\n" | ai-footprint`) is a legitimate, already
@@ -40,10 +44,20 @@
  * in (never reads `process.stdin` itself) so this is fully unit-testable
  * without a real TTY/process.
  */
-function computeConsentSkip({ decision, stdinIsTTY, consentFilePath, catalog } = {}) {
+function computeConsentSkip({ decision, emailVerified, stdinIsTTY, consentFilePath, catalog } = {}) {
   const c = catalog && catalog.consent;
 
-  if (decision === 'granted' || decision === 'denied') {
+  // Only a TERMINAL decision is skippable: an explicit DECLINE, or a GRANT
+  // whose email ownership was actually verified. A grant left unverified
+  // (`emailVerified === false` — e.g. a leftover from an OTP aborted mid-flow)
+  // is INCOMPLETE: re-ask it, don't skip. `=== false` is deliberate — legacy
+  // grants predate the flag (undefined) and were verified under the old model,
+  // so they stay skippable (mirrors autoShare / getConsentStatus).
+  const terminal =
+    decision === 'denied' ||
+    (decision === 'granted' && emailVerified !== false);
+
+  if (terminal) {
     const message = c && typeof c.skipAlreadyDecided === 'function'
       ? c.skipAlreadyDecided(decision, consentFilePath)
       : null;

@@ -13,6 +13,9 @@ const {
   saveConsentState,
   getConsentDecision,
   recordConsent,
+  setEmail,
+  resetConsent,
+  getConsentStatus,
   isValidEmail,
   normalizeEmail,
   isThrottled,
@@ -457,6 +460,70 @@ test('autoShare: granted but no endpoint configured -> skipped, reason no-endpoi
   assert.equal(r.ok, false);
   assert.equal(r.skipped, true);
   assert.equal(r.reason, 'no-endpoint-configured');
+});
+
+// --- ADR-006 (re-prompt bug fix): the emailVerified send-gate ---------------
+
+test('autoShare: granted but emailVerified:false -> skipped, reason email-unverified (never sends under an unverified email)', async () => {
+  recordConsent('granted', 'talent@example.com', { verified: false });
+  // Endpoint IS configured — the block must come from the unverified email,
+  // not from a missing endpoint.
+  process.env.AI_FOOTPRINT_INGEST_ENDPOINT = 'http://127.0.0.1:1/reports';
+  const r = await autoShare(REPORT, MATURITY);
+  assert.equal(r.ok, false);
+  assert.equal(r.skipped, true);
+  assert.equal(r.reason, 'email-unverified');
+});
+
+test('autoShare: a verified grant (recordConsent verified:true) passes the email-unverified gate', async () => {
+  recordConsent('granted', 'talent@example.com', { verified: true });
+  // Past the gate; with a dead endpoint it fails at the network layer
+  // (network-error), NOT at the email-unverified gate.
+  process.env.AI_FOOTPRINT_INGEST_ENDPOINT = 'http://127.0.0.1:1/reports';
+  const r = await autoShare(REPORT, MATURITY);
+  assert.notEqual(r.reason, 'email-unverified');
+  assert.equal(r.reason, 'network-error');
+});
+
+test('autoShare: legacy granted state with no emailVerified field still sends (no regression for pre-fix grants)', async () => {
+  // A grant persisted before this fix has no emailVerified field (undefined),
+  // which was verified under the old model to reach `granted` — must not be
+  // blocked as unverified.
+  saveConsentState({ consent: 'granted', email: 'talent@example.com', lastSentAt: null });
+  process.env.AI_FOOTPRINT_INGEST_ENDPOINT = 'http://127.0.0.1:1/reports';
+  const r = await autoShare(REPORT, MATURITY);
+  assert.notEqual(r.reason, 'email-unverified');
+  assert.equal(r.reason, 'network-error');
+});
+
+test('recordConsent {verified}: the emailVerified flag and getConsentStatus reflect verification state', () => {
+  recordConsent('granted', 'talent@example.com', { verified: false });
+  assert.equal(loadConsentState().emailVerified, false);
+  assert.equal(getConsentStatus().emailVerified, false);
+  recordConsent('granted', 'talent@example.com', { verified: true });
+  assert.equal(loadConsentState().emailVerified, true);
+  assert.equal(getConsentStatus().emailVerified, true);
+});
+
+test('setEmail: changing the email resets emailVerified to false (new address is unverified, ADR-006)', () => {
+  recordConsent('granted', 'talent@example.com', { verified: true });
+  setEmail('new@example.com');
+  const state = loadConsentState();
+  assert.equal(state.email, 'new@example.com');
+  assert.equal(state.emailVerified, false);
+});
+
+test('resetConsent: clears both the decision and the emailVerified flag (a re-grant re-verifies from scratch)', () => {
+  recordConsent('granted', 'talent@example.com', { verified: true });
+  resetConsent();
+  const state = loadConsentState();
+  assert.equal('consent' in state, false);
+  assert.equal('emailVerified' in state, false);
+});
+
+test('getConsentStatus: a legacy grant with no emailVerified field reads as verified (true)', () => {
+  saveConsentState({ consent: 'granted', email: 'talent@example.com', lastSentAt: null });
+  assert.equal(getConsentStatus().emailVerified, true);
 });
 
 test('autoShare: granted + throttled (recent lastSentAt) -> skipped, reason throttled', async () => {

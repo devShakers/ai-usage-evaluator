@@ -153,9 +153,11 @@ async function maybeShareCertification(items) {
 // later, consent or not (ADR-003) — this is not a wall. Returns nothing; the
 // decision lives in the shared consent state, read again at persist time.
 async function runFrontloadedConsent({ ask, catalog, stdinIsTTY }) {
-  const decision = getConsentDecision(loadConsentState());
+  const state = loadConsentState();
+  const decision = getConsentDecision(state);
   const consentSkip = computeConsentSkip({
     decision,
+    emailVerified: state ? state.emailVerified : undefined,
     stdinIsTTY,
     consentFilePath: consentPath(),
     catalog,

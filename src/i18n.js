@@ -288,11 +288,17 @@ const catalogs = {
         + '      --consent-revoke   Revoca el guardado (→ denegado); deja de enviar\n'
         + '      --consent-reset    Borra la decisión (→ sin decidir); vuelve a preguntar\n'
         + '      --consent-email C  Cambia el correo guardado, sin tocar la decisión\n'
+        + '      --set-endpoint URL Guarda el endpoint de ingesta en ~/.config/ai-footprint/config.json\n'
+        + '                         (un host no-local debe ser https). La env var tiene prioridad\n'
+        + '      --show-endpoint    Muestra el endpoint efectivo y de dónde sale (env / config / ninguno)\n'
         + '  -h, --help             Muestra esta ayuda\n\n'
         + 'El informe se genera y se muestra SIEMPRE en tu equipo, y se guarda un informe\n'
         + 'HTML acumulado en local cuyo enlace se imprime en cada ejecución. Antes de\n'
         + 'mostrarlo, la primera vez se te pregunta si quieres GUARDARLO en Shakers (con tu\n'
-        + 'correo); se pregunta una sola vez. Reabre la pregunta con --consent-reset.\n',
+        + 'correo); se pregunta una sola vez. Reabre la pregunta con --consent-reset.\n\n'
+        + 'El destino de envío se resuelve así: AI_FOOTPRINT_INGEST_ENDPOINT (env) > el fichero\n'
+        + 'de config (--set-endpoint) > ninguno. Sin endpoint, el informe se muestra pero no se\n'
+        + 'envía a Shakers.\n',
     },
     // "Construir el siguiente nivel ahora" (talents-ai-score, issue 021):
     // optional, explicit phase — writes the deterministic starter for the
@@ -370,12 +376,26 @@ const catalogs = {
         decisionDenied: 'Decisión: rechazado (denied)',
         decisionNone: 'Decisión: sin decisión todavía',
         email: (value) => `Correo: ${value || '(sin correo)'}`,
+        verificationPending: 'Correo pendiente de verificar: no se enviará nada a Shakers hasta verificarlo (usa --consent-reset para reintentar).',
         lastSentAt: (value) => `Último guardado: ${value || '(nunca)'}`,
       },
       revoked: 'Consentimiento revocado. No se guardará nada más automáticamente.',
       reset: 'Decisión de consentimiento reiniciada. Se te preguntará de nuevo en la próxima ejecución.',
       emailChanged: (email) => `Correo actualizado a ${email}. Se usará en el próximo guardado.`,
       emailInvalidCli: 'Correo no válido. Uso: footprint --consent-email tu@correo.com',
+    },
+    // Endpoint config (endpoint-config task): --set-endpoint / --show-endpoint
+    // copy. The endpoint decide adónde va el código muestreado, de ahí la regla
+    // https-para-hosts-no-locales. No barre el no-spanish-audit (solo informe).
+    endpoint: {
+      setOk: (url, path) => `Endpoint de ingesta guardado: ${url}\n  (en ${path}). La variable de entorno AI_FOOTPRINT_INGEST_ENDPOINT, si está definida, tiene prioridad.`,
+      errInsecureRemote: 'Endpoint rechazado: un host que no sea localhost/127.0.0.1 debe usar https:// (el endpoint decide adónde se envía tu código). Usa una URL https o un host local.',
+      errInvalidUrl: 'Endpoint rechazado: URL no válida. Debe ser una URL http(s) completa, p.ej. https://tu-hub/api/v1/works/ai-footprint/reports',
+      errEmpty: 'Endpoint rechazado: no se indicó ninguna URL. Uso: footprint --set-endpoint https://tu-hub/api/v1/works/ai-footprint/reports',
+      showEnv: (url) => `Endpoint de ingesta efectivo: ${url}\n  Origen: variable de entorno AI_FOOTPRINT_INGEST_ENDPOINT.`,
+      showConfigFile: (url, path) => `Endpoint de ingesta efectivo: ${url}\n  Origen: fichero de config (${path}).`,
+      showConfigInvalid: (path) => `El fichero de config (${path}) tiene un endpoint no válido o inseguro; se ignora. Corrígelo con footprint --set-endpoint <url>.`,
+      showNone: 'No hay endpoint de ingesta configurado. Define AI_FOOTPRINT_INGEST_ENDPOINT o usa footprint --set-endpoint <url>. Sin él, el informe se sigue mostrando pero no se envía a Shakers.',
     },
     // Email-ownership verification (skill-code-certification / ADR-006): the
     // OTP "modo espera" copy, shared by both binaries. Shown only when the
@@ -467,9 +487,10 @@ const catalogs = {
         notCertifiable: 'no es certificable',
       },
       errorNoEndpoint:
-        'No hay endpoint de certificación configurado. Define AI_FOOTPRINT_CERTIFY_ENDPOINT '
-        + 'con la URL del Hub de Shakers y vuelve a ejecutar certify. (No hay certificación '
-        + 'en local: el catálogo de Skills y el análisis viven en el Hub.)',
+        'No hay endpoint configurado. certify usa la misma base que footprint: define el endpoint '
+        + 'con footprint --set-endpoint <url> (o la variable AI_FOOTPRINT_INGEST_ENDPOINT), y la ruta '
+        + 'de certificación se deriva automáticamente. (No hay certificación en local: el catálogo de '
+        + 'Skills y el análisis viven en el Hub.)',
       errorIntro: 'No se han podido resolver las Skills certificables:',
       errorNetwork: 'no se pudo contactar con el servicio de certificación (error de red).',
       errorTimeout: 'el servicio de certificación agotó el tiempo de espera.',
@@ -750,11 +771,17 @@ const catalogs = {
         + '      --consent-revoke   Revoke saving (→ denied); stops sending\n'
         + '      --consent-reset    Clear the decision (→ undecided); asks again\n'
         + '      --consent-email C  Change the stored email, decision untouched\n'
+        + '      --set-endpoint URL Save the ingest endpoint to ~/.config/ai-footprint/config.json\n'
+        + '                         (a non-local host must be https). The env var takes precedence\n'
+        + '      --show-endpoint    Show the effective endpoint and where it comes from (env / config / none)\n'
         + '  -h, --help             Show this help\n\n'
         + 'The report is ALWAYS generated and shown on your machine, and a cumulative HTML\n'
         + 'report is saved locally whose link is printed on every run. Before showing it,\n'
         + 'the first time you are asked whether to SAVE it in Shakers (with your email);\n'
-        + 'you are asked only once. Reopen the question with --consent-reset.\n',
+        + 'you are asked only once. Reopen the question with --consent-reset.\n\n'
+        + 'The send destination resolves as: AI_FOOTPRINT_INGEST_ENDPOINT (env) > the config\n'
+        + 'file (--set-endpoint) > none. Without an endpoint, the report is shown but not sent\n'
+        + 'to Shakers.\n',
     },
     // Cumulative report (skill-code-certification, reporting redesign) —
     // English mirror. Same content/invariants as the Spanish catalog.
@@ -819,12 +846,26 @@ const catalogs = {
         decisionDenied: 'Decision: denied',
         decisionNone: 'Decision: no decision yet',
         email: (value) => `Email: ${value || '(none)'}`,
+        verificationPending: 'Email pending verification: nothing is sent to Shakers until verified (use --consent-reset to retry).',
         lastSentAt: (value) => `Last saved: ${value || '(never)'}`,
       },
       revoked: 'Consent revoked. Nothing will be saved automatically anymore.',
       reset: 'Consent decision reset. You will be asked again on the next run.',
       emailChanged: (email) => `Email updated to ${email}. It will be used on the next save.`,
       emailInvalidCli: 'Invalid email. Usage: footprint --consent-email you@example.com',
+    },
+    // Endpoint config (endpoint-config task): --set-endpoint / --show-endpoint
+    // copy. The endpoint decides where the sampled code is sent, hence the
+    // https-for-non-local-hosts rule.
+    endpoint: {
+      setOk: (url, path) => `Ingest endpoint saved: ${url}\n  (at ${path}). The AI_FOOTPRINT_INGEST_ENDPOINT environment variable, if set, takes precedence.`,
+      errInsecureRemote: 'Endpoint rejected: a host other than localhost/127.0.0.1 must use https:// (the endpoint decides where your code is sent). Use an https URL or a local host.',
+      errInvalidUrl: 'Endpoint rejected: invalid URL. It must be a full http(s) URL, e.g. https://your-hub/api/v1/works/ai-footprint/reports',
+      errEmpty: 'Endpoint rejected: no URL provided. Usage: footprint --set-endpoint https://your-hub/api/v1/works/ai-footprint/reports',
+      showEnv: (url) => `Effective ingest endpoint: ${url}\n  Source: AI_FOOTPRINT_INGEST_ENDPOINT environment variable.`,
+      showConfigFile: (url, path) => `Effective ingest endpoint: ${url}\n  Source: config file (${path}).`,
+      showConfigInvalid: (path) => `The config file (${path}) has an invalid or insecure endpoint; it is ignored. Fix it with footprint --set-endpoint <url>.`,
+      showNone: 'No ingest endpoint configured. Set AI_FOOTPRINT_INGEST_ENDPOINT or use footprint --set-endpoint <url>. Without it, the report is still shown but not sent to Shakers.',
     },
     // Email-ownership verification (skill-code-certification / ADR-006): the
     // OTP "wait mode" copy, shared by both binaries. Gates PERSISTENCE ONLY —
@@ -911,9 +952,10 @@ const catalogs = {
         notCertifiable: 'not certifiable',
       },
       errorNoEndpoint:
-        'No certification endpoint configured. Set AI_FOOTPRINT_CERTIFY_ENDPOINT to the '
-        + 'Shakers Hub URL and run certify again. (There is no local-only certification: '
-        + 'the Skill catalog and the analysis live on the Hub.)',
+        'No endpoint configured. certify uses the same base as footprint: set it with '
+        + 'footprint --set-endpoint <url> (or the AI_FOOTPRINT_INGEST_ENDPOINT variable), and the '
+        + 'certification path is derived automatically. (There is no local-only certification: the '
+        + 'Skill catalog and the analysis live on the Hub.)',
       errorIntro: 'Could not resolve certifiable Skills:',
       errorNetwork: 'the certification service could not be reached (network error).',
       errorTimeout: 'the certification service timed out.',

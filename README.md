@@ -111,6 +111,8 @@ sh-eval › footprint --consent-status      # view your save decision / email / 
 sh-eval › footprint --consent-revoke      # revoke consent to save (-> denied), no more sends
 sh-eval › footprint --consent-reset       # clear the decision (-> undecided), ask again next run
 sh-eval › footprint --consent-email E     # change the email on file, without touching the decision
+sh-eval › footprint --set-endpoint URL    # persist the ingest endpoint (see "Configuration" below)
+sh-eval › footprint --show-endpoint       # show the effective endpoint and where it comes from
 ```
 
 The `share` command reuses the last footprint stored for the project:
@@ -338,6 +340,35 @@ never breaks the local report.
 | `AI_FOOTPRINT_ROADMAP_ENDPOINT`   | Roadmap personalization endpoint (optional).                                                                                                                                                                                                                    |
 | `AI_FOOTPRINT_CERTIFY_ENDPOINT`   | Skill-certification endpoint for the `certify` command. Unlike the others, this one does **not** degrade silently: `certify` has no local-only product (the Skill catalog and analysis live on the Hub), so an unset value is an actionable error, not a no-op. |
 | `AI_FOOTPRINT_CONFIG_DIR`         | Override `~/.config/ai-footprint/` (mainly for tests).                                                                                                                                                                                                          |
+
+### Config file (persistent ingest endpoint)
+
+So you don't have to `export AI_FOOTPRINT_INGEST_ENDPOINT` every session, the
+ingest endpoint can also live in a persistent file next to consent/reports:
+
+```
+~/.config/ai-footprint/config.json     e.g. { "ingestEndpoint": "https://your-hub/api/v1/works/ai-footprint/reports" }
+```
+
+Set it without editing JSON by hand (inside the `sh-eval` shell, or standalone):
+
+```
+sh-eval › footprint --set-endpoint https://your-hub/api/v1/works/ai-footprint/reports
+sh-eval › footprint --show-endpoint     # prints the effective endpoint and its source
+```
+
+**Resolution precedence:** `AI_FOOTPRINT_INGEST_ENDPOINT` (env var, the raw
+developer override) **>** `config.json` **>** none. There is still no
+compiled-in production default. The `email-verification/*` URLs keep deriving
+as siblings of whatever ingest resolves to — that derivation is unchanged.
+
+**Endpoint safety (bounded):** because the endpoint decides where the sampled
+code (`certify`) and derived signals (`footprint`) are sent, `--set-endpoint`
+refuses to persist an `http://` URL to any host other than
+`localhost`/`127.0.0.1` — a non-local host must be `https`. There is no domain
+allowlist yet; the only rule is https-for-non-local. The env var is not
+validated (it's the explicit developer escape hatch); a hand-edited config file
+carrying an insecure remote endpoint is ignored at read time.
 
 ## Reference server (not deployed)
 

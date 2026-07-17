@@ -76,13 +76,26 @@ function createLineQueueAsk(writeQuestion) {
   return { ask, pushLine, markEnded };
 }
 
-function createStdinAsk() {
+// `onInterrupt` (optional): a Ctrl-C (SIGINT) handler for a TTY. Registering a
+// 'SIGINT' listener on the readline is what stops Node's default hard-kill and
+// lets us exit cleanly. This ask drives the consent / email / OTP prompts; if a
+// Talent aborts there, we exit WITHOUT a stack trace. No partial state is left
+// behind by construction: nothing is persisted until the consent decision
+// reaches a terminal state (decline, or grant + verified email — see
+// src/consent-flow.js), which is strictly AFTER any prompt this handler could
+// interrupt. Defaults to a clean exit(130) (the conventional SIGINT code).
+function createStdinAsk({ onInterrupt } = {}) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   const { ask, pushLine, markEnded } = createLineQueueAsk((question) => {
     process.stdout.write(`  ${question} `);
   });
   rl.on('line', pushLine);
   rl.on('close', markEnded);
+  rl.on('SIGINT', onInterrupt || (() => {
+    process.stdout.write('\n');
+    rl.close();
+    process.exit(130);
+  }));
   ask.close = () => rl.close();
   return ask;
 }
