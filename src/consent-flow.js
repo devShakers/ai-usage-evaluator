@@ -1,6 +1,6 @@
 'use strict';
 
-const { isValidEmail, recordConsent, setEmailVerified } = require('./share');
+const { isValidEmail, recordConsent } = require('./share');
 const { getEmailVerificationRequestUrl, getEmailVerificationVerifyUrl } = require('./config');
 const { runEmailVerification } = require('./email-verification');
 
@@ -72,10 +72,12 @@ async function defaultVerifyEmail({ email, ask, catalog }) {
 // Runs the short consent-to-persist prompt + (if accepted) email collection +
 // (skill-code-certification / ADR-006) EMAIL-OWNERSHIP VERIFICATION.
 // Returns the resulting decision: 'granted' | 'denied' | null.
-// `null` means no valid answer was obtained (unrecognized yes/no, malformed
-// email, or a FAILED/CANCELLED/EXPIRED verification): nothing is persisted, so
-// the prompt shows again on the next run — the CLI never persists without an
-// explicit, well-formed `granted` decision backed by a VERIFIED email.
+// `null` means no TERMINAL decision was reached (unrecognized yes/no, malformed
+// email, or a FAILED/CANCELLED/EXPIRED verification — incl. Ctrl-C at the OTP
+// prompt): NOTHING is persisted, so the prompt shows again on the next run. The
+// CLI only ever persists a decision that reached a terminal state: an explicit
+// DECLINE, or a GRANT whose email ownership was actually VERIFIED. An
+// interrupted consent is not a decision.
 //
 // The verification gates PERSISTENCE ONLY (ADR-003/ADR-006): the caller
 // (bin/report.js, bin/certify.js) invokes this AFTER the local report has
@@ -104,29 +106,26 @@ async function runConsentPrompt({ ask, catalog, verifyEmail = defaultVerifyEmail
     return null;
   }
 
-  // Persist the GRANT + email UP-FRONT, before verification, as UNVERIFIED.
-  // ADR-006 gates SENDING to Shakers on a proven email — NOT the local consent
-  // decision. Recording the decision now makes a granted answer STICK: later
-  // runs skip the prompt (computeConsentSkip) instead of re-asking
-  // consent+email+OTP every single time when the OTP backend is unavailable
-  // (the bug this fixes — infinite re-prompt). Nothing is SENT yet: autoShare/
-  // shareCertification refuse to send while `emailVerified === false`.
-  recordConsent('granted', email, { verified: false });
-
-  // Prove ownership before anything is SENT under this email. The report is
-  // already on screen. On success we flip the flag so sending is unlocked; on
-  // any failure (backend down, cancelled, expired, exhausted) the DECISION
-  // still stands — no re-prompt next run — but nothing is sent until verified.
-  // runEmailVerification already printed the specific reason.
+  // Prove email ownership BEFORE persisting anything (ADR-006). A grant is only
+  // TERMINAL — and only then remembered and skippable on future runs — once
+  // ownership is verified. We deliberately do NOT persist the grant up front:
+  // if the Talent aborts here (Ctrl-C / empty line / EOF at the OTP prompt) or
+  // verification fails (backend down, expired, exhausted), NOTHING is written,
+  // so the next run re-asks from the start. An interrupted consent must never
+  // be remembered as a valid, skippable decision. The dev/stub backend logs the
+  // code locally, so a Talent who wants to persist can always complete this;
+  // the report itself was/will still be shown regardless (ADR-003).
   const verification = await verifyEmail({ email, ask, catalog });
   if (verification && verification.verified) {
-    setEmailVerified(true);
+    recordConsent('granted', email, { verified: true });
     process.stdout.write(`  ${c.grantedSaved(email)}\n\n`);
     return 'granted';
   }
 
-  process.stdout.write(`  ${c.grantedUnverified(email)}\n\n`);
-  return 'granted';
+  // Not verified: persist nothing, re-ask next run. runEmailVerification
+  // already printed the specific reason (cancelled / technical / exhausted).
+  process.stdout.write(`  ${c.notObtained}\n\n`);
+  return null;
 }
 
 module.exports = { runConsentPrompt };

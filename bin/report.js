@@ -347,6 +347,7 @@ async function run(argv = process.argv.slice(2), { ask: injectedAsk = null } = {
   const decision = getConsentDecision(state);
   const consentSkip = computeConsentSkip({
     decision,
+    emailVerified: state ? state.emailVerified : undefined,
     stdinIsTTY: !!process.stdin.isTTY,
     consentFilePath: consentPath(),
     catalog,

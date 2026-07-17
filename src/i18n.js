@@ -359,11 +359,6 @@ const catalogs = {
       notObtained: 'No se ha podido registrar tu respuesta; se te volverá a preguntar la próxima vez.',
       deniedSaved: 'Entendido, no se guardará nada. Puedes cambiar de opinión más adelante volviendo a ejecutar el comando.',
       grantedSaved: (email) => `Gracias. A partir de ahora este informe se guardará automáticamente en Shakers (correo: ${email}, máx. 1 vez por hora).`,
-      // Grant persisted pero verificación de correo NO completada (ADR-006): la
-      // decisión se guarda igual (no se vuelve a preguntar), pero no se envía
-      // nada a Shakers hasta verificar el correo. Evita el re-preguntado
-      // infinito cuando el backend de OTP no está disponible.
-      grantedUnverified: (email) => `Gracias. Tu decisión y tu correo (${email}) se han guardado, así que no se te volverá a preguntar. El informe se sigue mostrando siempre, pero no se enviará a Shakers hasta verificar el correo. Vuelve a ejecutar con --consent-reset para reintentar la verificación.`,
       // DX visibility (talents-ai-score): the prompt runs exactly ONCE per
       // talent by design (ADR-007/ADR-011) — a talent who already answered
       // (even in an earlier test run) will never see it again, which read
@@ -839,11 +834,6 @@ const catalogs = {
       notObtained: "Couldn't record your answer; you'll be asked again next time.",
       deniedSaved: 'Understood, nothing will be saved. You can change your mind later by running the command again.',
       grantedSaved: (email) => `Thanks. From now on this report will be saved in Shakers automatically (email: ${email}, max. once per hour).`,
-      // Grant persisted but email verification NOT completed (ADR-006): the
-      // decision is saved anyway (you won't be asked again), but nothing is
-      // sent to Shakers until the email is verified. Prevents the infinite
-      // re-prompt when the OTP backend is unavailable.
-      grantedUnverified: (email) => `Thanks. Your decision and email (${email}) have been saved, so you won't be asked again. The report is still always shown, but it won't be sent to Shakers until your email is verified. Re-run with --consent-reset to retry verification.`,
       skipAlreadyDecided: (decision, path) =>
         `Consent already answered (${decision}) — stored at ${path}. `
         + 'Use --consent-status to view it, --consent-revoke to deny, or --consent-reset to be asked again.',

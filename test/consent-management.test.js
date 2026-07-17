@@ -103,9 +103,12 @@ const MATURITY = { level: 1, name: 'Exploring', score: 20 };
 
 // --- getConsentStatus --------------------------------------------------------
 
-test('getConsentStatus: no decision yet -> consent null, no email, no lastSentAt', () => {
+test('getConsentStatus: no decision yet -> consent null, no email, emailVerified false, no lastSentAt', () => {
   const status = getConsentStatus();
-  assert.deepEqual(status, { consent: null, email: null, lastSentAt: null });
+  // `emailVerified` is part of the status by design (ADR-006): computeConsentSkip
+  // depends on it to distinguish a terminal (verified) grant from an incomplete
+  // one. With no state, it defaults to false.
+  assert.deepEqual(status, { consent: null, email: null, emailVerified: false, lastSentAt: null });
 });
 
 test('getConsentStatus: reflects a granted decision, email and last send', () => {
@@ -171,7 +174,7 @@ test('setEmail: valid email persists without touching an existing consent decisi
   assert.equal(getConsentStatus().consent, 'granted'); // untouched
 });
 
-test('setEmail: changing the email is reflected in the NEXT send', async () => {
+test('setEmail: a changed email is unverified, so autoShare blocks the next send until re-verification (ADR-006)', async () => {
   const server = await echoServer();
   let lastReceivedEmail = null;
   server.removeAllListeners('request');
@@ -186,12 +189,16 @@ test('setEmail: changing the email is reflected in the NEXT send', async () => {
     });
   });
   try {
-    recordConsent('granted', 'old@example.com');
+    // A verified grant sends normally under its email.
+    recordConsent('granted', 'old@example.com', { verified: true });
     process.env.AI_FOOTPRINT_INGEST_ENDPOINT = serverUrl(server);
 
     await autoShare(REPORT, MATURITY);
     assert.equal(lastReceivedEmail, 'old@example.com');
 
+    // Changing the email marks it unverified (ADR-006): ownership of the new
+    // address hasn't been proven, so autoShare must NOT send under it until it
+    // is re-verified.
     setEmail('new@example.com');
     // Bypass the client-side throttle for this assertion by clearing
     // lastSentAt directly (the throttle itself is covered in share.test.js).
@@ -199,8 +206,12 @@ test('setEmail: changing the email is reflected in the NEXT send', async () => {
     state.lastSentAt = null;
     require('../src/share').saveConsentState(state);
 
-    await autoShare(REPORT, MATURITY);
-    assert.equal(lastReceivedEmail, 'new@example.com');
+    const r = await autoShare(REPORT, MATURITY);
+    assert.equal(r.ok, false);
+    assert.equal(r.skipped, true);
+    assert.equal(r.reason, 'email-unverified');
+    // Nothing was sent under the new (unverified) email.
+    assert.equal(lastReceivedEmail, 'old@example.com');
   } finally {
     server.close();
   }
