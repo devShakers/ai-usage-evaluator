@@ -6,6 +6,8 @@
  * Shakers mini-shell (REPL, Claude-Code style) where the commands run:
  *   footprint [args]   scan this project + machine, score the AI setup
  *   certify   [args]   certify Skills from this project's code
+ *   report    [args]   open the full shareable HTML report (footprint + certs)
+ *   share     [args]   branded footprint card for LinkedIn
  *   help | clear | exit/quit
  *
  * No behaviour change to the commands — they're the SAME `run(args,{ask})` from
@@ -26,6 +28,7 @@ const { runRepl, renderGoodbye } = require('../src/repl-shell');
 const { run: runFootprint } = require('./report');
 const { run: runCertify } = require('./certify');
 const { run: runShare } = require('./share');
+const { run: runReport } = require('./report-html');
 
 let VERSION = '';
 try {
@@ -66,7 +69,7 @@ async function main() {
     stdin,
     lang,
     version: VERSION,
-    deps: { runFootprint, runCertify, runShare },
+    deps: { runFootprint, runCertify, runShare, runReport },
   });
 
   stdin.close();

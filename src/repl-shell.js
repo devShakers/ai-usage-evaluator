@@ -152,14 +152,16 @@ function bannerWide({ title, color }) {
   right.push([{ t: 'with AI, and certify skills from your code.', st: { fg: BRAND.white } }]);
   right.push([]);
   right.push([{ t: 'Commands', st: { bold: true, fg: BRAND.lime } }]);
-  right.push([{ t: 'footprint'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'score AI setup (T0–T7) + roadmap', st: { fg: BRAND.zinc } }]);
+  right.push([{ t: 'footprint'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'score AI setup (T0–T7) + agents', st: { fg: BRAND.zinc } }]);
   right.push([{ t: 'certify'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'certify Skills from your code', st: { fg: BRAND.zinc } }]);
+  right.push([{ t: 'report'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'open full shareable HTML report', st: { fg: BRAND.zinc } }]);
   right.push([{ t: 'share'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'branded card for LinkedIn', st: { fg: BRAND.zinc } }]);
   right.push([{ t: '─'.repeat(RW), st: { fg: BRAND.zinc } }]);
   right.push([{ t: 'Getting started', st: { bold: true, fg: BRAND.violet } }]);
   right.push([
     { t: 'footprint', st: { fg: BRAND.white } }, { t: ' · ', st: { fg: BRAND.zinc } },
     { t: 'certify', st: { fg: BRAND.white } }, { t: ' · ', st: { fg: BRAND.zinc } },
+    { t: 'report', st: { fg: BRAND.white } }, { t: ' · ', st: { fg: BRAND.zinc } },
     { t: 'share', st: { fg: BRAND.white } },
     { t: ' · help · exit', st: { fg: BRAND.zinc } },
   ]);
@@ -212,9 +214,10 @@ function bannerStacked({ title, color, width }) {
   lines.push(line([{ t: 'Commands', st: { bold: true, fg: BRAND.lime } }]));
   lines.push(line([{ t: 'footprint  ', st: { bold: true, fg: BRAND.white } }, { t: 'score AI setup (T0–T7)', st: { fg: BRAND.zinc } }]));
   lines.push(line([{ t: 'certify    ', st: { bold: true, fg: BRAND.white } }, { t: 'certify your Skills', st: { fg: BRAND.zinc } }]));
+  lines.push(line([{ t: 'report     ', st: { bold: true, fg: BRAND.white } }, { t: 'full HTML report', st: { fg: BRAND.zinc } }]));
   lines.push(line([{ t: 'share      ', st: { bold: true, fg: BRAND.white } }, { t: 'card for LinkedIn', st: { fg: BRAND.zinc } }]));
   lines.push(line([{ t: '', st: null }]));
-  lines.push(line([{ t: 'footprint · certify · share · help · exit', st: { fg: BRAND.zinc } }]));
+  lines.push(line([{ t: 'footprint · certify · report · share · help · exit', st: { fg: BRAND.zinc } }]));
   lines.push(bottomBorder(INNER, color));
   lines.push('');
   return lines.join('\n') + '\n';
@@ -277,6 +280,9 @@ async function dispatchCommand({ command, args }, { ask, catalog, deps, out = pr
       return { exit: false };
     case 'share':
       await deps.runShare(args, { ask });
+      return { exit: false };
+    case 'report':
+      await deps.runReport(args, { ask });
       return { exit: false };
     default:
       out.write(`\n  ${catalog.repl.unknown(command)}\n`);

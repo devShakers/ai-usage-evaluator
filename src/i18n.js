@@ -141,6 +141,11 @@ const catalogs = {
       environment: 'Entorno',
       editors: 'editores',
       noEditorsDetected: 'ninguno detectado',
+      // ADR-016 agent evaluation (terminal, one line per agent): compact usage
+      // signal derived from the local Claude Code history.
+      agentUsed: (n) => `usado ${n}×`,
+      agentUnused: 'sin uso local',
+      agentUsageUnavailable: '(sin historial local de Claude Code: uso no disponible)',
       nextStep: 'Siguiente paso',
       files: (n) => `${n} ${n === 1 ? 'fichero' : 'ficheros'}`,
       lastModified: (label) => `última modificación: ${label}`,
@@ -189,6 +194,14 @@ const catalogs = {
       // templated sentence (that repetitive-filler approach was already
       // tried and rejected).
       agentDescriptionFromName: (name) => `Agente "${name}" (sin descripción declarada en su fichero).`,
+      // ADR-016 agent evaluation (HTML per-agent detail): definition-quality
+      // score + LLM rationale + local usage signal. The full detail lives here;
+      // the terminal keeps only a one-line summary.
+      agentScoreLabel: 'Calidad de la definición (0-100)',
+      agentQualityLabel: 'Por qué:',
+      agentUsageLabel: 'Uso local (historial de Claude Code)',
+      agentUsedTimes: (n) => `usado ${n}×`,
+      agentUnused: 'sin uso local',
       // Project technologies (talents-ai-score, ADR-012). Refined: shows
       // recognized FRAMEWORKS/LIBRARIES only (React, Express...), not a raw
       // dependency dump — the empty state also covers "manifest exists but
@@ -260,6 +273,18 @@ const catalogs = {
         hint: 'LinkedIn no permite adjuntar la imagen por URL: descarga el PNG desde la tarjeta y luego adjúntalo en tu publicación.',
         error: 'No se pudo generar la tarjeta para compartir.',
       },
+      // `report` command (ADR-016): genera y ABRE el informe HTML completo y
+      // compartible de este proyecto (footprint + Skills certificadas).
+      // `footprint`/`certify` ya no imprimen enlace; el HTML se produce aquí.
+      report: {
+        help: 'report — genera y abre el informe HTML completo de este proyecto (footprint + Skills certificadas) para compartir con tu equipo.\n'
+          + '  Usa `footprint` (y opcionalmente `certify`) primero; `report` reúne su resultado.\n'
+          + '  Opciones: --root <dir>, --lang es|en, --no-open (no abre el navegador; solo imprime el enlace)',
+        noData: 'Aún no hay nada que mostrar para este proyecto. Ejecuta `footprint` primero (y opcionalmente `certify`), luego `report`.',
+        ready: (url) => `Tu informe está listo:\n  ${url}`,
+        opening: 'Abriéndolo en tu navegador…',
+        error: 'No se pudo generar el informe.',
+      },
       // Terminal progress feedback (talents-ai-score): stderr-only status
       // during the two slow phases (see src/terminal-progress.js).
       scanningLabel: 'Escaneando entorno y detectores…',
@@ -267,6 +292,8 @@ const catalogs = {
       // Roadmap personalization (talents-ai-score, ADR-015): reuses the
       // same spinner mechanism as synthesizingLabel above.
       personalizingRoadmapLabel: 'Personalizando roadmap…',
+      // ADR-016: agent definition-quality evaluation (ephemeral LLM call).
+      evaluatingAgentsLabel: 'Evaluando la calidad de tus agentes…',
       // "Construir el siguiente nivel ahora" (issue 021): now a SECONDARY,
       // opt-in alternative — the copyable implementation prompt (below) is
       // the PRIMARY "how do I implement this" path.
@@ -279,8 +306,9 @@ const catalogs = {
         + 'Uso:\n  footprint [opciones]\n\n'
         + 'Opciones:\n'
         + '      --json             Imprime el informe en JSON por stdout\n'
-        + '      --no-save          No escribe el informe en disco (solo muestra)\n'
+        + '      --no-save          No guarda el estado del informe (solo muestra)\n'
         + '      --root DIR         Escanea DIR en vez del directorio actual\n'
+        + '      --roadmap          Muestra el bloque de "siguientes pasos" (oculto por defecto)\n'
         + '      --build-next-level Genera el starter del siguiente tier (alternativa secundaria)\n'
         + '      --force            Junto a --build-next-level, sobrescribe un fichero existente\n'
         + '      --lang es|en       Fuerza el idioma (informe + prompt) en vez de detectarlo del sistema\n'
@@ -292,10 +320,11 @@ const catalogs = {
         + '                         (un host no-local debe ser https). La env var tiene prioridad\n'
         + '      --show-endpoint    Muestra el endpoint efectivo y de dónde sale (env / config / ninguno)\n'
         + '  -h, --help             Muestra esta ayuda\n\n'
-        + 'El informe se genera y se muestra SIEMPRE en tu equipo, y se guarda un informe\n'
-        + 'HTML acumulado en local cuyo enlace se imprime en cada ejecución. Antes de\n'
-        + 'mostrarlo, la primera vez se te pregunta si quieres GUARDARLO en Shakers (con tu\n'
-        + 'correo); se pregunta una sola vez. Reabre la pregunta con --consent-reset.\n\n'
+        + 'El informe se genera y se muestra SIEMPRE en tu equipo. footprint ya NO imprime\n'
+        + 'un enlace: usa el comando `report` para generar y abrir el informe HTML completo\n'
+        + '(footprint + Skills certificadas) que puedes compartir con tu equipo. Antes de\n'
+        + 'mostrar el resultado, la primera vez se te pregunta si quieres GUARDARLO en Shakers\n'
+        + '(con tu correo); se pregunta una sola vez. Reabre la pregunta con --consent-reset.\n\n'
         + 'El destino de envío se resuelve así: AI_FOOTPRINT_INGEST_ENDPOINT (env) > el fichero\n'
         + 'de config (--set-endpoint) > ninguno. Sin endpoint, el informe se muestra pero no se\n'
         + 'envía a Shakers.\n',
@@ -569,13 +598,14 @@ const catalogs = {
         'Shakers — comandos disponibles\n\n'
         + '  footprint [opciones]   Escanea este proyecto y tu equipo; puntúa tu setup de IA (T0-T7)\n'
         + '  certify   [opciones]   Certifica tus Skills a partir del código de este proyecto\n'
+        + '  report    [opciones]   Genera y abre el informe HTML completo (footprint + Skills certificadas)\n'
         + '  share     [opciones]   Crea una tarjeta branded de tu footprint para compartir en LinkedIn\n'
         + '  help                   Muestra esta ayuda\n'
         + '  clear                  Limpia la pantalla\n'
         + '  exit | quit            Cierra la shell\n\n'
         + 'Los flags de cada comando siguen funcionando dentro de la shell\n'
-        + '(p.ej. `footprint --root <dir>`, `certify --all`). Usa `footprint --help`\n'
-        + 'o `certify --help` para ver todas sus opciones.',
+        + '(p.ej. `footprint --root <dir>`, `footprint --roadmap`, `certify --all`). Usa\n'
+        + '`footprint --help` o `certify --help` para ver todas sus opciones.',
     },
   },
   en: {
@@ -666,6 +696,11 @@ const catalogs = {
       environment: 'Environment',
       editors: 'editors',
       noEditorsDetected: 'none detected',
+      // ADR-016 agent evaluation (terminal, one line per agent): compact usage
+      // signal derived from the local Claude Code history.
+      agentUsed: (n) => `used ${n}×`,
+      agentUnused: 'no local use',
+      agentUsageUnavailable: '(no local Claude Code history: usage unavailable)',
       nextStep: 'Next step',
       files: (n) => `${n} ${n === 1 ? 'file' : 'files'}`,
       lastModified: (label) => `last modified: ${label}`,
@@ -701,6 +736,14 @@ const catalogs = {
       orchestratorLabel: 'Orchestrator',
       reportsToLabel: 'Reports to:',
       agentDescriptionFromName: (name) => `"${name}" agent (no description declared in its file).`,
+      // ADR-016 agent evaluation (HTML per-agent detail): definition-quality
+      // score + LLM rationale + local usage signal. The full detail lives here;
+      // the terminal keeps only a one-line summary.
+      agentScoreLabel: 'Definition quality (0-100)',
+      agentQualityLabel: 'Why:',
+      agentUsageLabel: 'Local usage (Claude Code history)',
+      agentUsedTimes: (n) => `used ${n}×`,
+      agentUnused: 'no local use',
       // Project technologies (talents-ai-score, ADR-012). Refined: shows
       // recognized FRAMEWORKS/LIBRARIES only, not a raw dependency dump.
       technologiesHeading: 'Project technologies',
@@ -750,9 +793,23 @@ const catalogs = {
         hint: 'LinkedIn can\'t attach an image from a URL: download the PNG from the card, then attach it to your post.',
         error: 'Could not generate the shareable card.',
       },
+      // `report` command (ADR-016): builds and OPENS the full, shareable HTML
+      // report for this project (footprint + certified Skills).
+      // `footprint`/`certify` no longer print a link; the HTML is produced here.
+      report: {
+        help: 'report — build and open the full HTML report for this project (footprint + certified Skills) to share with your team.\n'
+          + '  Run `footprint` (and optionally `certify`) first; `report` gathers their result.\n'
+          + '  Options: --root <dir>, --lang es|en, --no-open (do not open the browser; just print the link)',
+        noData: 'Nothing to show for this project yet. Run `footprint` first (and optionally `certify`), then `report`.',
+        ready: (url) => `Your report is ready:\n  ${url}`,
+        opening: 'Opening it in your browser…',
+        error: 'Could not generate the report.',
+      },
       scanningLabel: 'Scanning environment and detectors…',
       synthesizingLabel: 'Synthesizing agents with AI…',
       personalizingRoadmapLabel: 'Personalizing roadmap…',
+      // ADR-016: agent definition-quality evaluation (ephemeral LLM call).
+      evaluatingAgentsLabel: 'Evaluating your agents’ quality…',
       buildNextLevelHint: 'Alternatively, run `footprint --build-next-level` to generate the starter file directly in your project.',
       // Localized help (skill-code-certification / ADR-003): previously
       // hardcoded Spanish in bin/report.js; now routed through i18n so it
@@ -762,8 +819,9 @@ const catalogs = {
         + 'Usage:\n  footprint [options]\n\n'
         + 'Options:\n'
         + '      --json             Print the report as JSON on stdout\n'
-        + '      --no-save          Do not write the report to disk (show only)\n'
+        + '      --no-save          Do not persist the report state (show only)\n'
         + '      --root DIR         Scan DIR instead of the current directory\n'
+        + '      --roadmap          Show the "next steps" block (hidden by default)\n'
         + '      --build-next-level Generate the next tier starter (secondary alternative)\n'
         + '      --force            With --build-next-level, overwrite an existing file\n'
         + '      --lang es|en       Force the language (report + prompt) instead of OS detection\n'
@@ -775,10 +833,11 @@ const catalogs = {
         + '                         (a non-local host must be https). The env var takes precedence\n'
         + '      --show-endpoint    Show the effective endpoint and where it comes from (env / config / none)\n'
         + '  -h, --help             Show this help\n\n'
-        + 'The report is ALWAYS generated and shown on your machine, and a cumulative HTML\n'
-        + 'report is saved locally whose link is printed on every run. Before showing it,\n'
-        + 'the first time you are asked whether to SAVE it in Shakers (with your email);\n'
-        + 'you are asked only once. Reopen the question with --consent-reset.\n\n'
+        + 'The report is ALWAYS generated and shown on your machine. footprint no longer\n'
+        + 'prints a link: use the `report` command to build and open the full HTML report\n'
+        + '(footprint + certified Skills) you can share with your team. Before showing the\n'
+        + 'result, the first time you are asked whether to SAVE it in Shakers (with your\n'
+        + 'email); you are asked only once. Reopen the question with --consent-reset.\n\n'
         + 'The send destination resolves as: AI_FOOTPRINT_INGEST_ENDPOINT (env) > the config\n'
         + 'file (--set-endpoint) > none. Without an endpoint, the report is shown but not sent\n'
         + 'to Shakers.\n',
@@ -1031,13 +1090,14 @@ const catalogs = {
         'Shakers — available commands\n\n'
         + '  footprint [options]   Scan this project + your machine; score your AI setup (T0-T7)\n'
         + '  certify   [options]   Certify your Skills from this project\'s code\n'
+        + '  report    [options]   Build and open the full HTML report (footprint + certified Skills)\n'
         + '  share     [options]   Build a branded card of your footprint to share on LinkedIn\n'
         + '  help                  Show this help\n'
         + '  clear                 Clear the screen\n'
         + '  exit | quit           Close the shell\n\n'
         + 'Each command\'s flags still work inside the shell\n'
-        + '(e.g. `footprint --root <dir>`, `certify --all`). Use `footprint --help`\n'
-        + 'or `certify --help` for all their options.',
+        + '(e.g. `footprint --root <dir>`, `footprint --roadmap`, `certify --all`). Use\n'
+        + '`footprint --help` or `certify --help` for all their options.',
     },
   },
 };

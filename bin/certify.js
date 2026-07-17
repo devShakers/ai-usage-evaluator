@@ -34,7 +34,6 @@
 const { parseCertifyArgs } = require('../src/certify-args');
 const { detectReportLang, getCatalog } = require('../src/i18n');
 const { getCertifyEndpoint } = require('../src/config');
-const { oscLink } = require('../src/osc-link');
 const { detectTechnologies } = require('../src/tech-detector');
 const { confirmDisclaimerAcceptance } = require('../src/certify-disclaimer');
 const {
@@ -48,7 +47,7 @@ const { formatResolveReport } = require('../src/certify-render');
 const { buildSkillSamples } = require('../src/skill-sampler');
 const { parseSkillSelection } = require('../src/skill-selection');
 const { renderCertificationTerminal } = require('../src/render-certification');
-const { upsertCertification } = require('../src/report-store');
+const { persistCertification } = require('../src/report-store');
 const {
   isValidEmail,
   normalizeEmail,
@@ -264,16 +263,15 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
   // main, before Skill selection) — nothing consent-related happens here.
   process.stdout.write('\n' + renderCertificationTerminal(certification, lang) + '\n\n');
 
-  // Local report (skill-code-certification, reporting redesign): upsert each
-  // certified Skill into THIS PROJECT's scoped report (keyed by Skill id within
-  // the project `root`) and ALWAYS print its file:// link. HTML is no longer
-  // opt-in behind --html. Writing the local report must never break the run.
+  // ADR-016: certify PERSISTS each certified Skill into THIS PROJECT's scoped
+  // state (report-state.json, keyed by Skill id within the project `root`) but
+  // no longer writes the HTML nor prints a link — the cumulative HTML (footprint
+  // + certified Skills) is materialized + opened only by the `report` command.
+  // Persisting must never break the run.
   try {
-    const paths = upsertCertification({ root, items, lang });
-    // OSC 8 clickable file:// link (iTerm2 &c.); plain URL elsewhere.
-    process.stdout.write(`  ${c.reportLink(oscLink(paths.fileUrl))}\n\n`);
+    persistCertification({ root, items });
   } catch {
-    // Never break the local run over a failed report write.
+    // Never break the local run over a failed state write.
   }
 
   // --- persist (only if consent is granted) ----------------------------------

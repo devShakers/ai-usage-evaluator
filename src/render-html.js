@@ -322,6 +322,19 @@ function buildAgentCardTree(report, t) {
   const rawDescByName = new Map(rawDescriptions.map((d) => [normalizeAgentName(d.name), d.description]));
   const byName = new Set(agents.map((a) => a.name));
 
+  // ADR-016 agent evaluation: the ephemeral LLM definition-quality score
+  // (+ rationale) keyed by normalized name, and the LOCAL usage count keyed by
+  // exact name. Both optional — absent => card renders with no score/usage.
+  const evaluations =
+    report.agentEvaluation && Array.isArray(report.agentEvaluation.evaluations)
+      ? report.agentEvaluation.evaluations
+      : [];
+  const evalByName = new Map(evaluations.map((e) => [normalizeAgentName(e.name), e]));
+  const usageByAgent =
+    report.agentUsage && report.agentUsage.byAgent && typeof report.agentUsage.byAgent === 'object'
+      ? report.agentUsage.byAgent
+      : null;
+
   const cards = agents.map((a) => {
     const key = normalizeAgentName(a.name);
     const synth = synthesisByName.get(key);
@@ -337,6 +350,11 @@ function buildAgentCardTree(report, t) {
     const fallbackPhrase = t && t.html.agentDescriptionFromName ? t.html.agentDescriptionFromName(humanizeAgentName(a.name)) : null;
     const whatItDoes = synthPhrase || rawPhrase || fallbackPhrase;
 
+    const ev = evalByName.get(key);
+    const score = ev && typeof ev.score === 'number' ? ev.score : null;
+    const rationale = ev && typeof ev.rationale === 'string' && ev.rationale.trim() ? ev.rationale.trim() : null;
+    const usageCount = usageByAgent ? (typeof usageByAgent[a.name] === 'number' ? usageByAgent[a.name] : null) : null;
+
     return {
       name: a.name,
       symbolicName: synth && synth.symbolicName ? synth.symbolicName : null,
@@ -344,6 +362,9 @@ function buildAgentCardTree(report, t) {
       tools,
       model,
       parent: parentKey,
+      score,
+      rationale,
+      usageCount,
     };
   });
 
@@ -375,6 +396,20 @@ function agentCardHtml(card, t) {
   const modelChip = card.model
     ? `<span class="chip pill model"><i class="dot" aria-hidden="true"></i>${esc(card.model)}</span>`
     : '';
+  // ADR-016 agent evaluation: the full per-agent detail lives HERE (terminal
+  // keeps only a one-line summary). A definition-quality score badge (banded
+  // green/amber/red), its LLM rationale, and the local usage signal.
+  const scoreBadge = typeof card.score === 'number'
+    ? `<span class="agent-score ${scoreBand(card.score)}" title="${esc(t.html.agentScoreLabel)}">`
+      + `<b>${card.score}</b><span class="agent-score-max">/100</span></span>`
+    : '';
+  const usageChip = card.usageCount != null
+    ? `<span class="chip pill usage" title="${esc(t.html.agentUsageLabel)}">`
+      + `<i class="dot" aria-hidden="true"></i>${esc(card.usageCount === 0 ? t.html.agentUnused : t.html.agentUsedTimes(card.usageCount))}</span>`
+    : '';
+  const rationale = card.rationale
+    ? `<p class="agent-rationale"><span class="agent-rationale-k">${esc(t.html.agentQualityLabel)}</span> ${esc(card.rationale)}</p>`
+    : '';
   // Hierarchy is now visual (nesting + rail, see agentNodeHtml) — the
   // `aria-label` is the accessible equivalent of the old "Reports to:"
   // text line, not a duplicate of it.
@@ -384,11 +419,21 @@ function agentCardHtml(card, t) {
   return `<div class="agent-card" aria-label="${esc(ariaLabel)}">
     <div class="agent-card-head">
       <span class="agent-title">${title}</span>
-      ${badge}
+      ${scoreBadge || badge}
     </div>
+    ${hasSymbolicName && scoreBadge ? `<div class="agent-chips">${badge}</div>` : ''}
     ${phrase}
-    <div class="agent-chips">${modelChip}</div>
+    ${rationale}
+    <div class="agent-chips">${modelChip}${usageChip}</div>
   </div>`;
+}
+
+// Score band for the badge colour: >=80 strong, >=50 mid, else low. Mirrors the
+// terminal's green/amber/red banding (src/render-terminal.js#scoreColor).
+function scoreBand(score) {
+  if (score >= 80) return 'good';
+  if (score >= 50) return 'mid';
+  return 'low';
 }
 
 // Recursive: renders a card plus its children, indented and rail-connected,
@@ -879,6 +924,17 @@ const FOOTPRINT_CSS = `
     padding:4px 10px;border-radius:var(--r-full);white-space:nowrap}
   .agent-phrase{margin:0;font-size:14px;font-style:italic;line-height:1.5;
     color:var(--muted)}
+  /* ADR-016 agent evaluation: score badge (banded), rationale, usage chip. */
+  .agent-score{flex:none;display:inline-flex;align-items:baseline;gap:1px;
+    font-family:var(--font-mono);font-weight:700;font-size:16px;line-height:1;
+    padding:5px 10px;border-radius:var(--r-full);white-space:nowrap}
+  .agent-score .agent-score-max{font-size:11px;font-weight:600;opacity:.7}
+  .agent-score.good{color:var(--ds-emerald-700,#047857);background:var(--ds-emerald-50,#ecfdf5)}
+  .agent-score.mid{color:var(--ds-amber-700,#b45309);background:var(--ds-amber-50,#fffbeb)}
+  .agent-score.low{color:var(--ds-red-700,#b91c1c);background:var(--ds-red-50,#fef2f2)}
+  .agent-rationale{margin:0;font-size:13px;line-height:1.5;color:var(--muted)}
+  .agent-rationale-k{font-weight:600;color:var(--fg)}
+  .chip.pill.usage{color:var(--secondary-fg);background:var(--track)}
   .agent-chips{display:flex;flex-wrap:wrap;gap:8px}
   .chip.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;
     font-weight:500;color:var(--secondary-fg);background:var(--secondary);

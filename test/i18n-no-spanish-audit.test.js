@@ -116,7 +116,9 @@ test('renderHtml (en): the English tier name and section headings ARE present (p
 });
 
 test('renderTerminal (en): the English tier name and section headings ARE present', () => {
-  const out = stripAnsi(renderTerminal(reportAt('T2'), MATURITY_BY_TIER.T2, 'en'));
+  // ADR-016: pass { showRoadmap } so the roadmap section (and its EN tier name)
+  // is rendered too — it's hidden by default now, behind --roadmap.
+  const out = stripAnsi(renderTerminal(reportAt('T2'), MATURITY_BY_TIER.T2, 'en', { showRoadmap: true }));
   assert.match(out, /Detected/);
   // The terminal was condensed (CPO, 2026-07-16): the "Environment" block was
   // dropped from the terminal (it stays in the HTML — see the renderHtml check

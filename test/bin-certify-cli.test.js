@@ -91,7 +91,10 @@ test('no endpoint configured -> actionable error, exit 1 (no silent degrade)', a
     env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_CERTIFY_ENDPOINT: '' },
   });
   assert.equal(code, 1);
-  assert.match(stderr, /AI_FOOTPRINT_CERTIFY_ENDPOINT/);
+  // Endpoint unification (commit 8d89e4d): the actionable copy now points at
+  // footprint --set-endpoint / AI_FOOTPRINT_INGEST_ENDPOINT (the shared base),
+  // not a certify-only env var.
+  assert.match(stderr, /--set-endpoint|AI_FOOTPRINT_INGEST_ENDPOINT/);
 });
 
 test('no recognized technologies -> informs and exits 0 (nothing to certify)', async () => {
@@ -130,7 +133,7 @@ test('full flow end-to-end against the stub: resolve -> --all certify -> report,
   }
 });
 
-test('reporting redesign: a full certify run writes the cumulative report.html and ALWAYS prints its file:// link (no --html needed)', async () => {
+test('ADR-016: a full certify run PERSISTS the certification into report-state.json, writes NO html and prints NO link', async () => {
   writeReactProject();
   const { server } = await startStub();
   try {
@@ -139,15 +142,30 @@ test('reporting redesign: a full certify run writes the cumulative report.html a
       env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_CERTIFY_ENDPOINT: certifyUrl(server) },
     });
     assert.equal(code, 0);
-    assert.match(stdout, /file:\/\/\S+report-[a-f0-9]{12}\.html/);
-    assert.match(stdout, /Open your report|Abre tu informe/);
-    const htmlFile = fs.readdirSync(tmpConfigDir).find((f) => /^report-[a-f0-9]{12}\.html$/.test(f));
-    assert.ok(htmlFile, 'per-project report-<hash>.html written to the config dir');
-    const html = fs.readFileSync(path.join(tmpConfigDir, htmlFile), 'utf8');
-    // The certification landed in the cumulative report, in the Shakers theme.
-    assert.match(html, /Skill certification/);
-    assert.ok(html.includes('--bg:var(--ds-white)'), 'white background');
-    assert.equal(/prefers-color-scheme\s*:\s*dark/.test(html), false, 'no dark mode');
+    // certify no longer prints a report link (ADR-016 — the `report` command opens it).
+    assert.equal(/file:\/\//.test(stdout), false, 'certify no longer prints a link');
+    assert.equal(/Open your report|Abre tu informe/.test(stdout), false, 'no report-link copy');
+    // State IS persisted; no html written by certify.
+    assert.ok(fs.existsSync(path.join(tmpConfigDir, 'report-state.json')), 'state file written');
+    assert.equal(
+      fs.readdirSync(tmpConfigDir).some((f) => /^report-[a-f0-9]{12}\.html$/.test(f)),
+      false,
+      'certify writes no html (report command does)',
+    );
+    // And the certification is retrievable from state (report command renders it).
+    // materializeProjectReport reads AI_FOOTPRINT_CONFIG_DIR from THIS process,
+    // so point it at the same throwaway dir the spawned CLI wrote to.
+    const prevCfg = process.env.AI_FOOTPRINT_CONFIG_DIR;
+    process.env.AI_FOOTPRINT_CONFIG_DIR = tmpConfigDir;
+    try {
+      const { materializeProjectReport } = require('../src/report-store');
+      const r = materializeProjectReport({ root: tmpProjectDir, lang: 'en' });
+      const html = fs.readFileSync(r.htmlPath, 'utf8');
+      assert.match(html, /Skill certification/);
+    } finally {
+      if (prevCfg === undefined) delete process.env.AI_FOOTPRINT_CONFIG_DIR;
+      else process.env.AI_FOOTPRINT_CONFIG_DIR = prevCfg;
+    }
   } finally {
     server.close();
   }

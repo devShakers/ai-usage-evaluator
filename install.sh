@@ -65,6 +65,7 @@ FILES=(
   "bin/report.js"
   "bin/certify.js"
   "bin/share.js"
+  "bin/report-html.js"
 )
 
 say()  { printf "  %b\n" "$1"; }
