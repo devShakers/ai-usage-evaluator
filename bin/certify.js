@@ -246,8 +246,9 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
   const authorship = collectAuthorship(root);
   if (!authorship.available) {
     // No git / no readable history / squashed → attribution impossible → refuse
-    // the whole run cleanly (never a crash, never a silent pass).
-    process.stdout.write(`\n  ${c.authorshipNoGit}\n\n`);
+    // the whole run cleanly (never a crash, never a silent pass). ADR-018:
+    // offer the human contact valve for a possible legitimate false negative.
+    process.stdout.write(`\n  ${c.authorshipNoGit}\n  ${c.authorshipContact}\n\n`);
     return;
   }
 
@@ -269,12 +270,14 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
 
   if (sendable.length === 0) {
     // Nothing the Talent authored across ALL selected Skills → hard refusal.
-    process.stdout.write(`\n  ${c.authorshipNoneAttributable}\n\n`);
+    // ADR-018 contact valve (display only, no automatic send).
+    process.stdout.write(`\n  ${c.authorshipNoneAttributable}\n  ${c.authorshipContact}\n\n`);
     return;
   }
   if (refusedSkillNames.length > 0) {
-    // Some certified, some refused for lack of attributable code — say which.
-    process.stdout.write(`\n  ${c.authorshipRefused(refusedSkillNames.join(', '))}\n`);
+    // Some certified, some refused for lack of attributable code — say which,
+    // and offer the ADR-018 contact valve for a possible false negative.
+    process.stdout.write(`\n  ${c.authorshipRefused(refusedSkillNames.join(', '))}\n  ${c.authorshipContact}\n`);
   }
 
   // --- certify (egress; scrub happens in buildCertifyRequest) ---

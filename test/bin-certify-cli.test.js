@@ -317,6 +317,8 @@ test('ADR-017 gate: a project with NO git history is refused before any certify 
     });
     assert.equal(code, 0); // clean refusal, not a crash
     assert.match(stdout, /Without git history the code authorship cannot be verified/);
+    // ADR-018 contact valve is shown (display only — no extra request is made).
+    assert.match(stdout, /talent@shakersworks\.com/);
     assert.equal(/Skill certification result/.test(stdout), false, 'no certification report');
     assert.equal(state.requests, 1, 'only the resolve call — NO certify egress of unattributable code');
   } finally {
@@ -334,6 +336,7 @@ test('ADR-017 gate: a project authored by a DIFFERENT email is refused (no attri
     });
     assert.equal(code, 0);
     assert.match(stdout, /None of the selected Skills has code attributable to your verified email/);
+    assert.match(stdout, /talent@shakersworks\.com/); // ADR-018 contact valve shown
     assert.equal(/Skill certification result/.test(stdout), false, 'no certification report');
     assert.equal(state.requests, 1, 'only the resolve call — nothing the Talent did not author is sent');
   } finally {
