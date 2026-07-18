@@ -290,6 +290,12 @@ async function dispatchCommand({ command, args }, { ask, catalog, deps, out = pr
     case 'report':
       await deps.runReport(args, { ask });
       return { exit: false };
+    case 'superadmin':
+      // ADR-021 NON-PROD test-identity provisioning (hidden from the banner;
+      // a superadmin tool, not a product surface). No-op if deps omit it.
+      if (deps.runSuperadmin) await deps.runSuperadmin(args, { ask });
+      else out.write(`\n  ${catalog.repl.unknown(command)}\n`);
+      return { exit: false };
     default:
       out.write(`\n  ${catalog.repl.unknown(command)}\n`);
       return { exit: false };

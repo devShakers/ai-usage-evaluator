@@ -600,6 +600,27 @@ const catalogs = {
     },
     // Branded mini-shell chrome (skill-code-certification / ADR-014). The
     // `sh-eval` REPL is the single entrypoint; this covers the prompt, the
+    // Superadmin TEST-identity provisioning (ADR-021, NON-PROD only).
+    superadmin: {
+      intro:
+        'Provisiona una identidad de Talent de PRUEBA (solo entornos no productivos) para probar el flujo de certify sin OTP.',
+      passwordPrompt: 'Contraseña de superadmin:',
+      emailPrompt: 'Email de la identidad de prueba a provisionar:',
+      emailInvalid: 'Email no válido. Inténtalo de nuevo.',
+      needInput: 'Se requieren contraseña y email (interactivo, o --password y --email).',
+      ready: (email) =>
+        `Identidad de prueba lista para ${email}. Ahora ejecuta:  certify --email ${email} --accept-disclaimer --all`,
+      reused: (email) =>
+        `La identidad de prueba de ${email} ya existía (idempotente). Ejecuta:  certify --email ${email} --accept-disclaimer --all`,
+      errorNoEndpoint:
+        'No hay endpoint configurado. Configura el backend (AI_FOOTPRINT_INGEST_ENDPOINT o footprint --set-endpoint) y reinténtalo.',
+      errorWrongPassword: 'Contraseña de superadmin incorrecta.',
+      errorDisabled:
+        'Endpoint no disponible: el provisioning de prueba está deshabilitado fuera de entornos no productivos.',
+      errorConflict:
+        'Ese email ya pertenece a una cuenta real (no de prueba). Usa un email distinto para la identidad de prueba.',
+      errorGeneric: 'No se pudo provisionar la identidad de prueba. Inténtalo de nuevo.',
+    },
     // in-shell command help and messages — the commands keep their own copy.
     // The STARTUP BANNER is intentionally NOT here: it's always English (a
     // brand/product surface, like the installer), built in src/repl-shell.js.
@@ -1104,6 +1125,27 @@ const catalogs = {
       },
     },
     // Branded mini-shell chrome (skill-code-certification / ADR-014). The
+    // Superadmin TEST-identity provisioning (ADR-021, NON-PROD only).
+    superadmin: {
+      intro:
+        'Provision a TEST Talent identity (non-production environments only) to exercise the certify flow without OTP.',
+      passwordPrompt: 'Superadmin password:',
+      emailPrompt: 'Email of the test identity to provision:',
+      emailInvalid: 'Invalid email. Try again.',
+      needInput: 'Password and email are required (interactively, or --password and --email).',
+      ready: (email) =>
+        `Test identity ready for ${email}. Now run:  certify --email ${email} --accept-disclaimer --all`,
+      reused: (email) =>
+        `Test identity for ${email} already existed (idempotent). Run:  certify --email ${email} --accept-disclaimer --all`,
+      errorNoEndpoint:
+        'No endpoint configured. Set the backend (AI_FOOTPRINT_INGEST_ENDPOINT or footprint --set-endpoint) and retry.',
+      errorWrongPassword: 'Incorrect superadmin password.',
+      errorDisabled:
+        'Endpoint unavailable: test provisioning is disabled outside non-production environments.',
+      errorConflict:
+        'That email already belongs to a real (non-test) account. Use a different email for the test identity.',
+      errorGeneric: 'Could not provision the test identity. Try again.',
+    },
     // `sh-eval` REPL is the single entrypoint; this covers the prompt, the
     // in-shell command help and messages — the commands keep their own copy.
     // The STARTUP BANNER is intentionally NOT here: it's always English (a

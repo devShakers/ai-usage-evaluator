@@ -29,6 +29,7 @@ const { run: runFootprint } = require('./report');
 const { run: runCertify } = require('./certify');
 const { run: runShare } = require('./share');
 const { run: runReport } = require('./report-html');
+const { run: runSuperadmin } = require('./superadmin');
 
 let VERSION = '';
 try {
@@ -69,7 +70,7 @@ async function main() {
     stdin,
     lang,
     version: VERSION,
-    deps: { runFootprint, runCertify, runShare, runReport },
+    deps: { runFootprint, runCertify, runShare, runReport, runSuperadmin },
   });
 
   stdin.close();

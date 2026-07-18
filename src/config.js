@@ -290,6 +290,17 @@ function getEmailVerificationVerifyUrl(env = process.env) {
   return deriveEmailVerificationUrl(env, 'verify');
 }
 
+/*
+ * Superadmin TEST-identity provisioning endpoint (ADR-021, NON-PROD only) —
+ * a sibling of the ingest endpoint (`.../works/ai-footprint/superadmin/provision-test-talent`),
+ * derived exactly like the OTP routes, so no extra config is needed. Returns
+ * `null` when no ingest endpoint is configured. The server 404s this route in
+ * production regardless.
+ */
+function getProvisionTestTalentEndpoint(env = process.env) {
+  return deriveFromIngest(env, 'superadmin/provision-test-talent');
+}
+
 module.exports = {
   getIngestEndpoint,
   getSynthesisEndpoint,
@@ -298,6 +309,7 @@ module.exports = {
   getAgentEvaluationEndpoint,
   getEmailVerificationRequestUrl,
   getEmailVerificationVerifyUrl,
+  getProvisionTestTalentEndpoint,
   // Persistent config file + endpoint safety (endpoint-config task).
   configFilePath,
   loadConfigFile,
