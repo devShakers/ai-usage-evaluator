@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const http = require('http');
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 
 const { handle } = require('../reference-server/server');
 
@@ -66,7 +66,33 @@ test.afterEach(() => {
   fs.rmSync(tmpProjectDir, { recursive: true, force: true });
 });
 
-function writeReactProject() {
+// Initializes a git repo in `dir` and commits everything already written,
+// authored by `email`. The ADR-017 verified-authorship gate reads git to
+// confirm the sampled code is the Talent's — so the fixtures must carry a real
+// history. Config is repo-local (never touches the machine's global git).
+function gitCommitAll(dir, email) {
+  const git = (args) =>
+    execFileSync('git', ['-C', dir, ...args], {
+      stdio: 'ignore',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'Test Talent',
+        GIT_AUTHOR_EMAIL: email,
+        GIT_COMMITTER_NAME: 'Test Talent',
+        GIT_COMMITTER_EMAIL: email,
+      },
+    });
+  git(['init', '-q']);
+  git(['config', 'user.email', email]);
+  git(['config', 'user.name', 'Test Talent']);
+  git(['add', '-A']);
+  git(['commit', '-q', '-m', 'initial']);
+}
+
+// `email` = the git author for the project's commits. Defaults to the address
+// every full-flow test certifies with, so attribution passes; a test can pass a
+// DIFFERENT email to exercise the refusal path.
+function writeReactProject(email = 'talent@example.com') {
   fs.writeFileSync(
     path.join(tmpProjectDir, 'package.json'),
     JSON.stringify({ name: 'demo', dependencies: { react: '^18.0.0', express: '^4.0.0' } }),
@@ -75,6 +101,7 @@ function writeReactProject() {
   fs.mkdirSync(path.join(tmpProjectDir, 'src'), { recursive: true });
   fs.writeFileSync(path.join(tmpProjectDir, 'src', 'App.jsx'), 'export default function App() { return null; }\n'.repeat(4));
   fs.writeFileSync(path.join(tmpProjectDir, 'src', 'server.js'), 'const express = require("express"); const app = express();\n'.repeat(4));
+  gitCommitAll(tmpProjectDir, email);
 }
 
 test('--help prints usage and exits 0 (no endpoint needed)', async () => {
@@ -268,6 +295,47 @@ test('certify phase: --skills selects a subset', async () => {
     assert.equal(code, 0);
     assert.match(stdout, /Skill certification result/);
     assert.match(stdout, /Score: \d+\/100/);
+  } finally {
+    server.close();
+  }
+});
+
+test('ADR-017 gate: a project with NO git history is refused before any certify egress', async () => {
+  // Write the project WITHOUT git (no gitCommitAll) — attribution impossible.
+  fs.writeFileSync(
+    path.join(tmpProjectDir, 'package.json'),
+    JSON.stringify({ name: 'demo', dependencies: { react: '^18.0.0' } }),
+  );
+  fs.mkdirSync(path.join(tmpProjectDir, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(tmpProjectDir, 'src', 'App.jsx'), 'export default function App() { return null; }\n'.repeat(4));
+
+  const { server, state } = await startStub();
+  try {
+    const { code, stdout } = await runCli({
+      args: ['--root', tmpProjectDir, '--email', 'talent@example.com', '--accept-disclaimer', '--all', '--lang', 'en'],
+      env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_CERTIFY_ENDPOINT: certifyUrl(server) },
+    });
+    assert.equal(code, 0); // clean refusal, not a crash
+    assert.match(stdout, /Without git history the code authorship cannot be verified/);
+    assert.equal(/Skill certification result/.test(stdout), false, 'no certification report');
+    assert.equal(state.requests, 1, 'only the resolve call — NO certify egress of unattributable code');
+  } finally {
+    server.close();
+  }
+});
+
+test('ADR-017 gate: a project authored by a DIFFERENT email is refused (no attributable code)', async () => {
+  writeReactProject('someone-else@other.com'); // git history, but not the certifying Talent
+  const { server, state } = await startStub();
+  try {
+    const { code, stdout } = await runCli({
+      args: ['--root', tmpProjectDir, '--email', 'talent@example.com', '--accept-disclaimer', '--all', '--lang', 'en'],
+      env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_CERTIFY_ENDPOINT: certifyUrl(server) },
+    });
+    assert.equal(code, 0);
+    assert.match(stdout, /None of the selected Skills has code attributable to your verified email/);
+    assert.equal(/Skill certification result/.test(stdout), false, 'no certification report');
+    assert.equal(state.requests, 1, 'only the resolve call — nothing the Talent did not author is sent');
   } finally {
     server.close();
   }

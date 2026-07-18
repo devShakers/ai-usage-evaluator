@@ -172,7 +172,9 @@ function clampScore(value) {
 
 // Defensive, field-by-field reconstruction (never spread): the server fixes
 // skillId/skillName, score is clamped to range, improvements coerced to a
-// string array. An item missing `results[]` -> invalid shape.
+// string array. An item missing `results[]` -> invalid shape. `perFileBreakdown`
+// (ADR-017) is carried through when present and well-shaped, else null — it is
+// observability-additive, never a reason to reject the response.
 function normalizeCertifyResponse(parsed) {
   if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.results)) return null;
   return {
@@ -185,8 +187,26 @@ function normalizeCertifyResponse(parsed) {
         r && Array.isArray(r.improvements)
           ? r.improvements.filter((i) => typeof i === 'string' && i)
           : [],
+      perFileBreakdown: normalizePerFileBreakdown(r && r.perFileBreakdown),
     })),
   };
+}
+
+// Per-file scores from the certify response (ADR-017). Each entry is rebuilt
+// field-by-field; a non-numeric score or non-string path drops that entry.
+// Returns null (not []) when nothing usable survives — the caller treats a null
+// breakdown as "aggregate-only", so a legacy server that omits `perFileBreakdown`
+// keeps working unchanged.
+function normalizePerFileBreakdown(raw) {
+  if (!Array.isArray(raw)) return null;
+  const out = raw
+    .filter((f) => f && typeof f.path === 'string' && f.path && typeof f.score === 'number')
+    .map((f) => ({
+      path: f.path,
+      score: clampScore(f.score),
+      note: typeof f.note === 'string' && f.note ? f.note : null,
+    }));
+  return out.length > 0 ? out : null;
 }
 
 async function requestCertify(requestBody, { endpoint, timeoutMs = DEFAULT_CERTIFY_TIMEOUT_MS } = {}) {

@@ -46,6 +46,12 @@ const {
 const { formatResolveReport } = require('../src/certify-render');
 const { filterResolveBySampling } = require('../src/certify-sampling-filter');
 const { buildSkillSamples } = require('../src/skill-sampler');
+const { collectAuthorship, attributeSample } = require('../src/authorship');
+
+// CLI version stamped as `toolVersion` on the persisted certification evidence
+// (ADR-017) — same source `sh-eval` uses. `|| null` so a missing field never
+// sends an empty string.
+const CLI_VERSION = require('../package.json').version || null;
 const { parseSkillSelection } = require('../src/skill-selection');
 const { renderCertificationTerminal } = require('../src/render-certification');
 const { persistCertification } = require('../src/report-store');
@@ -134,10 +140,12 @@ function reportCertifyFailure(reason, catalog, email) {
 }
 
 // Persists the analyzed certification result if consent is granted. Never
-// throws — must not break the local report (ADR-011).
-async function maybeShareCertification(items) {
+// throws — must not break the local report (ADR-011). `provenance` carries the
+// run-level ADR-017 fields (repository/commitRange/toolVersion) stamped onto
+// every persisted assessment row.
+async function maybeShareCertification(items, provenance = {}) {
   try {
-    await shareCertification(items);
+    await shareCertification(items, provenance);
   } catch {
     // silent: any skip/failure reason is not an error of the local run
   }
@@ -230,7 +238,44 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
 
   // --- deterministic sampling (local) ---
   const samples = buildSkillSamples(root, selected);
+
+  // --- verified authorship gate (ADR-017) ------------------------------------
+  // Only code ATTRIBUTABLE to the Talent's verified email is certifiable. Git
+  // is read locally (no egress); non-attributable files are dropped BEFORE any
+  // code leaves the machine. "Sin email atribuible, no hay certificación."
+  const authorship = collectAuthorship(root);
+  if (!authorship.available) {
+    // No git / no readable history / squashed → attribution impossible → refuse
+    // the whole run cleanly (never a crash, never a silent pass).
+    process.stdout.write(`\n  ${c.authorshipNoGit}\n\n`);
+    return;
+  }
+
+  const refusedSkillNames = [];
+  for (const s of samples) {
+    const attribution = attributeSample(s, email, authorship);
+    // Persist-evidence + gate inputs live on the sample. Only attributable
+    // files survive to be sent for certification.
+    s.files = attribution.attributableFiles;
+    s.authorEmails = attribution.authorEmails;
+    s.sampledFiles = attribution.attributableFiles.map((f) => f.path);
+    if (!attribution.certifiable && s.meta && s.meta.sampleable) {
+      // A Skill that HAD a code sample but none of it is the Talent's own.
+      refusedSkillNames.push(s.skillName);
+    }
+  }
+
   const sendable = samples.filter((s) => Array.isArray(s.files) && s.files.length > 0);
+
+  if (sendable.length === 0) {
+    // Nothing the Talent authored across ALL selected Skills → hard refusal.
+    process.stdout.write(`\n  ${c.authorshipNoneAttributable}\n\n`);
+    return;
+  }
+  if (refusedSkillNames.length > 0) {
+    // Some certified, some refused for lack of attributable code — say which.
+    process.stdout.write(`\n  ${c.authorshipRefused(refusedSkillNames.join(', '))}\n`);
+  }
 
   // --- certify (egress; scrub happens in buildCertifyRequest) ---
   let results = [];
@@ -254,6 +299,9 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
     skillName: s.skillName,
     technology: s.technology,
     sampling: s.meta,
+    // Verified-authorship evidence (ADR-017) — persisted alongside the result.
+    authorEmails: Array.isArray(s.authorEmails) ? s.authorEmails : [],
+    sampledFiles: Array.isArray(s.sampledFiles) ? s.sampledFiles : [],
     result: (Array.isArray(s.files) && s.files.length > 0) ? (resultById.get(String(s.skillId)) || null) : null,
   }));
   const certification = { items, model: null };
@@ -277,7 +325,11 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
 
   // --- persist (only if consent is granted) ----------------------------------
   if (analyzed) {
-    await maybeShareCertification(items);
+    await maybeShareCertification(items, {
+      repository: authorship.repository,
+      commitRange: authorship.commitRange,
+      toolVersion: CLI_VERSION,
+    });
   }
 }
 

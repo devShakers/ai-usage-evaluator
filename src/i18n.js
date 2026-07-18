@@ -545,6 +545,12 @@ const catalogs = {
       selectNonInteractive: 'Entrada no interactiva sin --skills/--all: no se pueden seleccionar Skills. Se cancela (no se ha enviado código).',
       selectNothing: 'No hay Skills certificables que seleccionar.',
       selectNoneChosen: 'No se ha seleccionado ninguna Skill. No se ha enviado código.',
+      // Verified authorship gate (ADR-017): solo se certifica código atribuible
+      // a la identidad verificada del Talent. "Sin email atribuible, no hay
+      // certificación" — nunca se envía código no atribuible.
+      authorshipNoGit: 'Sin historial de git no se puede verificar la autoría del código. Solo se certifica código atribuible a tu identidad verificada; no se ha certificado ni enviado nada.',
+      authorshipNoneAttributable: 'Ninguna de las Skills seleccionadas tiene código atribuible a tu email verificado. Sin email atribuible, no hay certificación; no se ha enviado código.',
+      authorshipRefused: (skills) => `No se certificaron estas Skills por falta de código atribuible a tu email verificado: ${skills}.`,
       selectOption: (index, skillName, technology) => `  ${index}) ${skillName}${technology ? ` (${technology})` : ''}`,
       certifyingLabel: 'Analizando el código de tus Skills…',
       // Reporting redesign: el HTML ya no es opt-in; cada certificación se
@@ -1043,6 +1049,12 @@ const catalogs = {
       selectNonInteractive: 'Non-interactive input without --skills/--all: cannot select Skills. Aborting (no code was sent).',
       selectNothing: 'There are no certifiable Skills to select.',
       selectNoneChosen: 'No Skill selected. No code was sent.',
+      // Verified authorship gate (ADR-017): only code attributable to the
+      // Talent's verified identity is certifiable. "No attributable email, no
+      // certification" — non-attributable code is never sent.
+      authorshipNoGit: 'Without git history the code authorship cannot be verified. Only code attributable to your verified identity is certified; nothing was certified or sent.',
+      authorshipNoneAttributable: 'None of the selected Skills has code attributable to your verified email. Without an attributable email there is no certification; no code was sent.',
+      authorshipRefused: (skills) => `These Skills were not certified for lack of code attributable to your verified email: ${skills}.`,
       selectOption: (index, skillName, technology) => `  ${index}) ${skillName}${technology ? ` (${technology})` : ''}`,
       certifyingLabel: 'Analyzing your Skills’ code…',
       // Reporting redesign: HTML is no longer opt-in; each certification is
