@@ -44,6 +44,7 @@ const {
   classifyCertifyFailure,
 } = require('../src/certify-client');
 const { formatResolveReport } = require('../src/certify-render');
+const { filterResolveBySampling } = require('../src/certify-sampling-filter');
 const { buildSkillSamples } = require('../src/skill-sampler');
 const { parseSkillSelection } = require('../src/skill-selection');
 const { renderCertificationTerminal } = require('../src/render-certification');
@@ -357,7 +358,16 @@ async function run(argv = process.argv.slice(2), { ask: injectedAsk = null } = {
       return;
     }
 
-    process.stdout.write('\n' + formatResolveReport(technologies, outcome.result, catalog) + '\n\n');
+    // Invariant (listed-as-certifiable <=> has-a-defined-sampling): the RESOLVE
+    // server may mark a technology certifiable even when this CLI has no code
+    // sampling for it (detection-only techs — Jest historically, Vitest,
+    // Tailwind…). Demote those to non-certifiable HERE, once, so both the
+    // printed report and the interactive selection below offer only Skills that
+    // can actually be certified by code — never advertise one that then fails
+    // with "no hay muestreo definido".
+    const resolved = filterResolveBySampling(outcome.result);
+
+    process.stdout.write('\n' + formatResolveReport(technologies, resolved, catalog) + '\n\n');
 
     // (7) Certify phase (issue 005): select certifiable Skills, sample+scrub+
     // send code, show the assessment report; persist iff consent was granted
@@ -365,7 +375,7 @@ async function run(argv = process.argv.slice(2), { ask: injectedAsk = null } = {
     await runCertifyPhase({
       endpoint,
       email,
-      resolveResult: outcome.result,
+      resolveResult: resolved,
       root,
       opts,
       catalog,

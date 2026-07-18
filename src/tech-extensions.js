@@ -14,14 +14,33 @@
  * "honest limitation" discipline as tech-detector.js: recognizing more
  * ecosystems is future work, not something to fake).
  *
- * DETECTION-ONLY technologies (skill-code-certification, issue 009):
- * tech-detector.js recognizes some technologies deliberately absent here
- * because they have no meaningful CODE surface to review by sampling
- * (config/tooling/utility-class based): Tailwind CSS, Vite, Webpack, Jest,
- * Vitest. They still appear in the footprint and can be sent for RESOLVE, but
- * extensionsForTechnology returns null so the sampler marks them NOT
- * sampleable (not code-certified). Adding a real file surface later is all it
- * takes to make them sampleable.
+ * SAMPLING SURFACES BY TECH TYPE. The sampler matches by filename suffix
+ * (name.endsWith(ext)), so an "extension" here can be a real extension
+ * (`.tsx`), a compound suffix (`.test.ts`), or a full config filename
+ * (`vite.config.ts`) — whatever isolates the tech's real skill signal with
+ * minimum egress:
+ *
+ *   - Frameworks/libraries → their source extensions (React → .tsx, Django →
+ *     .py, …).
+ *   - Testing frameworks (Jest, Vitest) → the TEST files themselves via
+ *     compound suffixes (`.test.*` / `.spec.*`), NOT the whole JS/TS tree.
+ *     Known limit: tests placed in a `__tests__/` dir WITHOUT a
+ *     `.test.`/`.spec.` suffix aren't matched (the suffix matcher has no
+ *     directory awareness); such a project yields zero candidate files and
+ *     degrades to the normal "couldn't certify this run" path, never the
+ *     "no sampling defined" one.
+ *   - Build/config tooling (Vite, Webpack, Tailwind CSS) → the CONFIG file is
+ *     the meaningful, reviewable surface (there's no dedicated source surface).
+ *     Full-filename suffixes (`vite.config.ts`, `webpack.config.js`,
+ *     `tailwind.config.mjs`, …) match ONLY the tool's own config, never
+ *     arbitrary source/CSS/markup.
+ *
+ * A technology with NO entry here is treated as NOT SAMPLEABLE — documented
+ * and surfaced, never guessed with a made-up extension set. As of the
+ * skill-code-certification coverage work, EVERY technology the detector emits
+ * has a sampling (DETECTION_ONLY below is empty); the coverage guard
+ * (test/tech-extensions.test.js) fails if a future detectable tech has
+ * neither a sampling nor an explicit detection-only opt-out.
  */
 
 // Common JS/TS source extensions — most JS/TS libraries share this surface.
@@ -77,7 +96,43 @@ const TECH_EXTENSION_MAP = {
   // Python (issue 009)
   SQLAlchemy: ['.py'],
   Pydantic: ['.py'],
+  // Testing — Jest / Vitest. Their code surface is the test suite; compound
+  // suffixes match ONLY *.test.* / *.spec.* files, not the whole JS/TS tree.
+  Jest: [
+    '.test.js', '.test.jsx', '.test.ts', '.test.tsx', '.test.mjs', '.test.cjs',
+    '.spec.js', '.spec.jsx', '.spec.ts', '.spec.tsx', '.spec.mjs', '.spec.cjs',
+  ],
+  Vitest: [
+    '.test.js', '.test.jsx', '.test.ts', '.test.tsx', '.test.mjs', '.test.cjs',
+    '.spec.js', '.spec.jsx', '.spec.ts', '.spec.tsx', '.spec.mjs', '.spec.cjs',
+  ],
+  // Build/config tooling — the CONFIG file IS the meaningful skill surface (no
+  // dedicated source surface). Full-filename suffixes match ONLY the tool's own
+  // config, never arbitrary source/CSS/markup — minimal, honest egress.
+  Vite: ['vite.config.js', 'vite.config.cjs', 'vite.config.mjs', 'vite.config.ts'],
+  Webpack: ['webpack.config.js', 'webpack.config.cjs', 'webpack.config.mjs', 'webpack.config.ts'],
+  'Tailwind CSS': [
+    'tailwind.config.js', 'tailwind.config.cjs', 'tailwind.config.mjs', 'tailwind.config.ts',
+  ],
 };
+
+// Technologies the detector RECOGNIZES but that are INTENTIONALLY not code-
+// sampleable — config/tooling/utility-class surfaces with no dedicated code to
+// review by sampling. This is the deliberate opt-out that keeps the coverage
+// guard honest: a detector-known technology must be EITHER in
+// TECH_EXTENSION_MAP (sampleable) OR listed here (explicitly detection-only).
+// The guard test (test/tech-extensions.test.js) FAILS on any detectable tech
+// that is neither — so a new detectable tech can never silently reach a user
+// with no sampling and no decision. Marking a new tech detection-only is a
+// one-line addition here (a conscious choice, not an accident). Anything with a
+// real code surface (Jest's tests, a build tool's config, etc.) belongs in
+// TECH_EXTENSION_MAP instead.
+//
+// EMPTY as of the skill-code-certification coverage work: every technology the
+// detector currently emits is code-sampleable (Vitest/Vite/Webpack/Tailwind CSS
+// gained samplings). Kept exported and in place so a future intentionally-not-
+// certifiable tech is a one-line opt-in here rather than a silent gap.
+const DETECTION_ONLY = new Set([]);
 
 // Returns the extension list for a canonical technology name, or null when
 // the technology has no mapping (= NOT sampleable). Returns a fresh copy so
@@ -88,4 +143,4 @@ function extensionsForTechnology(technology) {
   return exts ? exts.slice() : null;
 }
 
-module.exports = { TECH_EXTENSION_MAP, extensionsForTechnology };
+module.exports = { TECH_EXTENSION_MAP, DETECTION_ONLY, extensionsForTechnology };

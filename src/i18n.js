@@ -515,6 +515,7 @@ const catalogs = {
       reasons: {
         'no-skill-match': 'no hay una Skill equivalente en el catálogo de Shakers',
         'not-declared': 'no has declarado esta Skill en tu perfil de Talent',
+        'no-sampling': 'todavía no se puede certificar por código (sin muestreo de código definido)',
         notCertifiable: 'no es certificable',
       },
       errorNoEndpoint:
@@ -1012,6 +1013,7 @@ const catalogs = {
       reasons: {
         'no-skill-match': 'no matching Skill in the Shakers catalog',
         'not-declared': "you haven't declared this Skill in your Talent profile",
+        'no-sampling': "can't be code-certified yet (no code sampling defined)",
         notCertifiable: 'not certifiable',
       },
       errorNoEndpoint:

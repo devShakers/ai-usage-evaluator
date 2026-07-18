@@ -112,13 +112,12 @@ const EXACT_FRAMEWORK_MAP = {
   '@trpc/server': 'tRPC',
   '@trpc/client': 'tRPC',
   zod: 'Zod',
-  // JS/TS — styling (DETECTION ONLY, not code-sampleable: utility classes in
-  // markup + a config file, no dedicated source-file surface to certify —
-  // NO entry in tech-extensions.js on purpose, see its header).
+  // JS/TS — styling. Code-certified via its CONFIG file surface
+  // (tailwind.config.*) — see tech-extensions.js.
   tailwindcss: 'Tailwind CSS',
-  // JS/TS — build tools & test runners (DETECTION ONLY, not code-sampleable:
-  // config/tooling, not a Skill surface certified by reading a code sample —
-  // NO entry in tech-extensions.js on purpose).
+  // JS/TS — build tools & test runners. All code-sampleable in
+  // tech-extensions.js: build tools via their config file (vite.config.*,
+  // webpack.config.*), test runners via their test files (*.test.*/*.spec.*).
   vite: 'Vite',
   webpack: 'Webpack',
   jest: 'Jest',
@@ -338,4 +337,16 @@ function detectTechnologies(root) {
   return [...canonical].sort();
 }
 
-module.exports = { detectTechnologies, detectRawDependencyNames, canonicalFrameworkName, findManifestFiles };
+module.exports = {
+  detectTechnologies,
+  detectRawDependencyNames,
+  canonicalFrameworkName,
+  findManifestFiles,
+  // Exported as the SOURCE OF TRUTH for the complete set of canonical
+  // technologies the detector can ever emit. The certification coverage guard
+  // (test/tech-extensions.test.js) enumerates these so a tech newly added here
+  // is automatically pulled into the guard — it must then either gain a
+  // sampling or be explicitly opted out (DETECTION_ONLY in tech-extensions.js).
+  EXACT_FRAMEWORK_MAP,
+  GO_FRAMEWORK_PREFIXES,
+};
