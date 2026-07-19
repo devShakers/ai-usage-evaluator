@@ -112,3 +112,83 @@ test('attributeSample: a sample authored by someone else is NOT certifiable, but
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// --- ADR-023: authorized authoring set (test identities only) ----------------
+
+test('attributeSample: with an authorized DOMAIN, an in-domain author is attributable even if not the identity email', () => {
+  const dir = makeRepo({ 'src/a.js': 'a\n' }, 'employee@shakersworks.com');
+  try {
+    const authorship = collectAuthorship(dir);
+    const sample = { files: [{ path: 'src/a.js', content: 'a' }] };
+    // Certifying identity is a different email, but the authorized set widens.
+    const res = attributeSample(sample, 'test-bot@shakers.test', authorship, {
+      domain: 'shakersworks.com',
+      extraEmails: [],
+    });
+    assert.equal(res.certifiable, true);
+    assert.equal(res.attributableFiles.length, 1);
+    assert.deepEqual(res.authorEmails, [{ email: 'employee@shakersworks.com', matched: true }]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('attributeSample: mixed repo — in-domain + extra-email files kept, outsider dropped (still a real gate)', () => {
+  // Only in.js exists initially (authored in-domain); the other two files are
+  // CREATED in later commits by distinct authors, so each file has exactly one.
+  const dir = makeRepo({ 'src/in.js': 'in\n' }, 'a@shakersworks.com');
+  try {
+    fs.writeFileSync(path.join(dir, 'src/out.js'), 'out\n');
+    git(dir, ['add', '-A']); git(dir, ['commit', '-q', '-m', 'outsider'], 'outsider@gmail.com');
+    fs.writeFileSync(path.join(dir, 'src/contrib.js'), 'c\n');
+    git(dir, ['add', '-A']); git(dir, ['commit', '-q', '-m', 'contrib'], 'personal@gmail.com');
+
+    const authorship = collectAuthorship(dir);
+    const sample = {
+      files: [
+        { path: 'src/in.js', content: 'in' },
+        { path: 'src/out.js', content: 'out' },
+        { path: 'src/contrib.js', content: 'c' },
+      ],
+    };
+    const res = attributeSample(sample, 'bot@shakers.test', authorship, {
+      domain: 'shakersworks.com',
+      extraEmails: ['personal@gmail.com'],
+    });
+    const kept = res.attributableFiles.map((f) => f.path).sort();
+    // in.js (domain) + contrib.js (extra email) kept; out.js (outsider) dropped.
+    assert.deepEqual(kept, ['src/contrib.js', 'src/in.js']);
+    assert.equal(res.certifiable, true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('attributeSample: a repo with ZERO in-set authors is still refused (not a bypass)', () => {
+  const dir = makeRepo({ 'src/a.js': 'a\n' }, 'outsider@gmail.com');
+  try {
+    const authorship = collectAuthorship(dir);
+    const sample = { files: [{ path: 'src/a.js', content: 'a' }] };
+    const res = attributeSample(sample, 'bot@shakers.test', authorship, {
+      domain: 'shakersworks.com',
+      extraEmails: ['someone@else.com'],
+    });
+    assert.equal(res.certifiable, false);
+    assert.equal(res.attributableFiles.length, 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('attributeSample: a null authorized set (real identity) keeps the strict single-email match', () => {
+  const dir = makeRepo({ 'src/a.js': 'a\n' }, 'employee@shakersworks.com');
+  try {
+    const authorship = collectAuthorship(dir);
+    const sample = { files: [{ path: 'src/a.js', content: 'a' }] };
+    // Real identity: no set -> in-domain colleague is NOT attributable.
+    const res = attributeSample(sample, 'real-talent@shakersworks.com', authorship, null);
+    assert.equal(res.certifiable, false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

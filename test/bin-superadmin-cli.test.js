@@ -85,6 +85,32 @@ test('success -> prints the certify next-step and exits 0', async () => {
   }
 });
 
+test('ADR-023: --author-domain and --author-emails are sent, and the authoring line is shown', async () => {
+  let received;
+  const server = await startStub((body, res) => {
+    received = body;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      talentId: 't1',
+      email: body.email,
+      reused: false,
+      authorizedAuthoring: { domain: 'shakersworks.com', extraEmails: ['c@x.com'] },
+    }));
+  });
+  try {
+    const { code, stdout } = await runCli(server, [
+      '--lang', 'en', '--password', 'secret', '--email', 'bot@shakers.test',
+      '--author-domain', 'shakersworks.com', '--author-emails', 'c@x.com, d@y.com',
+    ]);
+    assert.equal(code, 0);
+    assert.equal(received.authorDomain, 'shakersworks.com');
+    assert.deepEqual(received.extraEmails, ['c@x.com', 'd@y.com']);
+    assert.match(stdout, /Authorized authoring .*domain @shakersworks\.com/);
+  } finally {
+    server.close();
+  }
+});
+
 test('reused -> prints the idempotent message', async () => {
   const server = await startStub((body, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });

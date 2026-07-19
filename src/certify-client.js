@@ -106,7 +106,22 @@ function normalizeResolveResponse(parsed) {
           reason: n && typeof n.reason === 'string' ? n.reason : null,
         }))
       : [],
+    // ADR-023: the authorized authoring set for a TEST identity, or null for a
+    // real identity. Server-gated — the CLI only ever widens the authorship
+    // gate when the SERVER returns a set here (real identities get null).
+    authorizedAuthoring: normalizeAuthorizedAuthoring(parsed.authorizedAuthoring),
   };
+}
+
+// Field-by-field, defensive: a malformed set degrades to null (strict match).
+function normalizeAuthorizedAuthoring(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const domain = typeof raw.domain === 'string' && raw.domain ? raw.domain : null;
+  const extraEmails = Array.isArray(raw.extraEmails)
+    ? raw.extraEmails.filter((e) => typeof e === 'string' && e)
+    : [];
+  if (!domain && extraEmails.length === 0) return null;
+  return { domain, extraEmails };
 }
 
 async function requestResolve(requestBody, { endpoint, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {

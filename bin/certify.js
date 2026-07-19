@@ -252,9 +252,15 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
     return;
   }
 
+  // ADR-023: the server returns an authorized authoring set ONLY for a TEST
+  // identity (null for a real identity), so the widening below can never apply
+  // to a real identity. `resolveResult` came from the RESOLVE round-trip.
+  const authorizedSet =
+    resolveResult && resolveResult.authorizedAuthoring ? resolveResult.authorizedAuthoring : null;
+
   const refusedSkillNames = [];
   for (const s of samples) {
-    const attribution = attributeSample(s, email, authorship);
+    const attribution = attributeSample(s, email, authorship, authorizedSet);
     // Persist-evidence + gate inputs live on the sample. Only attributable
     // files survive to be sent for certification.
     s.files = attribution.attributableFiles;

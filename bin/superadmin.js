@@ -33,8 +33,23 @@ const REQUEST_TIMEOUT_MS = 20000;
 
 // Minimal flag parse: --email, --password, --lang (all optional; interactive
 // prompts fill the gaps). Kept tiny — this is a superadmin utility.
+function splitEmails(raw) {
+  return String(raw || '')
+    .split(',')
+    .map((e) => e.trim())
+    .filter(Boolean);
+}
+
 function parseArgs(argv) {
-  const opts = { email: null, password: null, lang: null, remove: false, all: false };
+  const opts = {
+    email: null,
+    password: null,
+    lang: null,
+    remove: false,
+    all: false,
+    authorDomain: null,
+    authorEmails: [],
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--email') opts.email = argv[++i];
@@ -43,6 +58,11 @@ function parseArgs(argv) {
     else if (a.startsWith('--password=')) opts.password = a.slice('--password='.length);
     else if (a === '--remove' || a === '--delete' || a === '--teardown') opts.remove = true;
     else if (a === '--all') opts.all = true;
+    // ADR-023 authorized authoring set (provision only).
+    else if (a === '--author-domain') opts.authorDomain = argv[++i];
+    else if (a.startsWith('--author-domain=')) opts.authorDomain = a.slice('--author-domain='.length);
+    else if (a === '--author-emails') opts.authorEmails = splitEmails(argv[++i]);
+    else if (a.startsWith('--author-emails=')) opts.authorEmails = splitEmails(a.slice('--author-emails='.length));
     else if (a === '--lang' && (argv[i + 1] === 'es' || argv[i + 1] === 'en')) opts.lang = argv[++i];
     else if (a === '--lang=es') opts.lang = 'es';
     else if (a === '--lang=en') opts.lang = 'en';
@@ -147,9 +167,17 @@ async function runProvision({ opts, c, endpoint, password, ask, canPrompt }) {
     return;
   }
 
+  // ADR-023 authorized authoring set — sent only when the superadmin specified
+  // it; the server applies the default domain otherwise.
+  const body = { password, email: normalizeEmail(email) };
+  if (opts.authorDomain && opts.authorDomain.trim()) body.authorDomain = opts.authorDomain.trim();
+  if (Array.isArray(opts.authorEmails) && opts.authorEmails.length > 0) {
+    body.extraEmails = opts.authorEmails.map((e) => normalizeEmail(e));
+  }
+
   let res;
   try {
-    res = await postJson(endpoint, { password, email: normalizeEmail(email) });
+    res = await postJson(endpoint, body);
   } catch {
     process.stderr.write(`\n  ${c.errorGeneric}\n\n`);
     process.exitCode = 1;
@@ -159,7 +187,15 @@ async function runProvision({ opts, c, endpoint, password, ask, canPrompt }) {
   if (res.status >= 200 && res.status < 300) {
     const provisionedEmail = (res.json && res.json.email) || normalizeEmail(email);
     const reused = !!(res.json && res.json.reused);
-    process.stdout.write(`\n  ${reused ? c.reused(provisionedEmail) : c.ready(provisionedEmail)}\n\n`);
+    const auth = (res.json && res.json.authorizedAuthoring) || null;
+    process.stdout.write(`\n  ${reused ? c.reused(provisionedEmail) : c.ready(provisionedEmail)}\n`);
+    if (auth && auth.domain) {
+      const extra = Array.isArray(auth.extraEmails) && auth.extraEmails.length > 0
+        ? auth.extraEmails.join(', ')
+        : null;
+      process.stdout.write(`  ${c.authoring(auth.domain, extra)}\n`);
+    }
+    process.stdout.write('\n');
     return;
   }
   if (res.status === 403) process.stderr.write(`\n  ${c.errorWrongPassword}\n\n`);

@@ -612,6 +612,8 @@ const catalogs = {
         `Identidad de prueba lista para ${email}. Ahora ejecuta:  certify --email ${email} --accept-disclaimer --all`,
       reused: (email) =>
         `La identidad de prueba de ${email} ya existía (idempotente). Ejecuta:  certify --email ${email} --accept-disclaimer --all`,
+      authoring: (domain, extra) =>
+        `Autoría autorizada (ADR-023): dominio @${domain}${extra ? ` + emails: ${extra}` : ''} — solo para esta identidad de prueba.`,
       errorNoEndpoint:
         'No hay endpoint configurado. Configura el backend (AI_FOOTPRINT_INGEST_ENDPOINT o footprint --set-endpoint) y reinténtalo.',
       errorWrongPassword: 'Contraseña de superadmin incorrecta.',
@@ -1149,6 +1151,8 @@ const catalogs = {
         `Test identity ready for ${email}. Now run:  certify --email ${email} --accept-disclaimer --all`,
       reused: (email) =>
         `Test identity for ${email} already existed (idempotent). Run:  certify --email ${email} --accept-disclaimer --all`,
+      authoring: (domain, extra) =>
+        `Authorized authoring (ADR-023): domain @${domain}${extra ? ` + emails: ${extra}` : ''} — for this test identity only.`,
       errorNoEndpoint:
         'No endpoint configured. Set the backend (AI_FOOTPRINT_INGEST_ENDPOINT or footprint --set-endpoint) and retry.',
       errorWrongPassword: 'Incorrect superadmin password.',

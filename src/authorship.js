@@ -167,19 +167,51 @@ function collectAuthorship(root) {
 }
 
 /**
- * Applies the ADR-017 gate to ONE sampled Skill. Given the sample's files and
- * the Talent's verified email, returns:
+ * Builds an "is this author attributable?" predicate for one certifying
+ * identity. Base rule (ADR-017): the author IS the identity's own verified
+ * email. ADR-023 WIDENING — applied ONLY when `authorizedSet` is non-null (the
+ * server returns one for TEST identities only, never for a real identity): an
+ * author is also attributable if its email is in the domain (`*@<domain>`) or
+ * the extra-email list. All comparisons case-insensitive. This is NOT a bypass:
+ * authors outside the set are still dropped, and a sample with zero in-set
+ * authors is still non-certifiable.
+ */
+function buildAttributionPredicate(verifiedEmail, authorizedSet) {
+  const target = String(verifiedEmail || '').trim().toLowerCase();
+  const domainSuffix =
+    authorizedSet && authorizedSet.domain
+      ? `@${String(authorizedSet.domain).trim().toLowerCase()}`
+      : null;
+  const extra = new Set(
+    authorizedSet && Array.isArray(authorizedSet.extraEmails)
+      ? authorizedSet.extraEmails.map((e) => String(e).trim().toLowerCase())
+      : [],
+  );
+  return (author) => {
+    const a = String(author || '').toLowerCase();
+    if (target && a === target) return true;
+    if (domainSuffix && a.endsWith(domainSuffix)) return true;
+    if (extra.has(a)) return true;
+    return false;
+  };
+}
+
+/**
+ * Applies the ADR-017 gate (with the ADR-023 widening for test identities) to
+ * ONE sampled Skill. `authorizedSet` is the server-returned authorized authoring
+ * set for a TEST identity, or `null`/undefined for a real identity (strict
+ * single-email match — unchanged). Returns:
  *   {
- *     attributableFiles: [{path, content, ...}],   // files the Talent authored
- *     authorEmails: [{email, matched}],            // ALL considered authors + match flag
+ *     attributableFiles: [{path, content, ...}],   // files attributable to the identity
+ *     authorEmails: [{email, matched}],            // ALL considered authors + attribution flag
  *     certifiable: boolean,                        // at least one attributable file
  *   }
- * Only `attributableFiles` are ever sent to the model — code the Talent did
- * not author never leaves the machine for certification. `authorEmails` is the
- * persisted EVIDENCE of the decision (every considered author, matched or not).
+ * Only `attributableFiles` are ever sent to the model — code outside the
+ * authorized set never leaves the machine for certification. `authorEmails` is
+ * the persisted EVIDENCE of the decision.
  */
-function attributeSample(sample, verifiedEmail, authorship) {
-  const target = String(verifiedEmail || '').trim().toLowerCase();
+function attributeSample(sample, verifiedEmail, authorship, authorizedSet = null) {
+  const isAttributable = buildAttributionPredicate(verifiedEmail, authorizedSet);
   const files = Array.isArray(sample.files) ? sample.files : [];
 
   const consideredEmails = new Set();
@@ -188,12 +220,12 @@ function attributeSample(sample, verifiedEmail, authorship) {
   for (const file of files) {
     const authors = authorship.authorsForPath(file.path);
     for (const a of authors) consideredEmails.add(a);
-    if (target && authors.includes(target)) attributableFiles.push(file);
+    if (authors.some((a) => isAttributable(a))) attributableFiles.push(file);
   }
 
   const authorEmails = [...consideredEmails].map((email) => ({
     email,
-    matched: email === target,
+    matched: isAttributable(email),
   }));
 
   return {

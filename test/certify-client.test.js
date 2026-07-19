@@ -46,7 +46,31 @@ test('normalizeResolveResponse: rebuilds fields, defaults nonCertifiable to []',
   assert.deepEqual(out, {
     certifiable: [{ skillId: 7, skillName: 'React', technology: 'React' }],
     nonCertifiable: [],
+    // ADR-023: absent authorizedAuthoring -> null (real identity, strict match).
+    authorizedAuthoring: null,
   });
+});
+
+test('normalizeResolveResponse: carries a valid ADR-023 authorizedAuthoring set (test identity)', () => {
+  const out = normalizeResolveResponse({
+    certifiable: [],
+    authorizedAuthoring: { domain: 'shakersworks.com', extraEmails: ['c@x.com', 42, ''] },
+  });
+  assert.deepEqual(out.authorizedAuthoring, {
+    domain: 'shakersworks.com',
+    extraEmails: ['c@x.com'],
+  });
+});
+
+test('normalizeResolveResponse: a malformed/empty authorizedAuthoring degrades to null (strict match)', () => {
+  assert.equal(
+    normalizeResolveResponse({ certifiable: [], authorizedAuthoring: { domain: '', extraEmails: [] } }).authorizedAuthoring,
+    null,
+  );
+  assert.equal(
+    normalizeResolveResponse({ certifiable: [], authorizedAuthoring: 'nope' }).authorizedAuthoring,
+    null,
+  );
 });
 
 test('normalizeResolveResponse: missing certifiable[] -> null (invalid shape)', () => {
