@@ -301,6 +301,15 @@ function getProvisionTestTalentEndpoint(env = process.env) {
   return deriveFromIngest(env, 'superadmin/provision-test-talent');
 }
 
+/*
+ * Superadmin TEST-identity TEARDOWN endpoint (ADR-022, NON-PROD only) — the
+ * inverse of provisioning, a sibling of the ingest endpoint. `null` when no
+ * ingest endpoint is configured. The server 404s this route in production.
+ */
+function getTeardownTestTalentEndpoint(env = process.env) {
+  return deriveFromIngest(env, 'superadmin/teardown-test-talent');
+}
+
 module.exports = {
   getIngestEndpoint,
   getSynthesisEndpoint,
@@ -310,6 +319,7 @@ module.exports = {
   getEmailVerificationRequestUrl,
   getEmailVerificationVerifyUrl,
   getProvisionTestTalentEndpoint,
+  getTeardownTestTalentEndpoint,
   // Persistent config file + endpoint safety (endpoint-config task).
   configFilePath,
   loadConfigFile,

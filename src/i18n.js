@@ -620,6 +620,18 @@ const catalogs = {
       errorConflict:
         'Ese email ya pertenece a una cuenta real (no de prueba). Usa un email distinto para la identidad de prueba.',
       errorGeneric: 'No se pudo provisionar la identidad de prueba. Inténtalo de nuevo.',
+      // Teardown (ADR-022) — el inverso: elimina identidades de PRUEBA.
+      removeIntro:
+        'Elimina identidad(es) de Talent de PRUEBA (solo entornos no productivos). Nunca borra cuentas reales.',
+      removeEmailPrompt: 'Email de la identidad de prueba a eliminar (o usa --all):',
+      removeNeedTarget: 'Indica un email (--email) o --all para eliminar todas las de prueba.',
+      removed: (count, emails) =>
+        count === 0
+          ? 'No había ninguna identidad de prueba que eliminar (nada que hacer).'
+          : `Eliminadas ${count} identidad(es) de prueba: ${emails}.`,
+      removeRefusedReal:
+        'Ese email pertenece a una cuenta REAL (no de prueba). No se ha eliminado nada.',
+      removeErrorGeneric: 'No se pudo eliminar la identidad de prueba. Inténtalo de nuevo.',
     },
     // in-shell command help and messages — the commands keep their own copy.
     // The STARTUP BANNER is intentionally NOT here: it's always English (a
@@ -1145,6 +1157,18 @@ const catalogs = {
       errorConflict:
         'That email already belongs to a real (non-test) account. Use a different email for the test identity.',
       errorGeneric: 'Could not provision the test identity. Try again.',
+      // Teardown (ADR-022) — the inverse: removes TEST identities.
+      removeIntro:
+        'Remove TEST Talent identity(ies) (non-production environments only). Never deletes real accounts.',
+      removeEmailPrompt: 'Email of the test identity to remove (or use --all):',
+      removeNeedTarget: 'Provide an email (--email) or --all to remove every test identity.',
+      removed: (count, emails) =>
+        count === 0
+          ? 'There was no test identity to remove (nothing to do).'
+          : `Removed ${count} test identity(ies): ${emails}.`,
+      removeRefusedReal:
+        'That email belongs to a REAL (non-test) account. Nothing was removed.',
+      removeErrorGeneric: 'Could not remove the test identity. Try again.',
     },
     // `sh-eval` REPL is the single entrypoint; this covers the prompt, the
     // in-shell command help and messages — the commands keep their own copy.

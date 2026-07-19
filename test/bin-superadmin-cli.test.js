@@ -148,3 +148,81 @@ test('409 -> real-account conflict error, exit 1', async () => {
     server.close();
   }
 });
+
+// --- teardown (ADR-022) ------------------------------------------------------
+
+test('--remove --email -> sends {password,email} to the teardown route, reports removed', async () => {
+  let received;
+  const server = await startStub((body, res) => {
+    received = body;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ removed: [{ talentId: 't1', email: body.email }], count: 1 }));
+  });
+  try {
+    const { code, stdout } = await runCli(server, [
+      '--lang', 'en', '--remove', '--password', 'secret', '--email', 'Test@Example.com',
+    ]);
+    assert.equal(code, 0);
+    assert.equal(received.password, 'secret');
+    assert.equal(received.email, 'test@example.com');
+    assert.equal(received.all, undefined);
+    assert.match(stdout, /Removed 1 test identity\(ies\): test@example\.com/);
+  } finally {
+    server.close();
+  }
+});
+
+test('--remove --all -> sends {password, all:true}, reports the emails', async () => {
+  let received;
+  const server = await startStub((body, res) => {
+    received = body;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      removed: [{ talentId: 'a', email: 'a@test.com' }, { talentId: 'b', email: 'b@test.com' }],
+      count: 2,
+    }));
+  });
+  try {
+    const { code, stdout } = await runCli(server, [
+      '--lang', 'en', '--remove', '--all', '--password', 'secret',
+    ]);
+    assert.equal(code, 0);
+    assert.equal(received.all, true);
+    assert.equal(received.email, undefined);
+    assert.match(stdout, /Removed 2 test identity\(ies\): a@test\.com, b@test\.com/);
+  } finally {
+    server.close();
+  }
+});
+
+test('--remove with count 0 -> clean no-op message, exit 0', async () => {
+  const server = await startStub((_body, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ removed: [], count: 0 }));
+  });
+  try {
+    const { code, stdout } = await runCli(server, [
+      '--lang', 'en', '--remove', '--email', 'ghost@example.com', '--password', 'secret',
+    ]);
+    assert.equal(code, 0);
+    assert.match(stdout, /no test identity to remove/);
+  } finally {
+    server.close();
+  }
+});
+
+test('--remove --email on a REAL account (409) -> refused message, exit 1', async () => {
+  const server = await startStub((_body, res) => {
+    res.writeHead(409, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ code: 'ai-footprint.test_talent_email_conflict' }));
+  });
+  try {
+    const { code, stderr } = await runCli(server, [
+      '--lang', 'en', '--remove', '--email', 'real@example.com', '--password', 'secret',
+    ]);
+    assert.equal(code, 1);
+    assert.match(stderr, /belongs to a REAL \(non-test\) account/);
+  } finally {
+    server.close();
+  }
+});
