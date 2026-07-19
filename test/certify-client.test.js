@@ -78,6 +78,21 @@ test('normalizeResolveResponse: missing certifiable[] -> null (invalid shape)', 
   assert.equal(normalizeResolveResponse(null), null);
 });
 
+// --- certifyTimeoutForItems: scales with Skill count -------------------------
+
+test('certifyTimeoutForItems: floors at the single-Skill default and scales per Skill', () => {
+  const { certifyTimeoutForItems, DEFAULT_CERTIFY_TIMEOUT_MS, PER_SKILL_CERTIFY_TIMEOUT_MS } =
+    require('../src/certify-client');
+  // 1 Skill → max(default, 1×perSkill) = perSkill (>= default).
+  assert.equal(certifyTimeoutForItems(1), Math.max(DEFAULT_CERTIFY_TIMEOUT_MS, PER_SKILL_CERTIFY_TIMEOUT_MS));
+  // 2 Skills (the reported failure: ~106s > the old flat 90s) → 2×perSkill.
+  assert.equal(certifyTimeoutForItems(2), 2 * PER_SKILL_CERTIFY_TIMEOUT_MS);
+  assert.ok(certifyTimeoutForItems(2) > 106000, 'covers a real 2-Skill (~106s) run');
+  // Defensive: 0/negative/NaN → single-Skill floor.
+  assert.equal(certifyTimeoutForItems(0), Math.max(DEFAULT_CERTIFY_TIMEOUT_MS, PER_SKILL_CERTIFY_TIMEOUT_MS));
+  assert.equal(certifyTimeoutForItems(NaN), Math.max(DEFAULT_CERTIFY_TIMEOUT_MS, PER_SKILL_CERTIFY_TIMEOUT_MS));
+});
+
 // --- classifyCertifyFailure (issue 014) --------------------------------------
 
 test('classifyCertifyFailure: 403 -> gate, 413 -> too-large, everything else -> technical', () => {

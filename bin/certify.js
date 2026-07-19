@@ -41,6 +41,7 @@ const {
   requestResolve,
   buildCertifyRequest,
   requestCertify,
+  certifyTimeoutForItems,
   classifyCertifyFailure,
 } = require('../src/certify-client');
 const { formatResolveReport } = require('../src/certify-render');
@@ -115,8 +116,10 @@ function resolveErrorMessage(reason, catalog) {
 // Reports a resolve/certify failure with the RIGHT UX per status (issue 014):
 // 403 = expected gate outcome (calm, clean exit, no retry/error styling);
 // 413 = actionable "too large"; everything else = real technical error.
-// Shared by both the resolve and certify phases.
-function reportCertifyFailure(reason, catalog, email) {
+// Shared by both phases — `phase` ('resolve'|'certify') selects an accurate
+// intro so a CERTIFY failure never prints the resolve-worded "could not resolve
+// certifiable Skills" (misleading — the Skills WERE resolved and shown first).
+function reportCertifyFailure(reason, catalog, email, phase = 'resolve') {
   const c = catalog.certify;
   const kind = classifyCertifyFailure(reason);
 
@@ -134,7 +137,8 @@ function reportCertifyFailure(reason, catalog, email) {
     return;
   }
   // technical: network/timeout/invalid/5xx/other non-2xx — generic error + retry.
-  process.stderr.write(`\n  ${c.errorIntro} ${resolveErrorMessage(reason, catalog)}\n`);
+  const intro = phase === 'certify' ? c.errorIntroCertify : c.errorIntro;
+  process.stderr.write(`\n  ${intro} ${resolveErrorMessage(reason, catalog)}\n`);
   process.stderr.write(`  ${c.errorRetryHint}\n\n`);
   process.exitCode = 1;
 }
@@ -290,12 +294,17 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
   let results = [];
   if (sendable.length > 0) {
     const requestBody = buildCertifyRequest(email, sendable);
-    // Spinner while the model analyzes your code (issue 011): the call takes ~15-25s — make
-    // it clear the CLI is working, not hung. withSpinner degrades to a single
-    // stderr line on non-TTY.
-    const outcome = await withSpinner(c.certifyingLabel, () => requestCertify(requestBody, { endpoint }));
+    // Spinner while the model analyzes your code (issue 011): each Skill is a
+    // ~50s+ server-side gemini-2.5-pro call, run sequentially — make it clear
+    // the CLI is working, not hung. withSpinner degrades to a single stderr
+    // line on non-TTY. The HTTP timeout SCALES with the number of Skills
+    // (`certifyTimeoutForItems`) so a multi-Skill run isn't aborted mid-way.
+    const timeoutMs = certifyTimeoutForItems(requestBody.items.length);
+    const outcome = await withSpinner(c.certifyingLabel, () =>
+      requestCertify(requestBody, { endpoint, timeoutMs }),
+    );
     if (!outcome.ok) {
-      reportCertifyFailure(outcome.reason, catalog, email);
+      reportCertifyFailure(outcome.reason, catalog, email, 'certify');
       return;
     }
     results = outcome.result.results;

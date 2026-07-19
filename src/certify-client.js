@@ -35,10 +35,30 @@ const { scrubSecrets } = require('./agent-synthesis');
  */
 
 const DEFAULT_TIMEOUT_MS = 20000;
-// The certify phase runs one LLM call per Skill server-side (specs.md AI/LLM),
-// so it's much slower than resolve — a generous single timeout, still bounded
-// (never hangs). Zero client retries in V1 (specs.md).
+// The certify phase runs one gemini-2.5-pro call PER Skill server-side, SEQUENTIALLY
+// (specs.md AI/LLM). On a REAL repo each call can take ~50s+ (large sampled input:
+// ~150k est-tokens → ~250k model tokens; the backend allows up to 5min PER call).
+// So a fixed whole-request timeout is wrong: N Skills ≈ N × per-call latency. This
+// floor covers a single Skill; multi-Skill runs scale via `certifyTimeoutForItems`
+// below (a 2-Skill run is ~106s, which the old flat 90s aborted mid-run even
+// though the backend completed both calls). Zero client retries in V1 (specs.md).
 const DEFAULT_CERTIFY_TIMEOUT_MS = 90000;
+// Per-Skill HTTP budget the CLI waits for each sequential server-side call.
+// Generous over the observed ~53s (≈3x) yet under the backend's 5min per-call
+// ceiling, so the CLI stops waiting only well after the model realistically
+// would have answered.
+const PER_SKILL_CERTIFY_TIMEOUT_MS = 150000;
+
+/**
+ * HTTP timeout for a CERTIFY request covering `itemCount` Skills — the server
+ * processes them SEQUENTIALLY (one gemini-2.5-pro call each), so the client must
+ * wait roughly `itemCount × per-call`. Floored at `DEFAULT_CERTIFY_TIMEOUT_MS`
+ * for a single Skill. Pure/deterministic (unit-testable).
+ */
+function certifyTimeoutForItems(itemCount) {
+  const n = Number.isFinite(itemCount) && itemCount > 0 ? Math.floor(itemCount) : 1;
+  return Math.max(DEFAULT_CERTIFY_TIMEOUT_MS, n * PER_SKILL_CERTIFY_TIMEOUT_MS);
+}
 const SCORE_MIN = 0;
 const SCORE_MAX = 100;
 
@@ -282,6 +302,8 @@ module.exports = {
   buildCertifyRequest,
   requestCertify,
   normalizeCertifyResponse,
+  certifyTimeoutForItems,
   DEFAULT_TIMEOUT_MS,
   DEFAULT_CERTIFY_TIMEOUT_MS,
+  PER_SKILL_CERTIFY_TIMEOUT_MS,
 };

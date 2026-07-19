@@ -524,6 +524,7 @@ const catalogs = {
         + 'de certificación se deriva automáticamente. (No hay certificación en local: el catálogo de '
         + 'Skills y el análisis viven en el Hub.)',
       errorIntro: 'No se han podido resolver las Skills certificables:',
+      errorIntroCertify: 'No se han podido certificar tus Skills:',
       errorNetwork: 'no se pudo contactar con el servicio de certificación (error de red).',
       errorTimeout: 'el servicio de certificación agotó el tiempo de espera.',
       errorHttp: (status) => `el servicio de certificación devolvió un estado inesperado (HTTP ${status}).`,
@@ -1067,6 +1068,7 @@ const catalogs = {
         + 'certification path is derived automatically. (There is no local-only certification: the '
         + 'Skill catalog and the analysis live on the Hub.)',
       errorIntro: 'Could not resolve certifiable Skills:',
+      errorIntroCertify: 'Could not certify your Skills:',
       errorNetwork: 'the certification service could not be reached (network error).',
       errorTimeout: 'the certification service timed out.',
       errorHttp: (status) => `the certification service returned an unexpected status (HTTP ${status}).`,
