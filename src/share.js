@@ -520,6 +520,25 @@ async function autoShare(report, maturity) {
 // provenance (`toolVersion`/`repository`/`commitRange`) travels once at the
 // payload root. Note per-file `note`s are scrubbed here client-side too (the
 // backend scrubs again — defense in depth, same as `rationale`).
+// ADR-024: rebuild the rubric dimensions key-by-key (each 0-4 int or null),
+// or null when the result carries no dimensions (aggregate-only / legacy).
+const CERT_DIMENSION_KEYS = ['idiomatic', 'correctness', 'depth', 'structure', 'testing'];
+function deriveDimensionScores(dimensions) {
+  if (!dimensions || typeof dimensions !== 'object') return null;
+  const out = {};
+  let any = false;
+  for (const key of CERT_DIMENSION_KEYS) {
+    const v = dimensions[key];
+    if (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 4) {
+      out[key] = v;
+      any = true;
+    } else {
+      out[key] = null;
+    }
+  }
+  return any ? out : null;
+}
+
 function deriveCertificationPayload(items, { model = null, repository = null, commitRange = null, toolVersion = null } = {}) {
   const list = Array.isArray(items) ? items : [];
   const skillCodeAssessments = list
@@ -556,6 +575,9 @@ function deriveCertificationPayload(items, { model = null, repository = null, co
               note: typeof f.note === 'string' && f.note ? scrubSecrets(f.note) : null,
             }))
         : [],
+      // ADR-024 rubric dimensions (0-4 or null) — the inputs the server used to
+      // compute the deterministic score. Rebuilt key-by-key, never spread.
+      dimensionScores: deriveDimensionScores(i.result.dimensions),
     }));
   return {
     schemaVersion: CERT_SCHEMA_VERSION,

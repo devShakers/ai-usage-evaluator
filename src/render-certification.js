@@ -42,6 +42,9 @@ function anyTruncated(items) {
   return (items || []).some((i) => i && i.sampling && i.sampling.truncated);
 }
 
+// ADR-024 rubric dimension order (terminal + HTML render).
+const DIMENSION_KEYS = ['idiomatic', 'correctness', 'depth', 'structure', 'testing'];
+
 // Score band -> semantic (shared by terminal color + HTML class).
 function scoreBand(score) {
   if (typeof score !== 'number') return 'mid';
@@ -119,6 +122,15 @@ function renderCertificationTerminal(certification, lang) {
 
     const band = scoreBand(item.result.score);
     lines.push(`${C.cyan}│${C.reset}  ${C.bold}${bandColor(band)}${r.scoreLine(item.result.score)}${C.reset}`);
+    // ADR-024: show the anchored rubric dimensions so the score is explainable.
+    if (item.result.dimensions && r.dimensionsLabel && r.dimensionLabels) {
+      lines.push(`${C.cyan}│${C.reset}  ${C.bold}${r.dimensionsLabel}:${C.reset}`);
+      for (const key of DIMENSION_KEYS) {
+        const v = item.result.dimensions[key];
+        const shown = typeof v === 'number' ? `${v}/4` : r.dimensionNA;
+        lines.push(`${C.cyan}│${C.reset}    ${C.dim}${r.dimensionLabels[key] || key}:${C.reset} ${shown}`);
+      }
+    }
     if (item.result.rationale) {
       lines.push(`${C.cyan}│${C.reset}  ${C.bold}${r.rationaleLabel}:${C.reset} ${conciseRationale(item.result.rationale)}`);
     }
@@ -220,6 +232,17 @@ function certificationSectionsHtml(certification, lang) {
       Array.isArray(item.result.improvements) && item.result.improvements.length
         ? `<p class="label">${escapeHtml(r.improvementsLabel)}</p><ul>${item.result.improvements.map((i) => `<li>${escapeHtml(i)}</li>`).join('')}</ul>`
         : '';
+    // ADR-024: render the anchored rubric dimensions so the score is explainable.
+    const dimensions =
+      item.result.dimensions && r.dimensionsLabel && r.dimensionLabels
+        ? `<p class="label">${escapeHtml(r.dimensionsLabel)}</p><ul class="dimensions">${DIMENSION_KEYS.map(
+            (key) => {
+              const v = item.result.dimensions[key];
+              const shown = typeof v === 'number' ? `${v}/4` : r.dimensionNA;
+              return `<li>${escapeHtml(r.dimensionLabels[key] || key)}: ${escapeHtml(shown)}</li>`;
+            },
+          ).join('')}</ul>`
+        : '';
     const sampleTag = item.sampling && item.sampling.truncated ? ` ${escapeHtml(r.partialTag)}` : '';
     const sample = item.sampling
       ? `<p class="sample">${escapeHtml(r.sampleSummary(item.sampling.includedCount, item.sampling.candidateCount, item.sampling.estTokens))}${sampleTag}</p>`
@@ -242,6 +265,7 @@ function certificationSectionsHtml(certification, lang) {
 
     return `<section class="card skill">${head}${scoreBadge}`
       + (item.result.rationale ? `<p class="rationale"><span class="label">${escapeHtml(r.rationaleLabel)}:</span> ${escapeHtml(item.result.rationale)}</p>` : '')
+      + dimensions
       + improvements
       + sample
       + remediationHtml

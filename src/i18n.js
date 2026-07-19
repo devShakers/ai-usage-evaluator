@@ -561,17 +561,29 @@ const catalogs = {
       // Reporting redesign: el HTML ya no es opt-in; cada certificación se
       // añade al informe acumulado y se imprime SIEMPRE su enlace file://.
       reportLink: (url) => `Abre tu informe en el navegador:\n  ${url}`,
-      // Certify report (terminal + HTML). Nota orientativa/no reproducible.
+      // Certify report (terminal + HTML). Rúbrica anclada + agregación determinista (ADR-024).
       report: {
         heading: 'Resultado de certificación de Skills',
         disclaimer:
-          'Nota: la puntuación es orientativa y NO reproducible — es un juicio libre del '
-          + 'modelo (sin rúbrica) y puede variar entre ejecuciones. No es una certificación '
+          'Nota: la puntuación se calcula con una rúbrica anclada (dimensiones de 0 a 4) y una '
+          + 'fórmula fija, por lo que el cálculo es determinista: con las mismas valoraciones '
+          + 'sale la misma nota. Solo los juicios por criterio del modelo pueden variar '
+          + 'ligeramente entre ejecuciones. Es una valoración indicativa, no una certificación '
           + 'oficial de cara al Client.',
         partialSampleWarning:
-          'Muestra parcial: por los límites de tamaño no se ha enviado todo el código; '
-          + 'la valoración se basa en una muestra.',
+          'Muestra parcial: por los límites de tamaño la valoración se basa en una muestra del '
+          + 'código, no en todo el proyecto.',
         scoreLine: (score) => `Puntuación: ${score == null ? 'n/d' : `${score}/100`}`,
+        // ADR-024 rubric dimensions.
+        dimensionsLabel: 'Dimensiones',
+        dimensionNA: 'N/A',
+        dimensionLabels: {
+          idiomatic: 'Uso idiomático',
+          correctness: 'Corrección y robustez',
+          depth: 'Profundidad',
+          structure: 'Estructura y mantenibilidad',
+          testing: 'Tests',
+        },
         rationaleLabel: 'Por qué',
         improvementsLabel: 'Mejoras sugeridas',
         sampleSummary: (included, candidate, estTokens) =>
@@ -584,8 +596,8 @@ const catalogs = {
         noItems: 'No hay resultados de certificación que mostrar.',
         // Coste (issue 012): input mayor = más € por run.
         costNote:
-          'Nota de coste: se analiza más código por Skill (hasta ~150k tokens/Skill, ~500k/run), '
-          + 'lo que aumenta el coste por ejecución.',
+          'Nota de coste: se analiza bastante código por Skill (hasta ~150k tokens/Skill), '
+          + 'lo que tiene un coste por ejecución.',
         // Prompt de remediación (issue 011): generado en local desde las mejoras.
         remediationHeading: 'Prompt para aplicar las mejoras',
         remediationHint: 'Copia este prompt y pégalo en tu herramienta de IA (Claude Code, Cursor…) para aplicar las mejoras.',
@@ -1108,13 +1120,25 @@ const catalogs = {
       report: {
         heading: 'Skill certification result',
         disclaimer:
-          'Note: the score is indicative and NOT reproducible — it is the model’s free '
-          + 'judgment (no rubric) and may vary between runs. It is not an official '
+          'Note: the score is computed from an anchored rubric (0-4 dimensions) with a fixed '
+          + 'formula, so the aggregation is deterministic — the same per-dimension judgments '
+          + 'always yield the same score. Only the model’s per-criterion judgments may vary '
+          + 'slightly between runs. It is an indicative assessment, not an official '
           + 'Client-facing certification.',
         partialSampleWarning:
-          'Partial sample: due to size limits not all code was sent; the assessment is '
-          + 'based on a sample.',
+          'Partial sample: due to size limits the assessment is based on a sample of the code, '
+          + 'not the whole project.',
         scoreLine: (score) => `Score: ${score == null ? 'n/a' : `${score}/100`}`,
+        // ADR-024 rubric dimensions.
+        dimensionsLabel: 'Dimensions',
+        dimensionNA: 'N/A',
+        dimensionLabels: {
+          idiomatic: 'Idiomatic usage',
+          correctness: 'Correctness & robustness',
+          depth: 'Depth',
+          structure: 'Structure & maintainability',
+          testing: 'Testing',
+        },
         rationaleLabel: 'Why',
         improvementsLabel: 'Suggested improvements',
         sampleSummary: (included, candidate, estTokens) =>
@@ -1126,8 +1150,8 @@ const catalogs = {
         htmlTitle: 'Skill Certification · Shakers',
         noItems: 'No certification results to show.',
         costNote:
-          'Cost note: more code is analyzed per Skill (up to ~150k tokens/Skill, ~500k/run), '
-          + 'which increases the cost per run.',
+          'Cost note: a fair amount of code is analyzed per Skill (up to ~150k tokens/Skill), '
+          + 'which has a per-run cost.',
         remediationHeading: 'Prompt to apply the improvements',
         remediationHint: 'Copy this prompt and paste it into your AI tool (Claude Code, Cursor…) to apply the improvements.',
         remediationIntro: (skillName, technology) =>

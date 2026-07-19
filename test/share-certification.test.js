@@ -55,8 +55,9 @@ test('deriveCertificationPayload: whitelists analyzed results only, scrubs prose
   assert.equal(payload.kind, 'skill-code-assessment');
   assert.equal(payload.skillCodeAssessments.length, 1); // the not-analyzed one is dropped
   const a = payload.skillCodeAssessments[0];
-  // ADR-017 added authorEmails/perFileBreakdown/sampledFiles — still NO code/content field.
-  assert.deepEqual(Object.keys(a).sort(), ['authorEmails', 'improvements', 'model', 'perFileBreakdown', 'rationale', 'sampled', 'sampledFiles', 'score', 'skillId', 'skillName', 'technology']);
+  // ADR-017 added authorEmails/perFileBreakdown/sampledFiles; ADR-024 added
+  // dimensionScores — still NO code/content field.
+  assert.deepEqual(Object.keys(a).sort(), ['authorEmails', 'dimensionScores', 'improvements', 'model', 'perFileBreakdown', 'rationale', 'sampled', 'sampledFiles', 'score', 'skillId', 'skillName', 'technology']);
   assert.equal(a.rationale.includes('sk-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEF'), false);
   assert.equal(a.improvements[0].includes('AKIAIOSFODNN7EXAMPLE'), false);
   assert.equal(a.model, 'claude-sonnet-5');

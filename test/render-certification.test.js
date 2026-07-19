@@ -29,11 +29,34 @@ function certification(overrides = {}) {
 test('terminal: shows heading, disclaimer, score, rationale, improvements, sample summary', () => {
   const out = renderCertificationTerminal(certification(), 'en');
   assert.match(out, /Skill certification result/);
-  assert.match(out, /indicative and NOT reproducible/);
+  // ADR-024: the disclaimer now describes the deterministic rubric aggregation.
+  assert.match(out, /anchored rubric/);
+  assert.match(out, /deterministic/);
   assert.match(out, /Score: 82\/100/);
   assert.match(out, /Solid component patterns/);
   assert.match(out, /Add tests/);
   assert.match(out, /Sample: 3\/5 files/);
+});
+
+test('terminal: renders the anchored rubric dimensions when present (ADR-024)', () => {
+  const cert = {
+    items: [{
+      skillId: 1, skillName: 'React', technology: 'React',
+      sampling: { sampleable: true, includedCount: 2, candidateCount: 2, estTokens: 800, truncated: false, capReason: null },
+      result: {
+        score: 64,
+        dimensions: { idiomatic: 3, correctness: 2, depth: 3, structure: 2, testing: null },
+        rationale: 'ok',
+        improvements: ['a', 'b'],
+      },
+    }],
+    model: null,
+  };
+  // Strip ANSI so label/value assertions aren't split by color codes.
+  const out = renderCertificationTerminal(cert, 'en').replace(/\x1b\[[0-9;]*m/g, '');
+  assert.match(out, /Dimensions/);
+  assert.match(out, /Idiomatic usage: 3\/4/);
+  assert.match(out, /Testing: N\/A/); // null dimension shown as N/A, not 0
 });
 
 // Terminal-condense (CPO feedback): a long LLM rationale is trimmed to its
@@ -165,7 +188,9 @@ test('HTML: partial warning + Spanish rendering', () => {
     }],
   }, 'es');
   assert.match(html, /Muestra parcial/);
-  assert.match(html, /orientativa y NO reproducible/);
+  // ADR-024: Spanish disclaimer now describes the deterministic rubric.
+  assert.match(html, /rúbrica anclada/);
+  assert.match(html, /determinista/);
 });
 
 test('both renderers: empty items -> no-results notice, no throw', () => {

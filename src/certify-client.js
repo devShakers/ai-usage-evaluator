@@ -222,6 +222,8 @@ function normalizeCertifyResponse(parsed) {
         r && Array.isArray(r.improvements)
           ? r.improvements.filter((i) => typeof i === 'string' && i)
           : [],
+      // ADR-024: anchored 0-4 dimensions that produced the deterministic score.
+      dimensions: normalizeDimensions(r && r.dimensions),
       perFileBreakdown: normalizePerFileBreakdown(r && r.perFileBreakdown),
     })),
   };
@@ -242,6 +244,28 @@ function normalizePerFileBreakdown(raw) {
       note: typeof f.note === 'string' && f.note ? f.note : null,
     }));
   return out.length > 0 ? out : null;
+}
+
+// The fixed rubric dimensions (ADR-024). Each value is an int 0-4 or null (N/A).
+const RUBRIC_DIMENSION_KEYS = ['idiomatic', 'correctness', 'depth', 'structure', 'testing'];
+
+// Rebuilds the dimensions object key-by-key: each key becomes an int 0-4 or
+// null. Returns null when the response has no usable dimensions object (a
+// legacy/aggregate-only server) — the caller then renders score-only.
+function normalizeDimensions(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const out = {};
+  let any = false;
+  for (const key of RUBRIC_DIMENSION_KEYS) {
+    const v = raw[key];
+    if (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 4) {
+      out[key] = v;
+      any = true;
+    } else {
+      out[key] = null;
+    }
+  }
+  return any ? out : null;
 }
 
 async function requestCertify(requestBody, { endpoint, timeoutMs = DEFAULT_CERTIFY_TIMEOUT_MS } = {}) {
@@ -303,6 +327,7 @@ module.exports = {
   requestCertify,
   normalizeCertifyResponse,
   certifyTimeoutForItems,
+  RUBRIC_DIMENSION_KEYS,
   DEFAULT_TIMEOUT_MS,
   DEFAULT_CERTIFY_TIMEOUT_MS,
   PER_SKILL_CERTIFY_TIMEOUT_MS,

@@ -152,7 +152,7 @@ test('full flow end-to-end against the stub: resolve -> --all certify -> report,
     assert.match(stdout, /Certifiable Skills for your project/);
     // certify phase report
     assert.match(stdout, /Skill certification result/);
-    assert.match(stdout, /indicative and NOT reproducible/);
+    assert.match(stdout, /anchored rubric/); // ADR-024 disclaimer
     assert.match(stdout, /Score: \d+\/100/);
     assert.match(stdout, /Sample: \d+\/\d+ files/);
   } finally {
