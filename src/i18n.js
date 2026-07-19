@@ -586,6 +586,21 @@ const catalogs = {
         },
         rationaleLabel: 'Por qué',
         improvementsLabel: 'Mejoras sugeridas',
+        // ADR-025 authorship receipt (atribución, NO prueba criptográfica).
+        receipt: {
+          label: 'Autoría',
+          repoLabel: 'Repo',
+          commitRangeLabel: 'Rango de commits',
+          filesLabel: 'Fichero',
+          authorLabel: 'Autor (git)',
+          confirmedLabel: 'Autores confirmados con la identidad',
+          attributedYes: '✓',
+          attributedNo: '✗',
+          summary: (attributed, total) => `${attributed}/${total} ficheros atribuidos a la identidad`,
+          note:
+            'Traza de autoría basada en el autor de git (self-asserted); no es una prueba '
+            + 'criptográfica de autoría.',
+        },
         sampleSummary: (included, candidate, estTokens) =>
           `Muestra: ${included}/${candidate} ficheros · ~${estTokens} tokens`,
         partialTag: '(muestra parcial)',
@@ -647,6 +662,28 @@ const catalogs = {
       removeRefusedReal:
         'Ese email pertenece a una cuenta REAL (no de prueba). No se ha eliminado nada.',
       removeErrorGeneric: 'No se pudo eliminar la identidad de prueba. Inténtalo de nuevo.',
+      // Inspect (ADR-025) — recibo de atribución de certificaciones YA guardadas.
+      inspectIntro:
+        'Audita la evidencia de autoría de las certificaciones ya guardadas (solo lectura, entornos no productivos).',
+      inspectEmailPrompt: 'Email cuya(s) certificación(es) quieres inspeccionar:',
+      inspectNone: (email) => `No hay certificaciones guardadas para ${email}.`,
+      inspectHeader: (count, email) =>
+        `${count} certificación(es) guardada(s) para ${email}:`,
+      inspectNote:
+        'Traza de autoría basada en el autor de git (self-asserted); no es una prueba criptográfica de autoría.',
+      inspectLabels: {
+        score: 'Puntuación',
+        dimensions: 'Dimensiones',
+        repo: 'Repo',
+        commitRange: 'Rango de commits',
+        sampledFiles: 'Ficheros muestreados',
+        authorsConfirmed: 'Autores confirmados',
+        authorsConsidered: 'Autores considerados',
+        model: 'Modelo',
+        when: 'Fecha',
+        testOrigin: 'Cuenta de prueba',
+      },
+      inspectErrorGeneric: 'No se pudo inspeccionar. Inténtalo de nuevo.',
     },
     // in-shell command help and messages — the commands keep their own copy.
     // The STARTUP BANNER is intentionally NOT here: it's always English (a
@@ -1141,6 +1178,21 @@ const catalogs = {
         },
         rationaleLabel: 'Why',
         improvementsLabel: 'Suggested improvements',
+        // ADR-025 authorship receipt (attribution, NOT cryptographic proof).
+        receipt: {
+          label: 'Authorship',
+          repoLabel: 'Repo',
+          commitRangeLabel: 'Commit range',
+          filesLabel: 'File',
+          authorLabel: 'Author (git)',
+          confirmedLabel: 'Authors confirmed against the identity',
+          attributedYes: '✓',
+          attributedNo: '✗',
+          summary: (attributed, total) => `${attributed}/${total} files attributed to the identity`,
+          note:
+            'Attribution trail based on the git author (self-asserted); it is not '
+            + 'cryptographic proof of authorship.',
+        },
         sampleSummary: (included, candidate, estTokens) =>
           `Sample: ${included}/${candidate} files · ~${estTokens} tokens`,
         partialTag: '(partial sample)',
@@ -1199,6 +1251,27 @@ const catalogs = {
       removeRefusedReal:
         'That email belongs to a REAL (non-test) account. Nothing was removed.',
       removeErrorGeneric: 'Could not remove the test identity. Try again.',
+      // Inspect (ADR-025) — attribution receipt for ALREADY-stored certifications.
+      inspectIntro:
+        'Audit the authorship evidence of already-stored certifications (read-only, non-production).',
+      inspectEmailPrompt: 'Email whose certification(s) to inspect:',
+      inspectNone: (email) => `No stored certifications for ${email}.`,
+      inspectHeader: (count, email) => `${count} stored certification(s) for ${email}:`,
+      inspectNote:
+        'Attribution trail based on the git author (self-asserted); it is not cryptographic proof of authorship.',
+      inspectLabels: {
+        score: 'Score',
+        dimensions: 'Dimensions',
+        repo: 'Repo',
+        commitRange: 'Commit range',
+        sampledFiles: 'Sampled files',
+        authorsConfirmed: 'Confirmed authors',
+        authorsConsidered: 'Considered authors',
+        model: 'Model',
+        when: 'When',
+        testOrigin: 'Test account',
+      },
+      inspectErrorGeneric: 'Could not inspect. Try again.',
     },
     // `sh-eval` REPL is the single entrypoint; this covers the prompt, the
     // in-shell command help and messages — the commands keep their own copy.

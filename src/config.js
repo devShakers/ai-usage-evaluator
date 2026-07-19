@@ -310,6 +310,15 @@ function getTeardownTestTalentEndpoint(env = process.env) {
   return deriveFromIngest(env, 'superadmin/teardown-test-talent');
 }
 
+/*
+ * Superadmin READ-ONLY certification inspection endpoint (ADR-025, NON-PROD
+ * only) — a sibling of the ingest endpoint. `null` when no ingest endpoint is
+ * configured. The server 404s this route in production.
+ */
+function getInspectCertificationsEndpoint(env = process.env) {
+  return deriveFromIngest(env, 'superadmin/inspect-certifications');
+}
+
 module.exports = {
   getIngestEndpoint,
   getSynthesisEndpoint,
@@ -320,6 +329,7 @@ module.exports = {
   getEmailVerificationVerifyUrl,
   getProvisionTestTalentEndpoint,
   getTeardownTestTalentEndpoint,
+  getInspectCertificationsEndpoint,
   // Persistent config file + endpoint safety (endpoint-config task).
   configFilePath,
   loadConfigFile,

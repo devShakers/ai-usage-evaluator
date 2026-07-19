@@ -25,6 +25,7 @@ const { detectReportLang, getCatalog } = require('../src/i18n');
 const {
   getProvisionTestTalentEndpoint,
   getTeardownTestTalentEndpoint,
+  getInspectCertificationsEndpoint,
 } = require('../src/config');
 const { isValidEmail, normalizeEmail } = require('../src/share');
 const { createStdinAsk } = require('../src/stdin-ask');
@@ -47,6 +48,7 @@ function parseArgs(argv) {
     lang: null,
     remove: false,
     all: false,
+    inspect: false,
     authorDomain: null,
     authorEmails: [],
   };
@@ -57,6 +59,7 @@ function parseArgs(argv) {
     else if (a === '--password') opts.password = argv[++i];
     else if (a.startsWith('--password=')) opts.password = a.slice('--password='.length);
     else if (a === '--remove' || a === '--delete' || a === '--teardown') opts.remove = true;
+    else if (a === '--inspect' || a === '--audit') opts.inspect = true;
     else if (a === '--all') opts.all = true;
     // ADR-023 authorized authoring set (provision only).
     else if (a === '--author-domain') opts.authorDomain = argv[++i];
@@ -125,20 +128,29 @@ async function run(argv = process.argv.slice(2), { ask: injectedAsk = null } = {
   const lang = opts.lang || detectReportLang();
   const c = getCatalog(lang).superadmin;
 
-  const endpoint = opts.remove ? getTeardownTestTalentEndpoint() : getProvisionTestTalentEndpoint();
+  const mode = opts.inspect ? 'inspect' : opts.remove ? 'remove' : 'provision';
+  const endpoint =
+    mode === 'inspect'
+      ? getInspectCertificationsEndpoint()
+      : mode === 'remove'
+        ? getTeardownTestTalentEndpoint()
+        : getProvisionTestTalentEndpoint();
   if (!endpoint) {
     process.stderr.write(`\n  ${c.errorNoEndpoint}\n\n`);
     process.exitCode = 1;
     return;
   }
 
-  process.stdout.write(`\n  ${opts.remove ? c.removeIntro : c.intro}\n`);
+  const intro = mode === 'inspect' ? c.inspectIntro : mode === 'remove' ? c.removeIntro : c.intro;
+  process.stdout.write(`\n  ${intro}\n`);
 
   const canPrompt = !!process.stdin.isTTY || !!injectedAsk;
   const ask = injectedAsk || createStdinAsk();
   try {
     const password = opts.password || (await promptLine(ask, canPrompt, c.passwordPrompt));
-    if (opts.remove) {
+    if (mode === 'inspect') {
+      await runInspect({ opts, c, endpoint, password, ask, canPrompt });
+    } else if (mode === 'remove') {
       await runTeardown({ opts, c, endpoint, password, ask, canPrompt });
     } else {
       await runProvision({ opts, c, endpoint, password, ask, canPrompt });
@@ -146,6 +158,73 @@ async function run(argv = process.argv.slice(2), { ask: injectedAsk = null } = {
   } finally {
     if (!injectedAsk) ask.close();
   }
+}
+
+// ADR-025 read-only attribution receipt for stored certifications.
+async function runInspect({ opts, c, endpoint, password, ask, canPrompt }) {
+  const email = await resolveEmailArg(opts, c, ask, canPrompt, c.inspectEmailPrompt);
+  if (!password || !email || !isValidEmail(email)) {
+    process.stderr.write(`\n  ${c.needInput}\n\n`);
+    process.exitCode = 1;
+    return;
+  }
+
+  let res;
+  try {
+    res = await postJson(endpoint, { password, email: normalizeEmail(email) });
+  } catch {
+    process.stderr.write(`\n  ${c.inspectErrorGeneric}\n\n`);
+    process.exitCode = 1;
+    return;
+  }
+
+  if (res.status >= 200 && res.status < 300) {
+    const certs = (res.json && Array.isArray(res.json.certifications) && res.json.certifications) || [];
+    printInspectReceipts(certs, normalizeEmail(email), c);
+    return;
+  }
+  if (res.status === 403) process.stderr.write(`\n  ${c.errorWrongPassword}\n\n`);
+  else if (res.status === 404) process.stderr.write(`\n  ${c.errorDisabled}\n\n`);
+  else process.stderr.write(`\n  ${c.inspectErrorGeneric}\n\n`);
+  process.exitCode = 1;
+}
+
+// Prints the stored authorship + rubric evidence per certification. Attribution
+// trail (git authorship), NOT cryptographic proof — stated in the note.
+function printInspectReceipts(certs, email, c) {
+  if (certs.length === 0) {
+    process.stdout.write(`\n  ${c.inspectNone(email)}\n\n`);
+    return;
+  }
+  const L = c.inspectLabels;
+  const out = [`\n  ${c.inspectHeader(certs.length, email)}\n`];
+  for (const cert of certs) {
+    const dims =
+      cert.dimensionScores && typeof cert.dimensionScores === 'object'
+        ? Object.entries(cert.dimensionScores)
+            .map(([k, v]) => `${k} ${v == null ? 'N/A' : `${v}/4`}`)
+            .join(', ')
+        : '—';
+    const confirmed = Array.isArray(cert.authorEmails)
+      ? cert.authorEmails.filter((a) => a && a.matched).map((a) => a.email)
+      : [];
+    const considered = Array.isArray(cert.authorEmails) ? cert.authorEmails.map((a) => a.email) : [];
+    const files = Array.isArray(cert.sampledFiles) ? cert.sampledFiles : [];
+    out.push(`  ── ${cert.skillName}${cert.technology ? ` (${cert.technology})` : ''}`);
+    out.push(`     ${L.score}: ${cert.score == null ? 'n/a' : `${cert.score}/100`}`);
+    out.push(`     ${L.dimensions}: ${dims}`);
+    if (cert.repository) out.push(`     ${L.repo}: ${cert.repository}`);
+    if (cert.commitRange) out.push(`     ${L.commitRange}: ${cert.commitRange}`);
+    if (files.length) out.push(`     ${L.sampledFiles}: ${files.join(', ')}`);
+    if (confirmed.length) out.push(`     ${L.authorsConfirmed}: ${confirmed.join(', ')}`);
+    else if (considered.length) out.push(`     ${L.authorsConsidered}: ${considered.join(', ')}`);
+    out.push(`     ${L.model}: ${cert.model || '—'}${cert.promptVersion ? ` · ${cert.promptVersion}` : ''}`);
+    out.push(`     ${L.when}: ${cert.createdAt}`);
+    if (cert.testOrigin) out.push(`     ${L.testOrigin}: ✓`);
+    out.push('');
+  }
+  out.push(`  ${c.inspectNote}\n`);
+  process.stdout.write(out.join('\n'));
 }
 
 async function resolveEmailArg(opts, c, ask, canPrompt, promptLabel) {

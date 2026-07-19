@@ -204,11 +204,15 @@ function buildAttributionPredicate(verifiedEmail, authorizedSet) {
  *   {
  *     attributableFiles: [{path, content, ...}],   // files attributable to the identity
  *     authorEmails: [{email, matched}],            // ALL considered authors + attribution flag
+ *     fileAttribution: [{path, authors[], attributed}], // EVERY sampled file → its git authors + ✓/✗ (ADR-025 receipt)
  *     certifiable: boolean,                        // at least one attributable file
  *   }
  * Only `attributableFiles` are ever sent to the model — code outside the
  * authorized set never leaves the machine for certification. `authorEmails` is
- * the persisted EVIDENCE of the decision.
+ * the persisted EVIDENCE of the decision; `fileAttribution` is the per-file
+ * attribution trail shown in the ADR-025 receipt (NOT persisted — an at-certify
+ * -time display artifact; git authorship is self-asserted, not cryptographic
+ * proof).
  */
 function attributeSample(sample, verifiedEmail, authorship, authorizedSet = null) {
   const isAttributable = buildAttributionPredicate(verifiedEmail, authorizedSet);
@@ -216,11 +220,14 @@ function attributeSample(sample, verifiedEmail, authorship, authorizedSet = null
 
   const consideredEmails = new Set();
   const attributableFiles = [];
+  const fileAttribution = [];
 
   for (const file of files) {
     const authors = authorship.authorsForPath(file.path);
     for (const a of authors) consideredEmails.add(a);
-    if (authors.some((a) => isAttributable(a))) attributableFiles.push(file);
+    const attributed = authors.some((a) => isAttributable(a));
+    if (attributed) attributableFiles.push(file);
+    fileAttribution.push({ path: file.path, authors, attributed });
   }
 
   const authorEmails = [...consideredEmails].map((email) => ({
@@ -231,6 +238,7 @@ function attributeSample(sample, verifiedEmail, authorship, authorizedSet = null
   return {
     attributableFiles,
     authorEmails,
+    fileAttribution,
     certifiable: attributableFiles.length > 0,
   };
 }

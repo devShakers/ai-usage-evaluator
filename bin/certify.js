@@ -270,6 +270,9 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
     s.files = attribution.attributableFiles;
     s.authorEmails = attribution.authorEmails;
     s.sampledFiles = attribution.attributableFiles.map((f) => f.path);
+    // ADR-025 receipt: the per-file attribution trail (path → git authors → ✓/✗)
+    // for display only (never persisted; git authorship is not cryptographic proof).
+    s.fileAttribution = attribution.fileAttribution;
     if (!attribution.certifiable && s.meta && s.meta.sampleable) {
       // A Skill that HAD a code sample but none of it is the Talent's own.
       refusedSkillNames.push(s.skillName);
@@ -320,9 +323,16 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
     // Verified-authorship evidence (ADR-017) — persisted alongside the result.
     authorEmails: Array.isArray(s.authorEmails) ? s.authorEmails : [],
     sampledFiles: Array.isArray(s.sampledFiles) ? s.sampledFiles : [],
+    // ADR-025 receipt: per-file attribution trail (display only).
+    fileAttribution: Array.isArray(s.fileAttribution) ? s.fileAttribution : [],
     result: (Array.isArray(s.files) && s.files.length > 0) ? (resultById.get(String(s.skillId)) || null) : null,
   }));
-  const certification = { items, model: null };
+  // ADR-025: run-level provenance for the authorship receipt (repo + commit range).
+  const certification = {
+    items,
+    model: null,
+    authorship: { repository: authorship.repository, commitRange: authorship.commitRange },
+  };
   const analyzed = items.some((i) => i.result);
 
   // --- report (always shown, ADR-003) ----------------------------------------

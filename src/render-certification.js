@@ -45,6 +45,47 @@ function anyTruncated(items) {
 // ADR-024 rubric dimension order (terminal + HTML render).
 const DIMENSION_KEYS = ['idiomatic', 'correctness', 'depth', 'structure', 'testing'];
 
+// ADR-025 authorship receipt (HTML). Renders the file → git author → ✓/✗ trail
+// plus repo/commit range, confirmed authors, and the honest "attribution, not
+// cryptographic proof" note. `rc` is `catalog.certify.report.receipt`. Returns
+// '' when there is no receipt data (older state / no authorship).
+function renderReceiptHtml(item, rc) {
+  if (!rc) return '';
+  const files = Array.isArray(item.fileAttribution) ? item.fileAttribution : [];
+  const authorEmails = Array.isArray(item.authorEmails) ? item.authorEmails : [];
+  const repo = item.repository || (item.authorship && item.authorship.repository) || null;
+  const commitRange = item.commitRange || (item.authorship && item.authorship.commitRange) || null;
+  if (files.length === 0 && authorEmails.length === 0 && !repo && !commitRange) return '';
+
+  const meta = [];
+  if (repo) meta.push(`<li>${escapeHtml(rc.repoLabel)}: ${escapeHtml(repo)}</li>`);
+  if (commitRange) meta.push(`<li>${escapeHtml(rc.commitRangeLabel)}: ${escapeHtml(commitRange)}</li>`);
+
+  const fileRows = files
+    .map((f) => {
+      const mark = f.attributed ? rc.attributedYes : rc.attributedNo;
+      const authors = Array.isArray(f.authors) && f.authors.length ? f.authors.join(', ') : '—';
+      return `<tr><td>${mark}</td><td>${escapeHtml(f.path)}</td><td>${escapeHtml(authors)}</td></tr>`;
+    })
+    .join('');
+  const fileTable = fileRows
+    ? `<table class="attribution"><thead><tr><th></th><th>${escapeHtml(rc.filesLabel)}</th><th>${escapeHtml(rc.authorLabel)}</th></tr></thead><tbody>${fileRows}</tbody></table>`
+    : '';
+
+  const confirmed = authorEmails.filter((a) => a && a.matched).map((a) => a.email);
+  const confirmedHtml = confirmed.length
+    ? `<p class="attribution-confirmed">${escapeHtml(rc.confirmedLabel)}: ${escapeHtml(confirmed.join(', '))}</p>`
+    : '';
+
+  return (
+    `<div class="attribution-receipt"><p class="label">${escapeHtml(rc.label)}</p>`
+    + (meta.length ? `<ul class="attribution-meta">${meta.join('')}</ul>` : '')
+    + fileTable
+    + confirmedHtml
+    + `<p class="attribution-note">${escapeHtml(rc.note)}</p></div>`
+  );
+}
+
 // Score band -> semantic (shared by terminal color + HTML class).
 function scoreBand(score) {
   if (typeof score !== 'number') return 'mid';
@@ -95,6 +136,17 @@ function renderCertificationTerminal(certification, lang) {
   lines.push('');
   lines.push(`${C.dim}${r.disclaimer}${C.reset}`);
   lines.push(`${C.dim}${r.costNote}${C.reset}`);
+  // ADR-025 authorship receipt (run-level): repo + commit range + honest note,
+  // shown once. Attribution is based on git authorship, NOT cryptographic proof.
+  const authorship = (certification && certification.authorship) || null;
+  const rc = r.receipt;
+  if (rc && authorship && (authorship.repository || authorship.commitRange)) {
+    const bits = [];
+    if (authorship.repository) bits.push(`${rc.repoLabel}: ${authorship.repository}`);
+    if (authorship.commitRange) bits.push(`${rc.commitRangeLabel}: ${authorship.commitRange}`);
+    lines.push(`${C.dim}${rc.label} — ${bits.join(' · ')}${C.reset}`);
+  }
+  if (rc) lines.push(`${C.dim}${rc.note}${C.reset}`);
   if (anyTruncated(items)) lines.push(`\n  ${C.yellow}${r.partialSampleWarning}${C.reset}`);
   lines.push('');
 
@@ -142,6 +194,18 @@ function renderCertificationTerminal(certification, lang) {
       const summary = r.sampleSummary(item.sampling.includedCount, item.sampling.candidateCount, item.sampling.estTokens);
       const tag = item.sampling.truncated ? ` ${r.partialTag}` : '';
       lines.push(`${C.cyan}│${C.reset}  ${C.dim}${summary}${tag}${C.reset}`);
+    }
+    // ADR-025 per-Skill authorship receipt (compact in terminal): attributed
+    // file count + the author emails confirmed against the identity.
+    if (rc && Array.isArray(item.fileAttribution) && item.fileAttribution.length > 0) {
+      const attributed = item.fileAttribution.filter((f) => f.attributed).length;
+      lines.push(
+        `${C.cyan}│${C.reset}  ${C.bold}${rc.label}:${C.reset} ${rc.summary(attributed, item.fileAttribution.length)}`,
+      );
+      const matched = (item.authorEmails || []).filter((a) => a && a.matched).map((a) => a.email);
+      if (matched.length > 0) {
+        lines.push(`${C.cyan}│${C.reset}    ${C.dim}${rc.confirmedLabel}: ${matched.join(', ')}${C.reset}`);
+      }
     }
 
     // Remediation prompt (issue 011): a clearly delimited copyable block.
@@ -247,6 +311,9 @@ function certificationSectionsHtml(certification, lang) {
     const sample = item.sampling
       ? `<p class="sample">${escapeHtml(r.sampleSummary(item.sampling.includedCount, item.sampling.candidateCount, item.sampling.estTokens))}${sampleTag}</p>`
       : '';
+    // ADR-025 authorship receipt (fuller in HTML): the full file → git author →
+    // ✓/✗ trail + confirmed authors + the honest "attribution, not proof" note.
+    const receipt = renderReceiptHtml(item, r.receipt);
 
     let remediationHtml = '';
     const remediation = buildRemediationPrompt(item, lang);
@@ -268,6 +335,7 @@ function certificationSectionsHtml(certification, lang) {
       + dimensions
       + improvements
       + sample
+      + receipt
       + remediationHtml
       + `</section>`;
   }).join('\n');
