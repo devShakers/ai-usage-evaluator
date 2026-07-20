@@ -538,6 +538,12 @@ const catalogs = {
       errorTooLarge:
         'El proyecto es demasiado grande para certificar de una vez. Reduce el alcance '
         + '(menos ficheros o Skills) e inténtalo de nuevo.',
+      // 5xx: el backend está caído/reiniciándose o le faltan migraciones de BD
+      // (bugfix "missing migrations"). Mensaje accionable, DISTINTO del de red:
+      // no es tu conexión, es el servidor.
+      errorBackendOutdated:
+        'El backend no está disponible: le faltan migraciones de base de datos o se está reiniciando. '
+        + 'Aplica las migraciones y reinícialo, y vuelve a intentarlo. No se ha certificado nada.',
       // Interactive Skill selection (certify phase, issue 005).
       selectHeading: 'Selecciona las Skills que quieres certificar:',
       selectHint: 'Flechas ↑/↓ para moverte · espacio para marcar/desmarcar · a = todas · enter para confirmar · esc para cancelar',
@@ -1131,6 +1137,12 @@ const catalogs = {
       errorTooLarge:
         'The project is too large to certify at once. Reduce the scope '
         + '(fewer files or Skills) and try again.',
+      // 5xx: the backend is down/restarting or missing DB migrations (the
+      // "missing migrations" bugfix). Actionable message, DISTINCT from the
+      // network error: it's not your connection, it's the server.
+      errorBackendOutdated:
+        'The backend is unavailable: it is missing database migrations or is restarting. '
+        + 'Apply migrations and restart it, then try again. Nothing was certified.',
       // Interactive Skill selection (certify phase, issue 005).
       selectHeading: 'Select the Skills you want to certify:',
       selectHint: 'Arrows ↑/↓ to move · space to toggle · a = all · enter to confirm · esc to cancel',

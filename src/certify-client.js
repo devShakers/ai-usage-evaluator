@@ -308,14 +308,22 @@ async function requestCertify(requestBody, { endpoint, timeoutMs = DEFAULT_CERTI
  *   - 'too-large' -> HTTP 413: the sampled payload is too big. A specific,
  *                   actionable message (reduce scope), not "check your
  *                   connection".
+ *   - 'backend-unavailable' -> any HTTP 5xx (500/502/503/504…): the SERVER is
+ *                   down, restarting, or — the "missing migrations" bugfix —
+ *                   running code newer than its DB (Prisma P2021/P2022 → the
+ *                   backend now returns 503 `ai-footprint.schema_outdated`). An
+ *                   ACTIONABLE message distinct from 'network-error' (which
+ *                   would wrongly blame the user's connection).
  *   - 'technical' -> everything else (no-endpoint, network-error, timeout,
- *                   invalid-json/shape, 5xx and any other non-2xx): a real
- *                   error, generic retry hint is appropriate.
+ *                   invalid-json/shape and any other non-2xx): a real error,
+ *                   generic retry hint is appropriate.
  * Pure/deterministic — unit-testable without the network.
  */
 function classifyCertifyFailure(reason) {
   if (reason === 'http-403') return 'gate';
   if (reason === 'http-413') return 'too-large';
+  // Any 5xx — the server, not the client. `http-5<dd>`.
+  if (typeof reason === 'string' && /^http-5\d\d$/.test(reason)) return 'backend-unavailable';
   return 'technical';
 }
 

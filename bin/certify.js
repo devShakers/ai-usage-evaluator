@@ -136,7 +136,14 @@ function reportCertifyFailure(reason, catalog, email, phase = 'resolve') {
     process.exitCode = 1;
     return;
   }
-  // technical: network/timeout/invalid/5xx/other non-2xx — generic error + retry.
+  if (kind === 'backend-unavailable') {
+    // 5xx: the server is down/restarting or missing DB migrations. Actionable,
+    // and DISTINCT from the network-error message — never blame the connection.
+    process.stderr.write(`\n  ${c.errorBackendOutdated}\n\n`);
+    process.exitCode = 1;
+    return;
+  }
+  // technical: network/timeout/invalid/other non-2xx — generic error + retry.
   const intro = phase === 'certify' ? c.errorIntroCertify : c.errorIntro;
   process.stderr.write(`\n  ${intro} ${resolveErrorMessage(reason, catalog)}\n`);
   process.stderr.write(`  ${c.errorRetryHint}\n\n`);

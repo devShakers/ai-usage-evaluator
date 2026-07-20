@@ -95,10 +95,15 @@ test('certifyTimeoutForItems: floors at the single-Skill default and scales per 
 
 // --- classifyCertifyFailure (issue 014) --------------------------------------
 
-test('classifyCertifyFailure: 403 -> gate, 413 -> too-large, everything else -> technical', () => {
+test('classifyCertifyFailure: 403 -> gate, 413 -> too-large, 5xx -> backend-unavailable, everything else -> technical', () => {
   assert.equal(classifyCertifyFailure('http-403'), 'gate');
   assert.equal(classifyCertifyFailure('http-413'), 'too-large');
-  for (const r of ['http-500', 'http-502', 'http-429', 'http-400', 'network-error', 'timeout', 'invalid-json', 'invalid-shape', 'no-endpoint']) {
+  // Missing-migrations bugfix: any 5xx is the SERVER, not the connection.
+  for (const r of ['http-500', 'http-502', 'http-503', 'http-504']) {
+    assert.equal(classifyCertifyFailure(r), 'backend-unavailable', `${r} should be backend-unavailable`);
+  }
+  // 4xx (other than the gate/too-large specials) and transport failures stay technical.
+  for (const r of ['http-429', 'http-400', 'http-404', 'network-error', 'timeout', 'invalid-json', 'invalid-shape', 'no-endpoint']) {
     assert.equal(classifyCertifyFailure(r), 'technical', `${r} should be technical`);
   }
 });
