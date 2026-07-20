@@ -270,9 +270,9 @@ function printLadder(report, t, p) {
   // NESTED (user decision): each maturity level, then its tiers indented beneath.
   for (const lvl of levels) {
     const nameStyle = lvl.status === 'pending' ? c.gray : `${c.bold}${c.white}`;
-    const badge = lvl.status === 'current' ? `  ${c.cyan}${ld.currentLabel}${c.reset}` : '';
     const keys = lvl.tierKeys.length ? ` ${c.gray}— [${lvl.tierKeys.join(', ')}]${c.reset}` : '';
-    p(`  ${ladderMark(lvl.status)} ${nameStyle}${lvl.emoji} ${ld.levelLabel(lvl.level)} · ${lvl.name}${c.reset}${keys}${badge}`);
+    // "You are here" lives ONLY on the current TIER, not the level header (user request).
+    p(`  ${ladderMark(lvl.status)} ${nameStyle}${lvl.emoji} ${ld.levelLabel(lvl.level)} · ${lvl.name}${c.reset}${keys}`);
     p(`      ${c.dim}${lvl.description}${c.reset}`);
     for (const tier of lvl.tiers) {
       const tierNameStyle = tier.status === 'pending' ? c.gray : c.white;

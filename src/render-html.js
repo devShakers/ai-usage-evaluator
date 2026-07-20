@@ -744,7 +744,6 @@ function ladderSection(report, t) {
           <span class="ladder-mark">${ladderStatusMark(lvl.status)}</span>
           <span class="ladder-level-name">${esc(lvl.emoji)} ${esc(ld.levelLabel(lvl.level))} · ${esc(lvl.name)}</span>
           <span class="ladder-level-tiers">${esc(keys)}</span>
-          ${lvl.status === 'current' ? `<span class="ladder-badge">${esc(ld.currentLabel)}</span>` : ''}
         </div>
         <p class="ladder-desc">${esc(lvl.description)}</p>
         <div class="ladder-tiers">${nestedTiers}</div>
