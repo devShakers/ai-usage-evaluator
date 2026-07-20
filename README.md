@@ -1,23 +1,30 @@
 # Shakers `sh-eval`
 
 A branded, **local-first** Shakers shell (`sh-eval`) — a small interactive
-REPL that is the single entrypoint to three commands:
+REPL that is the single entrypoint to four commands:
 
 - **`footprint`** — builds, **locally**, a deterministic profile of your AI
   tool setup: which copilots/agents you have configured, how deep that
-  configuration goes, and what "level-up" **tier** (T0-T7) you're at, plus a
-  curated roadmap of what unlocks the next tier.
+  configuration goes, and what "level-up" **tier** (T0-T7) you're at. Its
+  terminal output leads with **why** you're at that tier, then the score, your
+  tools, technologies and a **one-line-per-agent** summary (each agent scored
+  for how well it's built + how often you've actually used it). The tier
+  roadmap / next-steps is available behind `--roadmap`.
 - **`certify`** — certifies Skills from your Shakers catalog by analyzing your
   local project's code (resolve which Skills apply, then sample and send
   secret-scrubbed code for a per-Skill assessment).
+- **`report`** — builds and **opens** the full, shareable HTML report for the
+  current project (footprint + certified Skills, with the complete per-agent
+  detail). `footprint`/`certify` persist their result silently; `report` is how
+  you produce and open the HTML to share with your team.
 - **`share`** — turns the project's latest `footprint` result (tier + score)
   into a branded card you can post on LinkedIn (built offline; the PNG is
   exported in your browser).
 
 You run `sh-eval` once; it opens the shell with a Shakers wordmark and a
-`sh-eval ›` prompt, and you type `footprint`, `certify`, `share`, `help` or
-`exit` inside it. The former standalone `ai-footprint`/`ai-certify` binaries
-are retired — everything now lives in the one shell (ADR-014).
+`sh-eval ›` prompt, and you type `footprint`, `certify`, `report`, `share`,
+`help` or `exit` inside it. The former standalone `ai-footprint`/`ai-certify`
+binaries are retired — everything now lives in the one shell (ADR-014).
 
 The footprint mechanism is inspired by `darnoux/claude-code-level-up` (scan
 local signals and classify by level), extended to cover the main AI tools on
@@ -31,20 +38,36 @@ content.
 2. **Classifies** the setup into a tier, `T0` to `T7` ("empty bench" to
    "orchestrated workshop"), computed deterministically — no LLM involved
    in the level itself.
-3. **Shows a "why this tier" analysis**: exactly which criteria you meet,
+3. **Leads with a "why this tier" analysis**: exactly which criteria you meet,
    with the signal behind each one, and the single next criterion blocking
-   progression to the next tier.
-4. **Shows a roadmap**: current tier → next tier, with what it unlocks,
-   steps, a copyable code snippet, community tips and common mistakes —
-   curated, authored content, not generated per run.
-5. **Gives you a ready-to-paste implementation prompt** for your own AI
-   tool of choice, assembled from the roadmap entry plus your own detected
-   stack (frameworks, tools, tier) — this is the primary "how do I do this"
-   path.
+   progression to the next tier — shown FIRST, before the score.
+4. **Evaluates your agents**: one line per agent (nested subagents drawn with
+   stacked `↓`), each with a **definition-quality score** (0-100, how well the
+   agent is built) and a **usage signal** (how often you've actually invoked it,
+   read from your local Claude Code history — usage only, never session
+   content). Full per-agent detail (rationale included) lives in the `report`
+   HTML.
+5. **Roadmap behind `--roadmap`**: current tier → next tier, with what it
+   unlocks, steps, a copyable code snippet, community tips and common mistakes,
+   plus a ready-to-paste implementation prompt — curated, authored content, not
+   generated per run. Hidden from the default output to keep the terminal clean;
+   pass `--roadmap` (alias `--next`) to see it.
 
 Everything above runs **always, locally, unconditionally** — nothing is
 gated behind a decision. See [Privacy & consent](#privacy--consent-model)
 for what happens if you choose to save your report to Shakers.
+
+### Agent evaluation (the LLM feature)
+
+The definition-quality score is the one AI-model-backed part of `footprint`. As
+with the org-chart synthesis and roadmap personalization, the CLI never calls a
+model directly: it POSTs the scrubbed agent definitions to a Shakers Hub
+endpoint (`agent-evaluation`, a sibling of your configured ingest endpoint) that
+runs the model server-side (**gemini-2.5-flash**) and returns a score + short
+rationale per agent. It degrades gracefully: no endpoint, a network error, or a
+timeout simply means no scores are shown — the rest of the report is unaffected.
+The **usage** signal is entirely local (no network, no model). See
+[Privacy & consent](#privacy--consent-model).
 
 ## Installation
 
@@ -91,8 +114,9 @@ Inside the shell:
 
 ```
 sh-eval › help          # list the commands
-sh-eval › footprint     # scan this project + machine, print the report
+sh-eval › footprint     # scan this project + machine, print the report (no HTML link)
 sh-eval › certify       # certify Skills from this project's code
+sh-eval › report        # build + open the full shareable HTML report (footprint + certs)
 sh-eval › share         # branded LinkedIn card from this project's footprint
 sh-eval › clear         # clear the screen
 sh-eval › exit          # (or quit / Ctrl-D) leave the shell
@@ -103,7 +127,8 @@ Each command keeps all its flags, typed inside the shell:
 ```
 sh-eval › footprint --json               # report as JSON on stdout
 sh-eval › footprint --root ../other       # scan another directory instead of the current one
-sh-eval › footprint --no-save             # write nothing to disk (report only, on screen)
+sh-eval › footprint --roadmap             # also show the tier roadmap / next-steps (hidden by default; alias --next)
+sh-eval › footprint --no-save             # persist nothing (report only, on screen)
 sh-eval › footprint --build-next-level    # secondary path: write deterministic starter file(s) for the next tier
 sh-eval › footprint --force               # with --build-next-level, overwrite an existing file
 sh-eval › footprint --lang es|en          # force the report language instead of OS-locale detect
@@ -113,6 +138,16 @@ sh-eval › footprint --consent-reset       # clear the decision (-> undecided),
 sh-eval › footprint --consent-email E     # change the email on file, without touching the decision
 sh-eval › footprint --set-endpoint URL    # persist the ingest endpoint (see "Configuration" below)
 sh-eval › footprint --show-endpoint       # show the effective endpoint and where it comes from
+```
+
+`footprint` no longer prints a report link — its output is the clean terminal
+view. Use `report` to produce and open the full HTML:
+
+```
+sh-eval › report                          # materialize + open this project's HTML report in the browser
+sh-eval › report --root ../other          # report for another project
+sh-eval › report --no-open                # just print the file:// link, don't launch the browser
+sh-eval › report --lang es|en             # force the surrounding CLI copy + report language
 ```
 
 The `share` command reuses the last footprint stored for the project:
@@ -172,24 +207,34 @@ implementation lives in `shakers-hub-backend`.
 
 ## The report
 
-- **Terminal output** and a **self-contained HTML dashboard** (Shakers
-  branding, responsive, zero network calls — no CDN, no external script, no
-  fetch) show the same information.
+- **Terminal output** (from `footprint`/`certify`) and a **self-contained HTML
+  dashboard** (opened by `report`; Shakers branding, responsive, zero network
+  calls — no CDN, no external script, no fetch). The terminal is the concise
+  view; the HTML carries the full detail.
+- **`footprint`/`certify` persist their result silently** into
+  `report-state.json` and print **no** link (ADR-016). The HTML is produced and
+  opened only when you run **`report`** — which regenerates the per-project HTML
+  from state, opens it in your browser (use `--no-open` to just print the link),
+  and prints the clickable `file://` link.
 - **Localized to your OS locale**: a locale starting with `es` shows
   Spanish; anything else shows English (`src/locale.js` / `src/i18n.js`).
   `--lang` overrides this for a single run, including the copyable
   implementation prompt.
-- Sections: detected tools, environment, technologies (frameworks/libraries
-  detected from dependency manifests), MCP servers (name + category), your
-  agent org chart (cards + hierarchy), the tier analysis, and the
-  current→next roadmap with its implementation prompt.
+- **Terminal sections (ADR-016), in order**: the "why this tier" analysis
+  FIRST, then the score meter, detected tools, technologies, and a
+  one-line-per-agent summary (name + model + definition-quality score + local
+  usage, with `↓` nesting). No environment section; the roadmap / next-steps is
+  behind `--roadmap`.
+- **HTML sections**: everything above at full length, plus the environment,
+  MCP servers, the agent org chart with **per-agent detail** (score, rationale,
+  usage), and the current→next roadmap with its implementation prompt.
 - **The HTML report is cumulative and scoped per project.** Each scanned
   project has its OWN report file (`report-<hash>.html` in
   `~/.config/ai-footprint/`), keyed by the project's absolute path, and is
-  regenerated whole from `report-state.json` on every run. It fills in over
-  time: the footprint section appears once you've run `footprint` in that
-  project, and the certification section once you've run `certify` there;
-  both appear together when both have run for the **same** project. This is
+  regenerated whole from `report-state.json` each time you run `report`. It
+  fills in over time: the footprint section appears once you've run `footprint`
+  in that project, and the certification section once you've run `certify`
+  there; both appear together when both have run for the **same** project. This is
   intentional (skill-code-certification, reporting redesign) — the report is a
   persistent per-project artifact, not a per-invocation transcript. So running
   `certify` in a project where you previously ran `footprint` correctly
@@ -262,10 +307,11 @@ for any tier.
 
 ## Optional server-side LLM layers
 
-Two capabilities are ephemeral, optional, server-side LLM calls — both run
+Three capabilities are ephemeral, optional, server-side LLM calls — all run
 independently of the save/consent decision (they never touch the
-persistence payload) and both degrade to a fully deterministic fallback if
-no endpoint is configured or the call fails for any reason:
+persistence payload) and all degrade gracefully (deterministic fallback, or
+simply no scores shown) if no endpoint is configured or the call fails for any
+reason:
 
 - **Agent-card synthesis** (`AI_FOOTPRINT_SYNTHESIS_ENDPOINT`): sends your
   agents' description text to synthesize a short symbolic name + "what it
@@ -281,9 +327,25 @@ no endpoint is configured or the call fails for any reason:
   the curated roadmap's fallback prose can ever change. Only derived
   signals are sent (frameworks, tool/MCP categories, tier), never raw file
   content or agent descriptions.
+- **Agent definition-quality evaluation** (`agent-evaluation`, derived as a
+  sibling of your ingest endpoint; overridable with
+  `AI_FOOTPRINT_AGENT_EVAL_ENDPOINT`): sends the scrubbed agent definitions and
+  gets back a 0-100 score + short rationale per agent (**gemini-2.5-flash**
+  server-side, prompt version `agent-eval-v1`). The definition is treated as
+  DATA server-side (prompt-injection safe). Degradation is by omission — the
+  server drops any agent it couldn't score, and agents with no returned score
+  render without a number. No endpoint / failure → no scores shown.
 
-Both send only derived signals — never raw file content — and a scrub pass
-runs before anything leaves the machine.
+All three send only derived signals or scrubbed agent definitions — never raw
+file content — and a scrub pass runs before anything leaves the machine.
+
+Separately, `footprint` reads your **local Claude Code history**
+(`~/.claude/projects/**`) to count how often each detected agent was actually
+invoked on this machine. This is **usage only**: it extracts a single signal per
+line — the `subagent_type` of an `Agent` tool call — and never reads, stores, or
+transmits prompt text, tool inputs, or any session content. The counts stay
+strictly local (not in the persistence payload). It degrades gracefully if the
+history directory is absent or unreadable.
 
 ## Privacy & consent model
 
@@ -301,11 +363,12 @@ runs before anything leaves the machine.
   synthesized agent summaries. **Never** file contents, absolute paths,
   environment variables, or credentials. The email you typed travels
   outside this whitelisted payload, in the request body.
-- **The two optional LLM layers above are a separate, ephemeral flow**:
-  they run on every scan (independent of your save decision) so the diagram
-  and the roadmap can "always show", and they only ever see derived
-  signals or agent description text, never your save decision or your
-  email.
+- **The three optional LLM layers above are a separate, ephemeral flow**:
+  they run on every scan (independent of your save decision) so the diagram,
+  the roadmap and the agent scores can "always show", and they only ever see
+  derived signals or scrubbed agent definitions, never your save decision or
+  your email. The local **usage** read (Claude Code history) is not even a
+  network call — it never leaves the machine.
 - The consent decision lives in `~/.config/ai-footprint/consent.json`
   (permissions `600`).
 - **Legal**: sending data about how a person works involves personal-data
@@ -384,7 +447,11 @@ node reference-server/server.js
 
 Routes: `GET /health`, `POST /reports` (`{email, payload}`),
 `POST /works/ai-footprint/agent-synthesis` (deterministic placeholder, not
-a real LLM), `POST /works/ai-footprint/skill-certification` (deterministic
+a real LLM), `POST /works/ai-footprint/agent-evaluation` (deterministic
+placeholder for the agent definition-quality contract — returns a score +
+rationale per agent, and OMITS agents it "couldn't score" so the
+fewer-than-input degradation path is exercised; not a real LLM),
+`POST /works/ai-footprint/skill-certification` (deterministic
 placeholder for the `certify` resolve/certify contract, not a real LLM),
 `POST /works/ai-footprint/email-verification/request` and
 `.../email-verification/verify` (OTP stub — accepts the fixed code `123456`,
@@ -417,6 +484,7 @@ If you want to measure depth, add a probe in `src/scanner.js` inside
 bin/sh-eval.js                   Branded REPL — the single entrypoint (ADR-014)
 bin/report.js                    `footprint` command logic (run(args,{ask}))
 bin/certify.js                   `certify` command logic (run(args,{ask}))
+bin/report-html.js               `report` command — materialize + open the HTML (run(args,{ask}))
 bin/share.js                     `share` command logic (run(args,{ask}))
 src/repl-shell.js                REPL loop, banner, prompt, command dispatch
 src/repl-stdin.js                Shared stdin reader (nested-stdin seam for the REPL)
@@ -436,6 +504,8 @@ src/tech-detector.js             Project technologies (frameworks) detector
 src/tech-extensions.js           Technology name map / extensions
 src/agent-org-chart.js           Deterministic agent org chart parser (+ hierarchy)
 src/agent-synthesis.js           Optional LLM agent-card synthesis client
+src/agent-evaluation.js          Optional LLM agent definition-quality client (gemini-2.5-flash, server-side)
+src/agent-usage.js               Local Claude Code history reader (usage signal only, never content)
 src/roadmap-content.js           Curated per-tier roadmap content (es/en)
 src/roadmap-prompt.js            Ready-to-paste implementation prompt
 src/roadmap-personalization.js   Optional LLM roadmap-prose personalization client
@@ -464,9 +534,10 @@ src/share.js                     Consent state + derived-payload whitelist + sen
 src/report-store.js              Per-project cumulative report state + HTML (persistence)
 src/report-theme.js              Shared Shakers HTML theme (tokens/base/copy script)
 src/store.js                     Legacy latest/history store — UNUSED (kept on disk)
-src/render-terminal.js           Terminal output (condensed view)
-src/render-html.js               Self-contained HTML dashboard (full detail)
+src/render-terminal.js           Terminal output (why-first, one-line-per-agent; ADR-016)
+src/render-html.js               Self-contained HTML dashboard (full detail, per-agent scores)
 src/osc-link.js                  OSC 8 clickable terminal links
+src/open-file.js                 Best-effort cross-platform "open in browser" (report command)
 
 ── shared plumbing ──
 src/cli-args.js                  `footprint` flag parsing

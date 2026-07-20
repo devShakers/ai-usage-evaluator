@@ -34,7 +34,6 @@
 const { parseCertifyArgs } = require('../src/certify-args');
 const { detectReportLang, getCatalog } = require('../src/i18n');
 const { getCertifyEndpoint } = require('../src/config');
-const { oscLink } = require('../src/osc-link');
 const { detectTechnologies } = require('../src/tech-detector');
 const { confirmDisclaimerAcceptance } = require('../src/certify-disclaimer');
 const {
@@ -42,13 +41,21 @@ const {
   requestResolve,
   buildCertifyRequest,
   requestCertify,
+  certifyTimeoutForItems,
   classifyCertifyFailure,
 } = require('../src/certify-client');
 const { formatResolveReport } = require('../src/certify-render');
+const { filterResolveBySampling } = require('../src/certify-sampling-filter');
 const { buildSkillSamples } = require('../src/skill-sampler');
+const { collectAuthorship, attributeSample } = require('../src/authorship');
+
+// CLI version stamped as `toolVersion` on the persisted certification evidence
+// (ADR-017) — same source `sh-eval` uses. `|| null` so a missing field never
+// sends an empty string.
+const CLI_VERSION = require('../package.json').version || null;
 const { parseSkillSelection } = require('../src/skill-selection');
 const { renderCertificationTerminal } = require('../src/render-certification');
-const { upsertCertification } = require('../src/report-store');
+const { persistCertification } = require('../src/report-store');
 const {
   isValidEmail,
   normalizeEmail,
@@ -109,8 +116,10 @@ function resolveErrorMessage(reason, catalog) {
 // Reports a resolve/certify failure with the RIGHT UX per status (issue 014):
 // 403 = expected gate outcome (calm, clean exit, no retry/error styling);
 // 413 = actionable "too large"; everything else = real technical error.
-// Shared by both the resolve and certify phases.
-function reportCertifyFailure(reason, catalog, email) {
+// Shared by both phases — `phase` ('resolve'|'certify') selects an accurate
+// intro so a CERTIFY failure never prints the resolve-worded "could not resolve
+// certifiable Skills" (misleading — the Skills WERE resolved and shown first).
+function reportCertifyFailure(reason, catalog, email, phase = 'resolve') {
   const c = catalog.certify;
   const kind = classifyCertifyFailure(reason);
 
@@ -128,16 +137,19 @@ function reportCertifyFailure(reason, catalog, email) {
     return;
   }
   // technical: network/timeout/invalid/5xx/other non-2xx — generic error + retry.
-  process.stderr.write(`\n  ${c.errorIntro} ${resolveErrorMessage(reason, catalog)}\n`);
+  const intro = phase === 'certify' ? c.errorIntroCertify : c.errorIntro;
+  process.stderr.write(`\n  ${intro} ${resolveErrorMessage(reason, catalog)}\n`);
   process.stderr.write(`  ${c.errorRetryHint}\n\n`);
   process.exitCode = 1;
 }
 
 // Persists the analyzed certification result if consent is granted. Never
-// throws — must not break the local report (ADR-011).
-async function maybeShareCertification(items) {
+// throws — must not break the local report (ADR-011). `provenance` carries the
+// run-level ADR-017 fields (repository/commitRange/toolVersion) stamped onto
+// every persisted assessment row.
+async function maybeShareCertification(items, provenance = {}) {
   try {
-    await shareCertification(items);
+    await shareCertification(items, provenance);
   } catch {
     // silent: any skip/failure reason is not an error of the local run
   }
@@ -230,18 +242,72 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
 
   // --- deterministic sampling (local) ---
   const samples = buildSkillSamples(root, selected);
+
+  // --- verified authorship gate (ADR-017) ------------------------------------
+  // Only code ATTRIBUTABLE to the Talent's verified email is certifiable. Git
+  // is read locally (no egress); non-attributable files are dropped BEFORE any
+  // code leaves the machine. "Sin email atribuible, no hay certificación."
+  const authorship = collectAuthorship(root);
+  if (!authorship.available) {
+    // No git / no readable history / squashed → attribution impossible → refuse
+    // the whole run cleanly (never a crash, never a silent pass). ADR-018:
+    // offer the human contact valve for a possible legitimate false negative.
+    process.stdout.write(`\n  ${c.authorshipNoGit}\n  ${c.authorshipContact}\n\n`);
+    return;
+  }
+
+  // ADR-023: the server returns an authorized authoring set ONLY for a TEST
+  // identity (null for a real identity), so the widening below can never apply
+  // to a real identity. `resolveResult` came from the RESOLVE round-trip.
+  const authorizedSet =
+    resolveResult && resolveResult.authorizedAuthoring ? resolveResult.authorizedAuthoring : null;
+
+  const refusedSkillNames = [];
+  for (const s of samples) {
+    const attribution = attributeSample(s, email, authorship, authorizedSet);
+    // Persist-evidence + gate inputs live on the sample. Only attributable
+    // files survive to be sent for certification.
+    s.files = attribution.attributableFiles;
+    s.authorEmails = attribution.authorEmails;
+    s.sampledFiles = attribution.attributableFiles.map((f) => f.path);
+    // ADR-025 receipt: the per-file attribution trail (path → git authors → ✓/✗)
+    // for display only (never persisted; git authorship is not cryptographic proof).
+    s.fileAttribution = attribution.fileAttribution;
+    if (!attribution.certifiable && s.meta && s.meta.sampleable) {
+      // A Skill that HAD a code sample but none of it is the Talent's own.
+      refusedSkillNames.push(s.skillName);
+    }
+  }
+
   const sendable = samples.filter((s) => Array.isArray(s.files) && s.files.length > 0);
+
+  if (sendable.length === 0) {
+    // Nothing the Talent authored across ALL selected Skills → hard refusal.
+    // ADR-018 contact valve (display only, no automatic send).
+    process.stdout.write(`\n  ${c.authorshipNoneAttributable}\n  ${c.authorshipContact}\n\n`);
+    return;
+  }
+  if (refusedSkillNames.length > 0) {
+    // Some certified, some refused for lack of attributable code — say which,
+    // and offer the ADR-018 contact valve for a possible false negative.
+    process.stdout.write(`\n  ${c.authorshipRefused(refusedSkillNames.join(', '))}\n  ${c.authorshipContact}\n`);
+  }
 
   // --- certify (egress; scrub happens in buildCertifyRequest) ---
   let results = [];
   if (sendable.length > 0) {
-    const requestBody = buildCertifyRequest(email, sendable);
-    // Spinner while the model analyzes your code (issue 011): the call takes ~15-25s — make
-    // it clear the CLI is working, not hung. withSpinner degrades to a single
-    // stderr line on non-TTY.
-    const outcome = await withSpinner(c.certifyingLabel, () => requestCertify(requestBody, { endpoint }));
+    const requestBody = buildCertifyRequest(email, sendable, lang);
+    // Spinner while the model analyzes your code (issue 011): each Skill is a
+    // ~50s+ server-side gemini-2.5-pro call, run sequentially — make it clear
+    // the CLI is working, not hung. withSpinner degrades to a single stderr
+    // line on non-TTY. The HTTP timeout SCALES with the number of Skills
+    // (`certifyTimeoutForItems`) so a multi-Skill run isn't aborted mid-way.
+    const timeoutMs = certifyTimeoutForItems(requestBody.items.length);
+    const outcome = await withSpinner(c.certifyingLabel, () =>
+      requestCertify(requestBody, { endpoint, timeoutMs }),
+    );
     if (!outcome.ok) {
-      reportCertifyFailure(outcome.reason, catalog, email);
+      reportCertifyFailure(outcome.reason, catalog, email, 'certify');
       return;
     }
     results = outcome.result.results;
@@ -254,9 +320,19 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
     skillName: s.skillName,
     technology: s.technology,
     sampling: s.meta,
+    // Verified-authorship evidence (ADR-017) — persisted alongside the result.
+    authorEmails: Array.isArray(s.authorEmails) ? s.authorEmails : [],
+    sampledFiles: Array.isArray(s.sampledFiles) ? s.sampledFiles : [],
+    // ADR-025 receipt: per-file attribution trail (display only).
+    fileAttribution: Array.isArray(s.fileAttribution) ? s.fileAttribution : [],
     result: (Array.isArray(s.files) && s.files.length > 0) ? (resultById.get(String(s.skillId)) || null) : null,
   }));
-  const certification = { items, model: null };
+  // ADR-025: run-level provenance for the authorship receipt (repo + commit range).
+  const certification = {
+    items,
+    model: null,
+    authorship: { repository: authorship.repository, commitRange: authorship.commitRange },
+  };
   const analyzed = items.some((i) => i.result);
 
   // --- report (always shown, ADR-003) ----------------------------------------
@@ -264,21 +340,24 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
   // main, before Skill selection) — nothing consent-related happens here.
   process.stdout.write('\n' + renderCertificationTerminal(certification, lang) + '\n\n');
 
-  // Local report (skill-code-certification, reporting redesign): upsert each
-  // certified Skill into THIS PROJECT's scoped report (keyed by Skill id within
-  // the project `root`) and ALWAYS print its file:// link. HTML is no longer
-  // opt-in behind --html. Writing the local report must never break the run.
+  // ADR-016: certify PERSISTS each certified Skill into THIS PROJECT's scoped
+  // state (report-state.json, keyed by Skill id within the project `root`) but
+  // no longer writes the HTML nor prints a link — the cumulative HTML (footprint
+  // + certified Skills) is materialized + opened only by the `report` command.
+  // Persisting must never break the run.
   try {
-    const paths = upsertCertification({ root, items, lang });
-    // OSC 8 clickable file:// link (iTerm2 &c.); plain URL elsewhere.
-    process.stdout.write(`  ${c.reportLink(oscLink(paths.fileUrl))}\n\n`);
+    persistCertification({ root, items });
   } catch {
-    // Never break the local run over a failed report write.
+    // Never break the local run over a failed state write.
   }
 
   // --- persist (only if consent is granted) ----------------------------------
   if (analyzed) {
-    await maybeShareCertification(items);
+    await maybeShareCertification(items, {
+      repository: authorship.repository,
+      commitRange: authorship.commitRange,
+      toolVersion: CLI_VERSION,
+    });
   }
 }
 
@@ -359,7 +438,16 @@ async function run(argv = process.argv.slice(2), { ask: injectedAsk = null } = {
       return;
     }
 
-    process.stdout.write('\n' + formatResolveReport(technologies, outcome.result, catalog) + '\n\n');
+    // Invariant (listed-as-certifiable <=> has-a-defined-sampling): the RESOLVE
+    // server may mark a technology certifiable even when this CLI has no code
+    // sampling for it (detection-only techs — Jest historically, Vitest,
+    // Tailwind…). Demote those to non-certifiable HERE, once, so both the
+    // printed report and the interactive selection below offer only Skills that
+    // can actually be certified by code — never advertise one that then fails
+    // with "no hay muestreo definido".
+    const resolved = filterResolveBySampling(outcome.result);
+
+    process.stdout.write('\n' + formatResolveReport(technologies, resolved, catalog) + '\n\n');
 
     // (7) Certify phase (issue 005): select certifiable Skills, sample+scrub+
     // send code, show the assessment report; persist iff consent was granted
@@ -367,7 +455,7 @@ async function run(argv = process.argv.slice(2), { ask: injectedAsk = null } = {
     await runCertifyPhase({
       endpoint,
       email,
-      resolveResult: outcome.result,
+      resolveResult: resolved,
       root,
       opts,
       catalog,

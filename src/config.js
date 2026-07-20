@@ -82,11 +82,15 @@ function validateEndpoint(value) {
   if (u.protocol !== 'http:' && u.protocol !== 'https:') {
     return { ok: false, reason: 'bad-protocol' };
   }
-  const isLocal = LOCAL_HOSTS.has(u.hostname);
+  // WHATWG URL keeps the brackets on an IPv6 literal (`hostname === '[::1]'`),
+  // but LOCAL_HOSTS stores the bare address (`::1`) — strip the brackets so an
+  // IPv6 loopback endpoint (http://[::1]:PORT/...) is correctly treated as local.
+  const host = u.hostname.replace(/^\[|\]$/g, '');
+  const isLocal = LOCAL_HOSTS.has(host);
   if (!isLocal && u.protocol !== 'https:') {
     return { ok: false, reason: 'insecure-remote' };
   }
-  return { ok: true, value: raw, host: u.hostname, isLocal };
+  return { ok: true, value: raw, host, isLocal };
 }
 
 // Persists the ingest endpoint into config.json after validating it. Returns
@@ -261,6 +265,23 @@ function deriveEmailVerificationUrl(env, segment) {
   return deriveFromIngest(env, `email-verification/${segment}`);
 }
 
+/*
+ * Agent-evaluation endpoint (ADR-016, agent definition-quality scoring). Same
+ * ingest-sibling derivation as certify/OTP: the route lives in the Hub
+ * `ai-footprint` module next to `reports`, so a single configured ingest
+ * endpoint (env var / config.json / installer default) makes it resolve too —
+ * no separate config. `AI_FOOTPRINT_AGENT_EVAL_ENDPOINT` is kept ONLY as an
+ * explicit override for the rare case of a different mount. Unlike certify,
+ * unset is NOT an error: the caller (src/agent-evaluation.js / bin/report.js)
+ * treats a null endpoint as a graceful "no scores this run", exactly like
+ * synthesis — the footprint report is always shown regardless.
+ */
+function getAgentEvaluationEndpoint(env = process.env) {
+  const explicit = env.AI_FOOTPRINT_AGENT_EVAL_ENDPOINT;
+  if (explicit && explicit.trim()) return explicit.trim();
+  return deriveFromIngest(env, 'agent-evaluation');
+}
+
 function getEmailVerificationRequestUrl(env = process.env) {
   return deriveEmailVerificationUrl(env, 'request');
 }
@@ -269,13 +290,46 @@ function getEmailVerificationVerifyUrl(env = process.env) {
   return deriveEmailVerificationUrl(env, 'verify');
 }
 
+/*
+ * Superadmin TEST-identity provisioning endpoint (ADR-021, NON-PROD only) —
+ * a sibling of the ingest endpoint (`.../works/ai-footprint/superadmin/provision-test-talent`),
+ * derived exactly like the OTP routes, so no extra config is needed. Returns
+ * `null` when no ingest endpoint is configured. The server 404s this route in
+ * production regardless.
+ */
+function getProvisionTestTalentEndpoint(env = process.env) {
+  return deriveFromIngest(env, 'superadmin/provision-test-talent');
+}
+
+/*
+ * Superadmin TEST-identity TEARDOWN endpoint (ADR-022, NON-PROD only) — the
+ * inverse of provisioning, a sibling of the ingest endpoint. `null` when no
+ * ingest endpoint is configured. The server 404s this route in production.
+ */
+function getTeardownTestTalentEndpoint(env = process.env) {
+  return deriveFromIngest(env, 'superadmin/teardown-test-talent');
+}
+
+/*
+ * Superadmin READ-ONLY certification inspection endpoint (ADR-025, NON-PROD
+ * only) — a sibling of the ingest endpoint. `null` when no ingest endpoint is
+ * configured. The server 404s this route in production.
+ */
+function getInspectCertificationsEndpoint(env = process.env) {
+  return deriveFromIngest(env, 'superadmin/inspect-certifications');
+}
+
 module.exports = {
   getIngestEndpoint,
   getSynthesisEndpoint,
   getRoadmapEndpoint,
   getCertifyEndpoint,
+  getAgentEvaluationEndpoint,
   getEmailVerificationRequestUrl,
   getEmailVerificationVerifyUrl,
+  getProvisionTestTalentEndpoint,
+  getTeardownTestTalentEndpoint,
+  getInspectCertificationsEndpoint,
   // Persistent config file + endpoint safety (endpoint-config task).
   configFilePath,
   loadConfigFile,

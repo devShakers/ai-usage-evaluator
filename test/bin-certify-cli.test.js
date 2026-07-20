@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const http = require('http');
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 
 const { handle } = require('../reference-server/server');
 
@@ -66,7 +66,33 @@ test.afterEach(() => {
   fs.rmSync(tmpProjectDir, { recursive: true, force: true });
 });
 
-function writeReactProject() {
+// Initializes a git repo in `dir` and commits everything already written,
+// authored by `email`. The ADR-017 verified-authorship gate reads git to
+// confirm the sampled code is the Talent's — so the fixtures must carry a real
+// history. Config is repo-local (never touches the machine's global git).
+function gitCommitAll(dir, email) {
+  const git = (args) =>
+    execFileSync('git', ['-C', dir, ...args], {
+      stdio: 'ignore',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: 'Test Talent',
+        GIT_AUTHOR_EMAIL: email,
+        GIT_COMMITTER_NAME: 'Test Talent',
+        GIT_COMMITTER_EMAIL: email,
+      },
+    });
+  git(['init', '-q']);
+  git(['config', 'user.email', email]);
+  git(['config', 'user.name', 'Test Talent']);
+  git(['add', '-A']);
+  git(['commit', '-q', '-m', 'initial']);
+}
+
+// `email` = the git author for the project's commits. Defaults to the address
+// every full-flow test certifies with, so attribution passes; a test can pass a
+// DIFFERENT email to exercise the refusal path.
+function writeReactProject(email = 'talent@example.com') {
   fs.writeFileSync(
     path.join(tmpProjectDir, 'package.json'),
     JSON.stringify({ name: 'demo', dependencies: { react: '^18.0.0', express: '^4.0.0' } }),
@@ -75,6 +101,7 @@ function writeReactProject() {
   fs.mkdirSync(path.join(tmpProjectDir, 'src'), { recursive: true });
   fs.writeFileSync(path.join(tmpProjectDir, 'src', 'App.jsx'), 'export default function App() { return null; }\n'.repeat(4));
   fs.writeFileSync(path.join(tmpProjectDir, 'src', 'server.js'), 'const express = require("express"); const app = express();\n'.repeat(4));
+  gitCommitAll(tmpProjectDir, email);
 }
 
 test('--help prints usage and exits 0 (no endpoint needed)', async () => {
@@ -91,7 +118,10 @@ test('no endpoint configured -> actionable error, exit 1 (no silent degrade)', a
     env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_CERTIFY_ENDPOINT: '' },
   });
   assert.equal(code, 1);
-  assert.match(stderr, /AI_FOOTPRINT_CERTIFY_ENDPOINT/);
+  // Endpoint unification (commit 8d89e4d): the actionable copy now points at
+  // footprint --set-endpoint / AI_FOOTPRINT_INGEST_ENDPOINT (the shared base),
+  // not a certify-only env var.
+  assert.match(stderr, /--set-endpoint|AI_FOOTPRINT_INGEST_ENDPOINT/);
 });
 
 test('no recognized technologies -> informs and exits 0 (nothing to certify)', async () => {
@@ -122,7 +152,7 @@ test('full flow end-to-end against the stub: resolve -> --all certify -> report,
     assert.match(stdout, /Certifiable Skills for your project/);
     // certify phase report
     assert.match(stdout, /Skill certification result/);
-    assert.match(stdout, /indicative and NOT reproducible/);
+    assert.match(stdout, /anchored rubric/); // ADR-024 disclaimer
     assert.match(stdout, /Score: \d+\/100/);
     assert.match(stdout, /Sample: \d+\/\d+ files/);
   } finally {
@@ -130,7 +160,7 @@ test('full flow end-to-end against the stub: resolve -> --all certify -> report,
   }
 });
 
-test('reporting redesign: a full certify run writes the cumulative report.html and ALWAYS prints its file:// link (no --html needed)', async () => {
+test('ADR-016: a full certify run PERSISTS the certification into report-state.json, writes NO html and prints NO link', async () => {
   writeReactProject();
   const { server } = await startStub();
   try {
@@ -139,15 +169,30 @@ test('reporting redesign: a full certify run writes the cumulative report.html a
       env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_CERTIFY_ENDPOINT: certifyUrl(server) },
     });
     assert.equal(code, 0);
-    assert.match(stdout, /file:\/\/\S+report-[a-f0-9]{12}\.html/);
-    assert.match(stdout, /Open your report|Abre tu informe/);
-    const htmlFile = fs.readdirSync(tmpConfigDir).find((f) => /^report-[a-f0-9]{12}\.html$/.test(f));
-    assert.ok(htmlFile, 'per-project report-<hash>.html written to the config dir');
-    const html = fs.readFileSync(path.join(tmpConfigDir, htmlFile), 'utf8');
-    // The certification landed in the cumulative report, in the Shakers theme.
-    assert.match(html, /Skill certification/);
-    assert.ok(html.includes('--bg:var(--ds-white)'), 'white background');
-    assert.equal(/prefers-color-scheme\s*:\s*dark/.test(html), false, 'no dark mode');
+    // certify no longer prints a report link (ADR-016 — the `report` command opens it).
+    assert.equal(/file:\/\//.test(stdout), false, 'certify no longer prints a link');
+    assert.equal(/Open your report|Abre tu informe/.test(stdout), false, 'no report-link copy');
+    // State IS persisted; no html written by certify.
+    assert.ok(fs.existsSync(path.join(tmpConfigDir, 'report-state.json')), 'state file written');
+    assert.equal(
+      fs.readdirSync(tmpConfigDir).some((f) => /^report-[a-f0-9]{12}\.html$/.test(f)),
+      false,
+      'certify writes no html (report command does)',
+    );
+    // And the certification is retrievable from state (report command renders it).
+    // materializeProjectReport reads AI_FOOTPRINT_CONFIG_DIR from THIS process,
+    // so point it at the same throwaway dir the spawned CLI wrote to.
+    const prevCfg = process.env.AI_FOOTPRINT_CONFIG_DIR;
+    process.env.AI_FOOTPRINT_CONFIG_DIR = tmpConfigDir;
+    try {
+      const { materializeProjectReport } = require('../src/report-store');
+      const r = materializeProjectReport({ root: tmpProjectDir, lang: 'en' });
+      const html = fs.readFileSync(r.htmlPath, 'utf8');
+      assert.match(html, /Skill certification/);
+    } finally {
+      if (prevCfg === undefined) delete process.env.AI_FOOTPRINT_CONFIG_DIR;
+      else process.env.AI_FOOTPRINT_CONFIG_DIR = prevCfg;
+    }
   } finally {
     server.close();
   }
@@ -250,6 +295,50 @@ test('certify phase: --skills selects a subset', async () => {
     assert.equal(code, 0);
     assert.match(stdout, /Skill certification result/);
     assert.match(stdout, /Score: \d+\/100/);
+  } finally {
+    server.close();
+  }
+});
+
+test('ADR-017 gate: a project with NO git history is refused before any certify egress', async () => {
+  // Write the project WITHOUT git (no gitCommitAll) — attribution impossible.
+  fs.writeFileSync(
+    path.join(tmpProjectDir, 'package.json'),
+    JSON.stringify({ name: 'demo', dependencies: { react: '^18.0.0' } }),
+  );
+  fs.mkdirSync(path.join(tmpProjectDir, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(tmpProjectDir, 'src', 'App.jsx'), 'export default function App() { return null; }\n'.repeat(4));
+
+  const { server, state } = await startStub();
+  try {
+    const { code, stdout } = await runCli({
+      args: ['--root', tmpProjectDir, '--email', 'talent@example.com', '--accept-disclaimer', '--all', '--lang', 'en'],
+      env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_CERTIFY_ENDPOINT: certifyUrl(server) },
+    });
+    assert.equal(code, 0); // clean refusal, not a crash
+    assert.match(stdout, /Without git history the code authorship cannot be verified/);
+    // ADR-018 contact valve is shown (display only — no extra request is made).
+    assert.match(stdout, /talent@shakersworks\.com/);
+    assert.equal(/Skill certification result/.test(stdout), false, 'no certification report');
+    assert.equal(state.requests, 1, 'only the resolve call — NO certify egress of unattributable code');
+  } finally {
+    server.close();
+  }
+});
+
+test('ADR-017 gate: a project authored by a DIFFERENT email is refused (no attributable code)', async () => {
+  writeReactProject('someone-else@other.com'); // git history, but not the certifying Talent
+  const { server, state } = await startStub();
+  try {
+    const { code, stdout } = await runCli({
+      args: ['--root', tmpProjectDir, '--email', 'talent@example.com', '--accept-disclaimer', '--all', '--lang', 'en'],
+      env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_CERTIFY_ENDPOINT: certifyUrl(server) },
+    });
+    assert.equal(code, 0);
+    assert.match(stdout, /None of the selected Skills has code attributable to your verified email/);
+    assert.match(stdout, /talent@shakersworks\.com/); // ADR-018 contact valve shown
+    assert.equal(/Skill certification result/.test(stdout), false, 'no certification report');
+    assert.equal(state.requests, 1, 'only the resolve call — nothing the Talent did not author is sent');
   } finally {
     server.close();
   }

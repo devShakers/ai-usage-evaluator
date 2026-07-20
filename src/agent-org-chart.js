@@ -401,4 +401,41 @@ function parseAgentDescriptions(root) {
   return result;
 }
 
-module.exports = { parseAgentOrgChart, parseFrontmatter, parseAgentFile, parseAgentDescriptions };
+// ADR-016 agent evaluation: returns `[{ name, definition }]` where `definition`
+// is the agent's FULL authored definition — its frontmatter `description` PLUS
+// its body (the instructions/boundaries/structure the quality score is meant to
+// judge). This is distinct from parseAgentDescriptions (frontmatter description
+// ONLY, used by synthesis + card display): a large share of real agents put
+// their actual definition in the BODY with a thin or absent `description:`, so
+// sending the description alone yields an EMPTY definition and the evaluation
+// backend omits the agent (degrade-by-omission) → no score. Using the full body
+// guarantees a substantial definition to score. Scrubbing happens downstream
+// (src/agent-evaluation.js, client + network boundary). Same project ∪ home
+// scope + name-fallback rules as parseAgentDescriptions.
+function parseAgentDefinitions(root) {
+  const seen = new Set();
+  const result = [];
+  for (const dir of agentDirs(root)) {
+    for (const file of listAgentMarkdownFiles(dir)) {
+      let content;
+      try {
+        content = fs.readFileSync(file, 'utf8');
+      } catch {
+        continue;
+      }
+      const fm = parseFrontmatter(content, { includeDescription: true });
+      if (!fm) continue;
+      const fallbackName = path.basename(file, path.extname(file));
+      const name = typeof fm.name === 'string' && fm.name.trim() ? fm.name.trim() : fallbackName;
+      if (seen.has(name)) continue;
+      seen.add(name);
+      const description = typeof fm.description === 'string' ? fm.description : '';
+      const body = bodyAfterFrontmatter(content);
+      const definition = [description, body].map((s) => (s || '').trim()).filter(Boolean).join('\n\n');
+      result.push({ name, definition });
+    }
+  }
+  return result;
+}
+
+module.exports = { parseAgentOrgChart, parseFrontmatter, parseAgentFile, parseAgentDescriptions, parseAgentDefinitions };

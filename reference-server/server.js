@@ -35,6 +35,12 @@
  *     name, echoes its tool list as "what it does") — NOT an LLM call. The
  *     real endpoint synthesizes from the agent's DESCRIPTION content, which
  *     this stub never even asks for beyond structure (no model to feed it).
+ *   - `/agent-evaluation` (ADR-016) is likewise DETERMINISTIC — it derives a
+ *     score from the definition length/tools instead of judging quality, and
+ *     it OMITS any agent with too little definition to score (so the response
+ *     can be shorter than the request, exactly like the real backend, which
+ *     drops unscored agents rather than fabricating a number). The real
+ *     endpoint is shakers-hub-backend with a gemini-2.5-flash call.
  *
  * skill-code-certification / issue 006: adds a stub
  * `/works/ai-footprint/skill-certification` endpoint that mirrors the other
@@ -63,6 +69,7 @@
  *   GET  /health
  *   POST /reports                                     {email, payload}          -> public, no auth. 201 / 400 / 429
  *   POST /works/ai-footprint/agent-synthesis          {agents}                  -> public, no auth. 200 / 400
+ *   POST /works/ai-footprint/agent-evaluation         {agents, promptVersion}   -> public, no auth. 200 / 400
  *   POST /works/ai-footprint/skill-certification      {email, technologies|items} -> public, no auth. 200 / 400
  *   POST /works/ai-footprint/email-verification/request {email}                 -> public, no auth. 200 / 400
  *   POST /works/ai-footprint/email-verification/verify  {email, code}           -> public, no auth. 200 / 400
@@ -353,6 +360,43 @@ async function handle(req, res) {
     // Soft outcome in the 2xx body (never leaks whether the email exists):
     // matched -> verified:true; mismatch -> verified:false + reason.
     return send(res, 200, verified ? { verified: true } : { verified: false, reason: 'invalid-code' });
+  }
+
+  /* --- agent evaluation: public, no per-identity auth, EPHEMERAL (ADR-016).  */
+  /* DETERMINISTIC placeholder (NO LLM) that returns the SAME response shape as */
+  /* the real endpoint, so the CLI's request/response contract + the terminal/ */
+  /* HTML rendering are faithfully exercisable locally. The REAL endpoint       */
+  /* (shakers-hub-backend, gemini-2.5-flash, definitions treated as DATA) scores */
+  /* definition QUALITY; this stub just derives a number from the definition    */
+  /* length, tool count and whether a model is pinned. --- */
+  if (method === 'POST' && url === '/works/ai-footprint/agent-evaluation') {
+    const body = await readJson(req);
+    if (!body || !Array.isArray(body.agents)) {
+      return send(res, 400, { error: 'agents[] inválido o ausente' });
+    }
+    // Degradation is by OMISSION (contract): the real backend DROPS any agent
+    // the model failed to score rather than fabricating a number, so
+    // evaluations.length may be < agents.length and the CLI must join by NAME.
+    // This stub reproduces that: an agent with too little definition to judge
+    // (< 15 non-space chars) is OMITTED, exercising the missing-agent rendering.
+    const evaluations = body.agents
+      .filter((a) => (typeof a.definition === 'string' ? a.definition.trim().length : 0) >= 15)
+      .map((a) => {
+        const def = typeof a.definition === 'string' ? a.definition : '';
+        const toolCount = Array.isArray(a.tools) ? a.tools.length : 0;
+        const raw = 40 + Math.min(30, Math.round(def.length / 40)) + Math.min(20, toolCount * 4) + (a.model ? 10 : 0);
+        const score = Math.max(0, Math.min(100, raw));
+        return {
+          name: a.name,
+          score,
+          rationale:
+            `Stub determinista (sin LLM): nota derivada de ${def.length} caracteres de definición, `
+            + `${toolCount} tool(s) y modelo ${a.model || '(ninguno)'}. El servidor real es `
+            + 'shakers-hub-backend (gemini-2.5-flash), que evalúa la CALIDAD de la definición.',
+        };
+      });
+    console.log(`[agent-eval] promptVersion=${body.promptVersion} agents_in=${body.agents.length} scored=${evaluations.length}`);
+    return send(res, 200, { evaluations });
   }
 
   send(res, 404, { error: 'no encontrado' });

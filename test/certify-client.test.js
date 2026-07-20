@@ -46,12 +46,51 @@ test('normalizeResolveResponse: rebuilds fields, defaults nonCertifiable to []',
   assert.deepEqual(out, {
     certifiable: [{ skillId: 7, skillName: 'React', technology: 'React' }],
     nonCertifiable: [],
+    // ADR-023: absent authorizedAuthoring -> null (real identity, strict match).
+    authorizedAuthoring: null,
   });
+});
+
+test('normalizeResolveResponse: carries a valid ADR-023 authorizedAuthoring set (test identity)', () => {
+  const out = normalizeResolveResponse({
+    certifiable: [],
+    authorizedAuthoring: { domain: 'shakersworks.com', extraEmails: ['c@x.com', 42, ''] },
+  });
+  assert.deepEqual(out.authorizedAuthoring, {
+    domain: 'shakersworks.com',
+    extraEmails: ['c@x.com'],
+  });
+});
+
+test('normalizeResolveResponse: a malformed/empty authorizedAuthoring degrades to null (strict match)', () => {
+  assert.equal(
+    normalizeResolveResponse({ certifiable: [], authorizedAuthoring: { domain: '', extraEmails: [] } }).authorizedAuthoring,
+    null,
+  );
+  assert.equal(
+    normalizeResolveResponse({ certifiable: [], authorizedAuthoring: 'nope' }).authorizedAuthoring,
+    null,
+  );
 });
 
 test('normalizeResolveResponse: missing certifiable[] -> null (invalid shape)', () => {
   assert.equal(normalizeResolveResponse({ nope: true }), null);
   assert.equal(normalizeResolveResponse(null), null);
+});
+
+// --- certifyTimeoutForItems: scales with Skill count -------------------------
+
+test('certifyTimeoutForItems: floors at the single-Skill default and scales per Skill', () => {
+  const { certifyTimeoutForItems, DEFAULT_CERTIFY_TIMEOUT_MS, PER_SKILL_CERTIFY_TIMEOUT_MS } =
+    require('../src/certify-client');
+  // 1 Skill → max(default, 1×perSkill) = perSkill (>= default).
+  assert.equal(certifyTimeoutForItems(1), Math.max(DEFAULT_CERTIFY_TIMEOUT_MS, PER_SKILL_CERTIFY_TIMEOUT_MS));
+  // 2 Skills (the reported failure: ~106s > the old flat 90s) → 2×perSkill.
+  assert.equal(certifyTimeoutForItems(2), 2 * PER_SKILL_CERTIFY_TIMEOUT_MS);
+  assert.ok(certifyTimeoutForItems(2) > 106000, 'covers a real 2-Skill (~106s) run');
+  // Defensive: 0/negative/NaN → single-Skill floor.
+  assert.equal(certifyTimeoutForItems(0), Math.max(DEFAULT_CERTIFY_TIMEOUT_MS, PER_SKILL_CERTIFY_TIMEOUT_MS));
+  assert.equal(certifyTimeoutForItems(NaN), Math.max(DEFAULT_CERTIFY_TIMEOUT_MS, PER_SKILL_CERTIFY_TIMEOUT_MS));
 });
 
 // --- classifyCertifyFailure (issue 014) --------------------------------------

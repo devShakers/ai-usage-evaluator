@@ -33,6 +33,18 @@ test('buildCertifyRequest: shapes {email, items:[{skillId, technology, files:[{p
   assert.equal(body.items.length, 1);
   assert.deepEqual(Object.keys(body.items[0]).sort(), ['files', 'skillId', 'technology']);
   assert.deepEqual(Object.keys(body.items[0].files[0]).sort(), ['content', 'path']);
+  assert.equal('locale' in body, false); // no locale unless requested
+});
+
+test('buildCertifyRequest: ADR-026 carries a valid locale, omits an invalid one', () => {
+  const es = buildCertifyRequest('a@b.com', [
+    { skillId: 1, technology: 'React', files: [{ path: 'a.js', content: 'x' }] },
+  ], 'es');
+  assert.equal(es.locale, 'es');
+  const bad = buildCertifyRequest('a@b.com', [
+    { skillId: 1, technology: 'React', files: [{ path: 'a.js', content: 'x' }] },
+  ], 'fr');
+  assert.equal('locale' in bad, false);
 });
 
 test('buildCertifyRequest: drops skills with no files (nothing to certify)', () => {

@@ -207,26 +207,36 @@ function renderProjectHtml(project, lang) {
   });
 }
 
-/* ---------- upserts (each writes state + regenerates THIS project's HTML) ---------- */
+/* ---------- persist (state only) + materialize (render HTML) ---------- */
+//
+// ADR-016 split: `footprint` and `certify` now PERSIST state only (no HTML file,
+// no printed link). The HTML report is materialized + opened solely by the
+// `report` command (bin/report-html.js), so `materializeProjectReport` is the
+// ONE place the .html file is written. The legacy `upsertFootprint`/
+// `upsertCertification` (persist + materialize in one call) are kept for
+// backward compatibility (and existing callers/tests) as thin compositions.
 
-function writeProject(state, absRoot, lang) {
+function stampAndSaveState(state, absRoot) {
   state.schemaVersion = SCHEMA_VERSION;
   const now = new Date().toISOString();
   state.updatedAt = now;
-  const project = state.projects[absRoot];
-  project.updatedAt = now;
+  state.projects[absRoot].updatedAt = now;
   saveState(state);
+  return { statePath: statePath(), stateDir: configDir() };
+}
 
+function writeProjectHtml(project, absRoot, lang) {
   const html = renderProjectHtml(project, lang);
   fs.mkdirSync(configDir(), { recursive: true });
   const p = htmlPathFor(absRoot);
   fs.writeFileSync(p, html);
-  return { statePath: statePath(), htmlPath: p, fileUrl: fileUrl(p), stateDir: configDir() };
+  return { htmlPath: p, fileUrl: fileUrl(p) };
 }
 
-// Upsert THIS project's footprint (keyed by absolute project path). Replaces the
-// project's single footprint in place; never touches other projects' reports.
-function upsertFootprint({ root, report, maturity, lang }) {
+// Persist THIS project's footprint into report-state.json (keyed by absolute
+// project path). State only — no HTML is written here (ADR-016). Replaces the
+// project's single footprint in place; never touches other projects.
+function persistFootprint({ root, report, maturity }) {
   const absRoot = path.resolve(root || process.cwd());
   const state = loadState();
   const project = getOrCreateProject(state, absRoot);
@@ -235,7 +245,31 @@ function upsertFootprint({ root, report, maturity, lang }) {
     report,
     maturity,
   };
-  return writeProject(state, absRoot, lang);
+  return stampAndSaveState(state, absRoot);
+}
+
+// Materialize (render + write) THIS project's cumulative HTML from persisted
+// state, and return its path + file:// URL. Returns `{ hasData:false }` when the
+// project has neither a footprint nor a certified Skill yet (the `report`
+// command turns that into an actionable "run footprint first" message). This is
+// the ONLY place the HTML file is produced now (ADR-016).
+function materializeProjectReport({ root, lang }) {
+  const absRoot = path.resolve(root || process.cwd());
+  const state = loadState();
+  const project = state.projects[absRoot];
+  const hasFootprint = !!(project && project.footprint && project.footprint.report);
+  const hasCerts = !!(project && project.certifications && Object.keys(project.certifications).length);
+  if (!hasFootprint && !hasCerts) return { hasData: false };
+  return { hasData: true, ...writeProjectHtml(project, absRoot, lang) };
+}
+
+// Backward-compatible convenience: persist footprint AND materialize the HTML in
+// one call (the pre-ADR-016 behaviour). New code should call persistFootprint
+// (state only) + let `report` materialize.
+function upsertFootprint({ root, report, maturity, lang }) {
+  const s = persistFootprint({ root, report, maturity });
+  const m = materializeProjectReport({ root, lang });
+  return { ...s, htmlPath: m.htmlPath, fileUrl: m.fileUrl };
 }
 
 // Stable upsert key for a certified Skill WITHIN its project: its id when
@@ -252,7 +286,9 @@ function certKey(item) {
 // Skill id within the project). Certifications are scoped to the project they
 // were produced in — scanning/certifying another project keeps a separate
 // report. Only items that carry a Skill identity are stored.
-function upsertCertification({ root, items, lang }) {
+// Persist each certified Skill from this run into THIS PROJECT's state (keyed by
+// Skill id within the project). State only — no HTML written (ADR-016).
+function persistCertification({ root, items }) {
   const absRoot = path.resolve(root || process.cwd());
   const list = Array.isArray(items) ? items.filter((i) => i && (i.skillId != null || i.skillName)) : [];
   const state = loadState();
@@ -261,7 +297,14 @@ function upsertCertification({ root, items, lang }) {
   for (const item of list) {
     project.certifications[certKey(item)] = { generatedAt: now, item };
   }
-  return writeProject(state, absRoot, lang);
+  return stampAndSaveState(state, absRoot);
+}
+
+// Backward-compatible convenience: persist certification AND materialize.
+function upsertCertification({ root, items, lang }) {
+  const s = persistCertification({ root, items });
+  const m = materializeProjectReport({ root, lang });
+  return { ...s, htmlPath: m.htmlPath, fileUrl: m.fileUrl };
 }
 
 module.exports = {
@@ -273,6 +316,9 @@ module.exports = {
   loadState,
   saveState,
   renderProjectHtml,
+  persistFootprint,
+  persistCertification,
+  materializeProjectReport,
   upsertFootprint,
   upsertCertification,
   certKey,

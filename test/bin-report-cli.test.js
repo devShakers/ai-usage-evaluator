@@ -291,6 +291,7 @@ test('bin/report.js: the plain-text terminal report includes technologies, agent
   );
 
   const { code, stdout } = await runCli({
+    // Default report (ADR-016): technologies + agents shown, roadmap hidden.
     args: ['--no-save', '--root', tmpProjectDir],
     stdin: 'n\n',
     env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
@@ -303,9 +304,8 @@ test('bin/report.js: the plain-text terminal report includes technologies, agent
   // Agents section (structural org chart, always available even without a
   // reachable synthesis endpoint).
   assert.match(stdout, /backend-dev/);
-  // Some next-step framing is always shown, either the tier roadmap or the
-  // generic band fallback.
-  assert.match(stdout, /Tu próximo nivel|Your next level|Next step|Siguiente paso/);
+  // The default output points at --roadmap for the next-steps section.
+  assert.match(stdout, /footprint --roadmap/);
 });
 
 // talents-ai-score, description-always-present: real-shaped agent files
@@ -313,12 +313,10 @@ test('bin/report.js: the plain-text terminal report includes technologies, agent
 // a long free-text `description`, no explicit `tools:`) must still surface the
 // agent even with no synthesis endpoint configured at all.
 //
-// Terminal-summarize (2026-07-16): the condensed terminal now shows the agent
-// name + model badge AND a SHORT description line (the raw frontmatter
-// description, summarized). The full-length description stays in the HTML report
-// (covered by test/render-html-agent-cards.test.js). This fixture's description
-// is under the truncation limit, so it shows verbatim here.
-test('bin/report.js: an agent (name + model + short description) shows in the terminal report with no synthesis endpoint configured', async () => {
+// ADR-016: the terminal agents view is ONE line per agent — name + model (+
+// compact score/usage), NO description line (that stays in the HTML report,
+// covered by test/render-html-agent-cards.test.js).
+test('bin/report.js: an agent (name + model) shows in the terminal report with no synthesis endpoint configured', async () => {
   fs.mkdirSync(path.join(tmpProjectDir, '.claude', 'agents'), { recursive: true });
   fs.writeFileSync(
     path.join(tmpProjectDir, '.claude', 'agents', 'ddd-enforcer.md'),
@@ -342,9 +340,9 @@ test('bin/report.js: an agent (name + model + short description) shows in the te
   assert.match(stdout, /ddd-enforcer/);
   // Model badge is part of the agent line ([opus] here).
   assert.match(stdout, /\[opus\]/);
-  // Short description line now shown in the terminal (summarized; verbatim here
-  // as it's under the limit). The full-length version stays in the HTML report.
-  assert.match(stdout, /Scans a module directory for DDD pattern violations and fixes them\./);
+  // ADR-016 (2026-07-18): a SUMMARIZED description shows under the agent
+  // (dim line, truncated ~90 chars). The fixture's description starts with this.
+  assert.match(stdout, /Scans a module directory for DDD pattern violations/);
 });
 
 // --- --lang override + implementation prompt (talents-ai-score) -----------
@@ -356,7 +354,7 @@ test('bin/report.js: --lang es forces the report (and the implementation prompt)
   const tmpHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-footprint-cli-home-'));
   try {
     const { code, stdout } = await runCli({
-      args: ['--no-save', '--root', tmpProjectDir, '--lang', 'es'],
+      args: ['--no-save', '--root', tmpProjectDir, '--lang', 'es', '--roadmap'],
       stdin: 'n\n',
       env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_HOME_DIR: tmpHomeDir },
     });
@@ -373,7 +371,7 @@ test('bin/report.js: --lang en forces the report (and the implementation prompt)
   const tmpHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-footprint-cli-home-'));
   try {
     const { code, stdout } = await runCli({
-      args: ['--no-save', '--root', tmpProjectDir, '--lang', 'en'],
+      args: ['--no-save', '--root', tmpProjectDir, '--lang', 'en', '--roadmap'],
       stdin: 'n\n',
       env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_HOME_DIR: tmpHomeDir },
     });
@@ -400,7 +398,7 @@ test('bin/report.js: the implementation prompt is the primary "next steps" path,
   const tmpHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-footprint-cli-home-'));
   try {
     const { stdout } = await runCli({
-      args: ['--no-save', '--root', tmpProjectDir, '--lang', 'es'],
+      args: ['--no-save', '--root', tmpProjectDir, '--lang', 'es', '--roadmap'],
       stdin: 'n\n',
       env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir, AI_FOOTPRINT_HOME_DIR: tmpHomeDir },
     });
@@ -545,7 +543,8 @@ test('bin/report.js: a roadmap endpoint returning a valid, count-matching respon
   try {
     const { port } = server.address();
     const { code, stdout, stderr } = await runCli({
-      args: ['--no-save', '--root', tmpProjectDir],
+      // ADR-016: --roadmap to render the (personalized) roadmap prose in the terminal.
+      args: ['--no-save', '--root', tmpProjectDir, '--roadmap'],
       stdin: 'n\n',
       env: {
         AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir,
@@ -562,8 +561,9 @@ test('bin/report.js: a roadmap endpoint returning a valid, count-matching respon
     // The "content adapted" personalization NOTICE stays HTML-only (not
     // reintroduced) — HTML coverage in test/render-roadmap-personalization.test.js.
     assert.equal(/Contenido adaptado a tu proyecto|Content adapted to your project/.test(stdout), false);
-    // The blocking criterion is always curated (deterministic), personalized or not.
-    assert.match(stdout, /Criterio exacto que te impide|Exact criterion blocking/);
+    // ADR-016: --roadmap prints ONLY the roadmap — the tier-analysis blocking
+    // criterion is part of the DEFAULT report, not this output, so it's absent here.
+    assert.equal(/Criterio exacto que te impide|Exact criterion blocking/.test(stdout), false);
   } finally {
     server.close();
     fs.rmSync(tmpHomeDir, { recursive: true, force: true });
@@ -643,8 +643,9 @@ test('bin/report.js: LANG=en_US.UTF-8 (non-Spanish OS locale) never shows Spanis
     });
     assert.equal(code, 0);
     assert.match(stdout, /AI FOOTPRINT/);
-    // Positive check: it really did resolve to English.
-    assert.match(stdout, /Your next level|Next step/);
+    // Positive check: it really did resolve to English (headings always shown;
+    // the roadmap is hidden by default under ADR-016, so anchor on these).
+    assert.match(stdout, /Project technologies|Detected/);
     // The actual audit: no Spanish anywhere.
     assert.equal(/[áéíóúñÁÉÍÓÚÑ¡¿]/.test(stdout), false, 'found an accented/Spanish-punctuation character');
     for (const spanish of KNOWN_SPANISH_STRINGS) {
@@ -670,30 +671,29 @@ test('bin/report.js: LANG=es_ES.UTF-8 (Spanish OS locale) is unaffected — Span
   assert.match(stdout, /Guardar este informe en Shakers/);
 });
 
-// --- reporting redesign (skill-code-certification): --html retired, the
-// cumulative report is written and its file:// link printed on EVERY run ---
+// --- ADR-016: footprint PERSISTS report-state.json but no longer writes the
+// HTML nor prints a link — the HTML is materialized + opened by `report` ---
 
-test('bin/report.js: a normal run writes the cumulative report.html and ALWAYS prints its file:// link (no --html needed)', async () => {
+test('bin/report.js: a normal run persists report-state.json, writes NO html and prints NO link (ADR-016)', async () => {
   const { code, stdout } = await runCli({
-    args: ['--root', tmpProjectDir], // NOTE: no --no-save, no --html
+    args: ['--root', tmpProjectDir], // NOTE: no --no-save
     stdin: 'n\n',
     env: { AI_FOOTPRINT_CONFIG_DIR: tmpConfigDir },
   });
   assert.equal(code, 0);
-  // The link is always printed (es or en label), pointing at the project report.
-  assert.match(stdout, /file:\/\/\S+report-[a-f0-9]{12}\.html/);
-  assert.match(stdout, /Abre tu informe|Open your report/);
-  // The per-project report was actually written to the config dir.
-  const htmlFile = fs.readdirSync(tmpConfigDir).find((f) => /^report-[a-f0-9]{12}\.html$/.test(f));
-  assert.ok(htmlFile, 'per-project report-<hash>.html written to the config dir');
-  const htmlPath = path.join(tmpConfigDir, htmlFile);
-  const html = fs.readFileSync(htmlPath, 'utf8');
-  assert.ok(html.includes('--bg:var(--ds-white)'), 'white background');
-  assert.equal(/prefers-color-scheme\s*:\s*dark/.test(html), false, 'no dark mode');
+  // No file:// link is printed by footprint anymore.
+  assert.equal(/file:\/\//.test(stdout), false, 'footprint no longer prints a link');
+  assert.equal(/Abre tu informe|Open your report/.test(stdout), false, 'no report-link copy');
+  // State IS persisted; the HTML file is NOT written by footprint.
   assert.ok(fs.existsSync(path.join(tmpConfigDir, 'report-state.json')), 'state file written');
+  assert.equal(
+    fs.readdirSync(tmpConfigDir).some((f) => /^report-[a-f0-9]{12}\.html$/.test(f)),
+    false,
+    'footprint writes no html (report command does)',
+  );
 });
 
-test('bin/report.js: --no-save is the explicit opt-out — no report.html, no link printed', async () => {
+test('bin/report.js: --no-save is the explicit opt-out — nothing persisted', async () => {
   const { code, stdout } = await runCli({
     args: ['--no-save', '--root', tmpProjectDir],
     stdin: 'n\n',

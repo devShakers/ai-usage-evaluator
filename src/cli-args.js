@@ -41,6 +41,11 @@
  * prompt included, rather than a second independent choice just for the
  * prompt. Unrecognized values are ignored (null), never guessed at or
  * silently coerced to a made-up language.
+ *
+ * ADR-016: `--roadmap` (alias `--next`) re-enables the tier roadmap / "next
+ * steps" section, which is no longer shown in the default footprint output
+ * (the default terminal view leads with WHY the score is what it is, then the
+ * tier/score, tools, technologies and a one-line-per-agent summary).
  */
 const VALID_LANGS = new Set(['es', 'en']);
 
@@ -59,6 +64,7 @@ function parseArgs(argv) {
     buildNextLevel: false,
     force: false,
     lang: null,
+    roadmap: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -75,6 +81,9 @@ function parseArgs(argv) {
     else if (a === '--show-endpoint') opts.showEndpoint = true;
     else if (a === '--build-next-level') opts.buildNextLevel = true;
     else if (a === '--force') opts.force = true;
+    // ADR-016: the tier roadmap / "next steps" block is removed from the
+    // default footprint output; `--roadmap` (alias `--next`) shows it again.
+    else if (a === '--roadmap' || a === '--next') opts.roadmap = true;
     else if (a === '--lang') opts.lang = VALID_LANGS.has(argv[++i]) ? argv[i] : null;
     else if (a.startsWith('--lang=')) {
       const value = a.slice('--lang='.length);

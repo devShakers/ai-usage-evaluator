@@ -393,6 +393,47 @@ test('renderHtml: when BOTH synthesis and a raw description exist for the same a
   assert.equal(section.includes('RAW frontmatter description text.'), false);
 });
 
+test('renderHtml (ADR-026): the agent-evaluation description is a localized caption and OUTRANKS synthesis + raw frontmatter for the card phrase', () => {
+  // The evaluation `description` comes back in the report language, so it must
+  // win over the verbatim frontmatter (which could be authored in the other
+  // language) AND over the synthesis whatItDoes — otherwise a Spanish report
+  // leaks an English caption (the bug ADR-026 fixes on the render side).
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'backend-developer', tools: ['Read'], model: 'sonnet', parent: null }],
+    agentDescriptions: [{ name: 'backend-developer', description: 'RAW frontmatter description text.' }],
+    agentSynthesis: {
+      agents: [{ name: 'backend-developer', symbolicName: 'The Builder', whatItDoes: 'SYNTHESIZED polished description.' }],
+      edges: [],
+    },
+    agentEvaluation: {
+      evaluations: [
+        { name: 'backend-developer', score: 72, rationale: 'clara pero sin ejemplos', description: 'Implementa endpoints de backend a partir de especificaciones.' },
+      ],
+    },
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  assert.match(section, /Implementa endpoints de backend a partir de especificaciones\./);
+  assert.equal(section.includes('SYNTHESIZED polished description.'), false);
+  assert.equal(section.includes('RAW frontmatter description text.'), false);
+});
+
+test('renderHtml (ADR-026): a blank/absent evaluation description falls back to the existing precedence (synthesis → raw → name)', () => {
+  const report = {
+    ...BASE_REPORT,
+    agents: [{ name: 'backend-developer', tools: ['Read'], model: 'sonnet', parent: null }],
+    agentDescriptions: [{ name: 'backend-developer', description: 'RAW frontmatter description text.' }],
+    agentEvaluation: {
+      evaluations: [{ name: 'backend-developer', score: 60, rationale: 'ok', description: '   ' }],
+    },
+  };
+  const html = renderHtml(report, MATURITY, 'es');
+  const section = treeSectionOf(html);
+  // Blank eval description is ignored → raw frontmatter is used.
+  assert.match(section, /RAW frontmatter description text\./);
+});
+
 // talents-ai-score bugfix: matching used to be exact-string-equality, which
 // silently misses an agent when the synthesis response echoes its name
 // back with harmless formatting differences (case, surrounding

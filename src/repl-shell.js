@@ -123,18 +123,24 @@ function tileCell(row) {
 // Builds the startup banner (shown ONCE on entry). Deliberately ALWAYS ENGLISH —
 // a brand/product surface like the installer notice (functional footprint/
 // certify output still respects the OS locale). Two-column boxed layout on wide
-// terminals, degrading to a single stacked column under ~76 columns.
+// terminals, degrading to a single stacked column under the box width.
+//
+// The wide box is 87 columns (see bannerWide's LW+RW+7). The threshold MUST
+// match that width: rendering the two-column box in a narrower terminal is what
+// makes the right border wrap and the columns look "descuadrado". Below it we
+// fall back to the clean single-column stacked layout.
+const WIDE_MIN_COLS = 87;
 function renderBanner({ version = '', color = true, width = 80 } = {}) {
   const title = version ? `sh-eval · v${version}` : 'sh-eval';
-  return width >= 76
+  return width >= WIDE_MIN_COLS
     ? bannerWide({ title, color })
     : bannerStacked({ title, color, width });
 }
 
 function bannerWide({ title, color }) {
-  const LW = 24;         // left (logo) column
-  const RW = 44;         // right (info) column
-  const INNER = 1 + LW + 3 + RW + 1; // between the outer borders (73)
+  const LW = 26;         // left (logo) column
+  const RW = 54;         // right (info) column — must fit the widest info row
+  const INNER = 1 + LW + 3 + RW + 1; // between the outer borders (85); box = 87
 
   // Left column, with breathing room: welcome, blank, bolt tile, blank, product.
   const left = [];
@@ -146,20 +152,22 @@ function bannerWide({ title, color }) {
 
   // Right column: a short "what it is" summary, then Commands + Getting started
   // (violet, the sparing 2nd accent).
-  const NAME = 11;
+  const NAME = 12;
   const right = [];
   right.push([{ t: 'A local-first CLI to level up how you work', st: { fg: BRAND.white } }]);
   right.push([{ t: 'with AI, and certify skills from your code.', st: { fg: BRAND.white } }]);
   right.push([]);
   right.push([{ t: 'Commands', st: { bold: true, fg: BRAND.lime } }]);
-  right.push([{ t: 'footprint'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'score AI setup (T0–T7) + roadmap', st: { fg: BRAND.zinc } }]);
+  right.push([{ t: 'footprint'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'score AI setup (T0–T7) + agents', st: { fg: BRAND.zinc } }]);
   right.push([{ t: 'certify'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'certify Skills from your code', st: { fg: BRAND.zinc } }]);
+  right.push([{ t: 'report'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'open full shareable HTML report', st: { fg: BRAND.zinc } }]);
   right.push([{ t: 'share'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'branded card for LinkedIn', st: { fg: BRAND.zinc } }]);
   right.push([{ t: '─'.repeat(RW), st: { fg: BRAND.zinc } }]);
   right.push([{ t: 'Getting started', st: { bold: true, fg: BRAND.violet } }]);
   right.push([
     { t: 'footprint', st: { fg: BRAND.white } }, { t: ' · ', st: { fg: BRAND.zinc } },
     { t: 'certify', st: { fg: BRAND.white } }, { t: ' · ', st: { fg: BRAND.zinc } },
+    { t: 'report', st: { fg: BRAND.white } }, { t: ' · ', st: { fg: BRAND.zinc } },
     { t: 'share', st: { fg: BRAND.white } },
     { t: ' · help · exit', st: { fg: BRAND.zinc } },
   ]);
@@ -212,9 +220,10 @@ function bannerStacked({ title, color, width }) {
   lines.push(line([{ t: 'Commands', st: { bold: true, fg: BRAND.lime } }]));
   lines.push(line([{ t: 'footprint  ', st: { bold: true, fg: BRAND.white } }, { t: 'score AI setup (T0–T7)', st: { fg: BRAND.zinc } }]));
   lines.push(line([{ t: 'certify    ', st: { bold: true, fg: BRAND.white } }, { t: 'certify your Skills', st: { fg: BRAND.zinc } }]));
+  lines.push(line([{ t: 'report     ', st: { bold: true, fg: BRAND.white } }, { t: 'full HTML report', st: { fg: BRAND.zinc } }]));
   lines.push(line([{ t: 'share      ', st: { bold: true, fg: BRAND.white } }, { t: 'card for LinkedIn', st: { fg: BRAND.zinc } }]));
   lines.push(line([{ t: '', st: null }]));
-  lines.push(line([{ t: 'footprint · certify · share · help · exit', st: { fg: BRAND.zinc } }]));
+  lines.push(line([{ t: 'footprint · certify · report · share · help · exit', st: { fg: BRAND.zinc } }]));
   lines.push(bottomBorder(INNER, color));
   lines.push('');
   return lines.join('\n') + '\n';
@@ -277,6 +286,15 @@ async function dispatchCommand({ command, args }, { ask, catalog, deps, out = pr
       return { exit: false };
     case 'share':
       await deps.runShare(args, { ask });
+      return { exit: false };
+    case 'report':
+      await deps.runReport(args, { ask });
+      return { exit: false };
+    case 'superadmin':
+      // ADR-021 NON-PROD test-identity provisioning (hidden from the banner;
+      // a superadmin tool, not a product surface). No-op if deps omit it.
+      if (deps.runSuperadmin) await deps.runSuperadmin(args, { ask });
+      else out.write(`\n  ${catalog.repl.unknown(command)}\n`);
       return { exit: false };
     default:
       out.write(`\n  ${catalog.repl.unknown(command)}\n`);

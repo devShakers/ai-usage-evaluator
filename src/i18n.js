@@ -141,6 +141,13 @@ const catalogs = {
       environment: 'Entorno',
       editors: 'editores',
       noEditorsDetected: 'ninguno detectado',
+      // ADR-016 agent evaluation (terminal, one line per agent): compact usage
+      // signal derived from the local Claude Code history.
+      agentUsed: (n) => `usado ${n}×`,
+      agentUnused: 'sin uso local',
+      agentUsageUnavailable: '(sin historial local de Claude Code: uso no disponible)',
+      // ADR-016: discoverability hint for the next-steps section (behind --roadmap).
+      roadmapHint: 'Ejecuta `footprint --roadmap` para ver los siguientes pasos recomendados.',
       nextStep: 'Siguiente paso',
       files: (n) => `${n} ${n === 1 ? 'fichero' : 'ficheros'}`,
       lastModified: (label) => `última modificación: ${label}`,
@@ -189,6 +196,14 @@ const catalogs = {
       // templated sentence (that repetitive-filler approach was already
       // tried and rejected).
       agentDescriptionFromName: (name) => `Agente "${name}" (sin descripción declarada en su fichero).`,
+      // ADR-016 agent evaluation (HTML per-agent detail): definition-quality
+      // score + LLM rationale + local usage signal. The full detail lives here;
+      // the terminal keeps only a one-line summary.
+      agentScoreLabel: 'Calidad de la definición (0-100)',
+      agentQualityLabel: 'Por qué:',
+      agentUsageLabel: 'Uso local (historial de Claude Code)',
+      agentUsedTimes: (n) => `usado ${n}×`,
+      agentUnused: 'sin uso local',
       // Project technologies (talents-ai-score, ADR-012). Refined: shows
       // recognized FRAMEWORKS/LIBRARIES only (React, Express...), not a raw
       // dependency dump — the empty state also covers "manifest exists but
@@ -260,6 +275,18 @@ const catalogs = {
         hint: 'LinkedIn no permite adjuntar la imagen por URL: descarga el PNG desde la tarjeta y luego adjúntalo en tu publicación.',
         error: 'No se pudo generar la tarjeta para compartir.',
       },
+      // `report` command (ADR-016): genera y ABRE el informe HTML completo y
+      // compartible de este proyecto (footprint + Skills certificadas).
+      // `footprint`/`certify` ya no imprimen enlace; el HTML se produce aquí.
+      report: {
+        help: 'report — genera y abre el informe HTML completo de este proyecto (footprint + Skills certificadas) para compartir con tu equipo.\n'
+          + '  Usa `footprint` (y opcionalmente `certify`) primero; `report` reúne su resultado.\n'
+          + '  Opciones: --root <dir>, --lang es|en, --no-open (no abre el navegador; solo imprime el enlace)',
+        noData: 'Aún no hay nada que mostrar para este proyecto. Ejecuta `footprint` primero (y opcionalmente `certify`), luego `report`.',
+        ready: (url) => `Tu informe está listo:\n  ${url}`,
+        opening: 'Abriéndolo en tu navegador…',
+        error: 'No se pudo generar el informe.',
+      },
       // Terminal progress feedback (talents-ai-score): stderr-only status
       // during the two slow phases (see src/terminal-progress.js).
       scanningLabel: 'Escaneando entorno y detectores…',
@@ -267,6 +294,8 @@ const catalogs = {
       // Roadmap personalization (talents-ai-score, ADR-015): reuses the
       // same spinner mechanism as synthesizingLabel above.
       personalizingRoadmapLabel: 'Personalizando roadmap…',
+      // ADR-016: agent definition-quality evaluation (ephemeral LLM call).
+      evaluatingAgentsLabel: 'Evaluando la calidad de tus agentes…',
       // "Construir el siguiente nivel ahora" (issue 021): now a SECONDARY,
       // opt-in alternative — the copyable implementation prompt (below) is
       // the PRIMARY "how do I implement this" path.
@@ -279,8 +308,9 @@ const catalogs = {
         + 'Uso:\n  footprint [opciones]\n\n'
         + 'Opciones:\n'
         + '      --json             Imprime el informe en JSON por stdout\n'
-        + '      --no-save          No escribe el informe en disco (solo muestra)\n'
+        + '      --no-save          No guarda el estado del informe (solo muestra)\n'
         + '      --root DIR         Escanea DIR en vez del directorio actual\n'
+        + '      --roadmap          Muestra el bloque de "siguientes pasos" (oculto por defecto)\n'
         + '      --build-next-level Genera el starter del siguiente tier (alternativa secundaria)\n'
         + '      --force            Junto a --build-next-level, sobrescribe un fichero existente\n'
         + '      --lang es|en       Fuerza el idioma (informe + prompt) en vez de detectarlo del sistema\n'
@@ -292,10 +322,11 @@ const catalogs = {
         + '                         (un host no-local debe ser https). La env var tiene prioridad\n'
         + '      --show-endpoint    Muestra el endpoint efectivo y de dónde sale (env / config / ninguno)\n'
         + '  -h, --help             Muestra esta ayuda\n\n'
-        + 'El informe se genera y se muestra SIEMPRE en tu equipo, y se guarda un informe\n'
-        + 'HTML acumulado en local cuyo enlace se imprime en cada ejecución. Antes de\n'
-        + 'mostrarlo, la primera vez se te pregunta si quieres GUARDARLO en Shakers (con tu\n'
-        + 'correo); se pregunta una sola vez. Reabre la pregunta con --consent-reset.\n\n'
+        + 'El informe se genera y se muestra SIEMPRE en tu equipo. footprint ya NO imprime\n'
+        + 'un enlace: usa el comando `report` para generar y abrir el informe HTML completo\n'
+        + '(footprint + Skills certificadas) que puedes compartir con tu equipo. Antes de\n'
+        + 'mostrar el resultado, la primera vez se te pregunta si quieres GUARDARLO en Shakers\n'
+        + '(con tu correo); se pregunta una sola vez. Reabre la pregunta con --consent-reset.\n\n'
         + 'El destino de envío se resuelve así: AI_FOOTPRINT_INGEST_ENDPOINT (env) > el fichero\n'
         + 'de config (--set-endpoint) > ninguno. Sin endpoint, el informe se muestra pero no se\n'
         + 'envía a Shakers.\n',
@@ -484,6 +515,7 @@ const catalogs = {
       reasons: {
         'no-skill-match': 'no hay una Skill equivalente en el catálogo de Shakers',
         'not-declared': 'no has declarado esta Skill en tu perfil de Talent',
+        'no-sampling': 'todavía no se puede certificar por código (sin muestreo de código definido)',
         notCertifiable: 'no es certificable',
       },
       errorNoEndpoint:
@@ -492,6 +524,7 @@ const catalogs = {
         + 'de certificación se deriva automáticamente. (No hay certificación en local: el catálogo de '
         + 'Skills y el análisis viven en el Hub.)',
       errorIntro: 'No se han podido resolver las Skills certificables:',
+      errorIntroCertify: 'No se han podido certificar tus Skills:',
       errorNetwork: 'no se pudo contactar con el servicio de certificación (error de red).',
       errorTimeout: 'el servicio de certificación agotó el tiempo de espera.',
       errorHttp: (status) => `el servicio de certificación devolvió un estado inesperado (HTTP ${status}).`,
@@ -513,24 +546,61 @@ const catalogs = {
       selectNonInteractive: 'Entrada no interactiva sin --skills/--all: no se pueden seleccionar Skills. Se cancela (no se ha enviado código).',
       selectNothing: 'No hay Skills certificables que seleccionar.',
       selectNoneChosen: 'No se ha seleccionado ninguna Skill. No se ha enviado código.',
+      // Verified authorship gate (ADR-017): solo se certifica código atribuible
+      // a la identidad verificada del Talent. "Sin email atribuible, no hay
+      // certificación" — nunca se envía código no atribuible.
+      authorshipNoGit: 'Sin historial de git no se puede verificar la autoría del código. Solo se certifica código atribuible a tu identidad verificada; no se ha certificado ni enviado nada.',
+      authorshipNoneAttributable: 'Ninguna de las Skills seleccionadas tiene código atribuible a tu email verificado. Sin email atribuible, no hay certificación; no se ha enviado código.',
+      authorshipRefused: (skills) => `No se certificaron estas Skills por falta de código atribuible a tu email verificado: ${skills}.`,
+      // Human contact valve (ADR-018) — DISPLAY only, no automatic send. Shown
+      // in the refusal path for a possible legitimate false negative (commits
+      // con otro email, monorepo, historial migrado). Copy is DRAFT (a validar).
+      authorshipContact: 'Si crees que tienes la autoría y esto es un error (commits con otro email, monorepo o historial migrado), escríbenos a talent@shakersworks.com.',
       selectOption: (index, skillName, technology) => `  ${index}) ${skillName}${technology ? ` (${technology})` : ''}`,
       certifyingLabel: 'Analizando el código de tus Skills…',
       // Reporting redesign: el HTML ya no es opt-in; cada certificación se
       // añade al informe acumulado y se imprime SIEMPRE su enlace file://.
       reportLink: (url) => `Abre tu informe en el navegador:\n  ${url}`,
-      // Certify report (terminal + HTML). Nota orientativa/no reproducible.
+      // Certify report (terminal + HTML). Rúbrica anclada + agregación determinista (ADR-024).
       report: {
         heading: 'Resultado de certificación de Skills',
         disclaimer:
-          'Nota: la puntuación es orientativa y NO reproducible — es un juicio libre del '
-          + 'modelo (sin rúbrica) y puede variar entre ejecuciones. No es una certificación '
+          'Nota: la puntuación se calcula con una rúbrica anclada (dimensiones de 0 a 4) y una '
+          + 'fórmula fija, por lo que el cálculo es determinista: con las mismas valoraciones '
+          + 'sale la misma nota. Solo los juicios por criterio del modelo pueden variar '
+          + 'ligeramente entre ejecuciones. Es una valoración indicativa, no una certificación '
           + 'oficial de cara al Client.',
         partialSampleWarning:
-          'Muestra parcial: por los límites de tamaño no se ha enviado todo el código; '
-          + 'la valoración se basa en una muestra.',
+          'Muestra parcial: por los límites de tamaño la valoración se basa en una muestra del '
+          + 'código, no en todo el proyecto.',
         scoreLine: (score) => `Puntuación: ${score == null ? 'n/d' : `${score}/100`}`,
+        // ADR-024 rubric dimensions.
+        dimensionsLabel: 'Dimensiones',
+        dimensionNA: 'N/A',
+        dimensionLabels: {
+          idiomatic: 'Uso idiomático',
+          correctness: 'Corrección y robustez',
+          depth: 'Profundidad',
+          structure: 'Estructura y mantenibilidad',
+          testing: 'Tests',
+        },
         rationaleLabel: 'Por qué',
         improvementsLabel: 'Mejoras sugeridas',
+        // ADR-025 authorship receipt (atribución, NO prueba criptográfica).
+        receipt: {
+          label: 'Autoría',
+          repoLabel: 'Repo',
+          commitRangeLabel: 'Rango de commits',
+          filesLabel: 'Fichero',
+          authorLabel: 'Autor (git)',
+          confirmedLabel: 'Autores confirmados con la identidad',
+          attributedYes: '✓',
+          attributedNo: '✗',
+          summary: (attributed, total) => `${attributed}/${total} ficheros atribuidos a la identidad`,
+          note:
+            'Traza de autoría basada en el autor de git (self-asserted); no es una prueba '
+            + 'criptográfica de autoría.',
+        },
         sampleSummary: (included, candidate, estTokens) =>
           `Muestra: ${included}/${candidate} ficheros · ~${estTokens} tokens`,
         partialTag: '(muestra parcial)',
@@ -541,8 +611,8 @@ const catalogs = {
         noItems: 'No hay resultados de certificación que mostrar.',
         // Coste (issue 012): input mayor = más € por run.
         costNote:
-          'Nota de coste: se analiza más código por Skill (hasta ~150k tokens/Skill, ~500k/run), '
-          + 'lo que aumenta el coste por ejecución.',
+          'Nota de coste: se analiza bastante código por Skill (hasta ~150k tokens/Skill), '
+          + 'lo que tiene un coste por ejecución.',
         // Prompt de remediación (issue 011): generado en local desde las mejoras.
         remediationHeading: 'Prompt para aplicar las mejoras',
         remediationHint: 'Copia este prompt y pégalo en tu herramienta de IA (Claude Code, Cursor…) para aplicar las mejoras.',
@@ -558,6 +628,63 @@ const catalogs = {
     },
     // Branded mini-shell chrome (skill-code-certification / ADR-014). The
     // `sh-eval` REPL is the single entrypoint; this covers the prompt, the
+    // Superadmin TEST-identity provisioning (ADR-021, NON-PROD only).
+    superadmin: {
+      intro:
+        'Provisiona una identidad de Talent de PRUEBA (solo entornos no productivos) para probar el flujo de certify sin OTP.',
+      passwordPrompt: 'Contraseña de superadmin:',
+      emailPrompt: 'Email de la identidad de prueba a provisionar:',
+      emailInvalid: 'Email no válido. Inténtalo de nuevo.',
+      needInput: 'Se requieren contraseña y email (interactivo, o --password y --email).',
+      ready: (email) =>
+        `Identidad de prueba lista para ${email}. Ahora ejecuta:  certify --email ${email} --accept-disclaimer --all`,
+      reused: (email) =>
+        `La identidad de prueba de ${email} ya existía (idempotente). Ejecuta:  certify --email ${email} --accept-disclaimer --all`,
+      authoring: (domain, extra) =>
+        `Autoría autorizada (ADR-023): dominio @${domain}${extra ? ` + emails: ${extra}` : ''} — solo para esta identidad de prueba.`,
+      errorNoEndpoint:
+        'No hay endpoint configurado. Configura el backend (AI_FOOTPRINT_INGEST_ENDPOINT o footprint --set-endpoint) y reinténtalo.',
+      errorWrongPassword: 'Contraseña de superadmin incorrecta.',
+      errorDisabled:
+        'Endpoint no disponible: el provisioning de prueba está deshabilitado fuera de entornos no productivos.',
+      errorConflict:
+        'Ese email ya pertenece a una cuenta real (no de prueba). Usa un email distinto para la identidad de prueba.',
+      errorGeneric: 'No se pudo provisionar la identidad de prueba. Inténtalo de nuevo.',
+      // Teardown (ADR-022) — el inverso: elimina identidades de PRUEBA.
+      removeIntro:
+        'Elimina identidad(es) de Talent de PRUEBA (solo entornos no productivos). Nunca borra cuentas reales.',
+      removeEmailPrompt: 'Email de la identidad de prueba a eliminar (o usa --all):',
+      removeNeedTarget: 'Indica un email (--email) o --all para eliminar todas las de prueba.',
+      removed: (count, emails) =>
+        count === 0
+          ? 'No había ninguna identidad de prueba que eliminar (nada que hacer).'
+          : `Eliminadas ${count} identidad(es) de prueba: ${emails}.`,
+      removeRefusedReal:
+        'Ese email pertenece a una cuenta REAL (no de prueba). No se ha eliminado nada.',
+      removeErrorGeneric: 'No se pudo eliminar la identidad de prueba. Inténtalo de nuevo.',
+      // Inspect (ADR-025) — recibo de atribución de certificaciones YA guardadas.
+      inspectIntro:
+        'Audita la evidencia de autoría de las certificaciones ya guardadas (solo lectura, entornos no productivos).',
+      inspectEmailPrompt: 'Email cuya(s) certificación(es) quieres inspeccionar:',
+      inspectNone: (email) => `No hay certificaciones guardadas para ${email}.`,
+      inspectHeader: (count, email) =>
+        `${count} certificación(es) guardada(s) para ${email}:`,
+      inspectNote:
+        'Traza de autoría basada en el autor de git (self-asserted); no es una prueba criptográfica de autoría.',
+      inspectLabels: {
+        score: 'Puntuación',
+        dimensions: 'Dimensiones',
+        repo: 'Repo',
+        commitRange: 'Rango de commits',
+        sampledFiles: 'Ficheros muestreados',
+        authorsConfirmed: 'Autores confirmados',
+        authorsConsidered: 'Autores considerados',
+        model: 'Modelo',
+        when: 'Fecha',
+        testOrigin: 'Cuenta de prueba',
+      },
+      inspectErrorGeneric: 'No se pudo inspeccionar. Inténtalo de nuevo.',
+    },
     // in-shell command help and messages — the commands keep their own copy.
     // The STARTUP BANNER is intentionally NOT here: it's always English (a
     // brand/product surface, like the installer), built in src/repl-shell.js.
@@ -569,13 +696,14 @@ const catalogs = {
         'Shakers — comandos disponibles\n\n'
         + '  footprint [opciones]   Escanea este proyecto y tu equipo; puntúa tu setup de IA (T0-T7)\n'
         + '  certify   [opciones]   Certifica tus Skills a partir del código de este proyecto\n'
+        + '  report    [opciones]   Genera y abre el informe HTML completo (footprint + Skills certificadas)\n'
         + '  share     [opciones]   Crea una tarjeta branded de tu footprint para compartir en LinkedIn\n'
         + '  help                   Muestra esta ayuda\n'
         + '  clear                  Limpia la pantalla\n'
         + '  exit | quit            Cierra la shell\n\n'
         + 'Los flags de cada comando siguen funcionando dentro de la shell\n'
-        + '(p.ej. `footprint --root <dir>`, `certify --all`). Usa `footprint --help`\n'
-        + 'o `certify --help` para ver todas sus opciones.',
+        + '(p.ej. `footprint --root <dir>`, `footprint --roadmap`, `certify --all`). Usa\n'
+        + '`footprint --help` o `certify --help` para ver todas sus opciones.',
     },
   },
   en: {
@@ -666,6 +794,13 @@ const catalogs = {
       environment: 'Environment',
       editors: 'editors',
       noEditorsDetected: 'none detected',
+      // ADR-016 agent evaluation (terminal, one line per agent): compact usage
+      // signal derived from the local Claude Code history.
+      agentUsed: (n) => `used ${n}×`,
+      agentUnused: 'no local use',
+      agentUsageUnavailable: '(no local Claude Code history: usage unavailable)',
+      // ADR-016: discoverability hint for the next-steps section (behind --roadmap).
+      roadmapHint: 'Run `footprint --roadmap` to see recommended next steps.',
       nextStep: 'Next step',
       files: (n) => `${n} ${n === 1 ? 'file' : 'files'}`,
       lastModified: (label) => `last modified: ${label}`,
@@ -701,6 +836,14 @@ const catalogs = {
       orchestratorLabel: 'Orchestrator',
       reportsToLabel: 'Reports to:',
       agentDescriptionFromName: (name) => `"${name}" agent (no description declared in its file).`,
+      // ADR-016 agent evaluation (HTML per-agent detail): definition-quality
+      // score + LLM rationale + local usage signal. The full detail lives here;
+      // the terminal keeps only a one-line summary.
+      agentScoreLabel: 'Definition quality (0-100)',
+      agentQualityLabel: 'Why:',
+      agentUsageLabel: 'Local usage (Claude Code history)',
+      agentUsedTimes: (n) => `used ${n}×`,
+      agentUnused: 'no local use',
       // Project technologies (talents-ai-score, ADR-012). Refined: shows
       // recognized FRAMEWORKS/LIBRARIES only, not a raw dependency dump.
       technologiesHeading: 'Project technologies',
@@ -750,9 +893,23 @@ const catalogs = {
         hint: 'LinkedIn can\'t attach an image from a URL: download the PNG from the card, then attach it to your post.',
         error: 'Could not generate the shareable card.',
       },
+      // `report` command (ADR-016): builds and OPENS the full, shareable HTML
+      // report for this project (footprint + certified Skills).
+      // `footprint`/`certify` no longer print a link; the HTML is produced here.
+      report: {
+        help: 'report — build and open the full HTML report for this project (footprint + certified Skills) to share with your team.\n'
+          + '  Run `footprint` (and optionally `certify`) first; `report` gathers their result.\n'
+          + '  Options: --root <dir>, --lang es|en, --no-open (do not open the browser; just print the link)',
+        noData: 'Nothing to show for this project yet. Run `footprint` first (and optionally `certify`), then `report`.',
+        ready: (url) => `Your report is ready:\n  ${url}`,
+        opening: 'Opening it in your browser…',
+        error: 'Could not generate the report.',
+      },
       scanningLabel: 'Scanning environment and detectors…',
       synthesizingLabel: 'Synthesizing agents with AI…',
       personalizingRoadmapLabel: 'Personalizing roadmap…',
+      // ADR-016: agent definition-quality evaluation (ephemeral LLM call).
+      evaluatingAgentsLabel: 'Evaluating your agents’ quality…',
       buildNextLevelHint: 'Alternatively, run `footprint --build-next-level` to generate the starter file directly in your project.',
       // Localized help (skill-code-certification / ADR-003): previously
       // hardcoded Spanish in bin/report.js; now routed through i18n so it
@@ -762,8 +919,9 @@ const catalogs = {
         + 'Usage:\n  footprint [options]\n\n'
         + 'Options:\n'
         + '      --json             Print the report as JSON on stdout\n'
-        + '      --no-save          Do not write the report to disk (show only)\n'
+        + '      --no-save          Do not persist the report state (show only)\n'
         + '      --root DIR         Scan DIR instead of the current directory\n'
+        + '      --roadmap          Show the "next steps" block (hidden by default)\n'
         + '      --build-next-level Generate the next tier starter (secondary alternative)\n'
         + '      --force            With --build-next-level, overwrite an existing file\n'
         + '      --lang es|en       Force the language (report + prompt) instead of OS detection\n'
@@ -775,10 +933,11 @@ const catalogs = {
         + '                         (a non-local host must be https). The env var takes precedence\n'
         + '      --show-endpoint    Show the effective endpoint and where it comes from (env / config / none)\n'
         + '  -h, --help             Show this help\n\n'
-        + 'The report is ALWAYS generated and shown on your machine, and a cumulative HTML\n'
-        + 'report is saved locally whose link is printed on every run. Before showing it,\n'
-        + 'the first time you are asked whether to SAVE it in Shakers (with your email);\n'
-        + 'you are asked only once. Reopen the question with --consent-reset.\n\n'
+        + 'The report is ALWAYS generated and shown on your machine. footprint no longer\n'
+        + 'prints a link: use the `report` command to build and open the full HTML report\n'
+        + '(footprint + certified Skills) you can share with your team. Before showing the\n'
+        + 'result, the first time you are asked whether to SAVE it in Shakers (with your\n'
+        + 'email); you are asked only once. Reopen the question with --consent-reset.\n\n'
         + 'The send destination resolves as: AI_FOOTPRINT_INGEST_ENDPOINT (env) > the config\n'
         + 'file (--set-endpoint) > none. Without an endpoint, the report is shown but not sent\n'
         + 'to Shakers.\n',
@@ -949,6 +1108,7 @@ const catalogs = {
       reasons: {
         'no-skill-match': 'no matching Skill in the Shakers catalog',
         'not-declared': "you haven't declared this Skill in your Talent profile",
+        'no-sampling': "can't be code-certified yet (no code sampling defined)",
         notCertifiable: 'not certifiable',
       },
       errorNoEndpoint:
@@ -957,6 +1117,7 @@ const catalogs = {
         + 'certification path is derived automatically. (There is no local-only certification: the '
         + 'Skill catalog and the analysis live on the Hub.)',
       errorIntro: 'Could not resolve certifiable Skills:',
+      errorIntroCertify: 'Could not certify your Skills:',
       errorNetwork: 'the certification service could not be reached (network error).',
       errorTimeout: 'the certification service timed out.',
       errorHttp: (status) => `the certification service returned an unexpected status (HTTP ${status}).`,
@@ -978,6 +1139,16 @@ const catalogs = {
       selectNonInteractive: 'Non-interactive input without --skills/--all: cannot select Skills. Aborting (no code was sent).',
       selectNothing: 'There are no certifiable Skills to select.',
       selectNoneChosen: 'No Skill selected. No code was sent.',
+      // Verified authorship gate (ADR-017): only code attributable to the
+      // Talent's verified identity is certifiable. "No attributable email, no
+      // certification" — non-attributable code is never sent.
+      authorshipNoGit: 'Without git history the code authorship cannot be verified. Only code attributable to your verified identity is certified; nothing was certified or sent.',
+      authorshipNoneAttributable: 'None of the selected Skills has code attributable to your verified email. Without an attributable email there is no certification; no code was sent.',
+      authorshipRefused: (skills) => `These Skills were not certified for lack of code attributable to your verified email: ${skills}.`,
+      // Human contact valve (ADR-018) — DISPLAY only, no automatic send. Shown
+      // in the refusal path for a possible legitimate false negative (commits
+      // under another email, monorepo, migrated history). Copy is DRAFT (to validate).
+      authorshipContact: 'If you believe you hold the authorship and this is an error (commits under another email, monorepo, or migrated history), write to us at talent@shakersworks.com.',
       selectOption: (index, skillName, technology) => `  ${index}) ${skillName}${technology ? ` (${technology})` : ''}`,
       certifyingLabel: 'Analyzing your Skills’ code…',
       // Reporting redesign: HTML is no longer opt-in; each certification is
@@ -986,15 +1157,42 @@ const catalogs = {
       report: {
         heading: 'Skill certification result',
         disclaimer:
-          'Note: the score is indicative and NOT reproducible — it is the model’s free '
-          + 'judgment (no rubric) and may vary between runs. It is not an official '
+          'Note: the score is computed from an anchored rubric (0-4 dimensions) with a fixed '
+          + 'formula, so the aggregation is deterministic — the same per-dimension judgments '
+          + 'always yield the same score. Only the model’s per-criterion judgments may vary '
+          + 'slightly between runs. It is an indicative assessment, not an official '
           + 'Client-facing certification.',
         partialSampleWarning:
-          'Partial sample: due to size limits not all code was sent; the assessment is '
-          + 'based on a sample.',
+          'Partial sample: due to size limits the assessment is based on a sample of the code, '
+          + 'not the whole project.',
         scoreLine: (score) => `Score: ${score == null ? 'n/a' : `${score}/100`}`,
+        // ADR-024 rubric dimensions.
+        dimensionsLabel: 'Dimensions',
+        dimensionNA: 'N/A',
+        dimensionLabels: {
+          idiomatic: 'Idiomatic usage',
+          correctness: 'Correctness & robustness',
+          depth: 'Depth',
+          structure: 'Structure & maintainability',
+          testing: 'Testing',
+        },
         rationaleLabel: 'Why',
         improvementsLabel: 'Suggested improvements',
+        // ADR-025 authorship receipt (attribution, NOT cryptographic proof).
+        receipt: {
+          label: 'Authorship',
+          repoLabel: 'Repo',
+          commitRangeLabel: 'Commit range',
+          filesLabel: 'File',
+          authorLabel: 'Author (git)',
+          confirmedLabel: 'Authors confirmed against the identity',
+          attributedYes: '✓',
+          attributedNo: '✗',
+          summary: (attributed, total) => `${attributed}/${total} files attributed to the identity`,
+          note:
+            'Attribution trail based on the git author (self-asserted); it is not '
+            + 'cryptographic proof of authorship.',
+        },
         sampleSummary: (included, candidate, estTokens) =>
           `Sample: ${included}/${candidate} files · ~${estTokens} tokens`,
         partialTag: '(partial sample)',
@@ -1004,8 +1202,8 @@ const catalogs = {
         htmlTitle: 'Skill Certification · Shakers',
         noItems: 'No certification results to show.',
         costNote:
-          'Cost note: more code is analyzed per Skill (up to ~150k tokens/Skill, ~500k/run), '
-          + 'which increases the cost per run.',
+          'Cost note: a fair amount of code is analyzed per Skill (up to ~150k tokens/Skill), '
+          + 'which has a per-run cost.',
         remediationHeading: 'Prompt to apply the improvements',
         remediationHint: 'Copy this prompt and paste it into your AI tool (Claude Code, Cursor…) to apply the improvements.',
         remediationIntro: (skillName, technology) =>
@@ -1019,6 +1217,62 @@ const catalogs = {
       },
     },
     // Branded mini-shell chrome (skill-code-certification / ADR-014). The
+    // Superadmin TEST-identity provisioning (ADR-021, NON-PROD only).
+    superadmin: {
+      intro:
+        'Provision a TEST Talent identity (non-production environments only) to exercise the certify flow without OTP.',
+      passwordPrompt: 'Superadmin password:',
+      emailPrompt: 'Email of the test identity to provision:',
+      emailInvalid: 'Invalid email. Try again.',
+      needInput: 'Password and email are required (interactively, or --password and --email).',
+      ready: (email) =>
+        `Test identity ready for ${email}. Now run:  certify --email ${email} --accept-disclaimer --all`,
+      reused: (email) =>
+        `Test identity for ${email} already existed (idempotent). Run:  certify --email ${email} --accept-disclaimer --all`,
+      authoring: (domain, extra) =>
+        `Authorized authoring (ADR-023): domain @${domain}${extra ? ` + emails: ${extra}` : ''} — for this test identity only.`,
+      errorNoEndpoint:
+        'No endpoint configured. Set the backend (AI_FOOTPRINT_INGEST_ENDPOINT or footprint --set-endpoint) and retry.',
+      errorWrongPassword: 'Incorrect superadmin password.',
+      errorDisabled:
+        'Endpoint unavailable: test provisioning is disabled outside non-production environments.',
+      errorConflict:
+        'That email already belongs to a real (non-test) account. Use a different email for the test identity.',
+      errorGeneric: 'Could not provision the test identity. Try again.',
+      // Teardown (ADR-022) — the inverse: removes TEST identities.
+      removeIntro:
+        'Remove TEST Talent identity(ies) (non-production environments only). Never deletes real accounts.',
+      removeEmailPrompt: 'Email of the test identity to remove (or use --all):',
+      removeNeedTarget: 'Provide an email (--email) or --all to remove every test identity.',
+      removed: (count, emails) =>
+        count === 0
+          ? 'There was no test identity to remove (nothing to do).'
+          : `Removed ${count} test identity(ies): ${emails}.`,
+      removeRefusedReal:
+        'That email belongs to a REAL (non-test) account. Nothing was removed.',
+      removeErrorGeneric: 'Could not remove the test identity. Try again.',
+      // Inspect (ADR-025) — attribution receipt for ALREADY-stored certifications.
+      inspectIntro:
+        'Audit the authorship evidence of already-stored certifications (read-only, non-production).',
+      inspectEmailPrompt: 'Email whose certification(s) to inspect:',
+      inspectNone: (email) => `No stored certifications for ${email}.`,
+      inspectHeader: (count, email) => `${count} stored certification(s) for ${email}:`,
+      inspectNote:
+        'Attribution trail based on the git author (self-asserted); it is not cryptographic proof of authorship.',
+      inspectLabels: {
+        score: 'Score',
+        dimensions: 'Dimensions',
+        repo: 'Repo',
+        commitRange: 'Commit range',
+        sampledFiles: 'Sampled files',
+        authorsConfirmed: 'Confirmed authors',
+        authorsConsidered: 'Considered authors',
+        model: 'Model',
+        when: 'When',
+        testOrigin: 'Test account',
+      },
+      inspectErrorGeneric: 'Could not inspect. Try again.',
+    },
     // `sh-eval` REPL is the single entrypoint; this covers the prompt, the
     // in-shell command help and messages — the commands keep their own copy.
     // The STARTUP BANNER is intentionally NOT here: it's always English (a
@@ -1031,13 +1285,14 @@ const catalogs = {
         'Shakers — available commands\n\n'
         + '  footprint [options]   Scan this project + your machine; score your AI setup (T0-T7)\n'
         + '  certify   [options]   Certify your Skills from this project\'s code\n'
+        + '  report    [options]   Build and open the full HTML report (footprint + certified Skills)\n'
         + '  share     [options]   Build a branded card of your footprint to share on LinkedIn\n'
         + '  help                  Show this help\n'
         + '  clear                 Clear the screen\n'
         + '  exit | quit           Close the shell\n\n'
         + 'Each command\'s flags still work inside the shell\n'
-        + '(e.g. `footprint --root <dir>`, `certify --all`). Use `footprint --help`\n'
-        + 'or `certify --help` for all their options.',
+        + '(e.g. `footprint --root <dir>`, `footprint --roadmap`, `certify --all`). Use\n'
+        + '`footprint --help` or `certify --help` for all their options.',
     },
   },
 };

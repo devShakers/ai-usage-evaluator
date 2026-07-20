@@ -38,6 +38,7 @@ const c = {
   cyan: '\x1b[36m',
   green: '\x1b[32m',
   yellow: '\x1b[33m',
+  red: '\x1b[31m',
   gray: '\x1b[90m',
   white: '\x1b[97m',
 };
@@ -45,6 +46,14 @@ const c = {
 function bar(score, width = 24) {
   const filled = Math.round((score / 100) * width);
   return '█'.repeat(filled) + '░'.repeat(width - filled);
+}
+
+// ADR-016: a light visual break between the reordered sections — a dim rule
+// with air around it, keeping the branded ANSI look and zero deps.
+function sep(p) {
+  p();
+  p(`  ${c.gray}${'─'.repeat(46)}${c.reset}`);
+  p();
 }
 
 /*
@@ -67,22 +76,11 @@ function summarize(text, max = 140) {
   return (lastSpace > 0 ? slice.slice(0, lastSpace) : slice).replace(/[\s,;:.]+$/, '') + '…';
 }
 
-/* ---------- environment (summarized parity with render-html.js) ----------
- * A compact readout of the machine: platform (+ arch), Node version, and the
- * installed editors — one or two short lines, not the HTML's card grid.
+/* ---------- environment REMOVED from the terminal (ADR-016) ----------
+ * The "entorno"/environment section (platform / Node / editors) added no
+ * signal in the terminal and was dropped entirely. It still lives in the
+ * `report` HTML (render-html.js is untouched).
  */
-function printEnvironment(report, t, p) {
-  const env = report.environment || {};
-  const editors = Array.isArray(env.editorsInstalled) ? env.editorsInstalled : [];
-  p(`  ${c.bold}${t.html.environment}${c.reset}`);
-  const machineBits = [];
-  if (env.platform) machineBits.push(`${t.html.platform}: ${env.platform}${env.arch ? ` (${env.arch})` : ''}`);
-  if (env.nodeVersion) machineBits.push(`Node ${env.nodeVersion}`);
-  if (machineBits.length) p(`  ${c.gray}${machineBits.join(' · ')}${c.reset}`);
-  const editorsText = editors.length ? editors.join(', ') : t.html.noEditorsDetected;
-  p(`  ${c.gray}${t.html.installedEditors}: ${editorsText}${c.reset}`);
-  p();
-}
 
 /* ---------- project technologies (parity with render-html.js) ---------- */
 
@@ -97,25 +95,53 @@ function printTechnologies(report, t, p) {
   p();
 }
 
-/* ---------- agents (summarized terminal view) ----------
- * Same tree (buildAgentCardTree, shared with the HTML renderer), rendered
- * as an indented list with a rail-like connector to keep the hierarchy
- * scannable. Terminal-summarize (user feedback, 2026-07-16): the structure
- * (agent name (+ symbolic name when synthesized) + model) PLUS a SHORT,
- * one-line description (`whatItDoes`, truncated) — the HTML report keeps the
- * full-length description and the tools list. Guards against a malformed
- * `parent` cycle the same defensive way agentNodeHtml does (a `visited` set),
- * never an infinite loop on bad input.
+/* ---------- agents (ADR-016: one line per agent) ----------
+ * As SIMPLE as possible: ONE line per agent. Nesting is drawn with stacked
+ * down-arrows (↓ per depth level) leading to the subagent, so a sub-agent two
+ * levels down reads `↓↓ name`. Each line carries a COMPACT definition-quality
+ * score (0-100, from the ephemeral LLM evaluation — src/agent-evaluation.js)
+ * and a COMPACT local-usage signal (Claude Code invocation count —
+ * src/agent-usage.js). The full per-agent detail (rationale, exact usage) lives
+ * in the `report` HTML, never here. Same tree (buildAgentCardTree, shared with
+ * the HTML renderer); guards a malformed `parent` cycle with a `visited` set.
  */
 
-function agentLine(card, depth) {
+function scoreColor(score) {
+  if (score >= 80) return c.green;
+  if (score >= 50) return c.yellow;
+  return c.red;
+}
+
+function agentScoreBit(card) {
+  if (typeof card.score !== 'number') return '';
+  return `  ${scoreColor(card.score)}${c.bold}${card.score}${c.reset}${c.dim}/100${c.reset}`;
+}
+
+function agentUsageBit(card, t) {
+  if (card.usageCount === null || card.usageCount === undefined) return '';
+  const label = card.usageCount === 0 ? t.terminal.agentUnused : t.terminal.agentUsed(card.usageCount);
+  return `  ${c.gray}${label}${c.reset}`;
+}
+
+function agentLine(card, depth, t) {
   const indent = '  '.repeat(depth);
-  const connector = depth === 0 ? c.green + '●' + c.reset : c.gray + '└─' + c.reset;
+  // Root = a filled bullet; every deeper level = that many stacked down-arrows.
+  const marker = depth === 0 ? `${c.green}●${c.reset}` : `${c.cyan}${'↓'.repeat(depth)}${c.reset}`;
   const title = card.symbolicName
     ? `${card.symbolicName} ${c.gray}(${card.name})${c.reset}`
     : card.name;
   const modelBit = card.model ? ` ${c.dim}[${card.model}]${c.reset}` : '';
-  return `  ${indent}${connector} ${c.bold}${c.white}${title}${c.reset}${modelBit}`;
+  return `  ${indent}${marker} ${c.bold}${c.white}${title}${c.reset}${modelBit}`
+    + `${agentScoreBit(card)}${agentUsageBit(card, t)}`;
+}
+
+// A compact, dim, summarized description under each agent (frontmatter
+// `description` via buildAgentCardTree's whatItDoes), truncated to ~90 chars on
+// a clean boundary. Full-length detail stays in the report HTML.
+function agentDescLine(card, depth) {
+  if (!card.whatItDoes) return null;
+  const indent = '  '.repeat(depth);
+  return `  ${indent}   ${c.dim}${summarize(card.whatItDoes, 90)}${c.reset}`;
 }
 
 function printAgents(report, t, p) {
@@ -126,22 +152,22 @@ function printAgents(report, t, p) {
     p();
     return;
   }
-  p(`  ${c.gray}${t.html.orchestratorLabel}${c.reset}`);
   const visited = new Set();
   const walk = (card, depth) => {
     if (visited.has(card.name)) return;
     visited.add(card.name);
-    p(agentLine(card, depth));
-    // Short one-line description (summarized whatItDoes) under the agent, kept
-    // in the terminal now (was HTML-only after the condense).
-    if (card.whatItDoes) {
-      const indent = '  '.repeat(depth);
-      p(`  ${indent}   ${c.dim}${summarize(card.whatItDoes, 96)}${c.reset}`);
-    }
+    p(agentLine(card, depth, t));
+    const desc = agentDescLine(card, depth);
+    if (desc) p(desc);
     const children = childrenByParent.get(card.name) || [];
     for (const child of children) walk(child, depth + 1);
   };
   for (const root of roots) walk(root, 0);
+  // A single note when the local usage history is unavailable, so a blank usage
+  // column reads as "no local history" rather than "never used".
+  if (report.agentUsage && report.agentUsage.available === false) {
+    p(`  ${c.dim}${t.terminal.agentUsageUnavailable}${c.reset}`);
+  }
   p();
 }
 
@@ -290,68 +316,85 @@ function printRoadmap(report, maturity, t, lang, p) {
 // Level and category are translated by STABLE KEY (maturity.key/level,
 // category via categoryLabel) without touching maturity.js/detectors.js —
 // see the header of src/i18n.js.
-function renderTerminal(report, maturity, lang) {
+//
+// Terminal view order (ADR-016, reordered per user feedback 2026-07-17):
+//   1. The SCORE / tier meter (the "nota") FIRST.
+//   2. Immediately followed by the WHY — the tier-analysis rationale.
+//   3. Detected tools, technologies, and a ONE-LINE-PER-AGENT summary (with ↓
+//      nesting + compact score/usage).
+//   4. No Environment section; the tier roadmap / next-steps is behind
+//      `--roadmap` (opts.showRoadmap), not in the default output.
+function renderTerminal(report, maturity, lang, opts = {}) {
   const t = getCatalog(lang);
   const lines = [];
   const p = (s = '') => lines.push(s);
 
   const levelName = t.levelNames[maturity.key] || maturity.name;
 
+  // A compact brand header in BOTH modes for orientation.
   p();
   p(`${c.bold}${c.cyan}  AI FOOTPRINT${c.reset}${c.gray}  ·  ${t.terminal.brandSub}${c.reset}`);
   p(`${c.gray}  ${new Date(report.generatedAt).toLocaleString()}  ·  ${t.terminal.toolsDetected(report.tools.filter((x) => x.detected).length, report.tools.length)}${c.reset}`);
-  p();
 
-  // Level
+  // `--roadmap` (opts.showRoadmap): render ONLY the next-steps/roadmap section
+  // (header + steps + the copyable implementation prompt) — NOT the rest of the
+  // report. The default report doesn't reprint here.
+  if (opts.showRoadmap) {
+    sep(p);
+    printRoadmap(report, maturity, t, lang, p);
+    return lines.join('\n');
+  }
+
+  // Default report: score -> why -> tools -> technologies -> agents, then a
+  // dim hint pointing at --roadmap (so the next-steps section is discoverable).
+  // EMPTY sections are pruned entirely (no header, no "none" placeholder) —
+  // only sections with actual data are printed. (Agents are NOT pruned for
+  // "no local use" — an unused agent still carries a quality score + a
+  // description; the agents section is omitted only when there are zero agents.)
+
+  // 1. The score / level meter — the "nota" FIRST.
+  sep(p);
   p(`  ${c.bold}${c.white}${t.terminal.level(maturity.level, levelName)}${c.reset}`);
   p(`  ${c.cyan}${bar(maturity.score)}${c.reset} ${c.dim}${maturity.score}/100${c.reset}`);
-  p();
 
-  // Detected
-  p(`  ${c.bold}${t.terminal.detectedHeading}${c.reset}`);
-  const detected = report.tools.filter((tool) => tool.detected);
-  if (detected.length === 0) {
-    p(`  ${c.gray}  ${t.terminal.none}${c.reset}`);
-  }
-  for (const tool of detected) {
-    // Terminal-condense (CPO feedback): keep the one-line signal (name,
-    // version, category, depth breakdown); the per-tool footprint bytes and
-    // recency detail line is dropped from the terminal (it stays in the HTML
-    // report).
-    const depthBits = Object.entries(tool.depth)
-      .filter(([, v]) => v > 0)
-      .map(([k, v]) => `${v} ${k}`)
-      .join(', ');
-    const extra = depthBits ? `${c.dim} — ${depthBits}${c.reset}` : '';
-    const version = tool.version ? `${c.dim} v${tool.version}${c.reset}` : '';
-    p(`  ${c.green}●${c.reset} ${tool.name}${version} ${c.gray}(${categoryLabel(lang, tool.category)})${c.reset}${extra}`);
-  }
-  p();
-
-  // talents-ai-score: the "Not detected: ..." line is intentionally
-  // removed — undetected tools added noise without signal, and a relevant
-  // next step is already covered by the tier roadmap section below, never
-  // silently dropped, just not repeated here as a name list.
-
-  // Environment (summarized parity with render-html.js): reintroduced
-  // 2026-07-16 in short form (platform/Node/editors on one/two lines).
-  printEnvironment(report, t, p);
-
-  // Project technologies (parity with render-html.js's technologiesSection)
-  printTechnologies(report, t, p);
-
-  // Agents (parity with render-html.js's agentCardsSection)
-  printAgents(report, t, p);
-
-  // Tier analysis: why this tier (parity with render-html.js's
-  // tierAnalysisSection) — defends the already-computed tier before the
-  // roadmap covers what's next.
+  // 2. WHY that score/tier — the rationale, right after the number.
+  sep(p);
   printTierAnalysis(report, t, p);
 
-  // Tier roadmap: current -> next (parity with render-html.js's
-  // roadmapSection), falls back to the old generic band next-step text
-  // when there's no tierKey on `maturity`.
-  printRoadmap(report, maturity, t, lang, p);
+  // 3. Detected tools — omitted entirely if none detected.
+  const detected = report.tools.filter((tool) => tool.detected);
+  if (detected.length) {
+    sep(p);
+    p(`  ${c.bold}${t.terminal.detectedHeading}${c.reset}`);
+    for (const tool of detected) {
+      const depthBits = Object.entries(tool.depth)
+        .filter(([, v]) => v > 0)
+        .map(([k, v]) => `${v} ${k}`)
+        .join(', ');
+      const extra = depthBits ? `${c.dim} — ${depthBits}${c.reset}` : '';
+      const version = tool.version ? `${c.dim} v${tool.version}${c.reset}` : '';
+      p(`  ${c.green}●${c.reset} ${tool.name}${version} ${c.gray}(${categoryLabel(lang, tool.category)})${c.reset}${extra}`);
+    }
+  }
+
+  // 4. Project technologies — omitted entirely if none recognized.
+  const technologies = Array.isArray(report.technologies) ? report.technologies : [];
+  if (technologies.length) {
+    sep(p);
+    printTechnologies(report, t, p);
+  }
+
+  // 5. Agents — one line per agent (+ summarized description, ↓ nesting,
+  // compact score + usage). Omitted entirely when there are no agents at all.
+  const hasAgents = Array.isArray(report.agents) && report.agents.length > 0;
+  if (hasAgents) {
+    sep(p);
+    printAgents(report, t, p);
+  }
+
+  // Discoverability hint (dim): how to see the next-steps/roadmap section.
+  p(`  ${c.dim}${t.terminal.roadmapHint}${c.reset}`);
+  p();
 
   return lines.join('\n');
 }

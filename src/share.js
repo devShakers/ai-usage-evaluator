@@ -512,10 +512,34 @@ async function autoShare(report, maturity) {
  * quote" rule).
  */
 
-// Strict whitelist: the analyzed RESULT only, rebuilt field-by-field (never
-// spread). No file content, path, or raw sample ever appears here — those
-// were ephemeral to the certify request and are not persisted (ADR-001).
-function deriveCertificationPayload(items, { model = null } = {}) {
+// Strict whitelist: the analyzed RESULT + observability provenance (ADR-017),
+// rebuilt field-by-field (never spread). Still NO file CONTENT and no raw
+// sample — those stay ephemeral to the certify request (ADR-001). What ADR-017
+// ADDS: `sampledFiles` (paths only), `authorEmails` (verified-authorship
+// evidence), and `perFileBreakdown` (the model's per-file scores). Run-level
+// provenance (`toolVersion`/`repository`/`commitRange`) travels once at the
+// payload root. Note per-file `note`s are scrubbed here client-side too (the
+// backend scrubs again — defense in depth, same as `rationale`).
+// ADR-024: rebuild the rubric dimensions key-by-key (each 0-4 int or null),
+// or null when the result carries no dimensions (aggregate-only / legacy).
+const CERT_DIMENSION_KEYS = ['idiomatic', 'correctness', 'depth', 'structure', 'testing'];
+function deriveDimensionScores(dimensions) {
+  if (!dimensions || typeof dimensions !== 'object') return null;
+  const out = {};
+  let any = false;
+  for (const key of CERT_DIMENSION_KEYS) {
+    const v = dimensions[key];
+    if (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 4) {
+      out[key] = v;
+      any = true;
+    } else {
+      out[key] = null;
+    }
+  }
+  return any ? out : null;
+}
+
+function deriveCertificationPayload(items, { model = null, repository = null, commitRange = null, toolVersion = null } = {}) {
   const list = Array.isArray(items) ? items : [];
   const skillCodeAssessments = list
     .filter((i) => i && i.result && typeof i.result === 'object')
@@ -530,12 +554,39 @@ function deriveCertificationPayload(items, { model = null } = {}) {
         : [],
       sampled: !!(i.sampling && i.sampling.sampleable),
       model,
+      // Paths only (never content). The attribution gate already filtered
+      // these to the Talent's own files (bin/certify.js).
+      sampledFiles: Array.isArray(i.sampledFiles)
+        ? i.sampledFiles.filter((p) => typeof p === 'string' && p)
+        : [],
+      // Verified-authorship evidence: every considered author-email + match flag.
+      authorEmails: Array.isArray(i.authorEmails)
+        ? i.authorEmails
+            .filter((a) => a && typeof a.email === 'string' && a.email)
+            .map((a) => ({ email: a.email, matched: !!a.matched }))
+        : [],
+      // Model's per-file scores; `[]` when the model degraded to aggregate-only.
+      perFileBreakdown: Array.isArray(i.result.perFileBreakdown)
+        ? i.result.perFileBreakdown
+            .filter((f) => f && typeof f.path === 'string' && typeof f.score === 'number')
+            .map((f) => ({
+              path: f.path,
+              score: f.score,
+              note: typeof f.note === 'string' && f.note ? scrubSecrets(f.note) : null,
+            }))
+        : [],
+      // ADR-024 rubric dimensions (0-4 or null) — the inputs the server used to
+      // compute the deterministic score. Rebuilt key-by-key, never spread.
+      dimensionScores: deriveDimensionScores(i.result.dimensions),
     }));
   return {
     schemaVersion: CERT_SCHEMA_VERSION,
     generatedAt: new Date().toISOString(),
     kind: 'skill-code-assessment',
     skillCodeAssessments,
+    toolVersion: typeof toolVersion === 'string' && toolVersion ? toolVersion : null,
+    repository: typeof repository === 'string' && repository ? repository : null,
+    commitRange: typeof commitRange === 'string' && commitRange ? commitRange : null,
   };
 }
 
@@ -549,7 +600,7 @@ function isCertifyThrottled(state, now = Date.now()) {
 // Persists the analyzed certification result if (and only if) consent is
 // granted. Never throws — every skip/failure resolves with { ok:false, ... },
 // so it can't break the local report (ADR-011 invariant).
-async function shareCertification(items, { model = null } = {}) {
+async function shareCertification(items, { model = null, repository = null, commitRange = null, toolVersion = null } = {}) {
   const state = loadConsentState();
   const decision = getConsentDecision(state);
 
@@ -567,7 +618,7 @@ async function shareCertification(items, { model = null } = {}) {
     return { ok: false, skipped: true, reason: 'throttled' };
   }
 
-  const payload = deriveCertificationPayload(items, { model });
+  const payload = deriveCertificationPayload(items, { model, repository, commitRange, toolVersion });
   if (payload.skillCodeAssessments.length === 0) {
     return { ok: false, skipped: true, reason: 'nothing-to-persist' };
   }
