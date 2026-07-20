@@ -119,6 +119,7 @@ const catalogs = {
     ladder: {
       levelsHeading: 'Niveles de madurez (0-4)',
       tiersHeading: 'Escalera de tiers (T0-T7)',
+      levelLabel: (n) => `Nivel ${n}`,
       intro:
         'Tu nivel de madurez (0-4) resume tu uso de IA de un vistazo; el tier (T0-T7) es el eje '
         + 'fino del que se deriva. Ambos son deterministas. Abajo se marca lo que ya has superado (✓), '
@@ -196,6 +197,8 @@ const catalogs = {
       brandSub: 'perfil de uso de IA',
       toolsDetected: (n, total) => `${n}/${total} herramientas detectadas`,
       level: (level, name) => `Nivel ${level} · ${name}`,
+      // Current tier appended to the top bar, next to the level (report req 1 addendum).
+      tierInline: (key, name) => ` · Tier ${key} · ${name}`,
       detectedHeading: 'Detectadas',
       none: '(ninguna)',
       environment: 'Entorno',
@@ -218,6 +221,8 @@ const catalogs = {
       h1: 'Tu perfil de uso de IA',
       sub: 'Un vistazo local a qué herramientas de IA tienes y cuánto las has configurado.',
       levelOf: (level) => `Nivel ${level} de 4`,
+      // Current tier shown in the hero bar next to the level (report req 1 addendum).
+      currentTier: (key, name) => `Tier ${key} · ${name}`,
       // Suffix only: the number is already bolded separately in the markup
       // (see render-html.js), so we avoid duplicating/parsing the translated string.
       detectedSuffix: (total) => `de ${total} herramientas detectadas`,
@@ -824,6 +829,7 @@ const catalogs = {
     ladder: {
       levelsHeading: 'Maturity levels (0-4)',
       tiersHeading: 'Tier ladder (T0-T7)',
+      levelLabel: (n) => `Level ${n}`,
       intro:
         'Your maturity level (0-4) sums up your AI usage at a glance; the tier (T0-T7) is the '
         + 'fine-grained axis it is derived from. Both are deterministic. Below marks what you have '
@@ -898,6 +904,8 @@ const catalogs = {
       brandSub: 'AI usage profile',
       toolsDetected: (n, total) => `${n}/${total} tools detected`,
       level: (level, name) => `Level ${level} · ${name}`,
+      // Current tier appended to the top bar, next to the level (report req 1 addendum).
+      tierInline: (key, name) => ` · Tier ${key} · ${name}`,
       detectedHeading: 'Detected',
       none: '(none)',
       environment: 'Environment',
@@ -920,6 +928,8 @@ const catalogs = {
       h1: 'Your AI usage profile',
       sub: 'A local snapshot of which AI tools you have and how deeply you have configured them.',
       levelOf: (level) => `Level ${level} of 4`,
+      // Current tier shown in the hero bar next to the level (report req 1 addendum).
+      currentTier: (key, name) => `Tier ${key} · ${name}`,
       detectedSuffix: (total) => `of ${total} tools detected`,
       maturity: 'Maturity',
       tools: 'Tools',

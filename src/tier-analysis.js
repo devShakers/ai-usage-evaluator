@@ -1,6 +1,6 @@
 'use strict';
 
-const { computeTierResult, TIERS } = require('./tier-engine');
+const { computeTierResult, bandForTier, TIERS } = require('./tier-engine');
 const { LEVELS } = require('./maturity');
 
 /*
@@ -126,7 +126,7 @@ function buildLadder(report, t) {
   const statusFor = (index, current) =>
     index < current ? 'done' : index === current ? 'current' : 'pending';
 
-  const tiers = TIERS.map((meta) => {
+  const tierNode = (meta) => {
     const status = statusFor(meta.tier, tier);
     // Pending tiers carry the exact criterion that unlocks them (reused from the
     // tier-analysis CRITERIA, already localized). done/current show none.
@@ -143,18 +143,35 @@ function buildLadder(report, t) {
       status,
       unlock,
     };
+  };
+
+  // NESTED ladder (user decision): each maturity LEVEL groups the TIERS that
+  // compose it. The grouping is DERIVED from the tier engine's single source of
+  // truth (`bandForTier`, i.e. BAND_BY_TIER) — never a hardcoded second copy —
+  // so if that table changes, the grouping follows. Today that inversion yields
+  // L0→[T0] L1→[T1] L2→[T2] L3→[T3,T4] L4→[T5,T6,T7].
+  const tiersByBand = new Map();
+  for (const meta of TIERS) {
+    const b = bandForTier(meta.tier);
+    if (!tiersByBand.has(b)) tiersByBand.set(b, []);
+    tiersByBand.get(b).push(tierNode(meta));
+  }
+
+  const levels = LEVELS.map((meta) => {
+    const tiers = (tiersByBand.get(meta.level) || []).sort((a, b) => a.tier - b.tier);
+    return {
+      level: meta.level,
+      key: meta.key,
+      emoji: meta.emoji,
+      name: (t.levelNames && t.levelNames[meta.key]) || meta.name,
+      description: (ld && ld.levelDesc && ld.levelDesc[meta.key]) || '',
+      status: statusFor(meta.level, band),
+      tierKeys: tiers.map((x) => x.tierKey),
+      tiers,
+    };
   });
 
-  const levels = LEVELS.map((meta) => ({
-    level: meta.level,
-    key: meta.key,
-    emoji: meta.emoji,
-    name: (t.levelNames && t.levelNames[meta.key]) || meta.name,
-    description: (ld && ld.levelDesc && ld.levelDesc[meta.key]) || '',
-    status: statusFor(meta.level, band),
-  }));
-
-  return { currentTier: tier, currentBand: band, tiers, levels };
+  return { currentTier: tier, currentBand: band, levels };
 }
 
 module.exports = { analyzeTier, buildLadder, CRITERIA };

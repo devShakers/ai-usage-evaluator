@@ -259,33 +259,34 @@ function ladderMark(status) {
 
 function printLadder(report, t, p) {
   const ld = t.ladder;
-  const { tiers, levels } = buildLadder(report, t);
-  const done = tiers.filter((x) => x.status === 'done').length;
-  const current = tiers.filter((x) => x.status === 'current').length;
-  const pending = tiers.filter((x) => x.status === 'pending').length;
+  const { levels } = buildLadder(report, t);
+  const allTiers = levels.flatMap((lvl) => lvl.tiers);
+  const done = allTiers.filter((x) => x.status === 'done').length;
+  const current = allTiers.filter((x) => x.status === 'current').length;
+  const pending = allTiers.filter((x) => x.status === 'pending').length;
 
   p(`  ${c.bold}${ld.levelsHeading}${c.reset}`);
   p(`  ${c.gray}${ld.intro}${c.reset}`);
   p(`  ${c.dim}${ld.legend(done, current, pending)}${c.reset}`);
+  p();
+  // NESTED (user decision): each maturity level, then its tiers indented beneath.
   for (const lvl of levels) {
     const nameStyle = lvl.status === 'pending' ? c.gray : `${c.bold}${c.white}`;
     const badge = lvl.status === 'current' ? `  ${c.cyan}${ld.currentLabel}${c.reset}` : '';
-    p(`  ${ladderMark(lvl.status)} ${nameStyle}${lvl.emoji} ${lvl.level} · ${lvl.name}${c.reset}${badge}`);
+    const keys = lvl.tierKeys.length ? ` ${c.gray}— [${lvl.tierKeys.join(', ')}]${c.reset}` : '';
+    p(`  ${ladderMark(lvl.status)} ${nameStyle}${lvl.emoji} ${ld.levelLabel(lvl.level)} · ${lvl.name}${c.reset}${keys}${badge}`);
     p(`      ${c.dim}${lvl.description}${c.reset}`);
-  }
-
-  p();
-  p(`  ${c.bold}${ld.tiersHeading}${c.reset}`);
-  for (const tier of tiers) {
-    const nameStyle = tier.status === 'pending' ? c.gray : `${c.bold}${c.white}`;
-    const badge = tier.status === 'current' ? `  ${c.cyan}${ld.currentLabel}${c.reset}` : '';
-    p(`  ${ladderMark(tier.status)} ${c.bold}${tier.tierKey}${c.reset} ${nameStyle}${tier.name}${c.reset}${badge}`);
-    p(`      ${c.dim}${tier.description}${c.reset}`);
-    if (tier.unlock) {
-      p(`      ${c.gray}${ld.unlockLabel}: ${tier.unlock}${c.reset}`);
+    for (const tier of lvl.tiers) {
+      const tierNameStyle = tier.status === 'pending' ? c.gray : c.white;
+      const tierBadge = tier.status === 'current' ? `  ${c.cyan}${ld.currentLabel}${c.reset}` : '';
+      p(`        ${ladderMark(tier.status)} ${c.bold}${tier.tierKey}${c.reset} ${tierNameStyle}${tier.name}${c.reset}${tierBadge}`);
+      p(`            ${c.dim}${tier.description}${c.reset}`);
+      if (tier.unlock) {
+        p(`            ${c.gray}${ld.unlockLabel}: ${tier.unlock}${c.reset}`);
+      }
     }
+    p();
   }
-  p();
 }
 
 /* ---------- tier roadmap: current -> next (parity with render-html.js) ----------
@@ -432,9 +433,13 @@ function renderTerminal(report, maturity, lang, opts = {}) {
   // "no local use" — an unused agent still carries a quality score + a
   // description; the agents section is omitted only when there are zero agents.)
 
-  // 1. The score / level meter — the "nota" FIRST.
+  // 1. The score / level meter — the "nota" FIRST. The top bar now shows the
+  // current TIER alongside the level (user request) — both from the already
+  // computed maturity (no recompute); the tier name is localized via tierNames.
   sep(p);
-  p(`  ${c.bold}${c.white}${t.terminal.level(maturity.level, levelName)}${c.reset}`);
+  const tierName = (maturity.tierKey && t.tierNames[maturity.tierKey]) || maturity.tierName || '';
+  const tierBit = maturity.tierKey ? t.terminal.tierInline(maturity.tierKey, tierName) : '';
+  p(`  ${c.bold}${c.white}${t.terminal.level(maturity.level, levelName)}${c.reset}${c.gray}${tierBit}${c.reset}`);
   p(`  ${c.cyan}${bar(maturity.score)}${c.reset} ${c.dim}${maturity.score}/100${c.reset}`);
 
   // 2. WHY that score/tier — the rationale, right after the number.

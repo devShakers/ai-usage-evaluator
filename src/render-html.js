@@ -712,39 +712,45 @@ function ladderStatusMark(status) {
   return status === 'done' ? '✓' : status === 'current' ? '●' : '○';
 }
 
+// NESTED ladder (user decision): each maturity LEVEL groups the TIERS that
+// compose it (grouping derived from the tier engine, see buildLadder), with the
+// tier checks + unlock criteria nested beneath. Same texts/style as before.
+function ladderTierHtml(tier, ld) {
+  return `<div class="ladder-tier ${tier.status}">
+    <div class="ladder-tier-head">
+      <span class="ladder-mark">${ladderStatusMark(tier.status)}</span>
+      <span class="ladder-tier-key">${esc(tier.tierKey)}</span>
+      <span class="ladder-tier-name">${esc(tier.name)}</span>
+      ${tier.status === 'current' ? `<span class="ladder-badge">${esc(ld.currentLabel)}</span>` : ''}
+    </div>
+    <p class="ladder-desc">${esc(tier.description)}</p>
+    ${tier.unlock ? `<p class="ladder-unlock"><span class="ladder-unlock-k">${esc(ld.unlockLabel)}:</span> ${esc(tier.unlock)}</p>` : ''}
+  </div>`;
+}
+
 function ladderSection(report, t) {
   const ld = t.ladder;
-  const { tiers, levels } = buildLadder(report, t);
-  const doneCount = tiers.filter((x) => x.status === 'done').length;
-  const currentCount = tiers.filter((x) => x.status === 'current').length;
-  const pendingCount = tiers.filter((x) => x.status === 'pending').length;
+  const { levels } = buildLadder(report, t);
+  const allTiers = levels.flatMap((lvl) => lvl.tiers);
+  const doneCount = allTiers.filter((x) => x.status === 'done').length;
+  const currentCount = allTiers.filter((x) => x.status === 'current').length;
+  const pendingCount = allTiers.filter((x) => x.status === 'pending').length;
 
   const levelItems = levels
-    .map(
-      (lvl) => `<div class="ladder-level ${lvl.status}">
+    .map((lvl) => {
+      const keys = lvl.tierKeys.length ? ` — [${lvl.tierKeys.join(', ')}]` : '';
+      const nestedTiers = lvl.tiers.map((tier) => ladderTierHtml(tier, ld)).join('');
+      return `<div class="ladder-level ${lvl.status}">
         <div class="ladder-level-head">
           <span class="ladder-mark">${ladderStatusMark(lvl.status)}</span>
-          <span class="ladder-level-name">${esc(lvl.emoji)} ${esc(lvl.level)} · ${esc(lvl.name)}</span>
+          <span class="ladder-level-name">${esc(lvl.emoji)} ${esc(ld.levelLabel(lvl.level))} · ${esc(lvl.name)}</span>
+          <span class="ladder-level-tiers">${esc(keys)}</span>
           ${lvl.status === 'current' ? `<span class="ladder-badge">${esc(ld.currentLabel)}</span>` : ''}
         </div>
         <p class="ladder-desc">${esc(lvl.description)}</p>
-      </div>`,
-    )
-    .join('');
-
-  const tierItems = tiers
-    .map(
-      (tier) => `<div class="ladder-tier ${tier.status}">
-        <div class="ladder-tier-head">
-          <span class="ladder-mark">${ladderStatusMark(tier.status)}</span>
-          <span class="ladder-tier-key">${esc(tier.tierKey)}</span>
-          <span class="ladder-tier-name">${esc(tier.name)}</span>
-          ${tier.status === 'current' ? `<span class="ladder-badge">${esc(ld.currentLabel)}</span>` : ''}
-        </div>
-        <p class="ladder-desc">${esc(tier.description)}</p>
-        ${tier.unlock ? `<p class="ladder-unlock"><span class="ladder-unlock-k">${esc(ld.unlockLabel)}:</span> ${esc(tier.unlock)}</p>` : ''}
-      </div>`,
-    )
+        <div class="ladder-tiers">${nestedTiers}</div>
+      </div>`;
+    })
     .join('');
 
   return `<section>
@@ -753,8 +759,6 @@ function ladderSection(report, t) {
       <p class="ladder-intro">${esc(ld.intro)}</p>
       <p class="ladder-legend">${esc(ld.legend(doneCount, currentCount, pendingCount))}</p>
       <div class="ladder-levels">${levelItems}</div>
-      <div class="ladder-tiers-heading">${esc(ld.tiersHeading)}</div>
-      <div class="ladder-tiers">${tierItems}</div>
     </div>
   </section>`;
 }
@@ -1076,16 +1080,17 @@ const FOOTPRINT_CSS = `
   .ladder-card{display:flex;flex-direction:column;gap:14px}
   .ladder-intro{margin:0;font-size:14px;line-height:1.55;color:var(--muted)}
   .ladder-legend{margin:0;font-size:12px;font-weight:600;color:var(--secondary-fg)}
-  .ladder-levels{display:flex;flex-direction:column;gap:8px}
-  .ladder-level{padding:10px 14px;border-radius:var(--r-md,10px);border:1px solid var(--border);
+  .ladder-levels{display:flex;flex-direction:column;gap:12px}
+  .ladder-level{padding:12px 16px;border-radius:var(--r-md,10px);border:1px solid var(--border);
     background:var(--secondary)}
   .ladder-level.current{border-color:var(--accent-lime);background:var(--track)}
   .ladder-level.pending{opacity:.72}
-  .ladder-level-head{display:flex;align-items:center;gap:8px}
-  .ladder-level-name{font-weight:600;color:var(--fg)}
-  .ladder-tiers-heading{font-size:13px;font-weight:700;letter-spacing:.02em;color:var(--fg);
-    margin-top:6px}
-  .ladder-tiers{display:flex;flex-direction:column;gap:6px}
+  .ladder-level-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .ladder-level-name{font-weight:700;color:var(--fg)}
+  .ladder-level-tiers{font-family:var(--mono,monospace);font-size:12px;color:var(--muted)}
+  /* Tiers NESTED under their maturity level (user decision). */
+  .ladder-tiers{display:flex;flex-direction:column;gap:6px;margin:10px 0 0;
+    padding-left:14px;border-left:2px solid var(--border)}
   .ladder-tier{padding:10px 14px;border-radius:var(--r-md,10px);border-left:3px solid var(--border)}
   .ladder-tier.done{border-left-color:var(--ds-emerald-700,#047857)}
   .ladder-tier.current{border-left-color:var(--accent-lime);background:var(--track)}
@@ -1101,6 +1106,8 @@ const FOOTPRINT_CSS = `
   .ladder-desc{margin:4px 0 0;font-size:13px;line-height:1.45;color:var(--muted)}
   .ladder-unlock{margin:6px 0 0;font-size:12px;line-height:1.45;color:var(--secondary-fg)}
   .ladder-unlock-k{font-weight:600;color:var(--fg)}
+  /* Current tier in the hero top bar, under the level name. */
+  .hero .lvl .tier{margin-top:4px;font-size:13px;font-weight:600;color:var(--secondary-fg)}
 
   /* ---- Next step (lime accent = momentum) ---- */
   .next{padding:22px 24px;border-left:4px solid var(--accent-lime);
@@ -1260,6 +1267,13 @@ function footprintSectionsHtml(report, maturity, lang) {
     return `<span class="pip ${cls}"></span>`;
   }).join('');
 
+  // Current tier alongside the level in the top bar (user request) — from the
+  // already computed maturity (no recompute); tier name localized via tierNames.
+  const tierName = (maturity.tierKey && t.tierNames[maturity.tierKey]) || maturity.tierName || '';
+  const tierLine = maturity.tierKey
+    ? `<div class="tier">${esc(t.html.currentTier(maturity.tierKey, tierName))}</div>`
+    : '';
+
   return `<div class="card hero">
     <div class="lvl">
       <div class="k">${esc(t.html.levelOf(maturity.level))}</div>
@@ -1267,6 +1281,7 @@ function footprintSectionsHtml(report, maturity, lang) {
         <span class="glyph">${maturity.emoji}</span>
         <span class="name">${esc(levelName)}</span>
       </div>
+      ${tierLine}
       <div class="pips">${levelPips}</div>
       <div class="count"><b>${detectedCount}</b> ${esc(t.html.detectedSuffix(report.tools.length))}</div>
     </div>
