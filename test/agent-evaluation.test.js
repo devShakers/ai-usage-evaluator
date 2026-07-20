@@ -70,8 +70,13 @@ test('requestAgentEvaluation: valid response is normalized (score coerced int, c
   try {
     const r = await requestAgentEvaluation(buildAgentEvaluationRequest([{ name: 'a' }, { name: 'b' }], []), { endpoint: urlFor(server) });
     assert.equal(r.promptVersion, 'agent-eval-v1');
-    // ADR-026: normalized shape now carries `description` (null when absent).
-    assert.deepEqual(r.evaluations[0], { name: 'a', score: 88, rationale: 'clear boundaries', description: null });
+    // ADR-026 `description` + v4 `classification`/`improvements` default when the
+    // server omits them (older backend) — classification degrades to unclassified.
+    assert.deepEqual(r.evaluations[0], {
+      name: 'a', score: 88, rationale: 'clear boundaries', description: null,
+      classification: { catalogId: null, category: null, role: null, level: null, method: 'unclassified' },
+      improvements: [],
+    });
     assert.equal(r.evaluations[1].score, 100); // clamped
   } finally {
     server.close();
@@ -98,6 +103,48 @@ test('ADR-026: buildAgentEvaluationRequest carries a valid locale; requestAgentE
     );
     assert.equal(received.locale, 'es'); // forwarded to the backend
     assert.equal(r.evaluations[0].description, 'Hace cosas.');
+  } finally {
+    server.close();
+  }
+});
+
+test('v4: carries the classification (catalogId/category/role/level/method) and improvements verbatim', async () => {
+  const server = await startServer((_body, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ evaluations: [{
+      name: 'a', score: 72, rationale: 'ok', description: 'Reviews PRs.',
+      classification: { catalogId: 'dev-3', category: 'developer', role: 'Code Reviewer', level: 'L2', method: 'deterministic' },
+      improvements: ['  add non-goals  ', 'declare tools', 42, '', 'add an example', 'a fourth'],
+    }] }));
+  });
+  try {
+    const r = await requestAgentEvaluation(buildAgentEvaluationRequest([{ name: 'a' }], []), { endpoint: urlFor(server) });
+    assert.deepEqual(r.evaluations[0].classification, {
+      catalogId: 'dev-3', category: 'developer', role: 'Code Reviewer', level: 'L2', method: 'deterministic',
+    });
+    // trimmed, non-strings dropped, capped to 3
+    assert.deepEqual(r.evaluations[0].improvements, ['add non-goals', 'declare tools', 'add an example']);
+  } finally {
+    server.close();
+  }
+});
+
+test('v4: a classification with a null catalogId or unknown method degrades to unclassified', async () => {
+  const server = await startServer((_body, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ evaluations: [
+      { name: 'a', score: 50, rationale: 'x', classification: { catalogId: null, category: 'developer', role: 'X', level: 'L1', method: 'llm' } },
+      { name: 'b', score: 50, rationale: 'y', classification: { catalogId: 'dev-1', category: 'developer', role: 'X', level: 'L1', method: 'bogus' } },
+    ] }));
+  });
+  try {
+    const r = await requestAgentEvaluation(buildAgentEvaluationRequest([{ name: 'a' }, { name: 'b' }], []), { endpoint: urlFor(server) });
+    // null id ⇒ nothing to show ⇒ unclassified
+    assert.deepEqual(r.evaluations[0].classification, { catalogId: null, category: null, role: null, level: null, method: 'unclassified' });
+    // real id but unknown method ⇒ treated as llm-inferred (conservative)
+    assert.equal(r.evaluations[1].classification.catalogId, 'dev-1');
+    assert.equal(r.evaluations[1].classification.method, 'llm');
+    assert.deepEqual(r.evaluations[1].improvements, []); // absent improvements ⇒ []
   } finally {
     server.close();
   }

@@ -111,6 +111,66 @@ const catalogs = {
         t7Blocking: (n) => `Para subir a T7 (Taller orquestado) necesitas al menos un hook de automatización configurado — actualmente \`hooks = ${n}\`.`,
       },
     },
+    // Progression ladder (skill-code-certification, report req 1): explains what
+    // each maturity LEVEL (0-4) and each TIER (T0-T7) represents, and shows which
+    // are passed (✓) / current (●) / pending (○) with the unlock criterion. The
+    // unlock text itself is reused from `tierAnalysis.criterion.*` above; only the
+    // "what it represents" descriptions live here.
+    ladder: {
+      levelsHeading: 'Niveles de madurez (0-4)',
+      tiersHeading: 'Escalera de tiers (T0-T7)',
+      intro:
+        'Tu nivel de madurez (0-4) resume tu uso de IA de un vistazo; el tier (T0-T7) es el eje '
+        + 'fino del que se deriva. Ambos son deterministas. Abajo se marca lo que ya has superado (✓), '
+        + 'dónde estás ahora (●) y lo que queda por delante (○) con el criterio exacto que lo desbloquea.',
+      reachedLabel: 'Superado',
+      currentLabel: 'Estás aquí',
+      pendingLabel: 'Pendiente',
+      unlockLabel: 'Para desbloquear',
+      legend: (done, current, pending) => `${done} superado · ${current} actual · ${pending} pendiente`,
+      levelDesc: {
+        none: 'Sin rastro de IA: no se detecta ninguna herramienta de IA en tu entorno.',
+        exploring: 'Explorando: tienes herramientas de IA instaladas y las estás probando.',
+        integrated: 'Integrado: la IA está conectada a tus proyectos con contexto persistente.',
+        power: 'Power user: extiendes la IA con MCP, skills/comandos propios y CLIs agénticas.',
+        orchestrator: 'Orquestador: operas varios agentes coordinados y automatización de principio a fin.',
+      },
+      tierDesc: {
+        T0: 'Banco vacío: aún no se detecta ninguna herramienta de IA.',
+        T1: 'Primera herramienta: usas al menos una herramienta de IA.',
+        T2: 'Banco con notas: ficheros de contexto persistente guían a la IA.',
+        T3: 'Banco conectado: un servidor MCP da a la IA acceso a tus datos y herramientas.',
+        T4: 'Herramienta propia: has creado tus propios skills, comandos o reglas.',
+        T5: 'Operador agéntico: una CLI agéntica combina MCP y tus activos propios de punta a punta.',
+        T6: 'Multi-agente: un equipo de 2+ agentes especializados.',
+        T7: 'Taller orquestado: hooks automatizan el taller y los agentes se orquestan entre sí.',
+      },
+    },
+    // Agent classification against the AI-agent catalog (skill-code-certification,
+    // report req 2) + the "how to improve" tips (req 3). Shared by the HTML and
+    // terminal renders. Category/level names are DISPLAY labels for the catalog's
+    // stable keys; `method*` badges say whether the match was deterministic or
+    // inferred by the model.
+    classification: {
+      label: 'Clasificación',
+      closest: 'más parecido a',
+      unclassified: 'Sin clasificar',
+      methodDeterministic: 'coincidencia exacta',
+      methodLlm: 'inferido por IA',
+      improvementsHeading: 'Cómo mejorar este agente',
+      categories: {
+        developer: 'Desarrollo',
+        product: 'Producto',
+        designer: 'Diseño',
+        marketing: 'Marketing',
+        data: 'Datos',
+      },
+      levels: {
+        L1: 'L1 · operativo',
+        L2: 'L2 · táctico',
+        L3: 'L3 · estratégico',
+      },
+    },
     levelNames: {
       none: 'Sin rastro de IA',
       exploring: 'Explorando',
@@ -758,6 +818,59 @@ const catalogs = {
         },
         t6Blocking: (n) => `To reach T6 (Multi-agent) you need at least 2 specialized agents defined under \`.claude/agents/\` — currently you have ${n}.`,
         t7Blocking: (n) => `To reach T7 (Orchestrated workshop) you need at least one automation hook configured — currently \`hooks = ${n}\`.`,
+      },
+    },
+    // Progression ladder (skill-code-certification, report req 1) — see the es block.
+    ladder: {
+      levelsHeading: 'Maturity levels (0-4)',
+      tiersHeading: 'Tier ladder (T0-T7)',
+      intro:
+        'Your maturity level (0-4) sums up your AI usage at a glance; the tier (T0-T7) is the '
+        + 'fine-grained axis it is derived from. Both are deterministic. Below marks what you have '
+        + 'already passed (✓), where you are now (●), and what lies ahead (○) with the exact criterion '
+        + 'that unlocks it.',
+      reachedLabel: 'Reached',
+      currentLabel: 'You are here',
+      pendingLabel: 'Pending',
+      unlockLabel: 'To unlock',
+      legend: (done, current, pending) => `${done} reached · ${current} current · ${pending} pending`,
+      levelDesc: {
+        none: 'No AI footprint: no AI tool detected in your environment.',
+        exploring: 'Exploring: you have AI tools installed and are trying them out.',
+        integrated: 'Integrated: AI is wired into your projects with persistent context.',
+        power: 'Power user: you extend AI with MCP, your own skills/commands and agentic CLIs.',
+        orchestrator: 'Orchestrator: you run several coordinated agents and end-to-end automation.',
+      },
+      tierDesc: {
+        T0: 'Empty bench: no AI tool detected yet.',
+        T1: 'First tool: you use at least one AI tool.',
+        T2: 'Bench with notes: persistent context files guide the AI.',
+        T3: 'Connected bench: an MCP server gives the AI access to your data and tools.',
+        T4: 'Own tooling: you have built your own skills, commands or rules.',
+        T5: 'Agentic operator: an agentic CLI drives MCP and your own assets end to end.',
+        T6: 'Multi-agent: a team of 2+ specialized agents.',
+        T7: 'Orchestrated workshop: hooks automate the workshop and agents orchestrate each other.',
+      },
+    },
+    // Agent classification + improvement tips (skill-code-certification req 2/3) — see the es block.
+    classification: {
+      label: 'Classification',
+      closest: 'closest to',
+      unclassified: 'Unclassified',
+      methodDeterministic: 'exact match',
+      methodLlm: 'AI-inferred',
+      improvementsHeading: 'How to improve this agent',
+      categories: {
+        developer: 'Development',
+        product: 'Product',
+        designer: 'Design',
+        marketing: 'Marketing',
+        data: 'Data',
+      },
+      levels: {
+        L1: 'L1 · operational',
+        L2: 'L2 · tactical',
+        L3: 'L3 · strategic',
       },
     },
     levelNames: {

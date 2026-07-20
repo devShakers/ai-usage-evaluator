@@ -3,7 +3,7 @@
 const { getCatalog, categoryLabel } = require('./i18n');
 const { buildAgentCardTree } = require('./render-html');
 const { getRoadmapEntry } = require('./roadmap-content');
-const { analyzeTier } = require('./tier-analysis');
+const { analyzeTier, buildLadder } = require('./tier-analysis');
 const { mergeRoadmapPersonalization } = require('./roadmap-personalization');
 const { buildImplementationPrompt } = require('./roadmap-prompt');
 
@@ -144,6 +144,40 @@ function agentDescLine(card, depth) {
   return `  ${indent}   ${c.dim}${summarize(card.whatItDoes, 90)}${c.reset}`;
 }
 
+// v4 (agent classification, report req 2): one line under the agent with its
+// closest catalog agent + how it was matched (✓ exact match / AI-inferred), or
+// an explicit "unclassified". Full detail (not truncated — the pieces are short).
+function agentClassLine(card, depth, t) {
+  const indent = '  '.repeat(depth);
+  const cc = t.classification;
+  // No evaluation ran for this agent → no classification line.
+  if (!card.classification) return '';
+  if (card.classification.method === 'unclassified' || !card.classification.catalogId) {
+    return `  ${indent}   ${c.gray}[${cc.unclassified}]${c.reset}`;
+  }
+  const { category, role, level, method } = card.classification;
+  const catLabel = (category && cc.categories[category]) || category;
+  const levelLabel = (level && cc.levels[level]) || level;
+  const methodLabel = method === 'deterministic' ? cc.methodDeterministic : cc.methodLlm;
+  const methodColor = method === 'deterministic' ? c.green : c.gray;
+  const bits = [];
+  if (catLabel) bits.push(`${c.cyan}${catLabel}${c.reset}`);
+  if (role) bits.push(`${c.dim}${cc.closest}:${c.reset} ${c.white}${role}${c.reset}`);
+  if (levelLabel) bits.push(`${c.dim}${levelLabel}${c.reset}`);
+  bits.push(`${methodColor}(${methodLabel})${c.reset}`);
+  return `  ${indent}   ${bits.join(`${c.gray} · ${c.reset}`)}`;
+}
+
+// v4 (report req 3): the "how to improve" tips, one per line under the agent.
+function agentImprovementLines(card, depth, t) {
+  const tips = Array.isArray(card.improvements) ? card.improvements : [];
+  if (tips.length === 0) return [];
+  const indent = '  '.repeat(depth);
+  const out = [`  ${indent}   ${c.dim}${t.classification.improvementsHeading}${c.reset}`];
+  for (const tip of tips) out.push(`  ${indent}     ${c.gray}- ${tip}${c.reset}`);
+  return out;
+}
+
 function printAgents(report, t, p) {
   const { childrenByParent, roots } = buildAgentCardTree(report, t);
   p(`  ${c.bold}${t.html.diagramHeading}${c.reset}`);
@@ -159,6 +193,9 @@ function printAgents(report, t, p) {
     p(agentLine(card, depth, t));
     const desc = agentDescLine(card, depth);
     if (desc) p(desc);
+    const classLine = agentClassLine(card, depth, t);
+    if (classLine) p(classLine);
+    for (const line of agentImprovementLines(card, depth, t)) p(line);
     const children = childrenByParent.get(card.name) || [];
     for (const child of children) walk(child, depth + 1);
   };
@@ -204,6 +241,49 @@ function printTierAnalysis(report, t, p) {
     p(`  ${c.white}${analysis.blockingCriterion}${c.reset}`);
   } else {
     p(`  ${c.white}${tt.maxTierNote}${c.reset}`);
+  }
+  p();
+}
+
+/* ---------- progression ladder: levels 0-4 + tiers T0-T7 (report req 1) ----------
+ * FULL in the terminal (user decision): every level and every tier with its
+ * name, what it represents, and — for pending tiers — the exact unlock criterion.
+ * ✓ passed · ● current · ○ pending. Deterministic (src/tier-analysis.js#buildLadder),
+ * same data as the HTML report.
+ */
+function ladderMark(status) {
+  if (status === 'done') return `${c.green}✓${c.reset}`;
+  if (status === 'current') return `${c.cyan}${c.bold}●${c.reset}`;
+  return `${c.gray}○${c.reset}`;
+}
+
+function printLadder(report, t, p) {
+  const ld = t.ladder;
+  const { tiers, levels } = buildLadder(report, t);
+  const done = tiers.filter((x) => x.status === 'done').length;
+  const current = tiers.filter((x) => x.status === 'current').length;
+  const pending = tiers.filter((x) => x.status === 'pending').length;
+
+  p(`  ${c.bold}${ld.levelsHeading}${c.reset}`);
+  p(`  ${c.gray}${ld.intro}${c.reset}`);
+  p(`  ${c.dim}${ld.legend(done, current, pending)}${c.reset}`);
+  for (const lvl of levels) {
+    const nameStyle = lvl.status === 'pending' ? c.gray : `${c.bold}${c.white}`;
+    const badge = lvl.status === 'current' ? `  ${c.cyan}${ld.currentLabel}${c.reset}` : '';
+    p(`  ${ladderMark(lvl.status)} ${nameStyle}${lvl.emoji} ${lvl.level} · ${lvl.name}${c.reset}${badge}`);
+    p(`      ${c.dim}${lvl.description}${c.reset}`);
+  }
+
+  p();
+  p(`  ${c.bold}${ld.tiersHeading}${c.reset}`);
+  for (const tier of tiers) {
+    const nameStyle = tier.status === 'pending' ? c.gray : `${c.bold}${c.white}`;
+    const badge = tier.status === 'current' ? `  ${c.cyan}${ld.currentLabel}${c.reset}` : '';
+    p(`  ${ladderMark(tier.status)} ${c.bold}${tier.tierKey}${c.reset} ${nameStyle}${tier.name}${c.reset}${badge}`);
+    p(`      ${c.dim}${tier.description}${c.reset}`);
+    if (tier.unlock) {
+      p(`      ${c.gray}${ld.unlockLabel}: ${tier.unlock}${c.reset}`);
+    }
   }
   p();
 }
@@ -360,6 +440,11 @@ function renderTerminal(report, maturity, lang, opts = {}) {
   // 2. WHY that score/tier — the rationale, right after the number.
   sep(p);
   printTierAnalysis(report, t, p);
+
+  // 2b. Progression ladder — what each level 0-4 and tier T0-T7 means, and the
+  // ✓/●/○ progression with unlock criteria (report req 1, full in terminal).
+  sep(p);
+  printLadder(report, t, p);
 
   // 3. Detected tools — omitted entirely if none detected.
   const detected = report.tools.filter((tool) => tool.detected);

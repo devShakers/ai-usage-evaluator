@@ -25,7 +25,16 @@ const { scrubSecrets } = require('./agent-synthesis');
  *   POST <ingest-sibling>/agent-evaluation
  *   req:  { agents: [{ name, definition, tools, model, parent }],
  *           promptVersion: "agent-eval-v1" }
- *   resp: { evaluations: [{ name, score:0-100 int, rationale:string }] }
+ *   resp: { evaluations: [{
+ *            name, score:0-100 int, rationale:string, description:string|null,
+ *            classification:{ catalogId, category, role, level, method },
+ *            improvements:string[]
+ *          }] }
+ *
+ * v4 (agent classification): each evaluation also carries a `classification`
+ * against the AI-agent catalog (server-side, deterministic-first then LLM) and
+ * 2-3 `improvements`. Both are OPTIONAL on the wire — an older backend that
+ * omits them degrades cleanly (classification → unclassified, improvements → []).
  *
  * Mandatory mitigations (mirroring agent-synthesis.js):
  *   1. scrubSecrets — every `definition` is scrubbed BEFORE it leaves the
@@ -125,6 +134,46 @@ function isValidEvaluationResponse(parsed) {
   return !!parsed && typeof parsed === 'object' && Array.isArray(parsed.evaluations);
 }
 
+// The three classification methods the server may report; anything else is
+// coerced to 'unclassified' (never trust an unexpected value).
+const CLASSIFICATION_METHODS = new Set(['deterministic', 'llm', 'unclassified']);
+const UNCLASSIFIED = Object.freeze({
+  catalogId: null,
+  category: null,
+  role: null,
+  level: null,
+  method: 'unclassified',
+});
+
+// Defensive: the server already reconstructs category/role/level from the
+// catalog, but the CLI never trusts the wire — a malformed/absent classification
+// degrades to UNCLASSIFIED, and a `method` outside the known set is coerced. A
+// present classification with a null catalogId is normalized to UNCLASSIFIED too
+// (no id ⇒ nothing to show).
+function normalizeClassification(c) {
+  if (!c || typeof c !== 'object') return { ...UNCLASSIFIED };
+  const catalogId = typeof c.catalogId === 'string' && c.catalogId ? c.catalogId : null;
+  if (!catalogId) return { ...UNCLASSIFIED };
+  const method = CLASSIFICATION_METHODS.has(c.method) ? c.method : 'unclassified';
+  return {
+    catalogId,
+    category: typeof c.category === 'string' && c.category ? c.category : null,
+    role: typeof c.role === 'string' && c.role ? c.role : null,
+    level: typeof c.level === 'string' && c.level ? c.level : null,
+    // A real id but method 'unclassified' would be contradictory — treat an id
+    // that arrived without a usable method as LLM-inferred (the conservative read).
+    method: method === 'unclassified' ? 'llm' : method,
+  };
+}
+
+// Bounds the improvements to a clean string[] (max 3, trimmed, non-empty).
+function normalizeImprovements(list) {
+  return (Array.isArray(list) ? list : [])
+    .filter((s) => typeof s === 'string' && s.trim())
+    .map((s) => s.trim())
+    .slice(0, 3);
+}
+
 // Server scores are never trusted verbatim: coerce to an integer, clamp to
 // [0,100], drop anything without a usable numeric score. rationale defaults to
 // '' rather than trusting a non-string.
@@ -141,6 +190,10 @@ function normalizeEvaluations(list) {
         // ADR-026: target-language one-line description; null when the server
         // (older prompt) omitted it — the caller falls back to the verbatim phrase.
         description: typeof e.description === 'string' && e.description ? e.description : null,
+        // v4 (agent classification): closest catalog agent + how it was matched.
+        classification: normalizeClassification(e.classification),
+        // v4: 2-3 concrete improvement tips (target language).
+        improvements: normalizeImprovements(e.improvements),
       };
     })
     .filter((e) => e.score !== null);

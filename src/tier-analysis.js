@@ -1,6 +1,7 @@
 'use strict';
 
-const { computeTierResult } = require('./tier-engine');
+const { computeTierResult, TIERS } = require('./tier-engine');
+const { LEVELS } = require('./maturity');
 
 /*
  * Deterministic "why this tier" analysis (talents-ai-score): builds a
@@ -104,4 +105,56 @@ function analyzeTier(report, t) {
   return { ...result, tierName, metCriteria, blockingCriterion };
 }
 
-module.exports = { analyzeTier, CRITERIA };
+// Builds the FULL progression ladder (skill-code-certification, report req 1):
+// every maturity LEVEL (0-4) and every TIER (T0-T7) with its status relative to
+// where the talent currently sits — so the report explains what each level/tier
+// MEANS and shows, at a glance, which checks are already passed (✓), which is
+// current (●) and which remain (○) with the exact criterion that unlocks them.
+//
+// Fully DETERMINISTIC: the current tier/band come straight from the tier engine,
+// and the per-tier unlock text reuses tier-analysis's own already-translated
+// `blockingText` criteria — no LLM, no new copy for the criteria themselves
+// (only the plain-language "what it represents" descriptions are new i18n, in
+// `t.ladder`). `t` is the FULL catalog (needs `t.tierNames`, `t.levelNames`,
+// `t.tierAnalysis`, `t.ladder`).
+function buildLadder(report, t) {
+  const tt = t.tierAnalysis;
+  const ld = t.ladder;
+  const result = computeTierResult(report || {});
+  const { signals, tier, band } = result;
+
+  const statusFor = (index, current) =>
+    index < current ? 'done' : index === current ? 'current' : 'pending';
+
+  const tiers = TIERS.map((meta) => {
+    const status = statusFor(meta.tier, tier);
+    // Pending tiers carry the exact criterion that unlocks them (reused from the
+    // tier-analysis CRITERIA, already localized). done/current show none.
+    let unlock = null;
+    if (status === 'pending') {
+      const crit = CRITERIA.find((c) => c.toTier === meta.tier);
+      unlock = crit ? crit.blockingText(signals, tt) : null;
+    }
+    return {
+      tier: meta.tier,
+      tierKey: meta.key,
+      name: (t.tierNames && t.tierNames[meta.key]) || meta.name,
+      description: (ld && ld.tierDesc && ld.tierDesc[meta.key]) || '',
+      status,
+      unlock,
+    };
+  });
+
+  const levels = LEVELS.map((meta) => ({
+    level: meta.level,
+    key: meta.key,
+    emoji: meta.emoji,
+    name: (t.levelNames && t.levelNames[meta.key]) || meta.name,
+    description: (ld && ld.levelDesc && ld.levelDesc[meta.key]) || '',
+    status: statusFor(meta.level, band),
+  }));
+
+  return { currentTier: tier, currentBand: band, tiers, levels };
+}
+
+module.exports = { analyzeTier, buildLadder, CRITERIA };

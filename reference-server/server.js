@@ -379,6 +379,24 @@ async function handle(req, res) {
     // evaluations.length may be < agents.length and the CLI must join by NAME.
     // This stub reproduces that: an agent with too little definition to judge
     // (< 15 non-space chars) is OMITTED, exercising the missing-agent rendering.
+    // v4 (agent classification): a TINY deterministic catalog slice + a naive
+    // keyword match so the stub exercises all three classification `method`s
+    // (deterministic / llm / unclassified) offline. The real backend reads the
+    // full seeded `static_data_ai_agents` catalog and runs the hybrid matcher.
+    const STUB_CATALOG = {
+      'dev-3': { catalogId: 'dev-3', category: 'developer', role: 'Code Reviewer', level: 'L1' },
+      'dev-2': { catalogId: 'dev-2', category: 'developer', role: 'QA Automation Engineer', level: 'L2' },
+      'data-1': { catalogId: 'data-1', category: 'data', role: 'SQL Query Writer', level: 'L1' },
+    };
+    const UNCLASSIFIED = { catalogId: null, category: null, role: null, level: null, method: 'unclassified' };
+    const classifyStub = (name, toolCount) => {
+      const n = String(name || '').toLowerCase();
+      if (/review/.test(n)) return { ...STUB_CATALOG['dev-3'], method: 'deterministic' };
+      if (/test|qa/.test(n)) return { ...STUB_CATALOG['dev-2'], method: 'deterministic' };
+      if (toolCount > 0) return { ...STUB_CATALOG['data-1'], method: 'llm' };
+      return { ...UNCLASSIFIED };
+    };
+    const es = body.locale !== 'en';
     const evaluations = body.agents
       .filter((a) => (typeof a.definition === 'string' ? a.definition.trim().length : 0) >= 15)
       .map((a) => {
@@ -386,6 +404,10 @@ async function handle(req, res) {
         const toolCount = Array.isArray(a.tools) ? a.tools.length : 0;
         const raw = 40 + Math.min(30, Math.round(def.length / 40)) + Math.min(20, toolCount * 4) + (a.model ? 10 : 0);
         const score = Math.max(0, Math.min(100, raw));
+        const improvements = [];
+        if (def.length < 400) improvements.push(es ? 'Amplía la definición con un flujo de trabajo explícito.' : 'Expand the definition with an explicit workflow.');
+        if (toolCount === 0) improvements.push(es ? 'Declara las tools que usa y por qué.' : 'Declare the tools it uses and why.');
+        improvements.push(es ? 'Añade un ejemplo de salida esperada.' : 'Add a worked example of expected output.');
         return {
           name: a.name,
           score,
@@ -393,6 +415,8 @@ async function handle(req, res) {
             `Stub determinista (sin LLM): nota derivada de ${def.length} caracteres de definición, `
             + `${toolCount} tool(s) y modelo ${a.model || '(ninguno)'}. El servidor real es `
             + 'shakers-hub-backend (gemini-2.5-flash), que evalúa la CALIDAD de la definición.',
+          classification: classifyStub(a.name, toolCount),
+          improvements: improvements.slice(0, 3),
         };
       });
     console.log(`[agent-eval] promptVersion=${body.promptVersion} agents_in=${body.agents.length} scored=${evaluations.length}`);
