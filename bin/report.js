@@ -198,7 +198,7 @@ async function maybeSynthesizeAgents(report, root) {
 // they leave the machine (buildAgentEvaluationRequest + the network-boundary
 // re-scrub in requestAgentEvaluation). Reuses report.agentDescriptions (already
 // attached after the scan) rather than re-parsing.
-async function maybeEvaluateAgents(report, root) {
+async function maybeEvaluateAgents(report, root, lang) {
   if (!Array.isArray(report.agents) || report.agents.length === 0) return null;
   const endpoint = getAgentEvaluationEndpoint();
   if (!endpoint) return null;
@@ -209,7 +209,10 @@ async function maybeEvaluateAgents(report, root) {
     // description, which the backend would omit (no score). See
     // src/agent-org-chart.js#parseAgentDefinitions.
     const definitions = parseAgentDefinitions(root);
-    const requestBody = buildAgentEvaluationRequest(report.agents, definitions);
+    // ADR-026: pass the report language so the rationale + the one-line
+    // description come back translated (a Spanish-authored definition still
+    // yields report-language prose).
+    const requestBody = buildAgentEvaluationRequest(report.agents, definitions, lang);
     return await requestAgentEvaluation(requestBody, { endpoint });
   } catch {
     return null; // never breaks the local report
@@ -240,7 +243,8 @@ async function maybePersonalizeRoadmap(report, maturity, lang) {
 
   try {
     const tierResult = computeTierResult(report);
-    const requestBody = buildRoadmapPersonalizationRequest(entry, tierResult, report);
+    // ADR-026: pass the report language so the personalized prose is localized.
+    const requestBody = buildRoadmapPersonalizationRequest(entry, tierResult, report, lang);
     return await requestRoadmapPersonalization(requestBody, { endpoint });
   } catch {
     return null; // never breaks the local report — falls back to the curated content
@@ -353,8 +357,8 @@ async function run(argv = process.argv.slice(2), { ask: injectedAsk = null } = {
 
     const willAttemptEvaluation = !!getAgentEvaluationEndpoint();
     const evaluation = willAttemptEvaluation
-      ? await withSpinner(catalog.cli.evaluatingAgentsLabel, () => maybeEvaluateAgents(report, root || process.cwd()))
-      : await maybeEvaluateAgents(report, root || process.cwd());
+      ? await withSpinner(catalog.cli.evaluatingAgentsLabel, () => maybeEvaluateAgents(report, root || process.cwd(), lang))
+      : await maybeEvaluateAgents(report, root || process.cwd(), lang);
     if (evaluation) report.agentEvaluation = evaluation;
   }
 

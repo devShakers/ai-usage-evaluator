@@ -342,15 +342,22 @@ function buildAgentCardTree(report, t) {
     const tools = Array.isArray(a.tools) ? a.tools : [];
     const model = a.model || null;
 
+    const ev = evalByName.get(key);
+    // ADR-026: the agent-evaluation `description` is a one-line caption written
+    // in the report's detected language — TOP priority for the card phrase, so a
+    // Spanish-authored frontmatter description no longer leaks into an English
+    // report (or vice-versa). Falls back to synthesis → verbatim frontmatter →
+    // name-derived when the model didn't return one (older server / degrade).
+    const evalPhrase =
+      ev && typeof ev.description === 'string' && ev.description.trim() ? ev.description.trim() : null;
     const synthPhrase =
       synth && typeof synth.whatItDoes === 'string' && synth.whatItDoes.trim() ? synth.whatItDoes.trim() : null;
     const rawRaw = rawDescByName.get(key);
     const rawPhrase =
       typeof rawRaw === 'string' && rawRaw.trim() ? excerptForCard(cleanRawDescription(rawRaw)) : null;
     const fallbackPhrase = t && t.html.agentDescriptionFromName ? t.html.agentDescriptionFromName(humanizeAgentName(a.name)) : null;
-    const whatItDoes = synthPhrase || rawPhrase || fallbackPhrase;
+    const whatItDoes = evalPhrase || synthPhrase || rawPhrase || fallbackPhrase;
 
-    const ev = evalByName.get(key);
     const score = ev && typeof ev.score === 'number' ? ev.score : null;
     const rationale = ev && typeof ev.rationale === 'string' && ev.rationale.trim() ? ev.rationale.trim() : null;
     const usageCount = usageByAgent ? (typeof usageByAgent[a.name] === 'number' ? usageByAgent[a.name] : null) : null;

@@ -186,7 +186,7 @@ async function requestResolve(requestBody, { endpoint, timeoutMs = DEFAULT_TIMEO
  * defense-in-depth as agent-synthesis.js re-scrubbing at the boundary). The
  * caller (bin/certify.js) also scrubs while sampling; this is the last guard.
  */
-function buildCertifyRequest(email, sampledSkills) {
+function buildCertifyRequest(email, sampledSkills, locale = null) {
   const items = (Array.isArray(sampledSkills) ? sampledSkills : [])
     .filter((s) => s && Array.isArray(s.files) && s.files.length > 0)
     .map((s) => ({
@@ -197,7 +197,8 @@ function buildCertifyRequest(email, sampledSkills) {
         content: scrubSecrets(typeof f.content === 'string' ? f.content : ''),
       })),
     }));
-  return { email, items };
+  // ADR-026: detected report language for the model prose (rationale/improvements).
+  return { email, items, ...(locale === 'es' || locale === 'en' ? { locale } : {}) };
 }
 
 function clampScore(value) {

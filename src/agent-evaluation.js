@@ -65,7 +65,7 @@ const MAX_DEFINITION_CHARS = 2000;
 // empty definition, which the backend OMITS (degrade-by-omission) → no score —
 // so callers SHOULD pass the full definition (description + body), not just the
 // one-line description, or the agent gets no score.
-function buildAgentEvaluationRequest(structuralAgents, definitionsByName) {
+function buildAgentEvaluationRequest(structuralAgents, definitionsByName, locale = null) {
   const defMap = new Map(
     (definitionsByName || []).map((d) => [d.name, d.definition != null ? d.definition : d.description]),
   );
@@ -80,6 +80,8 @@ function buildAgentEvaluationRequest(structuralAgents, definitionsByName) {
       parent: a.parent || null,
     })),
     promptVersion: PROMPT_VERSION,
+    // ADR-026: detected report language for the rationale + description prose.
+    ...(locale === 'es' || locale === 'en' ? { locale } : {}),
   };
 }
 
@@ -132,7 +134,14 @@ function normalizeEvaluations(list) {
     .map((e) => {
       const n = Number(e.score);
       const score = Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : null;
-      return { name: e.name, score, rationale: typeof e.rationale === 'string' ? e.rationale : '' };
+      return {
+        name: e.name,
+        score,
+        rationale: typeof e.rationale === 'string' ? e.rationale : '',
+        // ADR-026: target-language one-line description; null when the server
+        // (older prompt) omitted it — the caller falls back to the verbatim phrase.
+        description: typeof e.description === 'string' && e.description ? e.description : null,
+      };
     })
     .filter((e) => e.score !== null);
 }
@@ -146,11 +155,15 @@ async function requestAgentEvaluation(requestBody, { endpoint, timeoutMs = DEFAU
   if (!endpoint) return null;
 
   const promptVersion = (requestBody && requestBody.promptVersion) || PROMPT_VERSION;
+  const locale = requestBody && (requestBody.locale === 'es' || requestBody.locale === 'en')
+    ? requestBody.locale
+    : null;
   const safeBody = {
     promptVersion,
     agents: Array.isArray(requestBody && requestBody.agents)
       ? requestBody.agents.map((a) => ({ ...a, definition: scrubSecrets(a.definition) }))
       : [],
+    ...(locale ? { locale } : {}),
   };
 
   let res;

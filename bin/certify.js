@@ -296,7 +296,7 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
   // --- certify (egress; scrub happens in buildCertifyRequest) ---
   let results = [];
   if (sendable.length > 0) {
-    const requestBody = buildCertifyRequest(email, sendable);
+    const requestBody = buildCertifyRequest(email, sendable, lang);
     // Spinner while the model analyzes your code (issue 011): each Skill is a
     // ~50s+ server-side gemini-2.5-pro call, run sequentially — make it clear
     // the CLI is working, not hung. withSpinner degrades to a single stderr

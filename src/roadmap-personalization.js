@@ -67,7 +67,7 @@ function buildRoadmapSignals(report, tierSignals) {
 // ONLY the 4 personalizable fields — title/upgradeWhen/snippet/tierKey are
 // deliberately excluded from the request body: the LLM never sees them,
 // so it can never rewrite them either.
-function buildRoadmapPersonalizationRequest(curatedEntry, tierResult, report) {
+function buildRoadmapPersonalizationRequest(curatedEntry, tierResult, report, locale = null) {
   return {
     tier: tierResult.tier,
     tierKey: tierResult.tierKey,
@@ -78,6 +78,8 @@ function buildRoadmapPersonalizationRequest(curatedEntry, tierResult, report) {
       mistakes: curatedEntry.commonMistakes,
     },
     signals: buildRoadmapSignals(report, tierResult.signals),
+    // ADR-026: detected report language for the personalized prose.
+    ...(locale === 'es' || locale === 'en' ? { locale } : {}),
   };
 }
 

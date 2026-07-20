@@ -70,8 +70,34 @@ test('requestAgentEvaluation: valid response is normalized (score coerced int, c
   try {
     const r = await requestAgentEvaluation(buildAgentEvaluationRequest([{ name: 'a' }, { name: 'b' }], []), { endpoint: urlFor(server) });
     assert.equal(r.promptVersion, 'agent-eval-v1');
-    assert.deepEqual(r.evaluations[0], { name: 'a', score: 88, rationale: 'clear boundaries' });
+    // ADR-026: normalized shape now carries `description` (null when absent).
+    assert.deepEqual(r.evaluations[0], { name: 'a', score: 88, rationale: 'clear boundaries', description: null });
     assert.equal(r.evaluations[1].score, 100); // clamped
+  } finally {
+    server.close();
+  }
+});
+
+test('ADR-026: buildAgentEvaluationRequest carries a valid locale; requestAgentEvaluation carries the description', async () => {
+  // locale on the request body (only for es/en; anything else omitted).
+  assert.equal(buildAgentEvaluationRequest([{ name: 'a' }], [], 'es').locale, 'es');
+  assert.equal('locale' in buildAgentEvaluationRequest([{ name: 'a' }], [], 'fr'), false);
+
+  let received;
+  const server = await startServer((body, res) => {
+    received = body;
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      evaluations: [{ name: 'a', score: 80, rationale: 'ok', description: 'Hace cosas.' }],
+    }));
+  });
+  try {
+    const r = await requestAgentEvaluation(
+      buildAgentEvaluationRequest([{ name: 'a' }], [], 'es'),
+      { endpoint: urlFor(server) },
+    );
+    assert.equal(received.locale, 'es'); // forwarded to the backend
+    assert.equal(r.evaluations[0].description, 'Hace cosas.');
   } finally {
     server.close();
   }
