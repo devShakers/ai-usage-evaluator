@@ -126,22 +126,9 @@ function normalizeResolveResponse(parsed) {
           reason: n && typeof n.reason === 'string' ? n.reason : null,
         }))
       : [],
-    // ADR-023: the authorized authoring set for a TEST identity, or null for a
-    // real identity. Server-gated — the CLI only ever widens the authorship
-    // gate when the SERVER returns a set here (real identities get null).
-    authorizedAuthoring: normalizeAuthorizedAuthoring(parsed.authorizedAuthoring),
+    // ADR-027: RESOLVE no longer carries an authorized-authoring set (the
+    // ADR-023 registry is retired; superadmin session replaces the widening).
   };
-}
-
-// Field-by-field, defensive: a malformed set degrades to null (strict match).
-function normalizeAuthorizedAuthoring(raw) {
-  if (!raw || typeof raw !== 'object') return null;
-  const domain = typeof raw.domain === 'string' && raw.domain ? raw.domain : null;
-  const extraEmails = Array.isArray(raw.extraEmails)
-    ? raw.extraEmails.filter((e) => typeof e === 'string' && e)
-    : [];
-  if (!domain && extraEmails.length === 0) return null;
-  return { domain, extraEmails };
 }
 
 async function requestResolve(requestBody, { endpoint, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
@@ -186,7 +173,7 @@ async function requestResolve(requestBody, { endpoint, timeoutMs = DEFAULT_TIMEO
  * defense-in-depth as agent-synthesis.js re-scrubbing at the boundary). The
  * caller (bin/certify.js) also scrubs while sampling; this is the last guard.
  */
-function buildCertifyRequest(email, sampledSkills, locale = null) {
+function buildCertifyRequest(email, sampledSkills, locale = null, superadminToken = null) {
   const items = (Array.isArray(sampledSkills) ? sampledSkills : [])
     .filter((s) => s && Array.isArray(s.files) && s.files.length > 0)
     .map((s) => ({
@@ -198,7 +185,13 @@ function buildCertifyRequest(email, sampledSkills, locale = null) {
       })),
     }));
   // ADR-026: detected report language for the model prose (rationale/improvements).
-  return { email, items, ...(locale === 'es' || locale === 'en' ? { locale } : {}) };
+  // ADR-027: superadmin session token (bypasses identity gate, non-prod only).
+  return {
+    email,
+    items,
+    ...(locale === 'es' || locale === 'en' ? { locale } : {}),
+    ...(superadminToken ? { superadminToken } : {}),
+  };
 }
 
 function clampScore(value) {

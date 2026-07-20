@@ -2,19 +2,21 @@
 'use strict';
 
 /*
- * `superadmin` — NON-PROD test-identity provisioning + teardown (skill-code-
- * certification ADR-021/022). Runs as an internal `sh-eval` command (ADR-014)
- * and is require()-able standalone.
+ * `superadmin` — NON-PROD, password-authenticated superadmin SESSION (ADR-027,
+ * supersedes the ADR-021/022/023 provision/teardown/authorized-authoring flow).
+ * Runs as an internal `sh-eval` command (ADR-014) and is require()-able standalone.
  *
- *   superadmin                        provision (prompts password + email)
- *   superadmin --email X --password Y provision, non-interactive
- *   superadmin --remove --email X     TEARDOWN one test identity (ADR-022)
- *   superadmin --remove --all         TEARDOWN every test identity
+ *   superadmin                        open a session (prompts password + your email)
+ *   superadmin --email X --password Y open a session, non-interactive
+ *   superadmin --inspect --email X    READ-ONLY certification receipt (ADR-025)
+ *   superadmin --logout               forget the locally stored session
  *
- * Provision creates a real, verified TEST Talent that passes the real certify
- * gates; teardown removes test identities ONLY (the backend refuses a real
- * account). The password is NEVER hardcoded here — collected and sent; the
- * backend validates it (constant-time) and 404s the whole route in production.
+ * Opening a session validates the superadmin password server-side and persists
+ * the returned token locally. `certify` then runs against ANY email on ANY repo
+ * (bypassing the identity + authorship gates) and its persisted results are
+ * stamped `test_origin=true` — all NON-PROD only (the backend 404s the session
+ * route and refuses the bypass in production). The password is NEVER hardcoded
+ * here — collected and sent; the backend validates it (constant-time).
  *
  * Zero-dependency (node stdlib only): all helpers are local src/ modules.
  */
@@ -23,34 +25,25 @@ const http = require('http');
 const https = require('https');
 const { detectReportLang, getCatalog } = require('../src/i18n');
 const {
-  getProvisionTestTalentEndpoint,
-  getTeardownTestTalentEndpoint,
+  getSuperadminSessionEndpoint,
   getInspectCertificationsEndpoint,
+  saveSuperadminSession,
+  clearSuperadminSession,
 } = require('../src/config');
 const { isValidEmail, normalizeEmail } = require('../src/share');
 const { createStdinAsk } = require('../src/stdin-ask');
 
 const REQUEST_TIMEOUT_MS = 20000;
 
-// Minimal flag parse: --email, --password, --lang (all optional; interactive
-// prompts fill the gaps). Kept tiny — this is a superadmin utility.
-function splitEmails(raw) {
-  return String(raw || '')
-    .split(',')
-    .map((e) => e.trim())
-    .filter(Boolean);
-}
-
+// Minimal flag parse: --email, --password, --lang, --inspect, --logout (all
+// optional; interactive prompts fill the gaps). Kept tiny — superadmin utility.
 function parseArgs(argv) {
   const opts = {
     email: null,
     password: null,
     lang: null,
-    remove: false,
-    all: false,
     inspect: false,
-    authorDomain: null,
-    authorEmails: [],
+    logout: false,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -58,14 +51,8 @@ function parseArgs(argv) {
     else if (a.startsWith('--email=')) opts.email = a.slice('--email='.length);
     else if (a === '--password') opts.password = argv[++i];
     else if (a.startsWith('--password=')) opts.password = a.slice('--password='.length);
-    else if (a === '--remove' || a === '--delete' || a === '--teardown') opts.remove = true;
     else if (a === '--inspect' || a === '--audit') opts.inspect = true;
-    else if (a === '--all') opts.all = true;
-    // ADR-023 authorized authoring set (provision only).
-    else if (a === '--author-domain') opts.authorDomain = argv[++i];
-    else if (a.startsWith('--author-domain=')) opts.authorDomain = a.slice('--author-domain='.length);
-    else if (a === '--author-emails') opts.authorEmails = splitEmails(argv[++i]);
-    else if (a.startsWith('--author-emails=')) opts.authorEmails = splitEmails(a.slice('--author-emails='.length));
+    else if (a === '--logout' || a === '--forget') opts.logout = true;
     else if (a === '--lang' && (argv[i + 1] === 'es' || argv[i + 1] === 'en')) opts.lang = argv[++i];
     else if (a === '--lang=es') opts.lang = 'es';
     else if (a === '--lang=en') opts.lang = 'en';
@@ -128,20 +115,23 @@ async function run(argv = process.argv.slice(2), { ask: injectedAsk = null } = {
   const lang = opts.lang || detectReportLang();
   const c = getCatalog(lang).superadmin;
 
-  const mode = opts.inspect ? 'inspect' : opts.remove ? 'remove' : 'provision';
+  // --logout is local-only (no endpoint, no password): forget the stored token.
+  if (opts.logout) {
+    clearSuperadminSession();
+    process.stdout.write(`\n  ${c.loggedOut}\n\n`);
+    return;
+  }
+
+  const mode = opts.inspect ? 'inspect' : 'session';
   const endpoint =
-    mode === 'inspect'
-      ? getInspectCertificationsEndpoint()
-      : mode === 'remove'
-        ? getTeardownTestTalentEndpoint()
-        : getProvisionTestTalentEndpoint();
+    mode === 'inspect' ? getInspectCertificationsEndpoint() : getSuperadminSessionEndpoint();
   if (!endpoint) {
     process.stderr.write(`\n  ${c.errorNoEndpoint}\n\n`);
     process.exitCode = 1;
     return;
   }
 
-  const intro = mode === 'inspect' ? c.inspectIntro : mode === 'remove' ? c.removeIntro : c.intro;
+  const intro = mode === 'inspect' ? c.inspectIntro : c.sessionIntro;
   process.stdout.write(`\n  ${intro}\n`);
 
   const canPrompt = !!process.stdin.isTTY || !!injectedAsk;
@@ -150,10 +140,8 @@ async function run(argv = process.argv.slice(2), { ask: injectedAsk = null } = {
     const password = opts.password || (await promptLine(ask, canPrompt, c.passwordPrompt));
     if (mode === 'inspect') {
       await runInspect({ opts, c, endpoint, password, ask, canPrompt });
-    } else if (mode === 'remove') {
-      await runTeardown({ opts, c, endpoint, password, ask, canPrompt });
     } else {
-      await runProvision({ opts, c, endpoint, password, ask, canPrompt });
+      await runOpenSession({ opts, c, endpoint, password, ask, canPrompt });
     }
   } finally {
     if (!injectedAsk) ask.close();
@@ -238,7 +226,9 @@ async function resolveEmailArg(opts, c, ask, canPrompt, promptLabel) {
   return null;
 }
 
-async function runProvision({ opts, c, endpoint, password, ask, canPrompt }) {
+// ADR-027: open a superadmin SESSION — validate the password server-side, get a
+// token, persist it locally. The email is the superadmin's OWN (audit only).
+async function runOpenSession({ opts, c, endpoint, password, ask, canPrompt }) {
   const email = await resolveEmailArg(opts, c, ask, canPrompt, c.emailPrompt);
   if (!password || !email || !isValidEmail(email)) {
     process.stderr.write(`\n  ${c.needInput}\n\n`);
@@ -246,84 +236,29 @@ async function runProvision({ opts, c, endpoint, password, ask, canPrompt }) {
     return;
   }
 
-  // ADR-023 authorized authoring set — sent only when the superadmin specified
-  // it; the server applies the default domain otherwise.
-  const body = { password, email: normalizeEmail(email) };
-  if (opts.authorDomain && opts.authorDomain.trim()) body.authorDomain = opts.authorDomain.trim();
-  if (Array.isArray(opts.authorEmails) && opts.authorEmails.length > 0) {
-    body.extraEmails = opts.authorEmails.map((e) => normalizeEmail(e));
-  }
-
   let res;
   try {
-    res = await postJson(endpoint, body);
+    res = await postJson(endpoint, { password, email: normalizeEmail(email) });
   } catch {
     process.stderr.write(`\n  ${c.errorGeneric}\n\n`);
     process.exitCode = 1;
     return;
   }
 
-  if (res.status >= 200 && res.status < 300) {
-    const provisionedEmail = (res.json && res.json.email) || normalizeEmail(email);
-    const reused = !!(res.json && res.json.reused);
-    const auth = (res.json && res.json.authorizedAuthoring) || null;
-    process.stdout.write(`\n  ${reused ? c.reused(provisionedEmail) : c.ready(provisionedEmail)}\n`);
-    if (auth && auth.domain) {
-      const extra = Array.isArray(auth.extraEmails) && auth.extraEmails.length > 0
-        ? auth.extraEmails.join(', ')
-        : null;
-      process.stdout.write(`  ${c.authoring(auth.domain, extra)}\n`);
-    }
-    process.stdout.write('\n');
+  if (res.status >= 200 && res.status < 300 && res.json && res.json.token) {
+    saveSuperadminSession({
+      email: res.json.email || normalizeEmail(email),
+      token: res.json.token,
+      expiresAt: res.json.expiresAt || null,
+    });
+    process.stdout.write(`\n  ${c.sessionReady(res.json.email || normalizeEmail(email))}\n`);
+    if (res.json.expiresAt) process.stdout.write(`  ${c.sessionExpires(res.json.expiresAt)}\n`);
+    process.stdout.write(`  ${c.sessionHint}\n\n`);
     return;
   }
   if (res.status === 403) process.stderr.write(`\n  ${c.errorWrongPassword}\n\n`);
   else if (res.status === 404) process.stderr.write(`\n  ${c.errorDisabled}\n\n`);
-  else if (res.status === 409) process.stderr.write(`\n  ${c.errorConflict}\n\n`);
   else process.stderr.write(`\n  ${c.errorGeneric}\n\n`);
-  process.exitCode = 1;
-}
-
-async function runTeardown({ opts, c, endpoint, password, ask, canPrompt }) {
-  const body = { password };
-  if (opts.all) {
-    body.all = true;
-  } else {
-    const email = await resolveEmailArg(opts, c, ask, canPrompt, c.removeEmailPrompt);
-    if (!email || !isValidEmail(email)) {
-      process.stderr.write(`\n  ${c.removeNeedTarget}\n\n`);
-      process.exitCode = 1;
-      return;
-    }
-    body.email = normalizeEmail(email);
-  }
-
-  if (!password) {
-    process.stderr.write(`\n  ${c.needInput}\n\n`);
-    process.exitCode = 1;
-    return;
-  }
-
-  let res;
-  try {
-    res = await postJson(endpoint, body);
-  } catch {
-    process.stderr.write(`\n  ${c.removeErrorGeneric}\n\n`);
-    process.exitCode = 1;
-    return;
-  }
-
-  if (res.status >= 200 && res.status < 300) {
-    const removed = (res.json && Array.isArray(res.json.removed) && res.json.removed) || [];
-    const count = res.json && typeof res.json.count === 'number' ? res.json.count : removed.length;
-    const emails = removed.map((r) => r && r.email).filter(Boolean).join(', ');
-    process.stdout.write(`\n  ${c.removed(count, emails)}\n\n`);
-    return;
-  }
-  if (res.status === 403) process.stderr.write(`\n  ${c.errorWrongPassword}\n\n`);
-  else if (res.status === 404) process.stderr.write(`\n  ${c.errorDisabled}\n\n`);
-  else if (res.status === 409) process.stderr.write(`\n  ${c.removeRefusedReal}\n\n`);
-  else process.stderr.write(`\n  ${c.removeErrorGeneric}\n\n`);
   process.exitCode = 1;
 }
 

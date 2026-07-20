@@ -562,6 +562,9 @@ const catalogs = {
       // in the refusal path for a possible legitimate false negative (commits
       // con otro email, monorepo, historial migrado). Copy is DRAFT (a validar).
       authorshipContact: 'Si crees que tienes la autoría y esto es un error (commits con otro email, monorepo o historial migrado), escríbenos a talent@shakersworks.com.',
+      // ADR-027: sesión de superadmin activa — se omite el gate de autoría.
+      superadminBypass: (email) =>
+        `Sesión de superadmin activa${email ? ` (${email})` : ''}: se omite el gate de autoría; se certificará todo el código muestreado (test_origin).`,
       selectOption: (index, skillName, technology) => `  ${index}) ${skillName}${technology ? ` (${technology})` : ''}`,
       certifyingLabel: 'Analizando el código de tus Skills…',
       // Reporting redesign: el HTML ya no es opt-in; cada certificación se
@@ -636,38 +639,25 @@ const catalogs = {
     // `sh-eval` REPL is the single entrypoint; this covers the prompt, the
     // Superadmin TEST-identity provisioning (ADR-021, NON-PROD only).
     superadmin: {
-      intro:
-        'Provisiona una identidad de Talent de PRUEBA (solo entornos no productivos) para probar el flujo de certify sin OTP.',
+      // ADR-027 — sesión de superadmin autenticada por contraseña (no-prod).
+      sessionIntro:
+        'Abre una sesión de superadmin (solo entornos no productivos): certify funcionará con CUALQUIER email en CUALQUIER repo, saltándose los gates de identidad y autoría.',
       passwordPrompt: 'Contraseña de superadmin:',
-      emailPrompt: 'Email de la identidad de prueba a provisionar:',
+      emailPrompt: 'Tu email de superadmin (solo para auditoría):',
       emailInvalid: 'Email no válido. Inténtalo de nuevo.',
       needInput: 'Se requieren contraseña y email (interactivo, o --password y --email).',
-      ready: (email) =>
-        `Identidad de prueba lista para ${email}. Ahora ejecuta:  certify --email ${email} --accept-disclaimer --all`,
-      reused: (email) =>
-        `La identidad de prueba de ${email} ya existía (idempotente). Ejecuta:  certify --email ${email} --accept-disclaimer --all`,
-      authoring: (domain, extra) =>
-        `Autoría autorizada (ADR-023): dominio @${domain}${extra ? ` + emails: ${extra}` : ''} — solo para esta identidad de prueba.`,
+      sessionReady: (email) =>
+        `Sesión de superadmin abierta (auditoría: ${email}). Ahora certify usará esta sesión con cualquier email.`,
+      sessionExpires: (iso) => `La sesión caduca: ${iso}.`,
+      sessionHint:
+        'Ejecuta:  certify --email <cualquiera> --accept-disclaimer --all   ·   Para cerrarla:  superadmin --logout',
+      loggedOut: 'Sesión de superadmin olvidada (token local eliminado).',
       errorNoEndpoint:
         'No hay endpoint configurado. Configura el backend (AI_FOOTPRINT_INGEST_ENDPOINT o footprint --set-endpoint) y reinténtalo.',
       errorWrongPassword: 'Contraseña de superadmin incorrecta.',
       errorDisabled:
-        'Endpoint no disponible: el provisioning de prueba está deshabilitado fuera de entornos no productivos.',
-      errorConflict:
-        'Ese email ya pertenece a una cuenta real (no de prueba). Usa un email distinto para la identidad de prueba.',
-      errorGeneric: 'No se pudo provisionar la identidad de prueba. Inténtalo de nuevo.',
-      // Teardown (ADR-022) — el inverso: elimina identidades de PRUEBA.
-      removeIntro:
-        'Elimina identidad(es) de Talent de PRUEBA (solo entornos no productivos). Nunca borra cuentas reales.',
-      removeEmailPrompt: 'Email de la identidad de prueba a eliminar (o usa --all):',
-      removeNeedTarget: 'Indica un email (--email) o --all para eliminar todas las de prueba.',
-      removed: (count, emails) =>
-        count === 0
-          ? 'No había ninguna identidad de prueba que eliminar (nada que hacer).'
-          : `Eliminadas ${count} identidad(es) de prueba: ${emails}.`,
-      removeRefusedReal:
-        'Ese email pertenece a una cuenta REAL (no de prueba). No se ha eliminado nada.',
-      removeErrorGeneric: 'No se pudo eliminar la identidad de prueba. Inténtalo de nuevo.',
+        'Endpoint no disponible: la sesión de superadmin está deshabilitada fuera de entornos no productivos.',
+      errorGeneric: 'No se pudo abrir la sesión de superadmin. Inténtalo de nuevo.',
       // Inspect (ADR-025) — recibo de atribución de certificaciones YA guardadas.
       inspectIntro:
         'Audita la evidencia de autoría de las certificaciones ya guardadas (solo lectura, entornos no productivos).',
@@ -1161,6 +1151,9 @@ const catalogs = {
       // in the refusal path for a possible legitimate false negative (commits
       // under another email, monorepo, migrated history). Copy is DRAFT (to validate).
       authorshipContact: 'If you believe you hold the authorship and this is an error (commits under another email, monorepo, or migrated history), write to us at talent@shakersworks.com.',
+      // ADR-027: active superadmin session — the authorship gate is bypassed.
+      superadminBypass: (email) =>
+        `Superadmin session active${email ? ` (${email})` : ''}: authorship gate bypassed; all sampled code will be certified (test_origin).`,
       selectOption: (index, skillName, technology) => `  ${index}) ${skillName}${technology ? ` (${technology})` : ''}`,
       certifyingLabel: 'Analyzing your Skills’ code…',
       // Reporting redesign: HTML is no longer opt-in; each certification is
@@ -1229,40 +1222,26 @@ const catalogs = {
       },
     },
     // Branded mini-shell chrome (skill-code-certification / ADR-014). The
-    // Superadmin TEST-identity provisioning (ADR-021, NON-PROD only).
+    // ADR-027 — password-authenticated superadmin SESSION (NON-PROD only).
     superadmin: {
-      intro:
-        'Provision a TEST Talent identity (non-production environments only) to exercise the certify flow without OTP.',
+      sessionIntro:
+        'Open a superadmin session (non-production environments only): certify will run against ANY email on ANY repo, bypassing the identity and authorship gates.',
       passwordPrompt: 'Superadmin password:',
-      emailPrompt: 'Email of the test identity to provision:',
+      emailPrompt: 'Your superadmin email (for audit only):',
       emailInvalid: 'Invalid email. Try again.',
       needInput: 'Password and email are required (interactively, or --password and --email).',
-      ready: (email) =>
-        `Test identity ready for ${email}. Now run:  certify --email ${email} --accept-disclaimer --all`,
-      reused: (email) =>
-        `Test identity for ${email} already existed (idempotent). Run:  certify --email ${email} --accept-disclaimer --all`,
-      authoring: (domain, extra) =>
-        `Authorized authoring (ADR-023): domain @${domain}${extra ? ` + emails: ${extra}` : ''} — for this test identity only.`,
+      sessionReady: (email) =>
+        `Superadmin session opened (audit: ${email}). certify will now use this session with any email.`,
+      sessionExpires: (iso) => `Session expires: ${iso}.`,
+      sessionHint:
+        'Run:  certify --email <anyone> --accept-disclaimer --all   ·   To end it:  superadmin --logout',
+      loggedOut: 'Superadmin session forgotten (local token removed).',
       errorNoEndpoint:
         'No endpoint configured. Set the backend (AI_FOOTPRINT_INGEST_ENDPOINT or footprint --set-endpoint) and retry.',
       errorWrongPassword: 'Incorrect superadmin password.',
       errorDisabled:
-        'Endpoint unavailable: test provisioning is disabled outside non-production environments.',
-      errorConflict:
-        'That email already belongs to a real (non-test) account. Use a different email for the test identity.',
-      errorGeneric: 'Could not provision the test identity. Try again.',
-      // Teardown (ADR-022) — the inverse: removes TEST identities.
-      removeIntro:
-        'Remove TEST Talent identity(ies) (non-production environments only). Never deletes real accounts.',
-      removeEmailPrompt: 'Email of the test identity to remove (or use --all):',
-      removeNeedTarget: 'Provide an email (--email) or --all to remove every test identity.',
-      removed: (count, emails) =>
-        count === 0
-          ? 'There was no test identity to remove (nothing to do).'
-          : `Removed ${count} test identity(ies): ${emails}.`,
-      removeRefusedReal:
-        'That email belongs to a REAL (non-test) account. Nothing was removed.',
-      removeErrorGeneric: 'Could not remove the test identity. Try again.',
+        'Endpoint unavailable: the superadmin session is disabled outside non-production environments.',
+      errorGeneric: 'Could not open the superadmin session. Try again.',
       // Inspect (ADR-025) — attribution receipt for ALREADY-stored certifications.
       inspectIntro:
         'Audit the authorship evidence of already-stored certifications (read-only, non-production).',

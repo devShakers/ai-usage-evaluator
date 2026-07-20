@@ -297,17 +297,8 @@ function getEmailVerificationVerifyUrl(env = process.env) {
  * `null` when no ingest endpoint is configured. The server 404s this route in
  * production regardless.
  */
-function getProvisionTestTalentEndpoint(env = process.env) {
-  return deriveFromIngest(env, 'superadmin/provision-test-talent');
-}
-
-/*
- * Superadmin TEST-identity TEARDOWN endpoint (ADR-022, NON-PROD only) — the
- * inverse of provisioning, a sibling of the ingest endpoint. `null` when no
- * ingest endpoint is configured. The server 404s this route in production.
- */
-function getTeardownTestTalentEndpoint(env = process.env) {
-  return deriveFromIngest(env, 'superadmin/teardown-test-talent');
+function getSuperadminSessionEndpoint(env = process.env) {
+  return deriveFromIngest(env, 'superadmin/session');
 }
 
 /*
@@ -319,6 +310,41 @@ function getInspectCertificationsEndpoint(env = process.env) {
   return deriveFromIngest(env, 'superadmin/inspect-certifications');
 }
 
+/*
+ * ADR-027 superadmin SESSION persistence. The `superadmin` command mints a
+ * session token server-side (non-prod only) and persists it here, next to the
+ * ingest endpoint config. `certify` reads it to bypass the identity/authorship
+ * gates on ANY email. Stored under `superadminSession` in config.json:
+ *   { email, token, expiresAt }
+ * Returns `null` when absent, malformed, or EXPIRED (the CLI treats an expired
+ * session as no session — the server would reject the token anyway).
+ */
+function loadSuperadminSession(env = process.env) {
+  const config = loadConfigFile(env);
+  const s = config && typeof config === 'object' ? config.superadminSession : null;
+  if (!s || typeof s !== 'object' || typeof s.token !== 'string' || !s.token) return null;
+  if (s.expiresAt && Date.parse(s.expiresAt) <= Date.now()) return null; // expired
+  return { email: s.email || null, token: s.token, expiresAt: s.expiresAt || null };
+}
+
+function saveSuperadminSession(session, env = process.env) {
+  const config = loadConfigFile(env);
+  config.superadminSession = {
+    email: session.email || null,
+    token: session.token,
+    expiresAt: session.expiresAt || null,
+  };
+  saveConfigFile(config, env);
+}
+
+function clearSuperadminSession(env = process.env) {
+  const config = loadConfigFile(env);
+  if (config && typeof config === 'object' && 'superadminSession' in config) {
+    delete config.superadminSession;
+    saveConfigFile(config, env);
+  }
+}
+
 module.exports = {
   getIngestEndpoint,
   getSynthesisEndpoint,
@@ -327,9 +353,12 @@ module.exports = {
   getAgentEvaluationEndpoint,
   getEmailVerificationRequestUrl,
   getEmailVerificationVerifyUrl,
-  getProvisionTestTalentEndpoint,
-  getTeardownTestTalentEndpoint,
+  getSuperadminSessionEndpoint,
   getInspectCertificationsEndpoint,
+  // ADR-027 superadmin session persistence.
+  loadSuperadminSession,
+  saveSuperadminSession,
+  clearSuperadminSession,
   // Persistent config file + endpoint safety (endpoint-config task).
   configFilePath,
   loadConfigFile,

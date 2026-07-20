@@ -33,7 +33,7 @@
 
 const { parseCertifyArgs } = require('../src/certify-args');
 const { detectReportLang, getCatalog } = require('../src/i18n');
-const { getCertifyEndpoint } = require('../src/config');
+const { getCertifyEndpoint, loadSuperadminSession } = require('../src/config');
 const { detectTechnologies } = require('../src/tech-detector');
 const { confirmDisclaimerAcceptance } = require('../src/certify-disclaimer');
 const {
@@ -250,60 +250,75 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
   // --- deterministic sampling (local) ---
   const samples = buildSkillSamples(root, selected);
 
-  // --- verified authorship gate (ADR-017) ------------------------------------
-  // Only code ATTRIBUTABLE to the Talent's verified email is certifiable. Git
-  // is read locally (no egress); non-attributable files are dropped BEFORE any
-  // code leaves the machine. "Sin email atribuible, no hay certificación."
+  // ADR-027: a NON-PROD superadmin session (opened via `superadmin`) bypasses
+  // the ADR-017 authorship gate wholesale — certify ANY code on ANY repo. The
+  // token is honored server-side only in non-production. Supersedes the ADR-023
+  // authorized-authoring widening (RESOLVE no longer returns a set).
+  const superadmin = loadSuperadminSession();
+
+  // Read git authorship once — used as the ADR-017 GATE (real run) and, either
+  // way, for the ADR-025 provenance receipt (repository / commit range).
   const authorship = collectAuthorship(root);
-  if (!authorship.available) {
-    // No git / no readable history / squashed → attribution impossible → refuse
-    // the whole run cleanly (never a crash, never a silent pass). ADR-018:
-    // offer the human contact valve for a possible legitimate false negative.
-    process.stdout.write(`\n  ${c.authorshipNoGit}\n  ${c.authorshipContact}\n\n`);
-    return;
-  }
 
-  // ADR-023: the server returns an authorized authoring set ONLY for a TEST
-  // identity (null for a real identity), so the widening below can never apply
-  // to a real identity. `resolveResult` came from the RESOLVE round-trip.
-  const authorizedSet =
-    resolveResult && resolveResult.authorizedAuthoring ? resolveResult.authorizedAuthoring : null;
+  if (superadmin) {
+    // Skip attribution entirely: every sampled file is sent as-is.
+    for (const s of samples) {
+      s.authorEmails = [];
+      s.sampledFiles = Array.isArray(s.files) ? s.files.map((f) => f.path) : [];
+      s.fileAttribution = [];
+    }
+    process.stdout.write(`\n  ${c.superadminBypass(superadmin.email || '')}\n`);
+  } else {
+    // --- verified authorship gate (ADR-017) ----------------------------------
+    // Only code ATTRIBUTABLE to the Talent's verified email is certifiable. Git
+    // is read locally (no egress); non-attributable files are dropped BEFORE any
+    // code leaves the machine. "Sin email atribuible, no hay certificación."
+    if (!authorship.available) {
+      // No git / no readable history / squashed → attribution impossible → refuse
+      // the whole run cleanly (never a crash, never a silent pass). ADR-018:
+      // offer the human contact valve for a possible legitimate false negative.
+      process.stdout.write(`\n  ${c.authorshipNoGit}\n  ${c.authorshipContact}\n\n`);
+      return;
+    }
 
-  const refusedSkillNames = [];
-  for (const s of samples) {
-    const attribution = attributeSample(s, email, authorship, authorizedSet);
-    // Persist-evidence + gate inputs live on the sample. Only attributable
-    // files survive to be sent for certification.
-    s.files = attribution.attributableFiles;
-    s.authorEmails = attribution.authorEmails;
-    s.sampledFiles = attribution.attributableFiles.map((f) => f.path);
-    // ADR-025 receipt: the per-file attribution trail (path → git authors → ✓/✗)
-    // for display only (never persisted; git authorship is not cryptographic proof).
-    s.fileAttribution = attribution.fileAttribution;
-    if (!attribution.certifiable && s.meta && s.meta.sampleable) {
-      // A Skill that HAD a code sample but none of it is the Talent's own.
-      refusedSkillNames.push(s.skillName);
+    const refusedSkillNames = [];
+    for (const s of samples) {
+      // ADR-027: strict single-verified-email attribution (no authorized set).
+      const attribution = attributeSample(s, email, authorship, null);
+      // Persist-evidence + gate inputs live on the sample. Only attributable
+      // files survive to be sent for certification.
+      s.files = attribution.attributableFiles;
+      s.authorEmails = attribution.authorEmails;
+      s.sampledFiles = attribution.attributableFiles.map((f) => f.path);
+      // ADR-025 receipt: the per-file attribution trail (path → git authors → ✓/✗)
+      // for display only (never persisted; git authorship is not cryptographic proof).
+      s.fileAttribution = attribution.fileAttribution;
+      if (!attribution.certifiable && s.meta && s.meta.sampleable) {
+        // A Skill that HAD a code sample but none of it is the Talent's own.
+        refusedSkillNames.push(s.skillName);
+      }
+    }
+
+    if (refusedSkillNames.length > 0) {
+      // Some certified, some refused for lack of attributable code — say which,
+      // and offer the ADR-018 contact valve for a possible false negative.
+      process.stdout.write(`\n  ${c.authorshipRefused(refusedSkillNames.join(', '))}\n  ${c.authorshipContact}\n`);
     }
   }
 
   const sendable = samples.filter((s) => Array.isArray(s.files) && s.files.length > 0);
 
   if (sendable.length === 0) {
-    // Nothing the Talent authored across ALL selected Skills → hard refusal.
+    // Nothing attributable (real run) or nothing sampled (superadmin) → refuse.
     // ADR-018 contact valve (display only, no automatic send).
     process.stdout.write(`\n  ${c.authorshipNoneAttributable}\n  ${c.authorshipContact}\n\n`);
     return;
-  }
-  if (refusedSkillNames.length > 0) {
-    // Some certified, some refused for lack of attributable code — say which,
-    // and offer the ADR-018 contact valve for a possible false negative.
-    process.stdout.write(`\n  ${c.authorshipRefused(refusedSkillNames.join(', '))}\n  ${c.authorshipContact}\n`);
   }
 
   // --- certify (egress; scrub happens in buildCertifyRequest) ---
   let results = [];
   if (sendable.length > 0) {
-    const requestBody = buildCertifyRequest(email, sendable, lang);
+    const requestBody = buildCertifyRequest(email, sendable, lang, superadmin ? superadmin.token : null);
     // Spinner while the model analyzes your code (issue 011): each Skill is a
     // ~50s+ server-side gemini-2.5-pro call, run sequentially — make it clear
     // the CLI is working, not hung. withSpinner degrades to a single stderr
@@ -364,6 +379,8 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
       repository: authorship.repository,
       commitRange: authorship.commitRange,
       toolVersion: CLI_VERSION,
+      // ADR-027: forward the session token so the backend stamps test_origin.
+      superadminToken: superadmin ? superadmin.token : null,
     });
   }
 }
