@@ -144,27 +144,25 @@ function agentDescLine(card, depth) {
   return `  ${indent}   ${c.dim}${summarize(card.whatItDoes, 90)}${c.reset}`;
 }
 
-// v4 (agent classification, report req 2): one line under the agent with its
-// closest catalog agent + how it was matched (✓ exact match / AI-inferred), or
-// an explicit "unclassified". Full detail (not truncated — the pieces are short).
+// Agent classification (report req 2): AFFIRMATIVE one-liner — Category · Role ·
+// Level, no "closest to" hedging and NO visible match-method badge (the `method`
+// field stays in the data, just not rendered). A genuinely unmatched agent shows
+// a neutral, plain "No category" — never bracketed/apologetic.
 function agentClassLine(card, depth, t) {
   const indent = '  '.repeat(depth);
   const cc = t.classification;
   // No evaluation ran for this agent → no classification line.
   if (!card.classification) return '';
   if (card.classification.method === 'unclassified' || !card.classification.catalogId) {
-    return `  ${indent}   ${c.gray}[${cc.unclassified}]${c.reset}`;
+    return `  ${indent}   ${c.gray}${cc.noCategory}${c.reset}`;
   }
-  const { category, role, level, method } = card.classification;
+  const { category, role, level } = card.classification;
   const catLabel = (category && cc.categories[category]) || category;
   const levelLabel = (level && cc.levels[level]) || level;
-  const methodLabel = method === 'deterministic' ? cc.methodDeterministic : cc.methodLlm;
-  const methodColor = method === 'deterministic' ? c.green : c.gray;
   const bits = [];
   if (catLabel) bits.push(`${c.cyan}${catLabel}${c.reset}`);
-  if (role) bits.push(`${c.dim}${cc.closest}:${c.reset} ${c.white}${role}${c.reset}`);
+  if (role) bits.push(`${c.white}${role}${c.reset}`);
   if (levelLabel) bits.push(`${c.dim}${levelLabel}${c.reset}`);
-  bits.push(`${methodColor}(${methodLabel})${c.reset}`);
   return `  ${indent}   ${bits.join(`${c.gray} · ${c.reset}`)}`;
 }
 

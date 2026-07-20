@@ -154,10 +154,7 @@ const catalogs = {
     // inferred by the model.
     classification: {
       label: 'Clasificación',
-      closest: 'más parecido a',
-      unclassified: 'Sin clasificar',
-      methodDeterministic: 'coincidencia exacta',
-      methodLlm: 'inferido por IA',
+      noCategory: 'Sin categoría',
       improvementsHeading: 'Cómo mejorar este agente',
       categories: {
         developer: 'Desarrollo',
@@ -861,10 +858,7 @@ const catalogs = {
     // Agent classification + improvement tips (skill-code-certification req 2/3) — see the es block.
     classification: {
       label: 'Classification',
-      closest: 'closest to',
-      unclassified: 'Unclassified',
-      methodDeterministic: 'exact match',
-      methodLlm: 'AI-inferred',
+      noCategory: 'No category',
       improvementsHeading: 'How to improve this agent',
       categories: {
         developer: 'Development',

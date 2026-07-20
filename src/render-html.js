@@ -452,26 +452,25 @@ function agentCardHtml(card, t) {
   </div>`;
 }
 
-// v4 (agent classification, report req 2): the closest catalog agent + how it was
-// matched. `classification` is null when unclassified — then we show an explicit
-// "Unclassified" chip rather than nothing (honest: it WAS considered, no fit).
+// Agent classification (report req 2): presented AFFIRMATIVELY — Category · Role
+// · Level, directly, no "closest to" hedging and NO visible match-method badge
+// (the `method` field still exists in the data/contract, just not rendered — it
+// gave a low-credibility "AI-inferred" feel). A genuinely unmatched agent gets a
+// neutral plain "No category" chip, never an apologetic or error-looking note.
 function agentClassificationHtml(card, t) {
   const c = t.classification;
   // No evaluation ran for this agent → no classification block at all.
   if (!card.classification) return '';
   if (card.classification.method === 'unclassified' || !card.classification.catalogId) {
-    return `<div class="agent-class"><span class="chip pill unclassified">${esc(c.unclassified)}</span></div>`;
+    return `<div class="agent-class"><span class="chip pill nocat">${esc(c.noCategory)}</span></div>`;
   }
-  const { category, role, level, method } = card.classification;
+  const { category, role, level } = card.classification;
   const categoryLabel = (category && c.categories[category]) || category;
   const levelLabel = (level && c.levels[level]) || level;
-  const methodLabel = method === 'deterministic' ? c.methodDeterministic : c.methodLlm;
-  const methodClass = method === 'deterministic' ? 'det' : 'llm';
   const parts = [];
   if (categoryLabel) parts.push(`<span class="chip pill cat">${esc(categoryLabel)}</span>`);
-  if (role) parts.push(`<span class="agent-class-role">${esc(c.closest)}: <b>${esc(role)}</b></span>`);
+  if (role) parts.push(`<span class="agent-class-role"><b>${esc(role)}</b></span>`);
   if (levelLabel) parts.push(`<span class="chip pill lvl">${esc(levelLabel)}</span>`);
-  parts.push(`<span class="chip pill method ${methodClass}" title="${esc(c.label)}">${esc(methodLabel)}</span>`);
   return `<div class="agent-class">${parts.join('')}</div>`;
 }
 
@@ -1063,21 +1062,20 @@ const FOOTPRINT_CSS = `
 
   /* ---- Agent classification + improvements (v4) ---- */
   .agent-class{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:2px}
-  .agent-class-role{font-size:12px;color:var(--muted)}
+  .agent-class-role{font-size:13px;color:var(--fg)}
   .agent-class-role b{color:var(--fg);font-weight:600}
   .chip.pill.cat{color:var(--fg);background:var(--track);font-weight:600}
   .chip.pill.lvl{color:var(--secondary-fg);background:var(--secondary)}
-  .chip.pill.unclassified{color:var(--muted);background:var(--track);font-style:italic}
-  .chip.pill.method{font-size:11px;padding:3px 10px}
-  .chip.pill.method.det{color:var(--ds-emerald-700,#047857);background:var(--ds-emerald-50,#ecfdf5)}
-  .chip.pill.method.llm{color:var(--model-fg);background:var(--model-bg)}
+  .chip.pill.nocat{color:var(--muted);background:var(--track)}
   .agent-improve{margin-top:4px}
   .agent-improve-k{font-size:12px;font-weight:600;color:var(--fg);margin-bottom:4px}
   .agent-improve ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:3px}
   .agent-improve li{font-size:13px;line-height:1.45;color:var(--muted)}
 
   /* ---- Progression ladder (levels 0-4 + tiers T0-T7, report req 1) ---- */
-  .ladder-card{display:flex;flex-direction:column;gap:14px}
+  /* Maturity-ladder card: give the content room to breathe and drop the border
+     (user request — the base .card has no padding of its own). */
+  .ladder-card{display:flex;flex-direction:column;gap:14px;padding:20px 22px;border:none}
   .ladder-intro{margin:0;font-size:14px;line-height:1.55;color:var(--muted)}
   .ladder-legend{margin:0;font-size:12px;font-weight:600;color:var(--secondary-fg)}
   .ladder-levels{display:flex;flex-direction:column;gap:12px}
