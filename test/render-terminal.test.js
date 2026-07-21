@@ -102,24 +102,25 @@ test('renderTerminal: nested subagents drawn with stacked ↓ per depth', () => 
 });
 
 // ADR-016 agent evaluation: compact score + usage shown per line (join by NAME).
-test('renderTerminal: shows the definition-quality score and local usage per agent (joined by name)', () => {
+test('renderTerminal: shows local usage per agent (joined by name) and NO numeric score', () => {
   const report = {
     ...BASE_REPORT,
     agents: [
-      { name: 'scored', tools: [], model: 'opus', parent: null },
-      { name: 'unscored', tools: [], model: 'haiku', parent: null },
+      { name: 'alpha', tools: [], model: 'opus', parent: null },
+      { name: 'beta', tools: [], model: 'haiku', parent: null },
     ],
-    // Fewer evaluations than agents (backend drops what it couldn't score) —
-    // matched by name, NOT index, so `unscored` renders with no number.
-    agentEvaluation: { evaluations: [{ name: 'scored', score: 88, rationale: 'clear' }], promptVersion: 'agent-eval-v1' },
-    agentUsage: { available: true, byAgent: { scored: 4, unscored: 0 } },
+    // Evaluation carries rationale/classification but NO score (removed).
+    agentEvaluation: { evaluations: [{ name: 'alpha', rationale: 'clear' }], promptVersion: 'agent-eval-v1' },
+    agentUsage: { available: true, byAgent: { alpha: 4, beta: 0 } },
   };
   const html = strip(renderTerminal(report, MATURITY_NO_TIER, 'es'));
-  assert.match(html, /scored.*88\/100/); // scored agent shows its number
   assert.match(html, /usado 4×/);
   assert.match(html, /sin uso local/);
-  // `unscored` line present but carries no "/100" score badge.
-  assert.match(html, /unscored/);
+  assert.match(html, /alpha/);
+  assert.match(html, /beta/);
+  // The per-agent numeric score badge is GONE (the agent line no longer carries
+  // a "N/100"). The footprint maturity meter's own /100 is a separate line.
+  assert.equal(/alpha[^\n]*\d+\/100/.test(html), false);
 });
 
 test('renderTerminal: a note is shown when local usage history is unavailable', () => {

@@ -364,7 +364,8 @@ function buildAgentCardTree(report, t) {
     const fallbackPhrase = t && t.html.agentDescriptionFromName ? t.html.agentDescriptionFromName(humanizeAgentName(a.name)) : null;
     const whatItDoes = evalPhrase || synthPhrase || rawPhrase || fallbackPhrase;
 
-    const score = ev && typeof ev.score === 'number' ? ev.score : null;
+    // The numeric score was removed from footprint cards (user decision) — not
+    // carried onto the card. rationale + classification + improvements + usage stay.
     const rationale = ev && typeof ev.rationale === 'string' && ev.rationale.trim() ? ev.rationale.trim() : null;
     const usageCount = usageByAgent ? (typeof usageByAgent[a.name] === 'number' ? usageByAgent[a.name] : null) : null;
     // v4 (agent classification): closest catalog agent + how it was matched, and
@@ -392,7 +393,6 @@ function buildAgentCardTree(report, t) {
       tools,
       model,
       parent: parentKey,
-      score,
       rationale,
       usageCount,
       classification,
@@ -429,13 +429,9 @@ function agentCardHtml(card, t) {
   const modelChip = card.model
     ? `<span class="chip pill model"><i class="dot" aria-hidden="true"></i>${esc(card.model)}</span>`
     : '';
-  // ADR-016 agent evaluation: the full per-agent detail lives HERE (terminal
-  // keeps only a one-line summary). A definition-quality score badge (banded
-  // green/amber/red), its LLM rationale, and the local usage signal.
-  const scoreBadge = typeof card.score === 'number'
-    ? `<span class="agent-score ${scoreBand(card.score)}" title="${esc(t.html.agentScoreLabel)}">`
-      + `<b>${card.score}</b><span class="agent-score-max">/100</span></span>`
-    : '';
+  // The numeric definition-quality score badge was REMOVED from footprint cards
+  // (user decision — no number). The rich detail (rationale, classification,
+  // improvements) + the local usage signal stay.
   const usageChip = card.usageCount != null
     ? `<span class="chip pill usage" title="${esc(t.html.agentUsageLabel)}">`
       + `<i class="dot" aria-hidden="true"></i>${esc(card.usageCount === 0 ? t.html.agentUnused : t.html.agentUsedTimes(card.usageCount))}</span>`
@@ -454,9 +450,8 @@ function agentCardHtml(card, t) {
   return `<div class="agent-card" aria-label="${esc(ariaLabel)}">
     <div class="agent-card-head">
       <span class="agent-title">${title}</span>
-      ${scoreBadge || badge}
+      ${badge}
     </div>
-    ${hasSymbolicName && scoreBadge ? `<div class="agent-chips">${badge}</div>` : ''}
     ${phrase}
     ${agentCertLevelHtml(card, t)}
     ${rationale}
@@ -516,14 +511,6 @@ function agentImprovementsHtml(card, t) {
     <div class="agent-improve-k">${esc(t.classification.improvementsHeading)}</div>
     <ul>${items}</ul>
   </div>`;
-}
-
-// Score band for the badge colour: >=80 strong, >=50 mid, else low. Mirrors the
-// terminal's green/amber/red banding (src/render-terminal.js#scoreColor).
-function scoreBand(score) {
-  if (score >= 80) return 'good';
-  if (score >= 50) return 'mid';
-  return 'low';
 }
 
 // Recursive: renders a card plus its children, indented and rail-connected,

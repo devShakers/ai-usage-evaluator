@@ -106,17 +106,6 @@ function printTechnologies(report, t, p) {
  * the HTML renderer); guards a malformed `parent` cycle with a `visited` set.
  */
 
-function scoreColor(score) {
-  if (score >= 80) return c.green;
-  if (score >= 50) return c.yellow;
-  return c.red;
-}
-
-function agentScoreBit(card) {
-  if (typeof card.score !== 'number') return '';
-  return `  ${scoreColor(card.score)}${c.bold}${card.score}${c.reset}${c.dim}/100${c.reset}`;
-}
-
 function agentUsageBit(card, t) {
   if (card.usageCount === null || card.usageCount === undefined) return '';
   const label = card.usageCount === 0 ? t.terminal.agentUnused : t.terminal.agentUsed(card.usageCount);
@@ -131,8 +120,9 @@ function agentLine(card, depth, t) {
     ? `${card.symbolicName} ${c.gray}(${card.name})${c.reset}`
     : card.name;
   const modelBit = card.model ? ` ${c.dim}[${card.model}]${c.reset}` : '';
+  // No numeric score on footprint cards (user decision) — model badge + usage only.
   return `  ${indent}${marker} ${c.bold}${c.white}${title}${c.reset}${modelBit}`
-    + `${agentScoreBit(card)}${agentUsageBit(card, t)}`;
+    + `${agentUsageBit(card, t)}`;
 }
 
 // A compact, dim, summarized description under each agent (frontmatter

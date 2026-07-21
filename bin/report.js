@@ -19,11 +19,14 @@ const {
 } = require('../src/share');
 const { runConsentPrompt } = require('../src/consent-flow');
 const { createStdinAsk } = require('../src/stdin-ask');
-const { parseAgentDescriptions } = require('../src/agent-org-chart');
+const { parseAgentDescriptions, parseAgentDefinitions } = require('../src/agent-org-chart');
 const { buildSynthesisRequest, requestAgentSynthesis } = require('../src/agent-synthesis');
+const { collectAgentUsage } = require('../src/agent-usage');
+const { buildAgentEvaluationRequest, requestAgentEvaluation } = require('../src/agent-evaluation');
 const {
   getSynthesisEndpoint,
   getRoadmapEndpoint,
+  getAgentEvaluationEndpoint,
   setIngestEndpoint,
   resolveIngestEndpoint,
 } = require('../src/config');
@@ -187,6 +190,35 @@ async function maybeSynthesizeAgents(report, root) {
   }
 }
 
+// Ephemeral agent-evaluation call (ADR-016): scores each agent's DEFINITION
+// quality server-side (gemini-2.5-flash — see src/agent-evaluation.js). Same
+// resilience contract as maybeSynthesizeAgents: no endpoint / network error /
+// timeout / bad shape all resolve to `null`, and the report simply shows no
+// scores (the local run never hangs or breaks). Definitions are scrubbed before
+// they leave the machine (buildAgentEvaluationRequest + the network-boundary
+// re-scrub in requestAgentEvaluation). Reuses report.agentDescriptions (already
+// attached after the scan) rather than re-parsing.
+async function maybeEvaluateAgents(report, root, lang) {
+  if (!Array.isArray(report.agents) || report.agents.length === 0) return null;
+  const endpoint = getAgentEvaluationEndpoint();
+  if (!endpoint) return null;
+
+  try {
+    // Evaluate the FULL definition (frontmatter description + body), not just
+    // the one-line description — a body-defined agent has an empty frontmatter
+    // description, which the backend would omit (no score). See
+    // src/agent-org-chart.js#parseAgentDefinitions.
+    const definitions = parseAgentDefinitions(root);
+    // ADR-026: pass the report language so the rationale + the one-line
+    // description come back translated (a Spanish-authored definition still
+    // yields report-language prose).
+    const requestBody = buildAgentEvaluationRequest(report.agents, definitions, lang);
+    return await requestAgentEvaluation(requestBody, { endpoint });
+  } catch {
+    return null; // never breaks the local report
+  }
+}
+
 // Ephemeral roadmap personalization call (talents-ai-score, ADR-015): asks
 // the hub for a project-adapted rewrite of the CURRENT tier jump's 4 prose
 // gaps (whatUnlocks/steps/tips/mistakes) — everything else about the
@@ -312,12 +344,23 @@ async function run(argv = process.argv.slice(2), { ask: injectedAsk = null } = {
     : await maybeSynthesizeAgents(report, root || process.cwd());
   if (synthesis) report.agentSynthesis = synthesis;
 
-  // Footprint agents are now name + description + hierarchy ONLY
-  // (skill-code-certification, investor spec): per-agent classification / level /
-  // improvements moved to the `certify agents` flow, and the orphaned
-  // agent-evaluation endpoint + its CLI client were removed. Footprint keeps the
-  // synthesis (name + one-line "what it does") + the deterministic org-chart
-  // hierarchy — no agent-quality/usage call happens here anymore.
+  // Agent evaluation (ADR-016). Two independent signals attached to the report:
+  //   - USAGE (local, no network, no LLM): how often each detected agent was
+  //     invoked in the local Claude Code history. Strictly local — never in the
+  //     persistence payload. Degrades to `available:false` with no history.
+  //   - DEFINITION QUALITY (ephemeral LLM, server-side): a 0-100 score +
+  //     rationale per agent. Only ATTEMPTED (and only then does the spinner
+  //     show) when agents exist AND an endpoint is configured; otherwise
+  //     resolves instantly to null and no scores are shown.
+  if (Array.isArray(report.agents) && report.agents.length > 0) {
+    report.agentUsage = collectAgentUsage(report.agents);
+
+    const willAttemptEvaluation = !!getAgentEvaluationEndpoint();
+    const evaluation = willAttemptEvaluation
+      ? await withSpinner(catalog.cli.evaluatingAgentsLabel, () => maybeEvaluateAgents(report, root || process.cwd(), lang))
+      : await maybeEvaluateAgents(report, root || process.cwd(), lang);
+    if (evaluation) report.agentEvaluation = evaluation;
+  }
 
   // Ephemeral roadmap personalization (ADR-015): attaches
   // `report.roadmapPersonalization` only on a validated success; on any

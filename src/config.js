@@ -266,6 +266,20 @@ function deriveEmailVerificationUrl(env, segment) {
 }
 
 /*
+ * Agent-evaluation endpoint (footprint agent cards — RESTORED). Ingest-sibling
+ * derivation like the others; `AI_FOOTPRINT_AGENT_EVAL_ENDPOINT` is an optional
+ * override. Unset is NOT an error: the caller treats a null endpoint as a
+ * graceful "no card enrichment this run" (the footprint report is always shown).
+ * NOTE: the footprint cards no longer show a numeric score — the endpoint now
+ * returns classification + improvements + rationale + description only.
+ */
+function getAgentEvaluationEndpoint(env = process.env) {
+  const explicit = env.AI_FOOTPRINT_AGENT_EVAL_ENDPOINT;
+  if (explicit && explicit.trim()) return explicit.trim();
+  return deriveFromIngest(env, 'agent-evaluation');
+}
+
+/*
  * Agent-certification endpoints (`certify agents`). Three ingest-siblings under
  * `.../works/ai-footprint/agent-certification/{categories,followups,verdict}`,
  * derived exactly like the other routes — a single configured ingest endpoint
@@ -351,6 +365,7 @@ module.exports = {
   getSynthesisEndpoint,
   getRoadmapEndpoint,
   getCertifyEndpoint,
+  getAgentEvaluationEndpoint,
   getAgentCertificationCategoriesEndpoint,
   getAgentCertificationFollowupsEndpoint,
   getAgentCertificationVerdictEndpoint,
