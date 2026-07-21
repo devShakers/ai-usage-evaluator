@@ -334,6 +334,12 @@ function buildAgentCardTree(report, t) {
     report.agentUsage && report.agentUsage.byAgent && typeof report.agentUsage.byAgent === 'object'
       ? report.agentUsage.byAgent
       : null;
+  // `certify agents` (skill-code-certification): per-agent proficiency LEVEL,
+  // keyed by the local agent name (exact), from report-state. Absent → no tag.
+  const certByName =
+    report.agentCertifications && typeof report.agentCertifications === 'object'
+      ? report.agentCertifications
+      : {};
 
   const cards = agents.map((a) => {
     const key = normalizeAgentName(a.name);
@@ -373,6 +379,12 @@ function buildAgentCardTree(report, t) {
       : null;
     const improvements = ev && Array.isArray(ev.improvements) ? ev.improvements : [];
 
+    const certRaw = certByName[a.name];
+    const certification =
+      certRaw && typeof certRaw === 'object' && certRaw.level && certRaw.level !== 'none'
+        ? { level: certRaw.level, category: certRaw.category || null, role: certRaw.role || null }
+        : null;
+
     return {
       name: a.name,
       symbolicName: synth && synth.symbolicName ? synth.symbolicName : null,
@@ -385,6 +397,7 @@ function buildAgentCardTree(report, t) {
       usageCount,
       classification,
       improvements,
+      certification,
     };
   });
 
@@ -445,10 +458,29 @@ function agentCardHtml(card, t) {
     </div>
     ${hasSymbolicName && scoreBadge ? `<div class="agent-chips">${badge}</div>` : ''}
     ${phrase}
+    ${agentCertLevelHtml(card, t)}
     ${rationale}
     ${classification}
     ${improvements}
     <div class="agent-chips">${modelChip}${usageChip}</div>
+  </div>`;
+}
+
+// `certify agents` (report req): a proficiency LEVEL tag + category · role on the
+// agent's card, when the talent has certified this agent. Compact — the full
+// evidence/areas detail is the terminal report, not the HTML card.
+function agentCertLevelHtml(card, t) {
+  if (!card.certification) return '';
+  const ca = t.certifyAgents;
+  const { level, category, role } = card.certification;
+  const levelName = (ca.levelNames && ca.levelNames[level]) || level;
+  const catLabel = category && t.classification.categories[category]
+    ? t.classification.categories[category]
+    : category;
+  const meta = [catLabel, role].filter(Boolean).map((x) => esc(x)).join(' · ');
+  return `<div class="agent-cert">
+    <span class="chip pill cert-level cert-${esc(level)}">${esc(ca.levelLabel)}: ${esc(levelName)}</span>
+    ${meta ? `<span class="agent-cert-meta">${meta}</span>` : ''}
   </div>`;
 }
 
@@ -1070,6 +1102,12 @@ const FOOTPRINT_CSS = `
   .agent-improve-k{font-size:12px;font-weight:600;color:var(--fg);margin-bottom:4px}
   .agent-improve ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:3px}
   .agent-improve li{font-size:13px;line-height:1.45;color:var(--muted)}
+  /* certify agents: proficiency level tag on the card */
+  .agent-cert{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:2px}
+  .agent-cert-meta{font-size:12px;color:var(--muted)}
+  .chip.pill.cert-level{font-weight:700;color:var(--fg);background:var(--track)}
+  .chip.pill.cert-P4,.chip.pill.cert-P5{color:var(--ds-emerald-700,#047857);background:var(--ds-emerald-50,#ecfdf5)}
+  .chip.pill.cert-none{color:var(--muted);background:var(--track)}
 
   /* ---- Progression ladder (levels 0-4 + tiers T0-T7, report req 1) ---- */
   /* Maturity-ladder card: give the content room to breathe and drop the border

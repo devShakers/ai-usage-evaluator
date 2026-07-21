@@ -423,6 +423,74 @@ async function handle(req, res) {
     return send(res, 200, { evaluations });
   }
 
+  /* ---- certify agents (skill-code-certification): 3 deterministic stub steps ---- */
+  const AGENT_CERT_CATALOG = {
+    'dev-3': { catalogId: 'dev-3', category: 'developer', role: 'Code Reviewer', level: 'L1' },
+    'dev-2': { catalogId: 'dev-2', category: 'developer', role: 'QA Automation Engineer', level: 'L2' },
+    'data-1': { catalogId: 'data-1', category: 'data', role: 'SQL Query Writer', level: 'L1' },
+    'prod-1': { catalogId: 'prod-1', category: 'product', role: 'Product Spec Writer', level: 'L2' },
+  };
+  if (method === 'POST' && url === '/works/ai-footprint/agent-certification/categories') {
+    const body = await readJson(req);
+    const name = String((body && body.agent && body.agent.name) || '').toLowerCase();
+    // Deterministic keyword shortlist, always 3 (padded from the catalog order).
+    const order = [];
+    if (/review/.test(name)) order.push('dev-3');
+    if (/test|qa/.test(name)) order.push('dev-2');
+    if (/sql|data|query/.test(name)) order.push('data-1');
+    for (const id of Object.keys(AGENT_CERT_CATALOG)) if (!order.includes(id)) order.push(id);
+    const candidates = order.slice(0, 3).map((id) => AGENT_CERT_CATALOG[id]);
+    console.log(`[agent-cert/categories] agent=${name} → ${candidates.map((c) => c.catalogId).join(',')}`);
+    return send(res, 200, { candidates });
+  }
+  if (method === 'POST' && url === '/works/ai-footprint/agent-certification/followups') {
+    const body = await readJson(req);
+    const es = body && body.locale !== 'en';
+    const questions = es
+      ? ['¿Qué pasa si el agente falla?', '¿Qué decidiste NO delegarle?']
+      : ['What happens if the agent fails?', 'What did you decide NOT to delegate to it?'];
+    console.log('[agent-cert/followups] →', questions.length);
+    return send(res, 200, { questions });
+  }
+  if (method === 'POST' && url === '/works/ai-footprint/agent-certification/verdict') {
+    const body = await readJson(req);
+    const es = body && body.locale !== 'en';
+    const chosen = AGENT_CERT_CATALOG[(body && body.chosenCategoryId) || ''] || null;
+    const def = String((body && body.agent && body.agent.definition) || '');
+    const answered = String((body && body.qualification && body.qualification.decisions) || '').length;
+    // Deterministic tags from signals: richer definition + real "decisions"
+    // answer → more verified areas. NOTE the stub returns `level` directly (the
+    // REAL backend derives it from the tags via the fixed formula).
+    const strong = def.length >= 120 && answered >= 20;
+    const tag = strong ? 'verified' : def.length >= 60 ? 'partial' : 'claimed';
+    const AREAS = ['purpose_fit', 'design_ownership', 'boundaries_guardrails', 'failure_handling', 'operation_evolution'];
+    const areas = AREAS.map((area, i) => ({
+      area,
+      // First areas verified when strong; taper off — exercises mixed tags.
+      tag: strong ? (i < 4 ? 'verified' : 'partial') : tag,
+      evidence: es ? 'Derivado de la definición (stub).' : 'Derived from the definition (stub).',
+    }));
+    const verifiedCount = areas.filter((a) => a.tag === 'verified').length;
+    const partial = areas.filter((a) => a.tag === 'partial').length;
+    const points = verifiedCount + partial * 0.5;
+    const level = ['none', 'P1', 'P2', 'P3', 'P4', 'P5'][Math.min(5, Math.round(points))];
+    console.log(`[agent-cert/verdict] agent=${body && body.agent && body.agent.name} level=${level}`);
+    return send(res, 200, {
+      agentName: (body && body.agent && body.agent.name) || 'agent',
+      category: chosen ? chosen.category : null,
+      role: chosen ? chosen.role : null,
+      level,
+      areas,
+      verifiedEvidence: strong
+        ? [es ? 'La definición incluye el guardrail que mencionaste.' : 'The definition includes the guardrail you mentioned.']
+        : [],
+      unverifiedEvidence: [es ? 'Afirmaste reintentos; la definición no los recoge.' : 'You claimed retries; the definition does not cover them.'],
+      rationale: es
+        ? 'Veredicto stub determinista (sin LLM); el servidor real es shakers-hub-backend (gemini-2.5-flash).'
+        : 'Deterministic stub verdict (no LLM); the real server is shakers-hub-backend (gemini-2.5-flash).',
+    });
+  }
+
   send(res, 404, { error: 'no encontrado' });
 }
 

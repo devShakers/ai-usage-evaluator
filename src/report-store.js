@@ -121,7 +121,17 @@ function saveState(state) {
 
 function getOrCreateProject(state, absRoot) {
   if (!state.projects[absRoot]) {
-    state.projects[absRoot] = { root: absRoot, updatedAt: null, footprint: null, certifications: {} };
+    state.projects[absRoot] = {
+      root: absRoot,
+      updatedAt: null,
+      footprint: null,
+      certifications: {},
+      agentCertifications: {},
+    };
+  }
+  // Backward-compat: a project persisted before agent certifications existed.
+  if (!state.projects[absRoot].agentCertifications) {
+    state.projects[absRoot].agentCertifications = {};
   }
   return state.projects[absRoot];
 }
@@ -162,9 +172,18 @@ function renderProjectHtml(project, lang) {
   const sections = [];
 
   if (project && project.footprint && project.footprint.report) {
+    // Enrich the footprint report's agent cards with any agent-certification
+    // LEVEL tags for this project (skill-code-certification, `certify agents`) —
+    // read by render-html.js#buildAgentCardTree. The HTML level tag therefore
+    // requires a footprint (which builds the agents section); the per-agent
+    // detail always shows in the terminal at cert time.
+    const report = {
+      ...project.footprint.report,
+      agentCertifications: (project && project.agentCertifications) || {},
+    };
     sections.push(`<section>
     <h2 class="section-title">${esc(c.footprintHeading)}</h2>
-    ${footprintSectionsHtml(project.footprint.report, project.footprint.maturity, lang)}
+    ${footprintSectionsHtml(report, project.footprint.maturity, lang)}
   </section>`);
   }
 
@@ -248,6 +267,24 @@ function persistFootprint({ root, report, maturity }) {
   return stampAndSaveState(state, absRoot);
 }
 
+// Persist an agent certification LEVEL for THIS project (skill-code-certification,
+// `certify agents`), keyed by the local agent name. State only (no HTML). Stores
+// just the summary the HTML card needs (level + category + role); the full
+// evidence lives server-side + is shown in the terminal at cert time. Latest per
+// agent name wins (the card shows the most recent level).
+function persistAgentCertification({ root, agentName, level, category, role }) {
+  const absRoot = path.resolve(root || process.cwd());
+  const state = loadState();
+  const project = getOrCreateProject(state, absRoot);
+  project.agentCertifications[agentName] = {
+    level: level || 'none',
+    category: category || null,
+    role: role || null,
+    generatedAt: new Date().toISOString(),
+  };
+  return stampAndSaveState(state, absRoot);
+}
+
 // Materialize (render + write) THIS project's cumulative HTML from persisted
 // state, and return its path + file:// URL. Returns `{ hasData:false }` when the
 // project has neither a footprint nor a certified Skill yet (the `report`
@@ -318,6 +355,7 @@ module.exports = {
   renderProjectHtml,
   persistFootprint,
   persistCertification,
+  persistAgentCertification,
   materializeProjectReport,
   upsertFootprint,
   upsertCertification,

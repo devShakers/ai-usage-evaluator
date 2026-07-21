@@ -344,23 +344,13 @@ async function run(argv = process.argv.slice(2), { ask: injectedAsk = null } = {
     : await maybeSynthesizeAgents(report, root || process.cwd());
   if (synthesis) report.agentSynthesis = synthesis;
 
-  // Agent evaluation (ADR-016). Two independent signals attached to the report:
-  //   - USAGE (local, no network, no LLM): how often each detected agent was
-  //     invoked in the local Claude Code history. Strictly local — never in the
-  //     persistence payload. Degrades to `available:false` with no history.
-  //   - DEFINITION QUALITY (ephemeral LLM, server-side): a 0-100 score +
-  //     rationale per agent. Only ATTEMPTED (and only then does the spinner
-  //     show) when agents exist AND an endpoint is configured; otherwise
-  //     resolves instantly to null and no scores are shown.
-  if (Array.isArray(report.agents) && report.agents.length > 0) {
-    report.agentUsage = collectAgentUsage(report.agents);
-
-    const willAttemptEvaluation = !!getAgentEvaluationEndpoint();
-    const evaluation = willAttemptEvaluation
-      ? await withSpinner(catalog.cli.evaluatingAgentsLabel, () => maybeEvaluateAgents(report, root || process.cwd(), lang))
-      : await maybeEvaluateAgents(report, root || process.cwd(), lang);
-    if (evaluation) report.agentEvaluation = evaluation;
-  }
+  // Footprint agents are now name + description + hierarchy ONLY
+  // (skill-code-certification, investor spec): the per-agent classification /
+  // level / improvements and the definition-quality score/usage were RELOCATED
+  // to the `certify agents` flow (they are NOT computed in footprint anymore).
+  // The synthesis (name + one-line "what it does") + the deterministic org-chart
+  // hierarchy remain. `collectAgentUsage` / `maybeEvaluateAgents` are no longer
+  // invoked here (kept in the codebase, dormant, reused by certify agents).
 
   // Ephemeral roadmap personalization (ADR-015): attaches
   // `report.roadmapPersonalization` only on a validated success; on any

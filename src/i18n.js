@@ -169,6 +169,67 @@ const catalogs = {
         L3: 'L3 · estratégico',
       },
     },
+    // `certify agents` — flujo interactivo de certificación de agentes.
+    certifyAgents: {
+      intro: 'Certificación de agentes: elige un agente y responde unas preguntas; la IA juzgará, contra la implementación real, hasta qué punto lo dominas.',
+      disclaimer: 'Se enviará la DEFINICIÓN del agente y tus respuestas al servicio de evaluación (efímero; el idioma no cambia el nivel). ¿Continuar? [s/N]',
+      disclaimerDeclined: 'Cancelado. No se ha enviado nada.',
+      noAgents: 'No se han detectado agentes en este proyecto (.claude/agents/).',
+      chooseAgentHeading: 'Elige el agente a certificar:',
+      choosePrompt: (max) => `Número (1-${max}), vacío para cancelar: `,
+      allEvaluated: 'Ya has certificado todos los agentes detectados en esta sesión.',
+      resolvingCategories: 'Analizando el agente y proponiendo categorías…',
+      categoriesUnavailable: 'No se pudieron proponer categorías. Se omite este agente.',
+      chooseCategoryHeading: 'Elige la categoría que mejor encaja:',
+      qAchieve: '¿Qué intentabas conseguir con este agente?',
+      qDecisions: '¿Qué decisiones tomaste tú personalmente?',
+      generatingFollowups: 'Preparando preguntas de seguimiento…',
+      followupsHeading: 'Preguntas de seguimiento:',
+      certifying: 'Evaluando tu dominio del agente contra su implementación…',
+      rerunPrompt: 'Certificar otro agente de los pendientes? [s/N]',
+      gateNotRegistered: 'La certificación de agentes solo está disponible para talentos registrados en Shakers. El email indicado no corresponde a un talento registrado.',
+      gateNotVerified: 'Verifica la propiedad de tu email antes de certificar (ejecuta el flujo con verificación).',
+      error: (reason) => `No se pudo certificar el agente (${reason}). No se ha guardado nada.`,
+      levelNames: {
+        none: 'No sustanciado',
+        P1: 'P1 · Familiar',
+        P2: 'P2 · Practicante',
+        P3: 'P3 · Competente',
+        P4: 'P4 · Avanzado',
+        P5: 'P5 · Experto',
+      },
+      levelDesc: {
+        none: 'La evidencia no respalda un dominio significativo del agente.',
+        P1: 'Conoces el agente y lo usas; poca autoría de su diseño.',
+        P2: 'Lo operas deliberadamente; decisiones de configuración propias, con lagunas.',
+        P3: 'Dominio sólido: modelaste alcance y límites y posees decisiones clave.',
+        P4: 'Dominio profundo: diseñaste para fallos y edge-cases, evidencia verificada.',
+        P5: 'Maestría: dominio verificado en todas las áreas clave; lo evolucionas.',
+      },
+      areaNames: {
+        purpose_fit: 'Propósito y encaje',
+        design_ownership: 'Autoría del diseño',
+        boundaries_guardrails: 'Límites y guardarraíles',
+        failure_handling: 'Manejo de fallos',
+        operation_evolution: 'Operación y evolución',
+      },
+      tagLabels: {
+        verified: 'verificado',
+        partial: 'parcial',
+        claimed: 'afirmado',
+        not_evidenced: 'sin evidencia',
+        n_a: 'no aplica',
+      },
+      reportHeading: 'Certificación del agente',
+      levelLabel: 'Nivel',
+      whyHeading: 'Por qué',
+      verifiedHeading: 'Evidencias verificadas',
+      unverifiedHeading: 'No verificadas (no confirmadas contra la implementación)',
+      areasHeading: 'Áreas evaluadas',
+      rationaleHeading: 'Valoración',
+      noVerified: '(ninguna evidencia verificada)',
+      savedHint: 'Guardado. Ejecuta `report` para ver el informe completo en el navegador.',
+    },
     levelNames: {
       none: 'Sin rastro de IA',
       exploring: 'Explorando',
@@ -515,6 +576,12 @@ const catalogs = {
     // like the consent flow — legal/disclaimer copy must not default to a
     // language the Talent may not read. Vocabulario CONTEXT: Talent, Skill.
     certify: {
+      // Subcommand chooser (skill-code-certification): `certify` = skills or agents.
+      flowHeading: 'Qué quieres certificar?',
+      flowSkills: 'skills — certifica Skills de tu catálogo desde el código',
+      flowAgents: 'agents — certifica tu dominio de un agente de IA',
+      flowPrompt: 'Elige [1=skills, 2=agents], vacío para cancelar: ',
+      flowUsage: 'Uso: `certify skills` o `certify agents`.',
       help:
         'AI Certify — certifica Skills de tu catálogo de Shakers analizando tu proyecto local\n\n'
         + 'Uso:\n'
@@ -873,6 +940,67 @@ const catalogs = {
         L3: 'L3 · strategic',
       },
     },
+    // `certify agents` — interactive agent-certification flow.
+    certifyAgents: {
+      intro: 'Agent certification: pick an agent and answer a few questions; the AI judges, against the real implementation, how deeply you command it.',
+      disclaimer: 'The agent DEFINITION and your answers will be sent to the evaluation service (ephemeral; language does not change the level). Continue? [y/N]',
+      disclaimerDeclined: 'Cancelled. Nothing was sent.',
+      noAgents: 'No agents detected in this project (.claude/agents/).',
+      chooseAgentHeading: 'Choose the agent to certify:',
+      choosePrompt: (max) => `Number (1-${max}), empty to cancel: `,
+      allEvaluated: 'You have certified every detected agent in this session.',
+      resolvingCategories: 'Analysing the agent and proposing categories…',
+      categoriesUnavailable: 'Could not propose categories. Skipping this agent.',
+      chooseCategoryHeading: 'Choose the category that fits best:',
+      qAchieve: 'What were you trying to achieve with this agent?',
+      qDecisions: 'What decisions did you own personally?',
+      generatingFollowups: 'Preparing follow-up questions…',
+      followupsHeading: 'Follow-up questions:',
+      certifying: 'Assessing your command of the agent against its implementation…',
+      rerunPrompt: 'Certify another of the remaining agents? [y/N]',
+      gateNotRegistered: 'Agent certification is only available to Talents registered on Shakers. The email provided is not a registered Talent.',
+      gateNotVerified: 'Verify ownership of your email before certifying (run the flow with verification).',
+      error: (reason) => `Could not certify the agent (${reason}). Nothing was saved.`,
+      levelNames: {
+        none: 'Not substantiated',
+        P1: 'P1 · Familiar',
+        P2: 'P2 · Practitioner',
+        P3: 'P3 · Proficient',
+        P4: 'P4 · Advanced',
+        P5: 'P5 · Expert',
+      },
+      levelDesc: {
+        none: 'The evidence does not back a meaningful command of the agent.',
+        P1: 'You know the agent and use it; little ownership of its design.',
+        P2: 'You operate it deliberately; your own configuration decisions, with gaps.',
+        P3: 'Solid command: you shaped scope and limits and own key decisions.',
+        P4: 'Deep command: you designed for failures and edge-cases, evidence verified.',
+        P5: 'Mastery: verified command across every key area; you evolve it.',
+      },
+      areaNames: {
+        purpose_fit: 'Purpose & fit',
+        design_ownership: 'Design ownership',
+        boundaries_guardrails: 'Boundaries & guardrails',
+        failure_handling: 'Failure handling',
+        operation_evolution: 'Operation & evolution',
+      },
+      tagLabels: {
+        verified: 'verified',
+        partial: 'partial',
+        claimed: 'claimed',
+        not_evidenced: 'not evidenced',
+        n_a: 'n/a',
+      },
+      reportHeading: 'Agent certification',
+      levelLabel: 'Level',
+      whyHeading: 'Why',
+      verifiedHeading: 'Verified evidence',
+      unverifiedHeading: 'Unverified (not confirmed against the implementation)',
+      areasHeading: 'Areas assessed',
+      rationaleHeading: 'Assessment',
+      noVerified: '(no verified evidence)',
+      savedHint: 'Saved. Run `report` to see the full report in your browser.',
+    },
     levelNames: {
       none: 'No AI footprint',
       exploring: 'Exploring',
@@ -1161,6 +1289,12 @@ const catalogs = {
     // Skill Code Certification (skill-code-certification, issues 004/006) —
     // English mirror of the `certify` catalog. Same content/invariants.
     certify: {
+      // Subcommand chooser (skill-code-certification): `certify` = skills or agents.
+      flowHeading: 'What do you want to certify?',
+      flowSkills: 'skills — certify Skills from your catalog, from code',
+      flowAgents: 'agents — certify your command of an AI agent',
+      flowPrompt: 'Choose [1=skills, 2=agents], empty to cancel: ',
+      flowUsage: 'Usage: `certify skills` or `certify agents`.',
       help:
         'AI Certify — certify Skills from your Shakers catalog by analyzing your local project\n\n'
         + 'Usage:\n'

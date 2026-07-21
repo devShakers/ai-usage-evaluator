@@ -282,6 +282,24 @@ function getAgentEvaluationEndpoint(env = process.env) {
   return deriveFromIngest(env, 'agent-evaluation');
 }
 
+/*
+ * Agent-certification endpoints (`certify agents`). Three ingest-siblings under
+ * `.../works/ai-footprint/agent-certification/{categories,followups,verdict}`,
+ * derived exactly like the other routes — a single configured ingest endpoint
+ * makes all three resolve. Unlike footprint's optional agent-evaluation, these
+ * back an interactive flow the user explicitly started: the caller treats a null
+ * endpoint as an actionable error (like certify skills), not a silent no-op.
+ */
+function getAgentCertificationCategoriesEndpoint(env = process.env) {
+  return deriveFromIngest(env, 'agent-certification/categories');
+}
+function getAgentCertificationFollowupsEndpoint(env = process.env) {
+  return deriveFromIngest(env, 'agent-certification/followups');
+}
+function getAgentCertificationVerdictEndpoint(env = process.env) {
+  return deriveFromIngest(env, 'agent-certification/verdict');
+}
+
 function getEmailVerificationRequestUrl(env = process.env) {
   return deriveEmailVerificationUrl(env, 'request');
 }
@@ -351,6 +369,9 @@ module.exports = {
   getRoadmapEndpoint,
   getCertifyEndpoint,
   getAgentEvaluationEndpoint,
+  getAgentCertificationCategoriesEndpoint,
+  getAgentCertificationFollowupsEndpoint,
+  getAgentCertificationVerdictEndpoint,
   getEmailVerificationRequestUrl,
   getEmailVerificationVerifyUrl,
   getSuperadminSessionEndpoint,
