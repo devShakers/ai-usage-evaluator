@@ -470,10 +470,17 @@ async function handle(req, res) {
       tag: strong ? (i < 4 ? 'verified' : 'partial') : tag,
       evidence: es ? 'Derivado de la definición (stub).' : 'Derived from the definition (stub).',
     }));
-    const verifiedCount = areas.filter((a) => a.tag === 'verified').length;
-    const partial = areas.filter((a) => a.tag === 'partial').length;
-    const points = verifiedCount + partial * 0.5;
-    const level = ['none', 'P1', 'P2', 'P3', 'P4', 'P5'][Math.min(5, Math.round(points))];
+    // Mirror the real server formula (aggregate-agent-level.util): P5 only if ALL
+    // five areas verified (strict gate); else ratio r=(verified+0.5·partial)/A
+    // over applicable (non-n_a) areas, floor bands P4≥.80 P3≥.60 P2≥.35 P1≥.15.
+    const applicable = areas.filter((a) => a.tag !== 'n_a');
+    const points = applicable.reduce((s, a) => s + (a.tag === 'verified' ? 1 : a.tag === 'partial' ? 0.5 : 0), 0);
+    let level;
+    if (areas.every((a) => a.tag === 'verified')) level = 'P5';
+    else {
+      const r = applicable.length ? points / applicable.length : 0;
+      level = r >= 0.8 ? 'P4' : r >= 0.6 ? 'P3' : r >= 0.35 ? 'P2' : r >= 0.15 ? 'P1' : 'none';
+    }
     console.log(`[agent-cert/verdict] agent=${body && body.agent && body.agent.name} level=${level}`);
     return send(res, 200, {
       agentName: (body && body.agent && body.agent.name) || 'agent',
