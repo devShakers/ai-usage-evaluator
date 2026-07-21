@@ -48,3 +48,18 @@ test('certify: es and en strings actually differ for a sample of keys (real tran
   assert.notEqual(es.certify.disclaimerQuestion, en.certify.disclaimerQuestion);
   assert.notEqual(es.certify.resolveHeading, en.certify.resolveHeading);
 });
+
+test('certify (missing-migrations bugfix): errorBackendOutdated is present, actionable, and DISTINCT from the network error', () => {
+  for (const cat of [es.certify, en.certify]) {
+    assert.ok(cat.errorBackendOutdated && cat.errorBackendOutdated.length > 0);
+    // Must NOT be the network-error copy — it's the server, not the connection.
+    assert.notEqual(cat.errorBackendOutdated, cat.errorNetwork);
+  }
+  // Actionable wording in each language (migrations / restart).
+  assert.match(es.certify.errorBackendOutdated, /migraciones/i);
+  assert.match(es.certify.errorBackendOutdated, /reinic/i);
+  assert.match(en.certify.errorBackendOutdated, /migrations/i);
+  assert.match(en.certify.errorBackendOutdated, /restart/i);
+  // Real translation, not a copy.
+  assert.notEqual(es.certify.errorBackendOutdated, en.certify.errorBackendOutdated);
+});

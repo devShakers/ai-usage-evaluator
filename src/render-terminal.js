@@ -3,7 +3,7 @@
 const { getCatalog, categoryLabel } = require('./i18n');
 const { buildAgentCardTree } = require('./render-html');
 const { getRoadmapEntry } = require('./roadmap-content');
-const { analyzeTier } = require('./tier-analysis');
+const { analyzeTier, buildLadder } = require('./tier-analysis');
 const { mergeRoadmapPersonalization } = require('./roadmap-personalization');
 const { buildImplementationPrompt } = require('./roadmap-prompt');
 
@@ -144,6 +144,38 @@ function agentDescLine(card, depth) {
   return `  ${indent}   ${c.dim}${summarize(card.whatItDoes, 90)}${c.reset}`;
 }
 
+// Agent classification (report req 2): AFFIRMATIVE one-liner — Category · Role ·
+// Level, no "closest to" hedging and NO visible match-method badge (the `method`
+// field stays in the data, just not rendered). A genuinely unmatched agent shows
+// a neutral, plain "No category" — never bracketed/apologetic.
+function agentClassLine(card, depth, t) {
+  const indent = '  '.repeat(depth);
+  const cc = t.classification;
+  // No evaluation ran for this agent → no classification line.
+  if (!card.classification) return '';
+  if (card.classification.method === 'unclassified' || !card.classification.catalogId) {
+    return `  ${indent}   ${c.gray}${cc.noCategory}${c.reset}`;
+  }
+  const { category, role, level } = card.classification;
+  const catLabel = (category && cc.categories[category]) || category;
+  const levelLabel = (level && cc.levels[level]) || level;
+  const bits = [];
+  if (catLabel) bits.push(`${c.cyan}${catLabel}${c.reset}`);
+  if (role) bits.push(`${c.white}${role}${c.reset}`);
+  if (levelLabel) bits.push(`${c.dim}${levelLabel}${c.reset}`);
+  return `  ${indent}   ${bits.join(`${c.gray} · ${c.reset}`)}`;
+}
+
+// v4 (report req 3): the "how to improve" tips, one per line under the agent.
+function agentImprovementLines(card, depth, t) {
+  const tips = Array.isArray(card.improvements) ? card.improvements : [];
+  if (tips.length === 0) return [];
+  const indent = '  '.repeat(depth);
+  const out = [`  ${indent}   ${c.dim}${t.classification.improvementsHeading}${c.reset}`];
+  for (const tip of tips) out.push(`  ${indent}     ${c.gray}- ${tip}${c.reset}`);
+  return out;
+}
+
 function printAgents(report, t, p) {
   const { childrenByParent, roots } = buildAgentCardTree(report, t);
   p(`  ${c.bold}${t.html.diagramHeading}${c.reset}`);
@@ -159,6 +191,9 @@ function printAgents(report, t, p) {
     p(agentLine(card, depth, t));
     const desc = agentDescLine(card, depth);
     if (desc) p(desc);
+    const classLine = agentClassLine(card, depth, t);
+    if (classLine) p(classLine);
+    for (const line of agentImprovementLines(card, depth, t)) p(line);
     const children = childrenByParent.get(card.name) || [];
     for (const child of children) walk(child, depth + 1);
   };
@@ -206,6 +241,50 @@ function printTierAnalysis(report, t, p) {
     p(`  ${c.white}${tt.maxTierNote}${c.reset}`);
   }
   p();
+}
+
+/* ---------- progression ladder: levels 0-4 + tiers T0-T7 (report req 1) ----------
+ * FULL in the terminal (user decision): every level and every tier with its
+ * name, what it represents, and — for pending tiers — the exact unlock criterion.
+ * ✓ passed · ● current · ○ pending. Deterministic (src/tier-analysis.js#buildLadder),
+ * same data as the HTML report.
+ */
+function ladderMark(status) {
+  if (status === 'done') return `${c.green}✓${c.reset}`;
+  if (status === 'current') return `${c.cyan}${c.bold}●${c.reset}`;
+  return `${c.gray}○${c.reset}`;
+}
+
+function printLadder(report, t, p) {
+  const ld = t.ladder;
+  const { levels } = buildLadder(report, t);
+  const allTiers = levels.flatMap((lvl) => lvl.tiers);
+  const done = allTiers.filter((x) => x.status === 'done').length;
+  const current = allTiers.filter((x) => x.status === 'current').length;
+  const pending = allTiers.filter((x) => x.status === 'pending').length;
+
+  p(`  ${c.bold}${ld.levelsHeading}${c.reset}`);
+  p(`  ${c.gray}${ld.intro}${c.reset}`);
+  p(`  ${c.dim}${ld.legend(done, current, pending)}${c.reset}`);
+  p();
+  // NESTED (user decision): each maturity level, then its tiers indented beneath.
+  for (const lvl of levels) {
+    const nameStyle = lvl.status === 'pending' ? c.gray : `${c.bold}${c.white}`;
+    const keys = lvl.tierKeys.length ? ` ${c.gray}— [${lvl.tierKeys.join(', ')}]${c.reset}` : '';
+    // "You are here" lives ONLY on the current TIER, not the level header (user request).
+    p(`  ${ladderMark(lvl.status)} ${nameStyle}${lvl.emoji} ${ld.levelLabel(lvl.level)} · ${lvl.name}${c.reset}${keys}`);
+    p(`      ${c.dim}${lvl.description}${c.reset}`);
+    for (const tier of lvl.tiers) {
+      const tierNameStyle = tier.status === 'pending' ? c.gray : c.white;
+      const tierBadge = tier.status === 'current' ? `  ${c.cyan}${ld.currentLabel}${c.reset}` : '';
+      p(`        ${ladderMark(tier.status)} ${c.bold}${tier.tierKey}${c.reset} ${tierNameStyle}${tier.name}${c.reset}${tierBadge}`);
+      p(`            ${c.dim}${tier.description}${c.reset}`);
+      if (tier.unlock) {
+        p(`            ${c.gray}${ld.unlockLabel}: ${tier.unlock}${c.reset}`);
+      }
+    }
+    p();
+  }
 }
 
 /* ---------- tier roadmap: current -> next (parity with render-html.js) ----------
@@ -352,14 +431,23 @@ function renderTerminal(report, maturity, lang, opts = {}) {
   // "no local use" — an unused agent still carries a quality score + a
   // description; the agents section is omitted only when there are zero agents.)
 
-  // 1. The score / level meter — the "nota" FIRST.
+  // 1. The score / level meter — the "nota" FIRST. The top bar now shows the
+  // current TIER alongside the level (user request) — both from the already
+  // computed maturity (no recompute); the tier name is localized via tierNames.
   sep(p);
-  p(`  ${c.bold}${c.white}${t.terminal.level(maturity.level, levelName)}${c.reset}`);
+  const tierName = (maturity.tierKey && t.tierNames[maturity.tierKey]) || maturity.tierName || '';
+  const tierBit = maturity.tierKey ? t.terminal.tierInline(maturity.tierKey, tierName) : '';
+  p(`  ${c.bold}${c.white}${t.terminal.level(maturity.level, levelName)}${c.reset}${c.gray}${tierBit}${c.reset}`);
   p(`  ${c.cyan}${bar(maturity.score)}${c.reset} ${c.dim}${maturity.score}/100${c.reset}`);
 
   // 2. WHY that score/tier — the rationale, right after the number.
   sep(p);
   printTierAnalysis(report, t, p);
+
+  // 2b. Progression ladder — what each level 0-4 and tier T0-T7 means, and the
+  // ✓/●/○ progression with unlock criteria (report req 1, full in terminal).
+  sep(p);
+  printLadder(report, t, p);
 
   // 3. Detected tools — omitted entirely if none detected.
   const detected = report.tools.filter((tool) => tool.detected);

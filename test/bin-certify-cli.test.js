@@ -414,9 +414,9 @@ test('014: 413 -> clear "too large" message (not the generic connection error), 
   }
 });
 
-test('014: 5xx stays a real technical error (generic message + retry), exit 1', async () => {
+test('missing-migrations bugfix: 5xx -> actionable "backend unavailable / missing migrations" message (NOT a network error), exit 1', async () => {
   writeReactProject();
-  const server = await startStatusStub(500);
+  const server = await startStatusStub(503);
   try {
     const { code, stdout, stderr } = await runCli({
       args: ['--root', tmpProjectDir, '--email', 'a@b.com', '--accept-disclaimer', '--all', '--lang', 'en'],
@@ -424,9 +424,11 @@ test('014: 5xx stays a real technical error (generic message + retry), exit 1', 
     });
     assert.equal(code, 1);
     const out = stdout + stderr;
-    assert.match(out, /Could not resolve certifiable Skills/);
-    assert.match(out, /HTTP 500/);
-    assert.match(out, /try again later/);
+    // Actionable, server-side message — distinct from the network-error copy.
+    assert.match(out, /missing database migrations|restarting/i);
+    assert.match(out, /Apply migrations and restart/i);
+    // NOT the generic connection/retry hint.
+    assert.equal(/Check your connection/i.test(out), false);
   } finally {
     server.close();
   }

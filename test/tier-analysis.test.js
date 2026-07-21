@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { analyzeTier } = require('../src/tier-analysis');
+const { analyzeTier, buildLadder } = require('../src/tier-analysis');
 const { getCatalog } = require('../src/i18n');
 
 /*
@@ -118,4 +118,55 @@ test('analyzeTier: tierName is the Spanish name when analyzing in Spanish', () =
   const tEs = getCatalog('es');
   const a = analyzeTier(rep, tEs);
   assert.equal(a.tierName, 'Banco con notas');
+});
+
+/* ---- buildLadder: NESTED levels→tiers, grouping derived from BAND_BY_TIER ---- */
+
+test('buildLadder: nests tiers under their maturity level, grouping DERIVED from bandForTier', () => {
+  const t = getCatalog('es');
+  const { levels } = buildLadder(report(), t);
+  // Five maturity levels, in order.
+  assert.deepEqual(levels.map((l) => l.level), [0, 1, 2, 3, 4]);
+  // The grouping must match BAND_BY_TIER=[0,1,2,3,3,4,4,4] inverted — NOT hardcoded.
+  assert.deepEqual(levels.map((l) => l.tierKeys), [
+    ['T0'],
+    ['T1'],
+    ['T2'],
+    ['T3', 'T4'],
+    ['T5', 'T6', 'T7'],
+  ]);
+  // Every tier appears exactly once across the nested structure (8 total).
+  const allTierKeys = levels.flatMap((l) => l.tiers.map((x) => x.tierKey));
+  assert.equal(allTierKeys.length, 8);
+  assert.equal(new Set(allTierKeys).size, 8);
+});
+
+test('buildLadder: marks the current level/tier and flags pending tiers with an unlock criterion', () => {
+  // A T2 setup (one detected tool with context) → band/level 2.
+  const rep = report({ tools: [tool('claude-code', true, { instructions: 1 })] });
+  const t = getCatalog('es');
+  const { currentTier, currentBand, levels } = buildLadder(rep, t);
+  assert.equal(currentTier, 2);
+  assert.equal(currentBand, 2);
+
+  const flat = levels.flatMap((l) => l.tiers);
+  const t2 = flat.find((x) => x.tierKey === 'T2');
+  const t3 = flat.find((x) => x.tierKey === 'T3');
+  assert.equal(t2.status, 'current');
+  assert.equal(t3.status, 'pending');
+  assert.ok(t3.unlock, 'a pending tier carries its unlock criterion');
+  // done tiers carry no unlock text.
+  assert.equal(flat.find((x) => x.tierKey === 'T0').status, 'done');
+  assert.equal(flat.find((x) => x.tierKey === 'T0').unlock, null);
+  // The level owning the current tier is itself current.
+  assert.equal(levels.find((l) => l.level === 2).status, 'current');
+});
+
+test('buildLadder: renders localized names in EN too (no raw Spanish tier-engine names)', () => {
+  const t = getCatalog('en');
+  const { levels } = buildLadder(report(), t);
+  const t0 = levels[0].tiers[0];
+  assert.equal(t0.tierKey, 'T0');
+  assert.equal(t0.name, 'Empty bench'); // t.tierNames.T0 (en), never the Spanish "Banco vacío"
+  assert.equal(levels[0].name, 'No AI footprint');
 });

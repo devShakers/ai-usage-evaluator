@@ -18,6 +18,10 @@ const {
   resolveIngestEndpoint,
   loadConfigFile,
   configFilePath,
+  getSuperadminSessionEndpoint,
+  loadSuperadminSession,
+  saveSuperadminSession,
+  clearSuperadminSession,
 } = require('../src/config');
 
 // A throwaway, guaranteed-empty config dir so getIngestEndpoint's config-file
@@ -37,6 +41,50 @@ function freshConfigDir() {
 
 test('getSynthesisEndpoint: unset env var -> null', () => {
   assert.equal(getSynthesisEndpoint({}), null);
+});
+
+// --- ADR-027 superadmin session (endpoint derivation + persistence) ----------
+
+test('getSuperadminSessionEndpoint: derived as a sibling of the ingest endpoint', () => {
+  const env = { AI_FOOTPRINT_INGEST_ENDPOINT: 'https://hub.example.com/works/ai-footprint/reports' };
+  assert.equal(
+    getSuperadminSessionEndpoint(env),
+    'https://hub.example.com/works/ai-footprint/superadmin/session',
+  );
+});
+
+test('superadmin session persistence: save -> load round-trips; clear removes it', () => {
+  const env = { AI_FOOTPRINT_CONFIG_DIR: freshConfigDir() };
+  assert.equal(loadSuperadminSession(env), null);
+
+  saveSuperadminSession(
+    { email: 'admin@shakers.test', token: 'p.sig', expiresAt: '2999-01-01T00:00:00.000Z' },
+    env,
+  );
+  const s = loadSuperadminSession(env);
+  assert.equal(s.token, 'p.sig');
+  assert.equal(s.email, 'admin@shakers.test');
+
+  clearSuperadminSession(env);
+  assert.equal(loadSuperadminSession(env), null);
+});
+
+test('loadSuperadminSession: an EXPIRED session reads back as null (treated as no session)', () => {
+  const env = { AI_FOOTPRINT_CONFIG_DIR: freshConfigDir() };
+  saveSuperadminSession(
+    { email: 'admin@shakers.test', token: 'p.sig', expiresAt: '2000-01-01T00:00:00.000Z' },
+    env,
+  );
+  assert.equal(loadSuperadminSession(env), null);
+});
+
+test('saving the superadmin session preserves an existing ingest endpoint in config.json', () => {
+  const env = { AI_FOOTPRINT_CONFIG_DIR: freshConfigDir() };
+  setIngestEndpoint('https://hub.example.com/works/ai-footprint/reports', env);
+  saveSuperadminSession({ email: 'a@b.com', token: 't', expiresAt: null }, env);
+  const cfg = loadConfigFile(env);
+  assert.equal(cfg.ingestEndpoint, 'https://hub.example.com/works/ai-footprint/reports');
+  assert.equal(cfg.superadminSession.token, 't');
 });
 
 test('getSynthesisEndpoint: reads AI_FOOTPRINT_SYNTHESIS_ENDPOINT, trimmed', () => {

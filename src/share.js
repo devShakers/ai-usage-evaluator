@@ -600,7 +600,7 @@ function isCertifyThrottled(state, now = Date.now()) {
 // Persists the analyzed certification result if (and only if) consent is
 // granted. Never throws — every skip/failure resolves with { ok:false, ... },
 // so it can't break the local report (ADR-011 invariant).
-async function shareCertification(items, { model = null, repository = null, commitRange = null, toolVersion = null } = {}) {
+async function shareCertification(items, { model = null, repository = null, commitRange = null, toolVersion = null, superadminToken = null } = {}) {
   const state = loadConsentState();
   const decision = getConsentDecision(state);
 
@@ -630,7 +630,12 @@ async function shareCertification(items, { model = null, repository = null, comm
 
   let res;
   try {
-    res = await requestJson('POST', endpoint, { body: { email: state.email, payload } });
+    // ADR-027: forward the superadmin session token so the backend stamps
+    // test_origin=true (server-authoritative, non-prod only). Omitted when
+    // there is no session — a real persist never carries it.
+    const body = { email: state.email, payload };
+    if (superadminToken) body.superadminToken = superadminToken;
+    res = await requestJson('POST', endpoint, { body });
   } catch (e) {
     return { ok: false, skipped: false, reason: 'network-error', error: e.message };
   }

@@ -46,31 +46,15 @@ test('normalizeResolveResponse: rebuilds fields, defaults nonCertifiable to []',
   assert.deepEqual(out, {
     certifiable: [{ skillId: 7, skillName: 'React', technology: 'React' }],
     nonCertifiable: [],
-    // ADR-023: absent authorizedAuthoring -> null (real identity, strict match).
-    authorizedAuthoring: null,
   });
 });
 
-test('normalizeResolveResponse: carries a valid ADR-023 authorizedAuthoring set (test identity)', () => {
+test('normalizeResolveResponse (ADR-027): no longer surfaces an authorizedAuthoring field, even if the server sends one', () => {
   const out = normalizeResolveResponse({
     certifiable: [],
-    authorizedAuthoring: { domain: 'shakersworks.com', extraEmails: ['c@x.com', 42, ''] },
+    authorizedAuthoring: { domain: 'shakersworks.com', extraEmails: ['c@x.com'] },
   });
-  assert.deepEqual(out.authorizedAuthoring, {
-    domain: 'shakersworks.com',
-    extraEmails: ['c@x.com'],
-  });
-});
-
-test('normalizeResolveResponse: a malformed/empty authorizedAuthoring degrades to null (strict match)', () => {
-  assert.equal(
-    normalizeResolveResponse({ certifiable: [], authorizedAuthoring: { domain: '', extraEmails: [] } }).authorizedAuthoring,
-    null,
-  );
-  assert.equal(
-    normalizeResolveResponse({ certifiable: [], authorizedAuthoring: 'nope' }).authorizedAuthoring,
-    null,
-  );
+  assert.equal('authorizedAuthoring' in out, false);
 });
 
 test('normalizeResolveResponse: missing certifiable[] -> null (invalid shape)', () => {
@@ -95,10 +79,15 @@ test('certifyTimeoutForItems: floors at the single-Skill default and scales per 
 
 // --- classifyCertifyFailure (issue 014) --------------------------------------
 
-test('classifyCertifyFailure: 403 -> gate, 413 -> too-large, everything else -> technical', () => {
+test('classifyCertifyFailure: 403 -> gate, 413 -> too-large, 5xx -> backend-unavailable, everything else -> technical', () => {
   assert.equal(classifyCertifyFailure('http-403'), 'gate');
   assert.equal(classifyCertifyFailure('http-413'), 'too-large');
-  for (const r of ['http-500', 'http-502', 'http-429', 'http-400', 'network-error', 'timeout', 'invalid-json', 'invalid-shape', 'no-endpoint']) {
+  // Missing-migrations bugfix: any 5xx is the SERVER, not the connection.
+  for (const r of ['http-500', 'http-502', 'http-503', 'http-504']) {
+    assert.equal(classifyCertifyFailure(r), 'backend-unavailable', `${r} should be backend-unavailable`);
+  }
+  // 4xx (other than the gate/too-large specials) and transport failures stay technical.
+  for (const r of ['http-429', 'http-400', 'http-404', 'network-error', 'timeout', 'invalid-json', 'invalid-shape', 'no-endpoint']) {
     assert.equal(classifyCertifyFailure(r), 'technical', `${r} should be technical`);
   }
 });

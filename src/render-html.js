@@ -2,7 +2,7 @@
 
 const { getCatalog, categoryLabel } = require('./i18n');
 const { getRoadmapEntry } = require('./roadmap-content');
-const { analyzeTier } = require('./tier-analysis');
+const { analyzeTier, buildLadder } = require('./tier-analysis');
 const { mergeRoadmapPersonalization } = require('./roadmap-personalization');
 const { buildImplementationPrompt } = require('./roadmap-prompt');
 
@@ -361,6 +361,17 @@ function buildAgentCardTree(report, t) {
     const score = ev && typeof ev.score === 'number' ? ev.score : null;
     const rationale = ev && typeof ev.rationale === 'string' && ev.rationale.trim() ? ev.rationale.trim() : null;
     const usageCount = usageByAgent ? (typeof usageByAgent[a.name] === 'number' ? usageByAgent[a.name] : null) : null;
+    // v4 (agent classification): closest catalog agent + how it was matched, and
+    // 2-3 improvement tips. `classification` is null ONLY when no evaluation ran
+    // for this agent (no block rendered); when the evaluation ran but placed no
+    // catalog match it is the explicit "unclassified" object (so the report shows
+    // "Unclassified" rather than silently nothing).
+    const classification = ev
+      ? ev.classification && ev.classification.catalogId
+        ? ev.classification
+        : { catalogId: null, category: null, role: null, level: null, method: 'unclassified' }
+      : null;
+    const improvements = ev && Array.isArray(ev.improvements) ? ev.improvements : [];
 
     return {
       name: a.name,
@@ -372,6 +383,8 @@ function buildAgentCardTree(report, t) {
       score,
       rationale,
       usageCount,
+      classification,
+      improvements,
     };
   });
 
@@ -417,6 +430,8 @@ function agentCardHtml(card, t) {
   const rationale = card.rationale
     ? `<p class="agent-rationale"><span class="agent-rationale-k">${esc(t.html.agentQualityLabel)}</span> ${esc(card.rationale)}</p>`
     : '';
+  const classification = agentClassificationHtml(card, t);
+  const improvements = agentImprovementsHtml(card, t);
   // Hierarchy is now visual (nesting + rail, see agentNodeHtml) — the
   // `aria-label` is the accessible equivalent of the old "Reports to:"
   // text line, not a duplicate of it.
@@ -431,7 +446,43 @@ function agentCardHtml(card, t) {
     ${hasSymbolicName && scoreBadge ? `<div class="agent-chips">${badge}</div>` : ''}
     ${phrase}
     ${rationale}
+    ${classification}
+    ${improvements}
     <div class="agent-chips">${modelChip}${usageChip}</div>
+  </div>`;
+}
+
+// Agent classification (report req 2): presented AFFIRMATIVELY — Category · Role
+// · Level, directly, no "closest to" hedging and NO visible match-method badge
+// (the `method` field still exists in the data/contract, just not rendered — it
+// gave a low-credibility "AI-inferred" feel). A genuinely unmatched agent gets a
+// neutral plain "No category" chip, never an apologetic or error-looking note.
+function agentClassificationHtml(card, t) {
+  const c = t.classification;
+  // No evaluation ran for this agent → no classification block at all.
+  if (!card.classification) return '';
+  if (card.classification.method === 'unclassified' || !card.classification.catalogId) {
+    return `<div class="agent-class"><span class="chip pill nocat">${esc(c.noCategory)}</span></div>`;
+  }
+  const { category, role, level } = card.classification;
+  const categoryLabel = (category && c.categories[category]) || category;
+  const levelLabel = (level && c.levels[level]) || level;
+  const parts = [];
+  if (categoryLabel) parts.push(`<span class="chip pill cat">${esc(categoryLabel)}</span>`);
+  if (role) parts.push(`<span class="agent-class-role"><b>${esc(role)}</b></span>`);
+  if (levelLabel) parts.push(`<span class="chip pill lvl">${esc(levelLabel)}</span>`);
+  return `<div class="agent-class">${parts.join('')}</div>`;
+}
+
+// v4 (report req 3): 2-3 concrete "how to improve this agent" tips. Omitted when
+// the model returned none (degrade-by-omission).
+function agentImprovementsHtml(card, t) {
+  const tips = Array.isArray(card.improvements) ? card.improvements : [];
+  if (tips.length === 0) return '';
+  const items = tips.map((tip) => `<li>${esc(tip)}</li>`).join('');
+  return `<div class="agent-improve">
+    <div class="agent-improve-k">${esc(t.classification.improvementsHeading)}</div>
+    <ul>${items}</ul>
   </div>`;
 }
 
@@ -649,6 +700,63 @@ function tierAnalysisSection(report, t) {
         <ul class="tier-analysis-list">${metItems}</ul>
       </div>` : ''}
       ${blockingBlock}
+    </div>
+  </section>`;
+}
+
+// Progression ladder (skill-code-certification, report req 1): what each maturity
+// LEVEL (0-4) and TIER (T0-T7) represents, plus the ✓/●/○ progression with the
+// exact unlock criterion for pending tiers. Fully deterministic (buildLadder).
+function ladderStatusMark(status) {
+  return status === 'done' ? '✓' : status === 'current' ? '●' : '○';
+}
+
+// NESTED ladder (user decision): each maturity LEVEL groups the TIERS that
+// compose it (grouping derived from the tier engine, see buildLadder), with the
+// tier checks + unlock criteria nested beneath. Same texts/style as before.
+function ladderTierHtml(tier, ld) {
+  return `<div class="ladder-tier ${tier.status}">
+    <div class="ladder-tier-head">
+      <span class="ladder-mark">${ladderStatusMark(tier.status)}</span>
+      <span class="ladder-tier-key">${esc(tier.tierKey)}</span>
+      <span class="ladder-tier-name">${esc(tier.name)}</span>
+      ${tier.status === 'current' ? `<span class="ladder-badge">${esc(ld.currentLabel)}</span>` : ''}
+    </div>
+    <p class="ladder-desc">${esc(tier.description)}</p>
+    ${tier.unlock ? `<p class="ladder-unlock"><span class="ladder-unlock-k">${esc(ld.unlockLabel)}:</span> ${esc(tier.unlock)}</p>` : ''}
+  </div>`;
+}
+
+function ladderSection(report, t) {
+  const ld = t.ladder;
+  const { levels } = buildLadder(report, t);
+  const allTiers = levels.flatMap((lvl) => lvl.tiers);
+  const doneCount = allTiers.filter((x) => x.status === 'done').length;
+  const currentCount = allTiers.filter((x) => x.status === 'current').length;
+  const pendingCount = allTiers.filter((x) => x.status === 'pending').length;
+
+  const levelItems = levels
+    .map((lvl) => {
+      const keys = lvl.tierKeys.length ? ` — [${lvl.tierKeys.join(', ')}]` : '';
+      const nestedTiers = lvl.tiers.map((tier) => ladderTierHtml(tier, ld)).join('');
+      return `<div class="ladder-level ${lvl.status}">
+        <div class="ladder-level-head">
+          <span class="ladder-mark">${ladderStatusMark(lvl.status)}</span>
+          <span class="ladder-level-name">${esc(lvl.emoji)} ${esc(ld.levelLabel(lvl.level))} · ${esc(lvl.name)}</span>
+          <span class="ladder-level-tiers">${esc(keys)}</span>
+        </div>
+        <p class="ladder-desc">${esc(lvl.description)}</p>
+        <div class="ladder-tiers">${nestedTiers}</div>
+      </div>`;
+    })
+    .join('');
+
+  return `<section>
+    <div class="h2">${esc(ld.levelsHeading)}</div>
+    <div class="card ladder-card">
+      <p class="ladder-intro">${esc(ld.intro)}</p>
+      <p class="ladder-legend">${esc(ld.legend(doneCount, currentCount, pendingCount))}</p>
+      <div class="ladder-levels">${levelItems}</div>
     </div>
   </section>`;
 }
@@ -951,6 +1059,53 @@ const FOOTPRINT_CSS = `
   .chip.pill.model{color:var(--model-fg);background:var(--model-bg)}
   .chip.pill.model .dot{background:var(--model-fg)}
 
+  /* ---- Agent classification + improvements (v4) ---- */
+  .agent-class{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:2px}
+  .agent-class-role{font-size:13px;color:var(--fg)}
+  .agent-class-role b{color:var(--fg);font-weight:600}
+  .chip.pill.cat{color:var(--fg);background:var(--track);font-weight:600}
+  .chip.pill.lvl{color:var(--secondary-fg);background:var(--secondary)}
+  .chip.pill.nocat{color:var(--muted);background:var(--track)}
+  .agent-improve{margin-top:4px}
+  .agent-improve-k{font-size:12px;font-weight:600;color:var(--fg);margin-bottom:4px}
+  .agent-improve ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:3px}
+  .agent-improve li{font-size:13px;line-height:1.45;color:var(--muted)}
+
+  /* ---- Progression ladder (levels 0-4 + tiers T0-T7, report req 1) ---- */
+  /* Maturity-ladder card: give the content room to breathe and drop the border
+     (user request — the base .card has no padding of its own). */
+  .ladder-card{display:flex;flex-direction:column;gap:14px;padding:20px 22px;border:none}
+  .ladder-intro{margin:0;font-size:14px;line-height:1.55;color:var(--muted)}
+  .ladder-legend{margin:0;font-size:12px;font-weight:600;color:var(--secondary-fg)}
+  .ladder-levels{display:flex;flex-direction:column;gap:12px}
+  .ladder-level{padding:12px 16px;border-radius:var(--r-md,10px);border:1px solid var(--border);
+    background:var(--secondary)}
+  .ladder-level.current{border-color:var(--accent-lime);background:var(--track)}
+  .ladder-level.pending{opacity:.72}
+  .ladder-level-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .ladder-level-name{font-weight:700;color:var(--fg)}
+  .ladder-level-tiers{font-family:var(--mono,monospace);font-size:12px;color:var(--muted)}
+  /* Tiers NESTED under their maturity level (user decision). */
+  .ladder-tiers{display:flex;flex-direction:column;gap:6px;margin:10px 0 0;
+    padding-left:14px;border-left:2px solid var(--border)}
+  .ladder-tier{padding:10px 14px;border-radius:var(--r-md,10px);border-left:3px solid var(--border)}
+  .ladder-tier.done{border-left-color:var(--ds-emerald-700,#047857)}
+  .ladder-tier.current{border-left-color:var(--accent-lime);background:var(--track)}
+  .ladder-tier.pending{opacity:.78}
+  .ladder-tier-head{display:flex;align-items:center;gap:8px}
+  .ladder-tier-key{font-weight:700;font-family:var(--mono,monospace);color:var(--fg)}
+  .ladder-tier-name{font-weight:600;color:var(--fg)}
+  .ladder-mark{flex:none;width:16px;text-align:center;font-weight:700;color:var(--secondary-fg)}
+  .ladder-tier.done .ladder-mark{color:var(--ds-emerald-700,#047857)}
+  .ladder-tier.current .ladder-mark,.ladder-level.current .ladder-mark{color:var(--accent-lime)}
+  .ladder-badge{font-size:11px;font-weight:700;color:var(--accent-lime-fg,#3f4a00);
+    background:var(--accent-lime);padding:2px 8px;border-radius:var(--r-full)}
+  .ladder-desc{margin:4px 0 0;font-size:13px;line-height:1.45;color:var(--muted)}
+  .ladder-unlock{margin:6px 0 0;font-size:12px;line-height:1.45;color:var(--secondary-fg)}
+  .ladder-unlock-k{font-weight:600;color:var(--fg)}
+  /* Current tier in the hero top bar, under the level name. */
+  .hero .lvl .tier{margin-top:4px;font-size:13px;font-weight:600;color:var(--secondary-fg)}
+
   /* ---- Next step (lime accent = momentum) ---- */
   .next{padding:22px 24px;border-left:4px solid var(--accent-lime);
     display:flex;gap:16px;align-items:flex-start}
@@ -1109,6 +1264,13 @@ function footprintSectionsHtml(report, maturity, lang) {
     return `<span class="pip ${cls}"></span>`;
   }).join('');
 
+  // Current tier alongside the level in the top bar (user request) — from the
+  // already computed maturity (no recompute); tier name localized via tierNames.
+  const tierName = (maturity.tierKey && t.tierNames[maturity.tierKey]) || maturity.tierName || '';
+  const tierLine = maturity.tierKey
+    ? `<div class="tier">${esc(t.html.currentTier(maturity.tierKey, tierName))}</div>`
+    : '';
+
   return `<div class="card hero">
     <div class="lvl">
       <div class="k">${esc(t.html.levelOf(maturity.level))}</div>
@@ -1116,6 +1278,7 @@ function footprintSectionsHtml(report, maturity, lang) {
         <span class="glyph">${maturity.emoji}</span>
         <span class="name">${esc(levelName)}</span>
       </div>
+      ${tierLine}
       <div class="pips">${levelPips}</div>
       <div class="count"><b>${detectedCount}</b> ${esc(t.html.detectedSuffix(report.tools.length))}</div>
     </div>
@@ -1159,6 +1322,8 @@ function footprintSectionsHtml(report, maturity, lang) {
   ${agentCardsSection(report, t)}
 
   ${tierAnalysisSection(report, t)}
+
+  ${ladderSection(report, t)}
 
   ${roadmapSection(report, maturity, t, lang)}`;
 }

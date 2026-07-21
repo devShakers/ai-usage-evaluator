@@ -111,6 +111,64 @@ const catalogs = {
         t7Blocking: (n) => `Para subir a T7 (Taller orquestado) necesitas al menos un hook de automatización configurado — actualmente \`hooks = ${n}\`.`,
       },
     },
+    // Progression ladder (skill-code-certification, report req 1): explains what
+    // each maturity LEVEL (0-4) and each TIER (T0-T7) represents, and shows which
+    // are passed (✓) / current (●) / pending (○) with the unlock criterion. The
+    // unlock text itself is reused from `tierAnalysis.criterion.*` above; only the
+    // "what it represents" descriptions live here.
+    ladder: {
+      levelsHeading: 'Niveles de madurez (0-4)',
+      tiersHeading: 'Escalera de tiers (T0-T7)',
+      levelLabel: (n) => `Nivel ${n}`,
+      intro:
+        'Tu nivel de madurez (0-4) resume tu uso de IA de un vistazo; el tier (T0-T7) es el eje '
+        + 'fino del que se deriva. Ambos son deterministas. Abajo se marca lo que ya has superado (✓), '
+        + 'dónde estás ahora (●) y lo que queda por delante (○) con el criterio exacto que lo desbloquea.',
+      reachedLabel: 'Superado',
+      currentLabel: 'Estás aquí',
+      pendingLabel: 'Pendiente',
+      unlockLabel: 'Para desbloquear',
+      legend: (done, current, pending) => `${done} superado · ${current} actual · ${pending} pendiente`,
+      levelDesc: {
+        none: 'Sin rastro de IA: no se detecta ninguna herramienta de IA en tu entorno.',
+        exploring: 'Explorando: tienes herramientas de IA instaladas y las estás probando.',
+        integrated: 'Integrado: la IA está conectada a tus proyectos con contexto persistente.',
+        power: 'Power user: extiendes la IA con MCP, skills/comandos propios y CLIs agénticas.',
+        orchestrator: 'Orquestador: operas varios agentes coordinados y automatización de principio a fin.',
+      },
+      tierDesc: {
+        T0: 'Banco vacío: aún no se detecta ninguna herramienta de IA.',
+        T1: 'Primera herramienta: usas al menos una herramienta de IA.',
+        T2: 'Banco con notas: ficheros de contexto persistente guían a la IA.',
+        T3: 'Banco conectado: un servidor MCP da a la IA acceso a tus datos y herramientas.',
+        T4: 'Herramienta propia: has creado tus propios skills, comandos o reglas.',
+        T5: 'Operador agéntico: una CLI agéntica combina MCP y tus activos propios de punta a punta.',
+        T6: 'Multi-agente: un equipo de 2+ agentes especializados.',
+        T7: 'Taller orquestado: hooks automatizan el taller y los agentes se orquestan entre sí.',
+      },
+    },
+    // Agent classification against the AI-agent catalog (skill-code-certification,
+    // report req 2) + the "how to improve" tips (req 3). Shared by the HTML and
+    // terminal renders. Category/level names are DISPLAY labels for the catalog's
+    // stable keys; `method*` badges say whether the match was deterministic or
+    // inferred by the model.
+    classification: {
+      label: 'Clasificación',
+      noCategory: 'Sin categoría',
+      improvementsHeading: 'Cómo mejorar este agente',
+      categories: {
+        developer: 'Desarrollo',
+        product: 'Producto',
+        designer: 'Diseño',
+        marketing: 'Marketing',
+        data: 'Datos',
+      },
+      levels: {
+        L1: 'L1 · operativo',
+        L2: 'L2 · táctico',
+        L3: 'L3 · estratégico',
+      },
+    },
     levelNames: {
       none: 'Sin rastro de IA',
       exploring: 'Explorando',
@@ -136,6 +194,8 @@ const catalogs = {
       brandSub: 'perfil de uso de IA',
       toolsDetected: (n, total) => `${n}/${total} herramientas detectadas`,
       level: (level, name) => `Nivel ${level} · ${name}`,
+      // Current tier appended to the top bar, next to the level (report req 1 addendum).
+      tierInline: (key, name) => ` · Tier ${key} · ${name}`,
       detectedHeading: 'Detectadas',
       none: '(ninguna)',
       environment: 'Entorno',
@@ -158,6 +218,8 @@ const catalogs = {
       h1: 'Tu perfil de uso de IA',
       sub: 'Un vistazo local a qué herramientas de IA tienes y cuánto las has configurado.',
       levelOf: (level) => `Nivel ${level} de 4`,
+      // Current tier shown in the hero bar next to the level (report req 1 addendum).
+      currentTier: (key, name) => `Tier ${key} · ${name}`,
       // Suffix only: the number is already bolded separately in the markup
       // (see render-html.js), so we avoid duplicating/parsing the translated string.
       detectedSuffix: (total) => `de ${total} herramientas detectadas`,
@@ -538,6 +600,12 @@ const catalogs = {
       errorTooLarge:
         'El proyecto es demasiado grande para certificar de una vez. Reduce el alcance '
         + '(menos ficheros o Skills) e inténtalo de nuevo.',
+      // 5xx: el backend está caído/reiniciándose o le faltan migraciones de BD
+      // (bugfix "missing migrations"). Mensaje accionable, DISTINTO del de red:
+      // no es tu conexión, es el servidor.
+      errorBackendOutdated:
+        'El backend no está disponible: le faltan migraciones de base de datos o se está reiniciando. '
+        + 'Aplica las migraciones y reinícialo, y vuelve a intentarlo. No se ha certificado nada.',
       // Interactive Skill selection (certify phase, issue 005).
       selectHeading: 'Selecciona las Skills que quieres certificar:',
       selectHint: 'Flechas ↑/↓ para moverte · espacio para marcar/desmarcar · a = todas · enter para confirmar · esc para cancelar',
@@ -556,6 +624,9 @@ const catalogs = {
       // in the refusal path for a possible legitimate false negative (commits
       // con otro email, monorepo, historial migrado). Copy is DRAFT (a validar).
       authorshipContact: 'Si crees que tienes la autoría y esto es un error (commits con otro email, monorepo o historial migrado), escríbenos a talent@shakersworks.com.',
+      // ADR-027: sesión de superadmin activa — se omite el gate de autoría.
+      superadminBypass: (email) =>
+        `Sesión de superadmin activa${email ? ` (${email})` : ''}: se omite el gate de autoría; se certificará todo el código muestreado (test_origin).`,
       selectOption: (index, skillName, technology) => `  ${index}) ${skillName}${technology ? ` (${technology})` : ''}`,
       certifyingLabel: 'Analizando el código de tus Skills…',
       // Reporting redesign: el HTML ya no es opt-in; cada certificación se
@@ -630,38 +701,25 @@ const catalogs = {
     // `sh-eval` REPL is the single entrypoint; this covers the prompt, the
     // Superadmin TEST-identity provisioning (ADR-021, NON-PROD only).
     superadmin: {
-      intro:
-        'Provisiona una identidad de Talent de PRUEBA (solo entornos no productivos) para probar el flujo de certify sin OTP.',
+      // ADR-027 — sesión de superadmin autenticada por contraseña (no-prod).
+      sessionIntro:
+        'Abre una sesión de superadmin (solo entornos no productivos): certify funcionará con CUALQUIER email en CUALQUIER repo, saltándose los gates de identidad y autoría.',
       passwordPrompt: 'Contraseña de superadmin:',
-      emailPrompt: 'Email de la identidad de prueba a provisionar:',
+      emailPrompt: 'Tu email de superadmin (solo para auditoría):',
       emailInvalid: 'Email no válido. Inténtalo de nuevo.',
       needInput: 'Se requieren contraseña y email (interactivo, o --password y --email).',
-      ready: (email) =>
-        `Identidad de prueba lista para ${email}. Ahora ejecuta:  certify --email ${email} --accept-disclaimer --all`,
-      reused: (email) =>
-        `La identidad de prueba de ${email} ya existía (idempotente). Ejecuta:  certify --email ${email} --accept-disclaimer --all`,
-      authoring: (domain, extra) =>
-        `Autoría autorizada (ADR-023): dominio @${domain}${extra ? ` + emails: ${extra}` : ''} — solo para esta identidad de prueba.`,
+      sessionReady: (email) =>
+        `Sesión de superadmin abierta (auditoría: ${email}). Ahora certify usará esta sesión con cualquier email.`,
+      sessionExpires: (iso) => `La sesión caduca: ${iso}.`,
+      sessionHint:
+        'Ejecuta:  certify --email <cualquiera> --accept-disclaimer --all   ·   Para cerrarla:  superadmin --logout',
+      loggedOut: 'Sesión de superadmin olvidada (token local eliminado).',
       errorNoEndpoint:
         'No hay endpoint configurado. Configura el backend (AI_FOOTPRINT_INGEST_ENDPOINT o footprint --set-endpoint) y reinténtalo.',
       errorWrongPassword: 'Contraseña de superadmin incorrecta.',
       errorDisabled:
-        'Endpoint no disponible: el provisioning de prueba está deshabilitado fuera de entornos no productivos.',
-      errorConflict:
-        'Ese email ya pertenece a una cuenta real (no de prueba). Usa un email distinto para la identidad de prueba.',
-      errorGeneric: 'No se pudo provisionar la identidad de prueba. Inténtalo de nuevo.',
-      // Teardown (ADR-022) — el inverso: elimina identidades de PRUEBA.
-      removeIntro:
-        'Elimina identidad(es) de Talent de PRUEBA (solo entornos no productivos). Nunca borra cuentas reales.',
-      removeEmailPrompt: 'Email de la identidad de prueba a eliminar (o usa --all):',
-      removeNeedTarget: 'Indica un email (--email) o --all para eliminar todas las de prueba.',
-      removed: (count, emails) =>
-        count === 0
-          ? 'No había ninguna identidad de prueba que eliminar (nada que hacer).'
-          : `Eliminadas ${count} identidad(es) de prueba: ${emails}.`,
-      removeRefusedReal:
-        'Ese email pertenece a una cuenta REAL (no de prueba). No se ha eliminado nada.',
-      removeErrorGeneric: 'No se pudo eliminar la identidad de prueba. Inténtalo de nuevo.',
+        'Endpoint no disponible: la sesión de superadmin está deshabilitada fuera de entornos no productivos.',
+      errorGeneric: 'No se pudo abrir la sesión de superadmin. Inténtalo de nuevo.',
       // Inspect (ADR-025) — recibo de atribución de certificaciones YA guardadas.
       inspectIntro:
         'Audita la evidencia de autoría de las certificaciones ya guardadas (solo lectura, entornos no productivos).',
@@ -764,6 +822,57 @@ const catalogs = {
         t7Blocking: (n) => `To reach T7 (Orchestrated workshop) you need at least one automation hook configured — currently \`hooks = ${n}\`.`,
       },
     },
+    // Progression ladder (skill-code-certification, report req 1) — see the es block.
+    ladder: {
+      levelsHeading: 'Maturity levels (0-4)',
+      tiersHeading: 'Tier ladder (T0-T7)',
+      levelLabel: (n) => `Level ${n}`,
+      intro:
+        'Your maturity level (0-4) sums up your AI usage at a glance; the tier (T0-T7) is the '
+        + 'fine-grained axis it is derived from. Both are deterministic. Below marks what you have '
+        + 'already passed (✓), where you are now (●), and what lies ahead (○) with the exact criterion '
+        + 'that unlocks it.',
+      reachedLabel: 'Reached',
+      currentLabel: 'You are here',
+      pendingLabel: 'Pending',
+      unlockLabel: 'To unlock',
+      legend: (done, current, pending) => `${done} reached · ${current} current · ${pending} pending`,
+      levelDesc: {
+        none: 'No AI footprint: no AI tool detected in your environment.',
+        exploring: 'Exploring: you have AI tools installed and are trying them out.',
+        integrated: 'Integrated: AI is wired into your projects with persistent context.',
+        power: 'Power user: you extend AI with MCP, your own skills/commands and agentic CLIs.',
+        orchestrator: 'Orchestrator: you run several coordinated agents and end-to-end automation.',
+      },
+      tierDesc: {
+        T0: 'Empty bench: no AI tool detected yet.',
+        T1: 'First tool: you use at least one AI tool.',
+        T2: 'Bench with notes: persistent context files guide the AI.',
+        T3: 'Connected bench: an MCP server gives the AI access to your data and tools.',
+        T4: 'Own tooling: you have built your own skills, commands or rules.',
+        T5: 'Agentic operator: an agentic CLI drives MCP and your own assets end to end.',
+        T6: 'Multi-agent: a team of 2+ specialized agents.',
+        T7: 'Orchestrated workshop: hooks automate the workshop and agents orchestrate each other.',
+      },
+    },
+    // Agent classification + improvement tips (skill-code-certification req 2/3) — see the es block.
+    classification: {
+      label: 'Classification',
+      noCategory: 'No category',
+      improvementsHeading: 'How to improve this agent',
+      categories: {
+        developer: 'Development',
+        product: 'Product',
+        designer: 'Design',
+        marketing: 'Marketing',
+        data: 'Data',
+      },
+      levels: {
+        L1: 'L1 · operational',
+        L2: 'L2 · tactical',
+        L3: 'L3 · strategic',
+      },
+    },
     levelNames: {
       none: 'No AI footprint',
       exploring: 'Exploring',
@@ -789,6 +898,8 @@ const catalogs = {
       brandSub: 'AI usage profile',
       toolsDetected: (n, total) => `${n}/${total} tools detected`,
       level: (level, name) => `Level ${level} · ${name}`,
+      // Current tier appended to the top bar, next to the level (report req 1 addendum).
+      tierInline: (key, name) => ` · Tier ${key} · ${name}`,
       detectedHeading: 'Detected',
       none: '(none)',
       environment: 'Environment',
@@ -811,6 +922,8 @@ const catalogs = {
       h1: 'Your AI usage profile',
       sub: 'A local snapshot of which AI tools you have and how deeply you have configured them.',
       levelOf: (level) => `Level ${level} of 4`,
+      // Current tier shown in the hero bar next to the level (report req 1 addendum).
+      currentTier: (key, name) => `Tier ${key} · ${name}`,
       detectedSuffix: (total) => `of ${total} tools detected`,
       maturity: 'Maturity',
       tools: 'Tools',
@@ -1131,6 +1244,12 @@ const catalogs = {
       errorTooLarge:
         'The project is too large to certify at once. Reduce the scope '
         + '(fewer files or Skills) and try again.',
+      // 5xx: the backend is down/restarting or missing DB migrations (the
+      // "missing migrations" bugfix). Actionable message, DISTINCT from the
+      // network error: it's not your connection, it's the server.
+      errorBackendOutdated:
+        'The backend is unavailable: it is missing database migrations or is restarting. '
+        + 'Apply migrations and restart it, then try again. Nothing was certified.',
       // Interactive Skill selection (certify phase, issue 005).
       selectHeading: 'Select the Skills you want to certify:',
       selectHint: 'Arrows ↑/↓ to move · space to toggle · a = all · enter to confirm · esc to cancel',
@@ -1149,6 +1268,9 @@ const catalogs = {
       // in the refusal path for a possible legitimate false negative (commits
       // under another email, monorepo, migrated history). Copy is DRAFT (to validate).
       authorshipContact: 'If you believe you hold the authorship and this is an error (commits under another email, monorepo, or migrated history), write to us at talent@shakersworks.com.',
+      // ADR-027: active superadmin session — the authorship gate is bypassed.
+      superadminBypass: (email) =>
+        `Superadmin session active${email ? ` (${email})` : ''}: authorship gate bypassed; all sampled code will be certified (test_origin).`,
       selectOption: (index, skillName, technology) => `  ${index}) ${skillName}${technology ? ` (${technology})` : ''}`,
       certifyingLabel: 'Analyzing your Skills’ code…',
       // Reporting redesign: HTML is no longer opt-in; each certification is
@@ -1217,40 +1339,26 @@ const catalogs = {
       },
     },
     // Branded mini-shell chrome (skill-code-certification / ADR-014). The
-    // Superadmin TEST-identity provisioning (ADR-021, NON-PROD only).
+    // ADR-027 — password-authenticated superadmin SESSION (NON-PROD only).
     superadmin: {
-      intro:
-        'Provision a TEST Talent identity (non-production environments only) to exercise the certify flow without OTP.',
+      sessionIntro:
+        'Open a superadmin session (non-production environments only): certify will run against ANY email on ANY repo, bypassing the identity and authorship gates.',
       passwordPrompt: 'Superadmin password:',
-      emailPrompt: 'Email of the test identity to provision:',
+      emailPrompt: 'Your superadmin email (for audit only):',
       emailInvalid: 'Invalid email. Try again.',
       needInput: 'Password and email are required (interactively, or --password and --email).',
-      ready: (email) =>
-        `Test identity ready for ${email}. Now run:  certify --email ${email} --accept-disclaimer --all`,
-      reused: (email) =>
-        `Test identity for ${email} already existed (idempotent). Run:  certify --email ${email} --accept-disclaimer --all`,
-      authoring: (domain, extra) =>
-        `Authorized authoring (ADR-023): domain @${domain}${extra ? ` + emails: ${extra}` : ''} — for this test identity only.`,
+      sessionReady: (email) =>
+        `Superadmin session opened (audit: ${email}). certify will now use this session with any email.`,
+      sessionExpires: (iso) => `Session expires: ${iso}.`,
+      sessionHint:
+        'Run:  certify --email <anyone> --accept-disclaimer --all   ·   To end it:  superadmin --logout',
+      loggedOut: 'Superadmin session forgotten (local token removed).',
       errorNoEndpoint:
         'No endpoint configured. Set the backend (AI_FOOTPRINT_INGEST_ENDPOINT or footprint --set-endpoint) and retry.',
       errorWrongPassword: 'Incorrect superadmin password.',
       errorDisabled:
-        'Endpoint unavailable: test provisioning is disabled outside non-production environments.',
-      errorConflict:
-        'That email already belongs to a real (non-test) account. Use a different email for the test identity.',
-      errorGeneric: 'Could not provision the test identity. Try again.',
-      // Teardown (ADR-022) — the inverse: removes TEST identities.
-      removeIntro:
-        'Remove TEST Talent identity(ies) (non-production environments only). Never deletes real accounts.',
-      removeEmailPrompt: 'Email of the test identity to remove (or use --all):',
-      removeNeedTarget: 'Provide an email (--email) or --all to remove every test identity.',
-      removed: (count, emails) =>
-        count === 0
-          ? 'There was no test identity to remove (nothing to do).'
-          : `Removed ${count} test identity(ies): ${emails}.`,
-      removeRefusedReal:
-        'That email belongs to a REAL (non-test) account. Nothing was removed.',
-      removeErrorGeneric: 'Could not remove the test identity. Try again.',
+        'Endpoint unavailable: the superadmin session is disabled outside non-production environments.',
+      errorGeneric: 'Could not open the superadmin session. Try again.',
       // Inspect (ADR-025) — attribution receipt for ALREADY-stored certifications.
       inspectIntro:
         'Audit the authorship evidence of already-stored certifications (read-only, non-production).',
