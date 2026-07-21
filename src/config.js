@@ -266,23 +266,6 @@ function deriveEmailVerificationUrl(env, segment) {
 }
 
 /*
- * Agent-evaluation endpoint (ADR-016, agent definition-quality scoring). Same
- * ingest-sibling derivation as certify/OTP: the route lives in the Hub
- * `ai-footprint` module next to `reports`, so a single configured ingest
- * endpoint (env var / config.json / installer default) makes it resolve too —
- * no separate config. `AI_FOOTPRINT_AGENT_EVAL_ENDPOINT` is kept ONLY as an
- * explicit override for the rare case of a different mount. Unlike certify,
- * unset is NOT an error: the caller (src/agent-evaluation.js / bin/report.js)
- * treats a null endpoint as a graceful "no scores this run", exactly like
- * synthesis — the footprint report is always shown regardless.
- */
-function getAgentEvaluationEndpoint(env = process.env) {
-  const explicit = env.AI_FOOTPRINT_AGENT_EVAL_ENDPOINT;
-  if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromIngest(env, 'agent-evaluation');
-}
-
-/*
  * Agent-certification endpoints (`certify agents`). Three ingest-siblings under
  * `.../works/ai-footprint/agent-certification/{categories,followups,verdict}`,
  * derived exactly like the other routes — a single configured ingest endpoint
@@ -368,7 +351,6 @@ module.exports = {
   getSynthesisEndpoint,
   getRoadmapEndpoint,
   getCertifyEndpoint,
-  getAgentEvaluationEndpoint,
   getAgentCertificationCategoriesEndpoint,
   getAgentCertificationFollowupsEndpoint,
   getAgentCertificationVerdictEndpoint,
