@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { deriveCertEvidence, agentCertLevelHtml } = require('../src/render-html');
+const { deriveCertEvidence, agentCertificationItemHtml } = require('../src/render-html');
 const { getCatalog } = require('../src/i18n');
 
 // Mirror the renderer's HTML escaping so assertions match escaped output
@@ -86,7 +86,7 @@ for (const lang of ['es', 'en']) {
         rationale: 'Verified command across all five areas.',
       },
     };
-    const html = agentCertLevelHtml(card, t);
+    const html = agentCertificationItemHtml('demo-agent', card.certification, t);
     assert.match(html, /cert-P5/, 'level chip present');
     // The "(no verified evidence)" fallback MUST NOT appear on a P5 card.
     assert.ok(!html.includes(ca.noVerified), `must not render noVerified fallback on P5 (${lang})`);
@@ -112,7 +112,7 @@ for (const lang of ['es', 'en']) {
         rationale: '',
       },
     };
-    const html = agentCertLevelHtml(card, t);
+    const html = agentCertificationItemHtml('demo-agent', card.certification, t);
     assert.ok(html.includes(ca.verifiedHeading), 'verified heading present');
     assert.ok(html.includes(ca.unverifiedHeading), 'unverified heading present');
     // The single verified area shows; n_a area appears only in the full areas
@@ -135,7 +135,7 @@ test('legacy record (level, no areas) shows the level chip alone, no misleading 
       rationale: null,
     },
   };
-  const html = agentCertLevelHtml(card, t);
+  const html = agentCertificationItemHtml('demo-agent', card.certification, t);
   assert.match(html, /cert-P5/, 'level chip still shown');
   assert.ok(!html.includes(ca.noVerified), 'no "(no verified evidence)" line on a legacy record');
   assert.ok(!html.includes(ca.whyHeading), 'the why block is omitted when there are no areas');

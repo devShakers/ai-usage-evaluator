@@ -461,18 +461,33 @@ function agentCardHtml(card, t) {
   const reportsTo = card.parent || t.html.orchestratorLabel;
   const ariaLabel = `${hasSymbolicName ? card.symbolicName : card.name}. ${t.html.reportsToLabel} ${reportsTo}`;
 
+  // The card stays SMALL: only a compact proficiency-LEVEL tag to the right of
+  // the name when this agent is certified. The full verdict (why + areas +
+  // rationale) lives in its own skill-style section (agentCertificationSectionsHtml).
   return `<div class="agent-card" aria-label="${esc(ariaLabel)}">
     <div class="agent-card-head">
-      <span class="agent-title">${title}</span>
+      <div class="agent-card-headline">
+        <span class="agent-title">${title}</span>
+        ${agentCardLevelTag(card, t)}
+      </div>
       ${badge}
     </div>
     ${phrase}
-    ${agentCertLevelHtml(card, t)}
     ${rationale}
     ${classification}
     ${improvements}
     <div class="agent-chips">${productChip}${toolChips}</div>
   </div>`;
+}
+
+// Compact level tag for the agent CARD head (right of the name). Level only —
+// no category/role/areas/rationale (those live in the certification section).
+function agentCardLevelTag(card, t) {
+  if (!card.certification || !card.certification.level || card.certification.level === 'none') return '';
+  const ca = t.certifyAgents;
+  const { level } = card.certification;
+  const levelName = (ca.levelNames && ca.levelNames[level]) || level;
+  return `<span class="chip pill cert-level cert-${esc(level)} agent-card-level">${esc(ca.levelLabel)}: ${esc(levelName)}</span>`;
 }
 
 // `certify agents`: the FULL verdict on the agent's card when the talent has
@@ -517,26 +532,34 @@ function deriveCertEvidence(areas, ca) {
   return { verified, unverified };
 }
 
-function agentCertLevelHtml(card, t) {
-  if (!card.certification) return '';
+// ONE certified agent as its own skill-style card (`.card.skill`, mirroring the
+// Skill-certification sections) — this is where the FULL verdict lives now (the
+// agent card in the footprint tree keeps only the level tag). `name` is the
+// local agent name; `cert` is the persisted verdict.
+function agentCertificationItemHtml(name, cert, t) {
   const ca = t.certifyAgents;
-  const { level, category, role, areas, rationale } = card.certification;
+  const level = cert && cert.level ? cert.level : 'none';
+  const category = (cert && cert.category) || null;
+  const role = (cert && cert.role) || null;
+  const areas = Array.isArray(cert && cert.areas) ? cert.areas : [];
+  const rationale = typeof (cert && cert.rationale) === 'string' && cert.rationale.trim() ? cert.rationale.trim() : null;
+
   const levelName = (ca.levelNames && ca.levelNames[level]) || level;
-  const catLabel = category && t.classification.categories[category]
-    ? t.classification.categories[category]
-    : category;
+  const catLabel =
+    category && t.classification.categories[category] ? t.classification.categories[category] : category;
   const meta = [catLabel, role].filter(Boolean).map((x) => esc(x)).join(' · ');
 
-  const head = `<div class="agent-cert-head">
-    <span class="chip pill cert-level cert-${esc(level)}">${esc(ca.levelLabel)}: ${esc(levelName)}</span>
-    ${meta ? `<span class="agent-cert-meta">${meta}</span>` : ''}
-  </div>`;
+  // Head mirrors the Skill card: <h2>name<span class="tech">meta</span></h2> +
+  // a level BADGE on the right (the analogue of the Skill score-badge).
+  const head =
+    `<div class="skill-head"><h2>${esc(name)}` +
+    `${meta ? `<span class="tech">${meta}</span>` : ''}</h2>` +
+    `<span class="chip pill cert-level cert-${esc(level)} cert-level-badge">${esc(ca.levelLabel)}: ${esc(levelName)}</span></div>`;
 
   // Why: DERIVED from the areas (deriveCertEvidence) so it can never contradict
-  // the level. Rendered only when the agent actually has assessed areas — a
-  // legacy record carrying just a level (pre full-verdict persistence) shows the
-  // level chip alone, never a misleading "no verified evidence" line.
-  const hasAreas = Array.isArray(areas) && areas.length > 0;
+  // the level. Only when the agent actually has assessed areas — a legacy record
+  // carrying just a level shows the badge alone, never a misleading fallback.
+  const hasAreas = areas.length > 0;
   let why = '';
   if (hasAreas) {
     const { verified, unverified } = deriveCertEvidence(areas, ca);
@@ -574,7 +597,7 @@ function agentCertLevelHtml(card, t) {
   // SEVERITY BUCKET (ok/mid/low/na), not the raw tag, so the always-present
   // stylesheet never leaks a domain literal like "not_evidenced" into a report
   // that has no certification (keeps the "invents no framing" guarantee).
-  const areaItems = (areas || [])
+  const areaItems = areas
     .map((a) => {
       const areaName = (ca.areaNames && ca.areaNames[a.area]) || a.area;
       const tagLabel = (ca.tagLabels && ca.tagLabels[a.tag]) || a.tag;
@@ -594,18 +617,30 @@ function agentCertLevelHtml(card, t) {
     : '';
 
   const rationaleBlock = rationale
-    ? `<div class="agent-cert-rationale">
-    <div class="agent-cert-k">${esc(ca.rationaleHeading)}</div>
-    <p>${esc(rationale)}</p>
-  </div>`
+    ? `<p class="rationale"><span class="label">${esc(ca.rationaleHeading)}:</span> ${esc(rationale)}</p>`
     : '';
 
-  return `<div class="agent-cert">
-    ${head}
+  return `<section class="card skill agent-cert-item">${head}
     ${why}
     ${areasBlock}
     ${rationaleBlock}
-  </div>`;
+  </section>`;
+}
+
+// The AGENT-CERTIFICATION section body: one skill-style card per certified
+// agent. Empty string when the project has no (non-`none`) agent certifications
+// — the caller then renders no section at all. Latest-first by generatedAt.
+function agentCertificationSectionsHtml(report, t) {
+  const certs =
+    report && report.agentCertifications && typeof report.agentCertifications === 'object'
+      ? report.agentCertifications
+      : {};
+  const names = Object.keys(certs).filter(
+    (n) => certs[n] && typeof certs[n] === 'object' && certs[n].level && certs[n].level !== 'none',
+  );
+  if (!names.length) return '';
+  names.sort((a, b) => String(certs[b].generatedAt || '').localeCompare(String(certs[a].generatedAt || '')));
+  return names.map((n) => agentCertificationItemHtml(n, certs[n], t)).join('\n');
 }
 
 // Agent classification (report req 2): presented AFFIRMATIVELY — Category · Role
@@ -1181,6 +1216,8 @@ const FOOTPRINT_CSS = `
     width:100%;max-width:400px;box-sizing:border-box}
   .agent-card-head{display:flex;align-items:flex-start;justify-content:space-between;
     gap:10px}
+  .agent-card-headline{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-width:0}
+  .agent-card-level{flex:none;font-size:11px;font-weight:700}
   .agent-title{font-size:18px;font-weight:700;letter-spacing:-.01em;line-height:1.3}
   .agent-badge{flex:none;font-size:11px;font-weight:600;letter-spacing:.02em;
     color:var(--faint);font-family:var(--font-mono);background:var(--track);
@@ -1222,10 +1259,10 @@ const FOOTPRINT_CSS = `
   .agent-improve-k{font-size:12px;font-weight:600;color:var(--fg);margin-bottom:4px}
   .agent-improve ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:3px}
   .agent-improve li{font-size:13px;line-height:1.45;color:var(--muted)}
-  /* certify agents: FULL verdict on the card (level + why + areas + rationale) */
-  .agent-cert{display:flex;flex-direction:column;gap:10px;margin-top:6px;padding:10px 12px;border:1px solid var(--border,rgba(0,0,0,.08));border-radius:10px;background:var(--track)}
-  .agent-cert-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
-  .agent-cert-meta{font-size:12px;color:var(--muted)}
+  /* certify agents: level TAG on the card (compact) + the FULL verdict lives in
+     its own skill-style section (.agent-cert-item), mirroring Skill cert cards */
+  .agent-cert-item{display:flex;flex-direction:column;gap:12px}
+  .cert-level-badge{flex:none}
   .agent-cert-k{font-size:12px;font-weight:600;color:var(--fg);margin-bottom:4px}
   .chip.pill.cert-level{font-weight:700;color:var(--fg);background:var(--card,#fff)}
   .chip.pill.cert-P4,.chip.pill.cert-P5{color:var(--ds-emerald-700,#047857);background:var(--ds-emerald-50,#ecfdf5)}
@@ -1247,7 +1284,6 @@ const FOOTPRINT_CSS = `
   .cert-area.cert-tag-ok .chip.pill.cert-area-tag{color:var(--ds-emerald-700,#047857);background:var(--ds-emerald-50,#ecfdf5)}
   .cert-area.cert-tag-mid .chip.pill.cert-area-tag{color:var(--ds-amber-700,#b45309);background:var(--ds-amber-50,#fffbeb)}
   .cert-area.cert-tag-low .chip.pill.cert-area-tag{color:var(--ds-red-700,#b91c1c);background:var(--ds-red-50,#fef2f2)}
-  .agent-cert-rationale p{margin:0;font-size:13px;line-height:1.5;color:var(--muted)}
 
   /* ---- Progression ladder (levels 0-4 + tiers T0-T7, report req 1) ---- */
   /* Maturity-ladder card: give the content room to breathe and drop the border
@@ -1547,4 +1583,4 @@ function renderHtml(report, maturity, lang) {
 // same merged (structural + synthesis) tree as the HTML card tree. And
 // footprintSectionsHtml / FOOTPRINT_CSS are exported for the cumulative report
 // (src/report-store.js) to embed a project's footprint into the shared doc.
-module.exports = { renderHtml, buildAgentCardTree, footprintSectionsHtml, FOOTPRINT_CSS, FOOTPRINT_SCRIPT, deriveCertEvidence, agentCertLevelHtml };
+module.exports = { renderHtml, buildAgentCardTree, footprintSectionsHtml, FOOTPRINT_CSS, FOOTPRINT_SCRIPT, deriveCertEvidence, agentCertificationItemHtml, agentCertificationSectionsHtml };

@@ -229,7 +229,7 @@ const catalogs = {
       savedHint: 'Guardado. Ejecuta `report` para ver el informe completo en el navegador.',
       // Terminal summary (the full breakdown now lives in the HTML report).
       summaryHeading: 'Agente certificado',
-      areasVerified: (n, total) => `${n}/${total} áreas verificadas`,
+      areasVerified: (n, total) => `${n}/${total} verificadas`,
     },
     levelNames: {
       none: 'Sin rastro de IA',
@@ -468,6 +468,7 @@ const catalogs = {
       subtitle: 'Tu informe de IA para este proyecto.',
       footprintHeading: 'AI Footprint',
       certificationHeading: 'Certificación de Skills',
+      agentCertificationHeading: 'Certificación de agentes',
       privacyNote: 'Este informe se genera y se guarda solo en tu equipo. Nada se envía a Shakers salvo que des tu consentimiento explícito.',
       updatedLabel: (when) => `Actualizado: ${when}`,
       unknownProject: '(proyecto desconocido)',
@@ -1003,7 +1004,7 @@ const catalogs = {
       savedHint: 'Saved. Run `report` to see the full report in your browser.',
       // Terminal summary (the full breakdown now lives in the HTML report).
       summaryHeading: 'Agent certified',
-      areasVerified: (n, total) => `${n}/${total} areas verified`,
+      areasVerified: (n, total) => `${n}/${total} verified`,
     },
     levelNames: {
       none: 'No AI footprint',
@@ -1196,6 +1197,7 @@ const catalogs = {
       subtitle: 'Your AI report for this project.',
       footprintHeading: 'AI Footprint',
       certificationHeading: 'Skill certification',
+      agentCertificationHeading: 'Agent certification',
       privacyNote: 'This report is generated and stored only on your machine. Nothing is sent to Shakers unless you give explicit consent.',
       updatedLabel: (when) => `Updated: ${when}`,
       unknownProject: '(unknown project)',

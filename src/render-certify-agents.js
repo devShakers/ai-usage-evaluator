@@ -1,13 +1,16 @@
 'use strict';
 
 /*
- * Terminal SUMMARY of a SINGLE agent-certification result (`certify agents`).
- * Printed right after each verdict. Zero-dep ANSI. Intentionally compact and
- * scannable: level Pn + agent name + role · category, and how many of the five
- * areas came back verified. The FULL breakdown — the "why" (verified/unverified
- * evidence), the five areas with their tags, and the rationale — now lives in
- * the HTML report's agents section (render-html.js#agentCertLevelHtml), reached
- * via the `report` command (see certifyAgents.savedHint).
+ * Terminal render of a SINGLE agent-certification result (`certify agents`),
+ * printed right after each verdict. Zero-dep ANSI. A MID-LEVEL summary: level
+ * Pn + agent name + role · category, then the five assessed areas one line each
+ * with their performance tag and the verified count — enough to see WHERE the
+ * command is strong/weak at a glance, WITHOUT the full evidence lists or the
+ * long rationale. Those (and the same areas) live in the HTML report's own
+ * "Agent certification" section, reached via the `report` command
+ * (certifyAgents.savedHint). Coherence: the verified count and the per-area
+ * tags come straight from the area tags the level is derived from, so the
+ * terminal can never contradict the level (mirrors the HTML derivation).
  */
 
 const c = {
@@ -30,13 +33,20 @@ function levelColor(level) {
   return c.red; // none / not substantiated
 }
 
+// Per-area tag color. Verified green, partial amber, n_a muted, the rest red.
+function tagColor(tag) {
+  if (tag === 'verified') return c.green;
+  if (tag === 'partial') return c.yellow;
+  if (tag === 'n_a') return c.gray;
+  return c.red; // claimed / not_evidenced
+}
+
 /**
- * Returns the terminal SUMMARY as a string. `verdict` is the normalized client
+ * Returns the terminal summary as a string. `verdict` is the normalized client
  * shape ({agentName, category, role, level, areas, verifiedEvidence,
  * unverifiedEvidence, rationale}); `t` is the full i18n catalog for the run's
- * language. Only level, name, role·category and the verified-area count are
- * shown here — the pointer to the full HTML breakdown is printed by the caller
- * (certifyAgents.savedHint).
+ * language. Renders level + role·category + the five areas with their tag and
+ * the verified count — not the evidence lists or the rationale (HTML report).
  */
 function renderAgentCertification(verdict, t) {
   const ca = t.certifyAgents;
@@ -54,12 +64,19 @@ function renderAgentCertification(verdict, t) {
 
   p();
   p(`  ${c.bold}${c.cyan}${ca.summaryHeading}${c.reset}${c.gray}  ·  ${verdict.agentName}${c.reset}${roleBit}`);
-  const desc = ca.levelDesc && ca.levelDesc[verdict.level];
-  p(
-    `  ${ca.levelLabel}: ${levelColor(verdict.level)}${c.bold}${levelName}${c.reset}` +
-      (desc ? ` ${c.dim}— ${desc}${c.reset}` : ''),
-  );
-  if (total) p(`  ${c.dim}${ca.areasVerified(verifiedCount, total)}${c.reset}`);
+  p(`  ${ca.levelLabel}: ${levelColor(verdict.level)}${c.bold}${levelName}${c.reset}`);
+
+  if (total) {
+    p(`  ${c.bold}${ca.areasHeading}${c.reset} ${c.gray}(${ca.areasVerified(verifiedCount, total)})${c.reset}`);
+    for (const a of areas) {
+      const areaName = (ca.areaNames && ca.areaNames[a.area]) || a.area;
+      const tagLabel = (ca.tagLabels && ca.tagLabels[a.tag]) || a.tag;
+      p(
+        `    ${tagColor(a.tag)}●${c.reset} ${c.white}${areaName}${c.reset} ` +
+          `${c.gray}—${c.reset} ${tagColor(a.tag)}${tagLabel}${c.reset}`,
+      );
+    }
+  }
   p();
 
   return lines.join('\n');

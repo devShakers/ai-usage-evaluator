@@ -8,7 +8,7 @@ const { pathToFileURL } = require('url');
 
 const { getCatalog } = require('./i18n');
 const { renderDocument } = require('./report-theme');
-const { footprintSectionsHtml, FOOTPRINT_CSS, FOOTPRINT_SCRIPT } = require('./render-html');
+const { footprintSectionsHtml, FOOTPRINT_CSS, FOOTPRINT_SCRIPT, agentCertificationSectionsHtml } = require('./render-html');
 const { certificationSectionsHtml, CERTIFICATION_CSS } = require('./render-certification');
 
 /*
@@ -184,6 +184,19 @@ function renderProjectHtml(project, lang) {
     sections.push(`<section>
     <h2 class="section-title">${esc(c.footprintHeading)}</h2>
     ${footprintSectionsHtml(report, project.footprint.maturity, lang)}
+  </section>`);
+  }
+
+  // Agent certifications (skill-code-certification, `certify agents`): their OWN
+  // section (skill-style cards) with the full verdict — the agent card in the
+  // footprint tree above keeps only the level tag. Independent of footprint
+  // (keyed by agent name), rendered whenever the project has any certified agent.
+  const agentCerts = (project && project.agentCertifications) || {};
+  const agentCertBody = agentCertificationSectionsHtml({ agentCertifications: agentCerts }, t);
+  if (agentCertBody) {
+    sections.push(`<section>
+    <h2 class="section-title">${esc(c.agentCertificationHeading)}</h2>
+    ${agentCertBody}
   </section>`);
   }
 
