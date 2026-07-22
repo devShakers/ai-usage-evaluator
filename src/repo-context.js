@@ -209,6 +209,15 @@ function collectRepoContext(root, { readFileImpl = readSafe } = {}) {
     if (info.provider && info.provider.domain) modelSet.set(info.provider.label, info.provider);
     else if (info.provider) integrationSet.add(info.provider.label); // shakers-ai-api = external tool
   }
+  // Match the foglamp scan's REST grain: keep DISTINCT surfaces (one per app,
+  // per named webhook, per WS gateway, per CLI) and DROP the generic catch-alls
+  // ('ctrl'→"HTTP API", 'http'→"HTTP server", bare 'wh'→"Webhook") whenever a
+  // specific surface already covers them — otherwise the graph shows a lumped
+  // "HTTP API" node next to the real per-app entries (what the user flagged).
+  const hasApp = [...entryGroups.keys()].some((k) => k.startsWith('app:'));
+  const hasNamedWebhook = [...entryGroups.keys()].some((k) => k.startsWith('wh:'));
+  if (hasApp) { entryGroups.delete('ctrl'); entryGroups.delete('http'); }
+  if (hasNamedWebhook) entryGroups.delete('wh');
   ctx.entrypoints = Array.from(entryGroups.values()).slice(0, CAP.entrypoints).map((g) => ({ label: g.label, sub: g.sub }));
   ctx.crons = Array.from(cronFiles).slice(0, CAP.crons).map((p) => ({ label: titleize(path.basename(p).replace(/\.(cron\.)?[tj]s$/, '')), path: scrubString(p) }));
   ctx.services = Array.from(serviceSet).slice(0, CAP.services).map((m) => titleize(m));
