@@ -284,10 +284,13 @@ document.getElementById('wm').innerHTML=WM.map(d=>'<path d="'+d+'"/>').join('');
 const DATA=__DATA_INJECT__;
 
 /* ===== node style maps ===== */
+/* c=accent colour, tag=kind label, g=per-kind GLYPH (white on the colour chip
+   when there's no brand favicon) — near-universal BMP symbols so every node
+   shows a meaningful icon even offline / when a favicon fetch fails. */
 const KIND={
-  entry:{c:"#0e7d69",tag:"entry"}, cron:{c:"#b0bd2d",tag:"cron"}, agent:{c:"#269787",tag:"agent"},
-  model:{c:"#8a9a1f",tag:"model"}, tool:{c:"#f59e0b",tag:"tool"}, service:{c:"#51b1a5",tag:"service"},
-  store:{c:"#64748b",tag:"store"}, external:{c:"#b06a86",tag:"external"}
+  entry:{c:"#0e7d69",tag:"entry",g:"▶"}, cron:{c:"#b0bd2d",tag:"cron",g:"↻"}, agent:{c:"#269787",tag:"agent",g:"◆"},
+  model:{c:"#8a9a1f",tag:"model",g:"◇"}, tool:{c:"#f59e0b",tag:"tool",g:"⚙"}, service:{c:"#51b1a5",tag:"service",g:"▣"},
+  store:{c:"#64748b",tag:"store",g:"▤"}, external:{c:"#b06a86",tag:"external",g:"↗"}
 };
 const NS="http://www.w3.org/2000/svg";
 const NW=212, NH=60;
@@ -379,8 +382,13 @@ DATA.graph.nodes.forEach((n,i)=>{
     g2.appendChild(el('rect',{x:14,y:NH/2-11,width:22,height:22,rx:7,fill:'#fff',stroke:k.c,'stroke-width':1.2}));
     const im=el('image',{x:15,y:NH/2-10,width:20,height:20,href:DATA.favicons[n.domain],preserveAspectRatio:'xMidYMid meet'});im.style.clipPath='inset(0 round 6px)';g2.appendChild(im);
   }else{
+    // No brand favicon (non-domain kind, or fetch unavailable/offline): a
+    // per-kind GLYPH on the colour chip, so the node still reads as an icon —
+    // falls back to an initial only if the kind somehow has no glyph.
     g2.appendChild(el('rect',{x:14,y:NH/2-11,width:22,height:22,rx:7,fill:k.c}));
-    const mono=el('text',{class:'mono',x:25,y:NH/2+4,'text-anchor':'middle'});mono.textContent=(n.domain?n.domain[0]:n.label[0]).toUpperCase();g2.appendChild(mono);
+    const mono=el('text',{class:'mono',x:25,y:NH/2+4,'text-anchor':'middle'});
+    mono.textContent=k.g||(n.domain?n.domain[0]:n.label[0]).toUpperCase();
+    g2.appendChild(mono);
   }
   // kind tag lives on its OWN top row (never shares a line with the title)
   const kt=el('text',{class:'kindtag',x:NW-12,y:16,'text-anchor':'end',fill:k.c});kt.textContent=k.tag;g2.appendChild(kt);

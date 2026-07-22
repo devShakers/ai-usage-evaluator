@@ -144,22 +144,44 @@ function buildFootprintDrawer(report, maturity) {
   const score = maturity && typeof maturity.score === 'number' ? maturity.score : 0;
   const tierKey = (maturity && (maturity.tierKey || maturity.key)) || '';
   const technologies = Array.isArray(report.technologies) ? report.technologies : [];
-  // installed AI dev tools (assistants), if the scan exposes them by key
+  // Installed AI dev tools (assistants). `report.tools` is an ARRAY of tool
+  // objects ({ id, name, detected, ... }) — earlier code indexed it as an
+  // object keyed by name, so the pills showed the numeric ARRAY INDEX ("0",
+  // "1"…) instead of the tool name. Read the array and use each tool's `.name`.
+  const toolList = Array.isArray(report.tools)
+    ? report.tools
+    : report.tools && typeof report.tools === 'object'
+      ? Object.entries(report.tools).map(([id, v]) => ({ id, ...(v && typeof v === 'object' ? v : {}) }))
+      : [];
   const tools = [];
-  if (report && report.tools && typeof report.tools === 'object') {
-    for (const k of Object.keys(report.tools)) {
-      const v = report.tools[k];
-      if (v && (v.installed || v.present || v.detected)) tools.push(prettyTool(k));
-    }
+  for (const t of toolList) {
+    if (!t || !(t.detected || t.installed || t.present)) continue;
+    const nm = (typeof t.name === 'string' && t.name) || prettyTool(t.id || t.key || '');
+    if (nm) tools.push(nm);
   }
+
   return {
     score,
     tier: { level, key: (maturity && maturity.key) || 'none', name, label: tierKey ? `${tierKey} · ${name}` : name },
     ladder: LADDER,
-    summary: '',
+    // "Lectura": a deterministic, human-readable one-liner from the scan (no LLM,
+    // no fabricated content). Previously hardcoded '' → an empty box in the drawer.
+    summary: buildReading({ level, name, score, tierKey, nTools: tools.length, nTech: technologies.length }),
     tools,
     technologies,
   };
+}
+
+/**
+ * Deterministic Spanish reading of the footprint (the drawer is es), composed
+ * ONLY from real scan numbers — never invented prose. Kept factual so it can't
+ * leak a dangling token like an unfilled `(${…})`.
+ */
+function buildReading({ level, name, score, tierKey, nTools, nTech }) {
+  const tier = tierKey ? `${tierKey} · ${name}` : name;
+  const toolsPart = nTools > 0 ? `${nTools} herramienta${nTools === 1 ? '' : 's'} de IA detectada${nTools === 1 ? '' : 's'}` : 'sin herramientas de IA detectadas';
+  const techPart = nTech > 0 ? `${nTech} tecnología${nTech === 1 ? '' : 's'} en el proyecto` : 'sin tecnologías detectadas';
+  return `Madurez de IA nivel ${level} (${tier}), score ${score}/100. ${toolsPart[0].toUpperCase()}${toolsPart.slice(1)} y ${techPart}.`;
 }
 
 function prettyTool(key) {
