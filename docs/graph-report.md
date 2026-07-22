@@ -97,6 +97,26 @@ A model infers the flows/services/stores/entrypoints we can't detect statically.
 - **Failure is graceful**: a throwing/empty LLM pass yields the deterministic
   graph — never a crash, never a fabricated flow.
 
+### Live wiring (implemented)
+- **Adapter (`src/graph-scan.js`)**: `buildGraphScan(root)` runs the SAME
+  detectors as `footprint` (`scanner.scan` + `maturity.classify`) → the
+  deterministic `scan` (agents from `.claude/agents` with model + orchestrator→
+  subagent hierarchy, models deduped by provider, technologies, store hints) and
+  the footprint drawer payload. `map` uses this by default for ANY project root;
+  `--contract <path>` renders a pre-made foglamp contract instead; `--no-llm`
+  skips enrichment.
+- **LLM pass endpoint**: CLI client `src/graph-infer-client.js` →
+  `POST <ingest-sibling>/graph-inference` (derive via
+  `config.getGraphInferenceEndpoint`, env override
+  `AI_FOOTPRINT_GRAPH_INFER_ENDPOINT`). Request (FROZEN, matches backend
+  `InferGraphInputDto`): `{ summary, promptVersion:'graph-infer-v1', locale? }`.
+  Response: `{ nodes, edges }` delta. Backend: `WorksGraphInferenceController`
+  (`@Public`, reuses the agent-evaluation 10/h-per-IP guard) →
+  `InferGraphService` (one `gemini-2.5-flash` call, `captureBodyInSpan:false`,
+  parse+sanitize, degrade-to-empty). Client resilience: ANY failure → `null` →
+  deterministic graph. **Keep the client's `GRAPH_INFER_PROMPT_VERSION` in the
+  backend's `ACCEPTED_GRAPH_INFERENCE_PROMPT_VERSIONS`** (the stub test guards it).
+
 ### Observability & privacy
 - **Content-free logs; NO Langfuse.** Instrumentation is emitted via the
   injected `onTrace(evt)` sink: `{ event:'graph.infer', ok, model, inputTokens,

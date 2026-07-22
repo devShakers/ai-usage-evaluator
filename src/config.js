@@ -279,6 +279,16 @@ function getAgentEvaluationEndpoint(env = process.env) {
   return deriveFromIngest(env, 'agent-evaluation');
 }
 
+// Graph-inference (LLM enrichment) endpoint for the LOCAL report (`map`).
+// Derived as a sibling of the ingest endpoint, exactly like agent-evaluation;
+// override with AI_FOOTPRINT_GRAPH_INFER_ENDPOINT. Null when ingest is unset →
+// `map` degrades to the deterministic graph (no enrichment).
+function getGraphInferenceEndpoint(env = process.env) {
+  const explicit = env.AI_FOOTPRINT_GRAPH_INFER_ENDPOINT;
+  if (explicit && explicit.trim()) return explicit.trim();
+  return deriveFromIngest(env, 'graph-inference');
+}
+
 /*
  * Agent-certification endpoints (`certify agents`). Three ingest-siblings under
  * `.../works/ai-footprint/agent-certification/{categories,followups,verdict}`,
@@ -363,6 +373,7 @@ module.exports = {
   getRoadmapEndpoint,
   getCertifyEndpoint,
   getAgentEvaluationEndpoint,
+  getGraphInferenceEndpoint,
   getAgentCertificationFollowupsEndpoint,
   getAgentCertificationVerdictEndpoint,
   getEmailVerificationRequestUrl,

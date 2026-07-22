@@ -111,6 +111,12 @@ function assembleDeterministic(scan) {
     const target = a.model || a.toolId || a.tool;
     if (target && seen.has(target)) edges.push({ from: a.id, to: target, kind: 'calls' });
   });
+  // orchestrator -> subagent hierarchy (parent triggers child), deterministic
+  (scan.agents || []).forEach((a) => {
+    if (a.parent && seen.has(a.parent) && seen.has(a.id) && a.parent !== a.id) {
+      edges.push({ from: a.parent, to: a.id, kind: 'triggers' });
+    }
+  });
 
   const stats = {
     agents: (scan.agents || []).length,
