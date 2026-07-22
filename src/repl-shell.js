@@ -162,7 +162,7 @@ function bannerWide({ title, color }) {
   right.push([{ t: 'footprint'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'score AI setup (T0–T7) + agents', st: { fg: BRAND.zinc } }]);
   right.push([{ t: 'certify'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'certify Skills from your code', st: { fg: BRAND.zinc } }]);
   right.push([{ t: 'map'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'LOCAL report — AI/codebase graph', st: { fg: BRAND.zinc } }]);
-  right.push([{ t: 'sheet'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'SHAREABLE report — footprint + certs', st: { fg: BRAND.zinc } }]);
+  right.push([{ t: 'report'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'SHAREABLE report — footprint + certs', st: { fg: BRAND.zinc } }]);
   right.push([{ t: 'share'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'branded card for LinkedIn', st: { fg: BRAND.zinc } }]);
   const SEP = { sep: true }; // separator placeholder — sized once RW is known
   right.push(SEP);
@@ -171,7 +171,7 @@ function bannerWide({ title, color }) {
     { t: 'footprint', st: { fg: BRAND.white } }, { t: ' · ', st: { fg: BRAND.zinc } },
     { t: 'certify', st: { fg: BRAND.white } }, { t: ' · ', st: { fg: BRAND.zinc } },
     { t: 'map', st: { fg: BRAND.white } }, { t: ' · ', st: { fg: BRAND.zinc } },
-    { t: 'sheet', st: { fg: BRAND.white } }, { t: ' · ', st: { fg: BRAND.zinc } },
+    { t: 'report', st: { fg: BRAND.white } }, { t: ' · ', st: { fg: BRAND.zinc } },
     { t: 'share', st: { fg: BRAND.white } },
     { t: ' · help · exit', st: { fg: BRAND.zinc } },
   ]);
@@ -233,10 +233,10 @@ function bannerStacked({ title, color, width }) {
   lines.push(line([{ t: 'footprint  ', st: { bold: true, fg: BRAND.white } }, { t: 'score AI setup (T0–T7)', st: { fg: BRAND.zinc } }]));
   lines.push(line([{ t: 'certify    ', st: { bold: true, fg: BRAND.white } }, { t: 'certify your Skills', st: { fg: BRAND.zinc } }]));
   lines.push(line([{ t: 'map        ', st: { bold: true, fg: BRAND.white } }, { t: 'LOCAL report (graph)', st: { fg: BRAND.zinc } }]));
-  lines.push(line([{ t: 'sheet      ', st: { bold: true, fg: BRAND.white } }, { t: 'shareable footprint+certs', st: { fg: BRAND.zinc } }]));
+  lines.push(line([{ t: 'report     ', st: { bold: true, fg: BRAND.white } }, { t: 'shareable footprint+certs', st: { fg: BRAND.zinc } }]));
   lines.push(line([{ t: 'share      ', st: { bold: true, fg: BRAND.white } }, { t: 'card for LinkedIn', st: { fg: BRAND.zinc } }]));
   lines.push(line([{ t: '', st: null }]));
-  lines.push(line([{ t: 'footprint · certify · map · sheet · share · help · exit', st: { fg: BRAND.zinc } }]));
+  lines.push(line([{ t: 'footprint · certify · map · report · share · help · exit', st: { fg: BRAND.zinc } }]));
   lines.push(bottomBorder(INNER, color));
   lines.push('');
   return lines.join('\n') + '\n';
@@ -305,10 +305,10 @@ async function dispatchCommand({ command, args }, { ask, catalog, deps, out = pr
       if (deps.runMap) await deps.runMap(args, { ask });
       else out.write(`\n  ${catalog.repl.unknown(command)}\n`);
       return { exit: false };
-    case 'sheet':
     case 'report':
-      // SHAREABLE report (footprint + certs, no graph). `report` is the
-      // back-compat alias of `sheet` (docs/graph-report.md).
+    case 'sheet':
+      // SHAREABLE report (footprint + certs, no graph). `report` is the name;
+      // `sheet` stays as a silent back-compat alias (docs/graph-report.md).
       await deps.runReport(args, { ask });
       return { exit: false };
     case 'superadmin':

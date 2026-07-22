@@ -13,10 +13,10 @@ you generate. Neither clashes with `share` (the branded LinkedIn footprint card)
 | Command | Report | Audience | Contents |
 |---|---|---|---|
 | **`map`** | LOCAL report (graph protagonist, v2) | the talent, kept locally | Interactive AI/codebase graph as the hero + footprint & certifications as toggleable side drawers. Full detail. |
-| **`sheet`** | SHAREABLE report (footprint + certs, no graph) | pass-by-hand to a client/team | Two-column footprint + certifications, **no graph** (= the v1 `mockup-report.html` layout). A local HTML file the talent shares manually. |
+| **`report`** | SHAREABLE report (footprint + certs, no graph) | pass-by-hand to a client/team | Two-column footprint + certifications, **no graph** (= the v1 `mockup-report.html` layout). A local HTML file the talent shares manually. |
 
-- `report` remains as a back-compat alias of **`sheet`** (same
-  `materializeProjectReport` behaviour) until removed.
+- `report` is the shareable report (`materializeProjectReport`). `sheet` stays as
+  a silent back-compat alias for `report` until removed.
 - **No hosting / public URL.** Both are local self-contained `.html` files.
   Hosting a shareable URL is a separate, deferred feature.
 
@@ -102,11 +102,15 @@ The `map` graph is "what the repo DOES" (foglamp-style), produced by an
 INTEGRATED LLM analysis of the code — NOT our footprint detectors (those now
 feed ONLY the AI-usage drawer).
 - **Context (`src/repo-context.js`)**: `collectRepoContext(root)` does a bounded
-  walk (AI-/flow-likely files first) and extracts a CONTENT-FREE structural
-  context — entrypoints, AI call-sites (matched lines), provider/integration
-  imports, Prisma stores, crons, modules, deps — file PATHS + scrubbed lines,
-  never file contents/secrets. (base64 scrub excludes `/` so paths aren't
-  mangled.)
+  walk (AI-/flow-likely files first) and enumerates CONTENT-FREE CANDIDATE lists
+  deterministically — `agents` (one per AI call-site file; provider clients &
+  infra skipped), `entrypoints` (grouped by app/webhook/CLI/WS), `crons` (per
+  cron file), `services` (module dirs), `models` (providers), `integrations`
+  (known `integrations/` dirs + npm imports), `stores` (datastore types). This
+  high-recall enumeration is what closes the completeness gap (base64 scrub
+  excludes `/` so paths aren't mangled). The model emits a node per candidate +
+  wires the flows — vs the old single-pass discovery that under-enumerated (27
+  nodes). Real Pro smoke: 57 nodes / 67 edges vs scan.json's 50.
 - **Analysis endpoint**: CLI `src/graph-infer-client.js` `analyzeCodebase(context)`
   → `POST <ingest-sibling>/graph-inference` (`config.getGraphInferenceEndpoint`,
   env `AI_FOOTPRINT_GRAPH_INFER_ENDPOINT`). Request (FROZEN, matches
@@ -122,8 +126,9 @@ feed ONLY the AI-usage drawer).
   just the fallback). `--contract <path>` renders a pre-made foglamp scan.json.
 - **DTO alignment**: keep the client's `ANALYZE_PROMPT_VERSION` in the backend's
   `ACCEPTED_GRAPH_INFERENCE_PROMPT_VERSIONS` (stub test guards it).
-- Real smoke (backend repo): 27 nodes / 32 edges (4 entry, 2 cron, 5 service,
-  7 agent, 2 model, 3 store, 4 external), ~49s on Pro.
+- Real smoke (backend repo), candidate-driven v2: 57 nodes / 67 edges (6 entry,
+  12 cron, 16 service, 9 agent, 2 model, 4 store, 8 external — 8/8 externals incl.
+  Adobe PDF + calc-match) vs scan.json's 50; ~60s on Pro, single pass.
 
 ### Drawers from real state
 - **Footprint drawer**: built from the live scan (`graph-scan.buildGraphScan` →
