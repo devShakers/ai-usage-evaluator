@@ -34,6 +34,12 @@ const { persistAgentCertification } = require('./report-store');
 const YES = /^(y|yes|s|si|sí)$/i;
 const CLI_VERSION = require('../package.json').version || null;
 
+// Branded ANSI for the agent QUESTIONS (the two fixed ones + the model
+// follow-ups) so they stand out from the rest of the flow's output. Cyan + bold
+// = the same accent the REPL/tier markers use; legible on light and dark.
+const C = { cyan: '\x1b[36m', bold: '\x1b[1m', reset: '\x1b[0m' };
+const question = (text) => `${C.cyan}${C.bold}${text}${C.reset}`;
+
 // Merge the deterministic org chart (name/tools/model/parent) with the parsed
 // definitions (name + full definition body) into the shape the flow needs.
 function collectAgents(root) {
@@ -145,9 +151,9 @@ async function runCertifyAgents(argv = [], { ask: injectedAsk = null } = {}) {
       const agent = await chooseAgent(ask, stdinIsTTY, remaining, ca, out);
       if (!agent) break;
 
-      // Two fixed qualification questions.
-      const achieve = (await ask(`\n  ${ca.qAchieve}\n  > `)).trim();
-      const decisions = (await ask(`  ${ca.qDecisions}\n  > `)).trim();
+      // Two fixed qualification questions (colored to stand out).
+      const achieve = (await ask(`\n  ${question(ca.qAchieve)}\n  > `)).trim();
+      const decisions = (await ask(`  ${question(ca.qDecisions)}\n  > `)).trim();
       const qualification = { achieve, decisions };
 
       // Follow-ups (model-generated). Degrades to none if the endpoint is unset.
@@ -159,9 +165,9 @@ async function runCertifyAgents(argv = [], { ask: injectedAsk = null } = {}) {
       const followups = [];
       const questions = fu.ok ? fu.questions : [];
       if (questions.length) out(`\n  ${ca.followupsHeading}\n`);
-      for (const question of questions) {
-        const answer = (await ask(`  ${question}\n  > `)).trim();
-        followups.push({ question, answer });
+      for (const q of questions) {
+        const answer = (await ask(`  ${question(q)}\n  > `)).trim();
+        followups.push({ question: q, answer });
       }
 
       // Verdict (gated + persisted server-side; category derived server-side).
