@@ -35,6 +35,7 @@ const {
 } = require('./agent-certification-client');
 const { renderAgentCertification } = require('./render-certify-agents');
 const { persistAgentCertification } = require('./report-store');
+const { withSpinner } = require('./terminal-progress');
 
 const YES = /^(y|yes|s|si|sí)$/i;
 const CLI_VERSION = require('../package.json').version || null;
@@ -177,11 +178,10 @@ async function runCertifyAgents(argv = [], { ask: injectedAsk = null } = {}) {
         // each answer with a generic sample instead of prompting.
         out(`\n  ${ca.fastModeNotice}\n`);
         qualification = { achieve: ca.sampleAchieve, decisions: ca.sampleDecisions };
-        out(`\n  ${ca.generatingFollowups}\n`);
-        const fu = await requestFollowups(agent, qualification, {
+        const fu = await withSpinner(ca.generatingFollowups, () => requestFollowups(agent, qualification, {
           endpoint: followupsEndpoint,
           locale: localeArg,
-        });
+        }));
         for (const q of fu.ok ? fu.questions : []) {
           followups.push({ question: q, answer: ca.sampleFollowupAnswer });
         }
@@ -192,11 +192,10 @@ async function runCertifyAgents(argv = [], { ask: injectedAsk = null } = {}) {
         qualification = { achieve, decisions };
 
         // Follow-ups (model-generated). Degrades to none if the endpoint is unset.
-        out(`\n  ${ca.generatingFollowups}\n`);
-        const fu = await requestFollowups(agent, qualification, {
+        const fu = await withSpinner(ca.generatingFollowups, () => requestFollowups(agent, qualification, {
           endpoint: followupsEndpoint,
           locale: localeArg,
-        });
+        }));
         const questions = fu.ok ? fu.questions : [];
         if (questions.length) out(`\n  ${ca.followupsHeading}\n`);
         for (const q of questions) {
@@ -206,8 +205,7 @@ async function runCertifyAgents(argv = [], { ask: injectedAsk = null } = {}) {
       }
 
       // Verdict (gated + persisted server-side; category derived server-side).
-      out(`\n  ${ca.certifying}\n`);
-      const v = await requestVerdict(
+      const v = await withSpinner(ca.certifying, () => requestVerdict(
         {
           email,
           agent,
@@ -216,7 +214,7 @@ async function runCertifyAgents(argv = [], { ask: injectedAsk = null } = {}) {
           superadminToken: superadmin ? superadmin.token : null,
         },
         { endpoint: verdictEndpoint, locale: localeArg },
-      );
+      ));
       if (!v.ok) {
         if (v.reason === 'http-403') out(`\n  ${ca.gateNotRegistered}\n  ${ca.gateNotVerified}\n\n`);
         else out(`\n  ${ca.error(v.reason)}\n\n`);

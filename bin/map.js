@@ -42,6 +42,7 @@ const { loadState } = require('../src/report-store');
 const { buildCertsPayload } = require('../src/graph-certs');
 const { openPath } = require('../src/open-file');
 const { oscLink } = require('../src/osc-link');
+const { withStaticStatus, withPhasedSpinner } = require('../src/terminal-progress');
 
 const VALID_LANGS = new Set(['es', 'en']);
 
@@ -53,6 +54,15 @@ const COPY = {
     opening: 'Abriendo en el navegador…',
     degraded: 'Análisis IA no disponible (endpoint sin configurar o fallo) — grafo de agentes determinista.',
     stats: (n, e, ms) => `Análisis IA del codebase: ${n} nodos, ${e} edges · ${ms}ms`,
+    collecting: 'Recogiendo contexto del repo…',
+    // Rotating reassurance during the single long (~1 min) Pro analysis wait —
+    // time-phased, not a real progress read (the call is opaque single-shot).
+    phases: [
+      'Analizando el código con IA…',
+      'Identificando agentes y modelos…',
+      'Mapeando flujos, stores e integraciones…',
+      'Componiendo el grafo del codebase…',
+    ],
   },
   en: {
     help: 'map — open the LOCAL report (codebase graph via AI analysis + footprint & certifications as drawers). Usage: map [--root <dir>] [--lang es|en] [--offline] [--no-llm] [--contract <path>] [--stats] [--no-open]',
@@ -61,6 +71,15 @@ const COPY = {
     opening: 'Opening in your browser…',
     degraded: 'AI analysis unavailable (endpoint unset or failed) — deterministic agent graph.',
     stats: (n, e, ms) => `Codebase AI analysis: ${n} nodes, ${e} edges · ${ms}ms`,
+    collecting: 'Collecting repo context…',
+    // Rotating reassurance during the single long (~1 min) Pro analysis wait —
+    // time-phased, not a real progress read (the call is opaque single-shot).
+    phases: [
+      'Analyzing the code with AI…',
+      'Identifying agents and models…',
+      'Mapping flows, stores and integrations…',
+      'Composing the codebase graph…',
+    ],
   },
 };
 
@@ -119,11 +138,17 @@ async function run(argv = process.argv.slice(2), { ask } = {}) { // eslint-disab
     } else {
       // Footprint drawer ALWAYS from the live scan (AI-usage), independent of graph.
       try { footprint = buildGraphScan(root).footprint; } catch { footprint = null; }
-      // GRAPH: integrated LLM codebase analysis.
+      // GRAPH: integrated LLM codebase analysis. Feedback on stderr (stdout
+      // stays clean for the report path + --stats): a static status for the
+      // fast synchronous context collection, then a phased spinner rotating
+      // reassuring copy through the one long, opaque Pro wait (~1 min).
       if (o.llm) {
-        const ctx = collectRepoContext(root);
-        const analyzer = makeCodebaseAnalyzer({ endpoint: getGraphInferenceEndpoint(), locale: lang });
-        const g = await analyzer.analyze(ctx);
+        const ctx = withStaticStatus(c.collecting, () => collectRepoContext(root));
+        const endpoint = getGraphInferenceEndpoint();
+        const analyzer = makeCodebaseAnalyzer({ endpoint, locale: lang });
+        const g = endpoint
+          ? await withPhasedSpinner(c.phases, () => analyzer.analyze(ctx))
+          : await analyzer.analyze(ctx); // no endpoint → instant null, no spinner flash
         if (g && Array.isArray(g.nodes) && g.nodes.length) {
           const built = assembleContract(ctx.project, g);
           if (built) { contract = built; analysis = { latencyMs: g.latencyMs }; }

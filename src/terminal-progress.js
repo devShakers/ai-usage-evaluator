@@ -79,4 +79,52 @@ async function withSpinner(label, task, stream = process.stderr) {
   }
 }
 
-module.exports = { withStaticStatus, withSpinner, isInteractive };
+const PHASE_MS = 8000;
+
+// Pure: which phase index is active after `elapsedMs`. Advances one step per
+// `phaseMs` and CLAMPS on the last phase — it never loops back to phase 0
+// (looping would read as "the work restarted"). Exposed for deterministic
+// unit tests (no timers needed to verify the rotation schedule).
+function phaseAt(phaseCount, elapsedMs, phaseMs = PHASE_MS) {
+  if (!(phaseCount > 0)) return 0;
+  if (!(elapsedMs > 0) || !(phaseMs > 0)) return 0;
+  const i = Math.floor(elapsedMs / phaseMs);
+  return i >= phaseCount ? phaseCount - 1 : i;
+}
+
+// Runs an ASYNC `task` (zero-arg → Promise) through ONE long, opaque wait
+// (e.g. `map`'s ~57s single-shot Pro call) while showing an animated spinner
+// whose COPY rotates through `phases` on a timer — time-phased reassurance,
+// NOT fake precise progress (we can't read the model's internal state). The
+// braille frame ticks at `tickMs`; the copy advances every `phaseMs` and holds
+// on the last phase. Non-TTY (piped/redirected/CI): prints phase[0] once as a
+// plain line and does NOT rotate or emit `\r` — same posture as withSpinner.
+// The line is fully erased on settle (success OR failure); the caller's own
+// try/catch around the awaited result is untouched.
+async function withPhasedSpinner(phases, task, { stream = process.stderr, phaseMs = PHASE_MS, tickMs = TICK_MS } = {}) {
+  const list = (Array.isArray(phases) ? phases : [phases]).filter((s) => typeof s === 'string' && s.length > 0);
+  const first = list[0] || '';
+  if (!isInteractive(stream)) {
+    if (first) stream.write(`  ${first}\n`);
+    return task();
+  }
+  const start = Date.now();
+  let frame = 0;
+  let maxLen = 0;
+  const render = () => {
+    const copy = list[phaseAt(list.length, Date.now() - start, phaseMs)] || first;
+    const line = `  ${FRAMES[frame]} ${copy}`;
+    maxLen = Math.max(maxLen, line.length);
+    stream.write(`\r${line.padEnd(maxLen)}`); // padEnd clears a longer previous phase's tail
+  };
+  render();
+  const timer = setInterval(() => { frame = (frame + 1) % FRAMES.length; render(); }, tickMs);
+  try {
+    return await task();
+  } finally {
+    clearInterval(timer);
+    stream.write(`\r${' '.repeat(maxLen)}\r`);
+  }
+}
+
+module.exports = { withStaticStatus, withSpinner, withPhasedSpinner, phaseAt, isInteractive };
