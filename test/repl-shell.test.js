@@ -140,10 +140,11 @@ test('renderBanner (wide): colour off yields a plain, accent-free boxed header',
   assert.match(banner, /Commands/);
   assert.match(banner, /footprint/);
   assert.match(banner, /certify/);
-  // ADR-016: `report` command listed alongside the others.
-  assert.match(banner, /report/);
+  // report split into `map` (LOCAL graph) + `sheet` (SHAREABLE) — docs/graph-report.md.
+  assert.match(banner, /map/);
+  assert.match(banner, /sheet/);
   assert.match(banner, /Getting started/);
-  assert.match(banner, /footprint · certify · report · share · help · exit/);
+  assert.match(banner, /footprint · certify · map · sheet · share · help · exit/);
 });
 
 test('renderBanner (narrow): degrades to a single stacked column without crashing', () => {

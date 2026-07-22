@@ -66,7 +66,15 @@ FILES=(
   "bin/certify.js"
   "bin/share.js"
   "bin/report-html.js"
+  "bin/map.js"
   "bin/superadmin.js"
+)
+
+# Non-.js assets under src/ that the src/*.js discovery below does NOT pick up
+# but that modules read at runtime (e.g. the LOCAL report HTML template that
+# render-graph.js loads). Ship these explicitly.
+ASSETS=(
+  "src/templates/graph-report.html"
 )
 
 say()  { printf "  %b\n" "$1"; }
@@ -173,6 +181,16 @@ for f in "${SRC_FILES[@]}"; do
     curl -fsSL "$RAW/src/$f" -o "$dest" || die "Could not download src/$f\n    Check your connection or the script's OWNER/REPO/BRANCH config."
   fi
   say "    ${G}+${N} src/$f"
+done
+for f in "${ASSETS[@]}"; do
+  dest="$INSTALL_DIR/$f"
+  mkdir -p "$(dirname "$dest")"
+  if [ "$LOCAL" -eq 1 ]; then
+    cp "$SCRIPT_DIR/$f" "$dest" || die "Could not copy $f"
+  else
+    curl -fsSL "$RAW/$f" -o "$dest" || die "Could not download $f\n    Check your connection or the script's OWNER/REPO/BRANCH config."
+  fi
+  say "    ${G}+${N} $f"
 done
 
 # ─── Create the single `sh-eval` launcher (ADR-014) ─────────────────────────
