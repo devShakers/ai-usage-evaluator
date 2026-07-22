@@ -31,6 +31,8 @@ const { makeGraphInferLlm } = require('../src/graph-infer-client');
 const { getGraphInferenceEndpoint } = require('../src/config');
 const { renderGraphReport } = require('../src/render-graph');
 const { embedFavicons } = require('../src/favicon-embed');
+const { loadState } = require('../src/report-store');
+const { buildCertsPayload } = require('../src/graph-certs');
 const { openPath } = require('../src/open-file');
 const { oscLink } = require('../src/osc-link');
 
@@ -116,6 +118,27 @@ async function run(argv = process.argv.slice(2), { ask } = {}) { // eslint-disab
     return;
   }
 
+  // Certifications drawer: real data from report-store state for this project
+  // (same source as `sheet`). `--contract` mode keeps whatever the contract carries.
+  let certs = contract.certs || null;
+  if (!o.contract) {
+    try {
+      const project = (loadState().projects || {})[root];
+      certs = project ? buildCertsPayload(project, lang) : null;
+    } catch {
+      certs = null; // never block the report over a cert-read failure
+    }
+  }
+  // Localized clean empty-state when the project has no certs yet (the drawer
+  // shows this message instead of a misleading placeholder).
+  if (!certs) {
+    certs = {
+      labels: { empty: lang === 'es' ? 'Aún no hay certificaciones para este proyecto. Ejecuta certify.' : 'No certifications for this project yet. Run certify.' },
+      agents: [],
+      skills: [],
+    };
+  }
+
   let outPath;
   try {
     const favicons = o.offline ? null : await embedFavicons(collectDomains(contract), { enabled: true });
@@ -129,7 +152,7 @@ async function run(argv = process.argv.slice(2), { ask } = {}) { // eslint-disab
         topIntegrations: contract.topIntegrations || [],
         graph: contract.graph,
         footprint,
-        certs: contract.certs || null,
+        certs,
         favicons,
       },
       { lang }

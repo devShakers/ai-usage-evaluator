@@ -117,6 +117,18 @@ A model infers the flows/services/stores/entrypoints we can't detect statically.
   deterministic graph. **Keep the client's `GRAPH_INFER_PROMPT_VERSION` in the
   backend's `ACCEPTED_GRAPH_INFERENCE_PROMPT_VERSIONS`** (the stub test guards it).
 
+### Drawers from real state
+- **Footprint drawer**: built from the live scan (`graph-scan.buildGraphScan` →
+  tier/level/score/technologies/tools from `maturity.classify`).
+- **Certifications drawer**: real data from `report-store` (SAME source as
+  `sheet`), adapted by `src/graph-certs.js` — REUSING the shared logic
+  `deriveCertEvidence` (agent evidence derived from areas — a P5 never shows
+  without evidence), `scoreBand`, and the i18n `certifyAgents` catalog (P1–P5
+  Familiar→Experto, area/tag labels, headings). Skills: name (+tech) · score
+  band · rationale · improvements. Agents: level pill · category·role · Why
+  (verified/unverified evidence) · 5 areas (name+tag+evidence) · assessment.
+  Rendered in the mockup's accordion; clean localized empty state when none.
+
 ### Observability & privacy
 - **Content-free logs; NO Langfuse.** Instrumentation is emitted via the
   injected `onTrace(evt)` sink: `{ event:'graph.infer', ok, model, inputTokens,

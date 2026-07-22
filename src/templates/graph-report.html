@@ -496,17 +496,34 @@ document.getElementById('footBody').innerHTML=
    <div class="h2">Herramientas detectadas</div><div class="chips">${f.tools.map(t=>`<span class="tchip is-tool">${esc(t)}</span>`).join('')}</div>
    <div class="h2">Tecnologías</div><div class="chips">${f.technologies.map(t=>`<span class="tchip">${esc(t)}</span>`).join('')}</div>`;
 
-const c=DATA.certs;
-const areaRows=a=>a.map(([nm,v])=>`<div class="area"><span class="an">${esc(nm)}</span><span class="bar"><i style="width:${v}%"></i></span><span class="av">${v}</span></div>`).join('');
-document.getElementById('certBody').innerHTML=
-  `<div class="h2">Agentes certificados · ${c.agents.length}</div>
-   ${c.agents.map(a=>`<details class="acc"><summary><span class="caret">▶</span><span class="nm">${esc(a.name)}</span><span class="lvtag">${a.level} · ${esc(a.levelName)}</span><span class="score ${a.band}">${a.score}</span></summary>
-     <div class="abody"><div class="areas">${areaRows(a.areas)}</div><div style="font-weight:700;color:var(--fg);font-size:11px;margin-bottom:4px">Evidencias</div><ul class="evid">${a.evidences.map(e=>`<li>${esc(e)}</li>`).join('')}</ul></div></details>`).join('')}
-   <div class="h2">Skills evaluadas · ${c.skills.length}</div>
-   ${c.skills.map(sk=>`<details class="acc"><summary><span class="caret">▶</span><span class="nm">${esc(sk.name)}</span><span class="score ${sk.band}">${sk.score}</span></summary>
-     <div class="abody"><div style="font-weight:700;color:var(--fg);font-size:11px;margin-bottom:4px">Mejoras sugeridas</div><ul class="impr">${sk.improvements.map(i=>`<li>${esc(i)}</li>`).join('')}</ul></div></details>`).join('')}
-   <div class="callout" style="margin-top:16px;font-size:11.5px">${DATA.certs.pnScaleNote||"Escala de competencia de agentes P1 \u2192 P5 (autonomia/fiabilidad creciente)."}</div>`;
-
+const c=DATA.certs||null;
+const L=(c&&c.labels)||{};
+const kH='font-weight:700;color:var(--fg);font-size:11px;margin:10px 0 3px';
+const kH2='font-weight:600;color:var(--muted);font-size:10.5px;margin:7px 0 2px';
+const tagColor=k=>k==='verified'?'var(--ds-success)':k==='partial'?'var(--ds-warning)':k==='n_a'?'var(--faint)':'var(--ds-destructive)';
+function agentCard(a){
+  const meta=a.meta?`<div style="font-size:11px;color:var(--faint);margin-bottom:6px">${esc(a.meta)}</div>`:'';
+  const ver=(a.verified||[]).map(e=>`<li>${esc(e.name)}${e.evidence?': '+esc(e.evidence):''}</li>`).join('');
+  const unv=(a.unverified||[]).map(e=>`<li>${esc(e.name)}${e.tagLabel?' ('+esc(e.tagLabel)+')':''}${e.evidence?': '+esc(e.evidence):''}</li>`).join('');
+  const why=(ver||unv)?`<div style="${kH}">${esc(L.why||'Why')}</div>`
+    +(ver?`<div style="${kH2}">${esc(L.verified||'Verified')}</div><ul class="evid">${ver}</ul>`:'')
+    +(unv?`<div style="${kH2}">${esc(L.unverified||'Unverified')}</div><ul class="evid">${unv}</ul>`:''):'';
+  const areas=(a.areas||[]).length?`<div style="${kH}">${esc(L.areas||'Areas')}</div><ul class="evid">`
+    +a.areas.map(ar=>`<li><b>${esc(ar.name)}</b> <span style="color:${tagColor(ar.tagKey)};font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em">${esc(ar.tag)}</span>${ar.evidence?': '+esc(ar.evidence):''}</li>`).join('')+`</ul>`:'';
+  const rat=a.rationale?`<p style="font-size:12px;color:var(--muted);line-height:1.5;margin:9px 0 0"><b style="color:var(--fg)">${esc(L.rationale||'Assessment')}:</b> ${esc(a.rationale)}</p>`:'';
+  return `<details class="acc"><summary><span class="caret">&#9654;</span><span class="nm">${esc(a.name)}</span><span class="score ${a.band||'mid'}">${esc(a.levelName)}</span></summary><div class="abody">${meta}${why}${areas}${rat}</div></details>`;
+}
+function skillCard(sk){
+  const rat=sk.rationale?`<p style="font-size:12.5px;color:var(--muted);line-height:1.5;margin:0 0 6px">${esc(sk.rationale)}</p>`:'';
+  const imp=(sk.improvements||[]).length?`<div style="${kH2}">${esc(L.improvements||'Improvements')}</div><ul class="impr">${sk.improvements.map(i=>`<li>${esc(i)}</li>`).join('')}</ul>`:'';
+  return `<details class="acc"><summary><span class="caret">&#9654;</span><span class="nm">${esc(sk.name)}</span><span class="score ${sk.band||'mid'}">${esc(String(sk.score))}</span></summary><div class="abody">${rat}${imp}</div></details>`;
+}
+const hasCerts=c&&(((c.agents||[]).length)||((c.skills||[]).length));
+document.getElementById('certBody').innerHTML= hasCerts
+  ? `${(c.agents||[]).length?`<div class="h2">${esc(L.agentsTitle||'Certified agents')} &middot; ${c.agents.length}</div>${c.agents.map(agentCard).join('')}`:''}`
+    +`${(c.skills||[]).length?`<div class="h2">${esc(L.skillsTitle||'Skills')} &middot; ${c.skills.length}</div>${c.skills.map(skillCard).join('')}`:''}`
+    +`${c.pnScaleNote?`<div class="callout" style="margin-top:16px;font-size:11.5px">${esc(c.pnScaleNote)}</div>`:''}`
+  : `<div class="callout" style="font-size:12.5px">${esc(L.empty||'No certifications for this project yet.')}</div>`;
 document.getElementById('legend').innerHTML=
   Object.entries(KIND).map(([k,v])=>`<span class="li"><span class="sw" style="background:${v.c}"></span>${v.tag}</span>`).join('')+
   `<span class="li"><span class="ed" style="border-color:var(--ds-teal-400)"></span>calls</span>
