@@ -197,6 +197,17 @@ function parseFrontmatter(content, { includeDescription = false } = {}) {
 // than showing with a name. Every agent must show a name — falls back to
 // the file's own basename (extension stripped) when the frontmatter
 // doesn't supply one, so a card is NEVER rendered with no name.
+// Derives the AI PRODUCT an agent belongs to from its SOURCE (the directory/
+// format it was parsed from), never hardcoded per agent. A `.claude/agents/*.md`
+// file is a Claude Code subagent → `'claude-code'`. New product sources (other
+// tools that expose agent definitions) add a branch here; the render maps the
+// key to a display name via i18n. `null` when the source isn't recognised.
+function deriveAiProduct(filePath) {
+  const p = String(filePath || '').replace(/\\/g, '/');
+  if (p.includes('/.claude/agents/') || p.includes('/.claude/agents')) return 'claude-code';
+  return null;
+}
+
 function buildAgentFromFrontmatter(fm, filePath) {
   const fallbackName = path.basename(filePath, path.extname(filePath));
   const name = typeof fm.name === 'string' && fm.name.trim() ? fm.name.trim() : fallbackName;
@@ -206,6 +217,9 @@ function buildAgentFromFrontmatter(fm, filePath) {
   return {
     name,
     tools,
+    // AI product derived from the source path (see deriveAiProduct) — shown on
+    // the card in place of the LLM `model`.
+    aiProduct: deriveAiProduct(filePath),
     model: typeof fm.model === 'string' && fm.model ? fm.model : null,
     // Hierarchy (ADR-009): first honour an explicit `parent` frontmatter key
     // when a project declares one. Claude Code's own subagent schema has NO

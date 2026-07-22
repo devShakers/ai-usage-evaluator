@@ -65,10 +65,11 @@ test('scan: populates report.agents with the exact shape {name, tools[], model, 
 
   const report = scan({ root: tmpDir });
   assert.equal(report.agents.length, 1);
-  assert.deepEqual(Object.keys(report.agents[0]).sort(), ['model', 'name', 'parent', 'tools'].sort());
+  assert.deepEqual(Object.keys(report.agents[0]).sort(), ['aiProduct', 'model', 'name', 'parent', 'tools'].sort());
   assert.deepEqual(report.agents[0], {
     name: 'backend-developer',
     tools: ['Read', 'Write', 'Bash'],
+    aiProduct: 'claude-code',
     model: 'sonnet',
     parent: null,
   });

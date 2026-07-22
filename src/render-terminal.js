@@ -106,10 +106,11 @@ function printTechnologies(report, t, p) {
  * the HTML renderer); guards a malformed `parent` cycle with a `visited` set.
  */
 
-function agentUsageBit(card, t) {
-  if (card.usageCount === null || card.usageCount === undefined) return '';
-  const label = card.usageCount === 0 ? t.terminal.agentUnused : t.terminal.agentUsed(card.usageCount);
-  return `  ${c.gray}${label}${c.reset}`;
+// AI product (from the source, e.g. Claude Code) shown in place of the LLM model.
+function agentProductLabel(card, t) {
+  if (!card.aiProduct) return '';
+  const map = (t.html && t.html.aiProducts) || {};
+  return map[card.aiProduct] || card.aiProduct;
 }
 
 function agentLine(card, depth, t) {
@@ -119,10 +120,19 @@ function agentLine(card, depth, t) {
   const title = card.symbolicName
     ? `${card.symbolicName} ${c.gray}(${card.name})${c.reset}`
     : card.name;
-  const modelBit = card.model ? ` ${c.dim}[${card.model}]${c.reset}` : '';
-  // No numeric score on footprint cards (user decision) — model badge + usage only.
-  return `  ${indent}${marker} ${c.bold}${c.white}${title}${c.reset}${modelBit}`
-    + `${agentUsageBit(card, t)}`;
+  // No model, no usage (user decision) — show the AI PRODUCT instead of the model.
+  const product = agentProductLabel(card, t);
+  const productBit = product ? ` ${c.dim}[${product}]${c.reset}` : '';
+  return `  ${indent}${marker} ${c.bold}${c.white}${title}${c.reset}${productBit}`;
+}
+
+// The agent's wired tools/integrations = the per-card "technologies" (user wants
+// MORE tech visible). One dim line under the agent; deduped; omitted when empty.
+function agentToolsLine(card, depth) {
+  const tools = Array.from(new Set((card.tools || []).filter((x) => typeof x === 'string' && x.trim())));
+  if (tools.length === 0) return null;
+  const indent = '  '.repeat(depth);
+  return `  ${indent}   ${c.gray}${tools.join(' · ')}${c.reset}`;
 }
 
 // A compact, dim, summarized description under each agent (frontmatter
@@ -181,6 +191,8 @@ function printAgents(report, t, p) {
     p(agentLine(card, depth, t));
     const desc = agentDescLine(card, depth);
     if (desc) p(desc);
+    const toolsLine = agentToolsLine(card, depth);
+    if (toolsLine) p(toolsLine);
     const classLine = agentClassLine(card, depth, t);
     if (classLine) p(classLine);
     for (const line of agentImprovementLines(card, depth, t)) p(line);

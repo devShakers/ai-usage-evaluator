@@ -330,10 +330,6 @@ function buildAgentCardTree(report, t) {
       ? report.agentEvaluation.evaluations
       : [];
   const evalByName = new Map(evaluations.map((e) => [normalizeAgentName(e.name), e]));
-  const usageByAgent =
-    report.agentUsage && report.agentUsage.byAgent && typeof report.agentUsage.byAgent === 'object'
-      ? report.agentUsage.byAgent
-      : null;
   // `certify agents` (skill-code-certification): per-agent proficiency LEVEL,
   // keyed by the local agent name (exact), from report-state. Absent → no tag.
   const certByName =
@@ -346,7 +342,10 @@ function buildAgentCardTree(report, t) {
     const synth = synthesisByName.get(key);
     const parentKey = a.parent && byName.has(a.parent) && a.parent !== a.name ? a.parent : null;
     const tools = Array.isArray(a.tools) ? a.tools : [];
-    const model = a.model || null;
+    // AI product derived from the agent's SOURCE (agent-org-chart#deriveAiProduct)
+    // — shown on the card in place of the LLM model. Falls back to the report's
+    // catalog-independent default when a parsed agent predates the field.
+    const aiProduct = typeof a.aiProduct === 'string' && a.aiProduct ? a.aiProduct : null;
 
     const ev = evalByName.get(key);
     // ADR-026: the agent-evaluation `description` is a one-line caption written
@@ -364,10 +363,10 @@ function buildAgentCardTree(report, t) {
     const fallbackPhrase = t && t.html.agentDescriptionFromName ? t.html.agentDescriptionFromName(humanizeAgentName(a.name)) : null;
     const whatItDoes = evalPhrase || synthPhrase || rawPhrase || fallbackPhrase;
 
-    // The numeric score was removed from footprint cards (user decision) — not
-    // carried onto the card. rationale + classification + improvements + usage stay.
+    // The numeric score AND the local usage signal were removed from footprint
+    // cards (user decision) — not carried onto the card. rationale +
+    // classification + improvements stay.
     const rationale = ev && typeof ev.rationale === 'string' && ev.rationale.trim() ? ev.rationale.trim() : null;
-    const usageCount = usageByAgent ? (typeof usageByAgent[a.name] === 'number' ? usageByAgent[a.name] : null) : null;
     // v4 (agent classification): closest catalog agent + how it was matched, and
     // 2-3 improvement tips. `classification` is null ONLY when no evaluation ran
     // for this agent (no block rendered); when the evaluation ran but placed no
@@ -391,10 +390,9 @@ function buildAgentCardTree(report, t) {
       symbolicName: synth && synth.symbolicName ? synth.symbolicName : null,
       whatItDoes,
       tools,
-      model,
+      aiProduct,
       parent: parentKey,
       rationale,
-      usageCount,
       classification,
       improvements,
       certification,
@@ -410,6 +408,13 @@ function buildAgentCardTree(report, t) {
   return { childrenByParent, roots: childrenByParent.get(null) || [] };
 }
 
+// Maps an AI-product key (e.g. 'claude-code') to its display name via i18n,
+// falling back to the raw key. Product names are proper nouns (same es/en).
+function aiProductLabel(key, t) {
+  const map = (t && t.html && t.html.aiProducts) || {};
+  return map[key] || key;
+}
+
 function agentCardHtml(card, t) {
   const hasSymbolicName = !!card.symbolicName;
   const title = esc(hasSymbolicName ? card.symbolicName : card.name);
@@ -420,22 +425,20 @@ function agentCardHtml(card, t) {
     ? `<span class="agent-badge" title="${esc(t.html.agentRealNameLabel)}">${esc(card.name)}</span>`
     : '';
   const phrase = card.whatItDoes ? `<p class="agent-phrase">${esc(card.whatItDoes)}</p>` : '';
-  // Per-agent tool / MCP-server chips were REMOVED (user request, talents-ai-score):
-  // an agent card now shows only its identity + hierarchy — real name, symbolic
-  // name (when synthesized), one-line description and the MODEL chip. The
-  // structural `tools[]` (which surfaced the per-agent MCP servers) is still in
-  // the data model (buildAgentCardTree) but is no longer rendered in either
-  // surface (HTML here, and the terminal never listed it after the condense).
-  const modelChip = card.model
-    ? `<span class="chip pill model"><i class="dot" aria-hidden="true"></i>${esc(card.model)}</span>`
+  // The AI PRODUCT the agent belongs to (derived from its source — e.g. Claude
+  // Code for a `.claude/agents/*.md` file), shown in place of the LLM model
+  // (user decision: no model, show the product). Display name via i18n.
+  const productChip = card.aiProduct
+    ? `<span class="chip pill product"><i class="dot" aria-hidden="true"></i>${esc(aiProductLabel(card.aiProduct, t))}</span>`
     : '';
-  // The numeric definition-quality score badge was REMOVED from footprint cards
-  // (user decision — no number). The rich detail (rationale, classification,
-  // improvements) + the local usage signal stay.
-  const usageChip = card.usageCount != null
-    ? `<span class="chip pill usage" title="${esc(t.html.agentUsageLabel)}">`
-      + `<i class="dot" aria-hidden="true"></i>${esc(card.usageCount === 0 ? t.html.agentUnused : t.html.agentUsedTimes(card.usageCount))}</span>`
-    : '';
+  // "Technologies" per card = the agent's own wired tools / integrations / MCP
+  // servers (re-surfaced — user wants MORE technologies visible, and these vary
+  // per agent). Deduped; empty → no chips.
+  const toolChips = Array.from(new Set((card.tools || []).filter((x) => typeof x === 'string' && x.trim())))
+    .map((tool) => `<span class="chip pill tool">${esc(tool)}</span>`)
+    .join('');
+  // The numeric score AND the local usage signal were REMOVED from footprint
+  // cards (user decision). rationale + classification + improvements stay.
   const rationale = card.rationale
     ? `<p class="agent-rationale"><span class="agent-rationale-k">${esc(t.html.agentQualityLabel)}</span> ${esc(card.rationale)}</p>`
     : '';
@@ -457,7 +460,7 @@ function agentCardHtml(card, t) {
     ${rationale}
     ${classification}
     ${improvements}
-    <div class="agent-chips">${modelChip}${usageChip}</div>
+    <div class="agent-chips">${productChip}${toolChips}</div>
   </div>`;
 }
 
@@ -1077,6 +1080,10 @@ const FOOTPRINT_CSS = `
     flex:none}
   .chip.pill.model{color:var(--model-fg);background:var(--model-bg)}
   .chip.pill.model .dot{background:var(--model-fg)}
+  /* AI product (replaces the model chip) + the agent's wired tools/tech chips */
+  .chip.pill.product{color:var(--model-fg);background:var(--model-bg);font-weight:600}
+  .chip.pill.product .dot{background:var(--model-fg)}
+  .chip.pill.tool{color:var(--secondary-fg);background:var(--track)}
 
   /* ---- Agent classification + improvements (v4) ---- */
   .agent-class{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:2px}

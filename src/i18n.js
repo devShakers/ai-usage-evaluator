@@ -319,6 +319,8 @@ const catalogs = {
       // templated sentence (that repetitive-filler approach was already
       // tried and rejected).
       agentDescriptionFromName: (name) => `Agente "${name}" (sin descripción declarada en su fichero).`,
+      // AI product an agent belongs to, derived from its source (proper nouns; same es/en).
+      aiProducts: { 'claude-code': 'Claude Code' },
       // ADR-016 agent evaluation (HTML per-agent detail): definition-quality
       // score + LLM rationale + local usage signal. The full detail lives here;
       // the terminal keeps only a one-line summary.
@@ -1077,6 +1079,8 @@ const catalogs = {
       orchestratorLabel: 'Orchestrator',
       reportsToLabel: 'Reports to:',
       agentDescriptionFromName: (name) => `"${name}" agent (no description declared in its file).`,
+      // AI product an agent belongs to, derived from its source (proper nouns; same es/en).
+      aiProducts: { 'claude-code': 'Claude Code' },
       // ADR-016 agent evaluation (HTML per-agent detail): definition-quality
       // score + LLM rationale + local usage signal. The full detail lives here;
       // the terminal keeps only a one-line summary.
