@@ -122,8 +122,15 @@ async function runCertifyAgents(argv = [], { ask: injectedAsk = null } = {}) {
   const localeArg = lang === 'es' || lang === 'en' ? lang : null;
   const superadmin = loadSuperadminSession();
 
+  // SUPERADMIN-ONLY testing shortcut (--fast): skip the interactive Q&A with
+  // built-in sample answers and go straight to the real verdict. HARD-GATED on a
+  // valid superadmin session — a real Talent's `--fast` is ignored and the normal
+  // Q&A is asked, so nobody can bypass the questions. Agent selection is untouched.
+  const fastMode = !!opts.fast && !!superadmin;
+
   try {
     out(`\n  ${ca.intro}\n`);
+    if (opts.fast && !superadmin) out(`\n  ${ca.fastModeDenied}\n`);
 
     // Egress disclaimer (definition + answers). Explicit acceptance.
     const accepted = YES.test((await ask(`  ${ca.disclaimer} `)).trim());
@@ -151,23 +158,40 @@ async function runCertifyAgents(argv = [], { ask: injectedAsk = null } = {}) {
       const agent = await chooseAgent(ask, stdinIsTTY, remaining, ca, out);
       if (!agent) break;
 
-      // Two fixed qualification questions (colored to stand out).
-      const achieve = (await ask(`\n  ${question(ca.qAchieve)}\n  > `)).trim();
-      const decisions = (await ask(`  ${question(ca.qDecisions)}\n  > `)).trim();
-      const qualification = { achieve, decisions };
-
-      // Follow-ups (model-generated). Degrades to none if the endpoint is unset.
-      out(`\n  ${ca.generatingFollowups}\n`);
-      const fu = await requestFollowups(agent, qualification, {
-        endpoint: followupsEndpoint,
-        locale: localeArg,
-      });
+      let qualification;
       const followups = [];
-      const questions = fu.ok ? fu.questions : [];
-      if (questions.length) out(`\n  ${ca.followupsHeading}\n`);
-      for (const q of questions) {
-        const answer = (await ask(`  ${question(q)}\n  > `)).trim();
-        followups.push({ question: q, answer });
+      if (fastMode) {
+        // Zero-typing: built-in sample answers + auto-answered follow-ups. The
+        // follow-ups endpoint still runs (real e2e of that call), we just fill
+        // each answer with a generic sample instead of prompting.
+        out(`\n  ${ca.fastModeNotice}\n`);
+        qualification = { achieve: ca.sampleAchieve, decisions: ca.sampleDecisions };
+        out(`\n  ${ca.generatingFollowups}\n`);
+        const fu = await requestFollowups(agent, qualification, {
+          endpoint: followupsEndpoint,
+          locale: localeArg,
+        });
+        for (const q of fu.ok ? fu.questions : []) {
+          followups.push({ question: q, answer: ca.sampleFollowupAnswer });
+        }
+      } else {
+        // Two fixed qualification questions (colored to stand out).
+        const achieve = (await ask(`\n  ${question(ca.qAchieve)}\n  > `)).trim();
+        const decisions = (await ask(`  ${question(ca.qDecisions)}\n  > `)).trim();
+        qualification = { achieve, decisions };
+
+        // Follow-ups (model-generated). Degrades to none if the endpoint is unset.
+        out(`\n  ${ca.generatingFollowups}\n`);
+        const fu = await requestFollowups(agent, qualification, {
+          endpoint: followupsEndpoint,
+          locale: localeArg,
+        });
+        const questions = fu.ok ? fu.questions : [];
+        if (questions.length) out(`\n  ${ca.followupsHeading}\n`);
+        for (const q of questions) {
+          const answer = (await ask(`  ${question(q)}\n  > `)).trim();
+          followups.push({ question: q, answer });
+        }
       }
 
       // Verdict (gated + persisted server-side; category derived server-side).

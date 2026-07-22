@@ -230,6 +230,12 @@ const catalogs = {
       // Terminal summary (the full breakdown now lives in the HTML report).
       summaryHeading: 'Agente certificado',
       areasVerified: (n, total) => `${n}/${total} verificadas`,
+      // Superadmin-only fast testing shortcut (--fast): skip the Q&A.
+      fastModeNotice: 'Modo rápido (superadmin): saltando el Q&A con respuestas de muestra; el veredicto se ejecuta de verdad.',
+      fastModeDenied: 'El modo rápido (--fast) solo está disponible con una sesión superadmin activa; se responderá el Q&A normalmente.',
+      sampleAchieve: 'Quería un agente que automatizara una parte concreta de mi flujo, con un alcance acotado y salidas revisables.',
+      sampleDecisions: 'Definí yo su propósito y sus límites, elegí sus herramientas y sus guardarraíles, y decidí cómo maneja los fallos.',
+      sampleFollowupAnswer: 'Lo diseñé así deliberadamente por las restricciones del proyecto y lo he iterado según los resultados reales.',
     },
     levelNames: {
       none: 'Sin rastro de IA',
@@ -597,6 +603,7 @@ const catalogs = {
         + '      --accept-disclaimer  Acepta el aviso legal de forma no interactiva (aceptación explícita)\n'
         + '      --all                Certifica TODAS las Skills certificables (sin selección interactiva)\n'
         + '      --skills 1,3         Certifica las Skills en esas posiciones (sin selección interactiva)\n'
+        + '      --fast               (`certify agents`, solo superadmin) salta el Q&A con respuestas de muestra\n'
         + '  -h, --help               Muestra esta ayuda\n\n'
         + 'Fase 1 (resolve): detecta las tecnologías de tu proyecto y consulta al Hub de\n'
         + 'Shakers qué Skills son certificables. Fase 2 (certify): eliges qué Skills\n'
@@ -1005,6 +1012,12 @@ const catalogs = {
       // Terminal summary (the full breakdown now lives in the HTML report).
       summaryHeading: 'Agent certified',
       areasVerified: (n, total) => `${n}/${total} verified`,
+      // Superadmin-only fast testing shortcut (--fast): skip the Q&A.
+      fastModeNotice: 'Fast mode (superadmin): skipping the Q&A with sample answers; the verdict still runs for real.',
+      fastModeDenied: 'Fast mode (--fast) is only available with an active superadmin session; the Q&A will be asked normally.',
+      sampleAchieve: 'I wanted an agent that automated a specific part of my workflow, with a bounded scope and reviewable outputs.',
+      sampleDecisions: 'I defined its purpose and boundaries myself, chose its tools and guardrails, and decided how it handles failures.',
+      sampleFollowupAnswer: 'I designed it this way deliberately for the project constraints and have iterated on it based on real results.',
     },
     levelNames: {
       none: 'No AI footprint',
@@ -1314,6 +1327,7 @@ const catalogs = {
         + '      --accept-disclaimer  Accept the legal disclaimer non-interactively (explicit acceptance)\n'
         + '      --all                Certify ALL certifiable Skills (no interactive selection)\n'
         + '      --skills 1,3         Certify the Skills at these positions (no interactive selection)\n'
+        + '      --fast               (`certify agents`, superadmin only) skip the Q&A with sample answers\n'
         + '  -h, --help               Show this help\n\n'
         + 'Phase 1 (resolve): detects your project technologies and asks the Shakers Hub\n'
         + 'which Skills are certifiable. Phase 2 (certify): you pick which Skills to\n'
