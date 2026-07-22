@@ -227,6 +227,9 @@ const catalogs = {
       rationaleHeading: 'Valoración',
       noVerified: '(ninguna evidencia verificada)',
       savedHint: 'Guardado. Ejecuta `report` para ver el informe completo en el navegador.',
+      // Terminal summary (the full breakdown now lives in the HTML report).
+      summaryHeading: 'Agente certificado',
+      areasVerified: (n, total) => `${n}/${total} áreas verificadas`,
     },
     levelNames: {
       none: 'Sin rastro de IA',
@@ -998,6 +1001,9 @@ const catalogs = {
       rationaleHeading: 'Assessment',
       noVerified: '(no verified evidence)',
       savedHint: 'Saved. Run `report` to see the full report in your browser.',
+      // Terminal summary (the full breakdown now lives in the HTML report).
+      summaryHeading: 'Agent certified',
+      areasVerified: (n, total) => `${n}/${total} areas verified`,
     },
     levelNames: {
       none: 'No AI footprint',

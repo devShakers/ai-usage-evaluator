@@ -380,9 +380,20 @@ function buildAgentCardTree(report, t) {
     const improvements = ev && Array.isArray(ev.improvements) ? ev.improvements : [];
 
     const certRaw = certByName[a.name];
+    // The HTML card is now the FULL agent-certification breakdown surface (the
+    // terminal only prints a summary): carry level + category + role AND the
+    // evidence, the five areas with their tags, and the rationale.
     const certification =
       certRaw && typeof certRaw === 'object' && certRaw.level && certRaw.level !== 'none'
-        ? { level: certRaw.level, category: certRaw.category || null, role: certRaw.role || null }
+        ? {
+            level: certRaw.level,
+            category: certRaw.category || null,
+            role: certRaw.role || null,
+            areas: Array.isArray(certRaw.areas) ? certRaw.areas : [],
+            verifiedEvidence: Array.isArray(certRaw.verifiedEvidence) ? certRaw.verifiedEvidence : [],
+            unverifiedEvidence: Array.isArray(certRaw.unverifiedEvidence) ? certRaw.unverifiedEvidence : [],
+            rationale: typeof certRaw.rationale === 'string' && certRaw.rationale.trim() ? certRaw.rationale.trim() : null,
+          }
         : null;
 
     return {
@@ -464,21 +475,90 @@ function agentCardHtml(card, t) {
   </div>`;
 }
 
-// `certify agents` (report req): a proficiency LEVEL tag + category · role on the
-// agent's card, when the talent has certified this agent. Compact — the full
-// evidence/areas detail is the terminal report, not the HTML card.
+// `certify agents`: the FULL verdict on the agent's card when the talent has
+// certified this agent (user decision — swap the surfaces: HTML gets the full
+// breakdown, the terminal only summarizes). The level tag + category · role stay
+// the header; below it the "why" (verified/unverified evidence), the five areas
+// with their performance tag, and the rationale.
+// Maps an area performance tag to a severity bucket used for the CSS class, so
+// the static stylesheet carries no domain literal (see areaItems note).
+function certTagBucket(tag) {
+  if (tag === 'verified') return 'ok';
+  if (tag === 'partial') return 'mid';
+  if (tag === 'n_a') return 'na';
+  return 'low'; // claimed / not_evidenced
+}
+
 function agentCertLevelHtml(card, t) {
   if (!card.certification) return '';
   const ca = t.certifyAgents;
-  const { level, category, role } = card.certification;
+  const { level, category, role, areas, verifiedEvidence, unverifiedEvidence, rationale } = card.certification;
   const levelName = (ca.levelNames && ca.levelNames[level]) || level;
   const catLabel = category && t.classification.categories[category]
     ? t.classification.categories[category]
     : category;
   const meta = [catLabel, role].filter(Boolean).map((x) => esc(x)).join(' · ');
-  return `<div class="agent-cert">
+
+  const head = `<div class="agent-cert-head">
     <span class="chip pill cert-level cert-${esc(level)}">${esc(ca.levelLabel)}: ${esc(levelName)}</span>
     ${meta ? `<span class="agent-cert-meta">${meta}</span>` : ''}
+  </div>`;
+
+  // Why: verified evidence (always shown, with a fallback line) + unverified
+  // (only when the model flagged unconfirmed claims).
+  const verifiedItems = (verifiedEvidence || []).map((e) => `<li>${esc(e)}</li>`).join('');
+  const verifiedBlock = `<div class="agent-cert-ev verified">
+    <div class="agent-cert-ev-k">${esc(ca.verifiedHeading)}</div>
+    ${verifiedItems ? `<ul>${verifiedItems}</ul>` : `<p class="agent-cert-none">${esc(ca.noVerified)}</p>`}
+  </div>`;
+  const unverifiedItems = (unverifiedEvidence || []).map((e) => `<li>${esc(e)}</li>`).join('');
+  const unverifiedBlock = unverifiedItems
+    ? `<div class="agent-cert-ev unverified">
+    <div class="agent-cert-ev-k">${esc(ca.unverifiedHeading)}</div>
+    <ul>${unverifiedItems}</ul>
+  </div>`
+    : '';
+  const why = `<div class="agent-cert-why">
+    <div class="agent-cert-k">${esc(ca.whyHeading)}</div>
+    ${verifiedBlock}
+    ${unverifiedBlock}
+  </div>`;
+
+  // The five assessed areas, each with its performance tag. The CSS class is a
+  // SEVERITY BUCKET (ok/mid/low/na), not the raw tag, so the always-present
+  // stylesheet never leaks a domain literal like "not_evidenced" into a report
+  // that has no certification (keeps the "invents no framing" guarantee).
+  const areaItems = (areas || [])
+    .map((a) => {
+      const areaName = (ca.areaNames && ca.areaNames[a.area]) || a.area;
+      const tagLabel = (ca.tagLabels && ca.tagLabels[a.tag]) || a.tag;
+      const ev = a.evidence ? `<span class="cert-area-ev">${esc(a.evidence)}</span>` : '';
+      return `<li class="cert-area cert-tag-${certTagBucket(a.tag)}">
+        <span class="cert-area-name">${esc(areaName)}</span>
+        <span class="chip pill cert-area-tag">${esc(tagLabel)}</span>
+        ${ev}
+      </li>`;
+    })
+    .join('');
+  const areasBlock = areaItems
+    ? `<div class="agent-cert-areas">
+    <div class="agent-cert-k">${esc(ca.areasHeading)}</div>
+    <ul class="cert-areas-list">${areaItems}</ul>
+  </div>`
+    : '';
+
+  const rationaleBlock = rationale
+    ? `<div class="agent-cert-rationale">
+    <div class="agent-cert-k">${esc(ca.rationaleHeading)}</div>
+    <p>${esc(rationale)}</p>
+  </div>`
+    : '';
+
+  return `<div class="agent-cert">
+    ${head}
+    ${why}
+    ${areasBlock}
+    ${rationaleBlock}
   </div>`;
 }
 
@@ -1096,12 +1176,32 @@ const FOOTPRINT_CSS = `
   .agent-improve-k{font-size:12px;font-weight:600;color:var(--fg);margin-bottom:4px}
   .agent-improve ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:3px}
   .agent-improve li{font-size:13px;line-height:1.45;color:var(--muted)}
-  /* certify agents: proficiency level tag on the card */
-  .agent-cert{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:2px}
+  /* certify agents: FULL verdict on the card (level + why + areas + rationale) */
+  .agent-cert{display:flex;flex-direction:column;gap:10px;margin-top:6px;padding:10px 12px;border:1px solid var(--border,rgba(0,0,0,.08));border-radius:10px;background:var(--track)}
+  .agent-cert-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
   .agent-cert-meta{font-size:12px;color:var(--muted)}
-  .chip.pill.cert-level{font-weight:700;color:var(--fg);background:var(--track)}
+  .agent-cert-k{font-size:12px;font-weight:600;color:var(--fg);margin-bottom:4px}
+  .chip.pill.cert-level{font-weight:700;color:var(--fg);background:var(--card,#fff)}
   .chip.pill.cert-P4,.chip.pill.cert-P5{color:var(--ds-emerald-700,#047857);background:var(--ds-emerald-50,#ecfdf5)}
-  .chip.pill.cert-none{color:var(--muted);background:var(--track)}
+  .chip.pill.cert-P1,.chip.pill.cert-P2,.chip.pill.cert-P3{color:var(--ds-amber-700,#b45309);background:var(--ds-amber-50,#fffbeb)}
+  .chip.pill.cert-none{color:var(--muted);background:var(--card,#fff)}
+  .agent-cert-why{display:flex;flex-direction:column;gap:6px}
+  .agent-cert-ev{display:flex;flex-direction:column;gap:2px}
+  .agent-cert-ev-k{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.02em}
+  .agent-cert-ev.verified .agent-cert-ev-k{color:var(--ds-emerald-700,#047857)}
+  .agent-cert-ev.unverified .agent-cert-ev-k{color:var(--ds-amber-700,#b45309)}
+  .agent-cert-ev ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:2px}
+  .agent-cert-ev li{font-size:13px;line-height:1.45;color:var(--muted)}
+  .agent-cert-none{margin:0;font-size:13px;color:var(--muted);font-style:italic}
+  .cert-areas-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+  .cert-area{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px}
+  .cert-area-name{color:var(--fg);font-weight:500}
+  .cert-area-ev{flex-basis:100%;font-size:12px;color:var(--muted);padding-left:2px}
+  .chip.pill.cert-area-tag{font-size:11px;color:var(--muted);background:var(--card,#fff)}
+  .cert-area.cert-tag-ok .chip.pill.cert-area-tag{color:var(--ds-emerald-700,#047857);background:var(--ds-emerald-50,#ecfdf5)}
+  .cert-area.cert-tag-mid .chip.pill.cert-area-tag{color:var(--ds-amber-700,#b45309);background:var(--ds-amber-50,#fffbeb)}
+  .cert-area.cert-tag-low .chip.pill.cert-area-tag{color:var(--ds-red-700,#b91c1c);background:var(--ds-red-50,#fef2f2)}
+  .agent-cert-rationale p{margin:0;font-size:13px;line-height:1.5;color:var(--muted)}
 
   /* ---- Progression ladder (levels 0-4 + tiers T0-T7, report req 1) ---- */
   /* Maturity-ladder card: give the content room to breathe and drop the border

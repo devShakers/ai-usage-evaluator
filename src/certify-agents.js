@@ -190,7 +190,8 @@ async function runCertifyAgents(argv = [], { ask: injectedAsk = null } = {}) {
         continue;
       }
 
-      // Report (terminal) + persist the level for the HTML report.
+      // Summary (terminal) + persist the FULL verdict for the HTML report, which
+      // is now the full-breakdown surface (evidence, areas, rationale).
       out('\n' + renderAgentCertification(v.verdict, catalog) + '\n');
       try {
         persistAgentCertification({
@@ -199,6 +200,10 @@ async function runCertifyAgents(argv = [], { ask: injectedAsk = null } = {}) {
           level: v.verdict.level,
           category: v.verdict.category,
           role: v.verdict.role,
+          areas: v.verdict.areas,
+          verifiedEvidence: v.verdict.verifiedEvidence,
+          unverifiedEvidence: v.verdict.unverifiedEvidence,
+          rationale: v.verdict.rationale,
         });
       } catch {
         // Never break the run over a failed state write.

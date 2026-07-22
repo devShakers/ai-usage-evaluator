@@ -1,11 +1,13 @@
 'use strict';
 
 /*
- * Terminal render of a SINGLE agent-certification result (`certify agents`).
- * Printed right after each verdict. Zero-dep ANSI. The HTML surface is the
- * footprint report's agents section (a level tag on the agent's card) — this
- * module is the terminal-only, per-agent detail: level, the "why" (verified vs
- * unverified evidence), the five areas with their tag, and the rationale.
+ * Terminal SUMMARY of a SINGLE agent-certification result (`certify agents`).
+ * Printed right after each verdict. Zero-dep ANSI. Intentionally compact and
+ * scannable: level Pn + agent name + role · category, and how many of the five
+ * areas came back verified. The FULL breakdown — the "why" (verified/unverified
+ * evidence), the five areas with their tags, and the rationale — now lives in
+ * the HTML report's agents section (render-html.js#agentCertLevelHtml), reached
+ * via the `report` command (see certifyAgents.savedHint).
  */
 
 const c = {
@@ -28,18 +30,13 @@ function levelColor(level) {
   return c.red; // none / not substantiated
 }
 
-function tagColor(tag) {
-  if (tag === 'verified') return c.green;
-  if (tag === 'partial') return c.yellow;
-  if (tag === 'n_a') return c.gray;
-  return c.red; // claimed / not_evidenced
-}
-
 /**
- * Returns the terminal report as a string. `verdict` is the normalized client
+ * Returns the terminal SUMMARY as a string. `verdict` is the normalized client
  * shape ({agentName, category, role, level, areas, verifiedEvidence,
  * unverifiedEvidence, rationale}); `t` is the full i18n catalog for the run's
- * language.
+ * language. Only level, name, role·category and the verified-area count are
+ * shown here — the pointer to the full HTML breakdown is printed by the caller
+ * (certifyAgents.savedHint).
  */
 function renderAgentCertification(verdict, t) {
   const ca = t.certifyAgents;
@@ -51,41 +48,18 @@ function renderAgentCertification(verdict, t) {
     ? ` ${c.gray}·${c.reset} ${verdict.role}${verdict.category ? ` ${c.gray}(${t.classification.categories[verdict.category] || verdict.category})${c.reset}` : ''}`
     : '';
 
+  const areas = Array.isArray(verdict.areas) ? verdict.areas : [];
+  const verifiedCount = areas.filter((a) => a && a.tag === 'verified').length;
+  const total = areas.length;
+
   p();
-  p(`  ${c.bold}${c.cyan}${ca.reportHeading}${c.reset}${c.gray}  ·  ${verdict.agentName}${c.reset}${roleBit}`);
-  p(`  ${ca.levelLabel}: ${levelColor(verdict.level)}${c.bold}${levelName}${c.reset}`);
+  p(`  ${c.bold}${c.cyan}${ca.summaryHeading}${c.reset}${c.gray}  ·  ${verdict.agentName}${c.reset}${roleBit}`);
   const desc = ca.levelDesc && ca.levelDesc[verdict.level];
-  if (desc) p(`  ${c.dim}${desc}${c.reset}`);
-  p();
-
-  // Why: verified + unverified evidence.
-  p(`  ${c.bold}${ca.whyHeading}${c.reset}`);
-  p(`  ${c.green}${ca.verifiedHeading}${c.reset}`);
-  if (verdict.verifiedEvidence.length) {
-    for (const e of verdict.verifiedEvidence) p(`    ${c.green}✓${c.reset} ${e}`);
-  } else {
-    p(`    ${c.dim}${ca.noVerified}${c.reset}`);
-  }
-  if (verdict.unverifiedEvidence.length) {
-    p(`  ${c.yellow}${ca.unverifiedHeading}${c.reset}`);
-    for (const e of verdict.unverifiedEvidence) p(`    ${c.yellow}~${c.reset} ${c.gray}${e}${c.reset}`);
-  }
-  p();
-
-  // Areas with tags.
-  p(`  ${c.bold}${ca.areasHeading}${c.reset}`);
-  for (const a of verdict.areas) {
-    const areaName = (ca.areaNames && ca.areaNames[a.area]) || a.area;
-    const tagLabel = (ca.tagLabels && ca.tagLabels[a.tag]) || a.tag;
-    p(`    ${tagColor(a.tag)}●${c.reset} ${c.white}${areaName}${c.reset} ${c.gray}—${c.reset} ${tagColor(a.tag)}${tagLabel}${c.reset}`);
-    if (a.evidence) p(`        ${c.dim}${a.evidence}${c.reset}`);
-  }
-
-  if (verdict.rationale) {
-    p();
-    p(`  ${c.bold}${ca.rationaleHeading}${c.reset}`);
-    p(`  ${c.gray}${verdict.rationale}${c.reset}`);
-  }
+  p(
+    `  ${ca.levelLabel}: ${levelColor(verdict.level)}${c.bold}${levelName}${c.reset}` +
+      (desc ? ` ${c.dim}— ${desc}${c.reset}` : ''),
+  );
+  if (total) p(`  ${c.dim}${ca.areasVerified(verifiedCount, total)}${c.reset}`);
   p();
 
   return lines.join('\n');

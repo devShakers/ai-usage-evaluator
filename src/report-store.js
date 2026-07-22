@@ -267,12 +267,24 @@ function persistFootprint({ root, report, maturity }) {
   return stampAndSaveState(state, absRoot);
 }
 
-// Persist an agent certification LEVEL for THIS project (skill-code-certification,
+// Persist an agent certification for THIS project (skill-code-certification,
 // `certify agents`), keyed by the local agent name. State only (no HTML). Stores
-// just the summary the HTML card needs (level + category + role); the full
-// evidence lives server-side + is shown in the terminal at cert time. Latest per
-// agent name wins (the card shows the most recent level).
-function persistAgentCertification({ root, agentName, level, category, role }) {
+// the FULL verdict — level + category + role AND the "why" (verified/unverified
+// evidence), the five areas with their tag, and the rationale — because the HTML
+// report card is now the full breakdown surface (the terminal shows only a
+// summary at cert time). Latest per agent name wins (the card shows the most
+// recent verdict).
+function persistAgentCertification({
+  root,
+  agentName,
+  level,
+  category,
+  role,
+  areas,
+  verifiedEvidence,
+  unverifiedEvidence,
+  rationale,
+}) {
   const absRoot = path.resolve(root || process.cwd());
   const state = loadState();
   const project = getOrCreateProject(state, absRoot);
@@ -280,6 +292,10 @@ function persistAgentCertification({ root, agentName, level, category, role }) {
     level: level || 'none',
     category: category || null,
     role: role || null,
+    areas: Array.isArray(areas) ? areas : [],
+    verifiedEvidence: Array.isArray(verifiedEvidence) ? verifiedEvidence : [],
+    unverifiedEvidence: Array.isArray(unverifiedEvidence) ? unverifiedEvidence : [],
+    rationale: rationale || null,
     generatedAt: new Date().toISOString(),
   };
   return stampAndSaveState(state, absRoot);
