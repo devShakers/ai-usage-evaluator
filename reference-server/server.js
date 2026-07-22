@@ -423,26 +423,14 @@ async function handle(req, res) {
     return send(res, 200, { evaluations });
   }
 
-  /* ---- certify agents (skill-code-certification): 3 deterministic stub steps ---- */
+  /* ---- certify agents (skill-code-certification): 2 deterministic stub steps ----
+   * (The /categories step was removed — the category is derived server-side at
+   *  verdict from the agent name.) */
   const AGENT_CERT_CATALOG = {
     'dev-3': { catalogId: 'dev-3', category: 'developer', role: 'Code Reviewer', level: 'L1' },
     'dev-2': { catalogId: 'dev-2', category: 'developer', role: 'QA Automation Engineer', level: 'L2' },
     'data-1': { catalogId: 'data-1', category: 'data', role: 'SQL Query Writer', level: 'L1' },
-    'prod-1': { catalogId: 'prod-1', category: 'product', role: 'Product Spec Writer', level: 'L2' },
   };
-  if (method === 'POST' && url === '/works/ai-footprint/agent-certification/categories') {
-    const body = await readJson(req);
-    const name = String((body && body.agent && body.agent.name) || '').toLowerCase();
-    // Deterministic keyword shortlist, always 3 (padded from the catalog order).
-    const order = [];
-    if (/review/.test(name)) order.push('dev-3');
-    if (/test|qa/.test(name)) order.push('dev-2');
-    if (/sql|data|query/.test(name)) order.push('data-1');
-    for (const id of Object.keys(AGENT_CERT_CATALOG)) if (!order.includes(id)) order.push(id);
-    const candidates = order.slice(0, 3).map((id) => AGENT_CERT_CATALOG[id]);
-    console.log(`[agent-cert/categories] agent=${name} → ${candidates.map((c) => c.catalogId).join(',')}`);
-    return send(res, 200, { candidates });
-  }
   if (method === 'POST' && url === '/works/ai-footprint/agent-certification/followups') {
     const body = await readJson(req);
     const es = body && body.locale !== 'en';
@@ -455,7 +443,17 @@ async function handle(req, res) {
   if (method === 'POST' && url === '/works/ai-footprint/agent-certification/verdict') {
     const body = await readJson(req);
     const es = body && body.locale !== 'en';
-    const chosen = AGENT_CERT_CATALOG[(body && body.chosenCategoryId) || ''] || null;
+    // Category is DERIVED server-side (mirrors the real backend's deterministic
+    // matcher) from the agent NAME — the client no longer sends chosenCategoryId.
+    const agentName = String((body && body.agent && body.agent.name) || '').toLowerCase();
+    const derivedId = /review/.test(agentName)
+      ? 'dev-3'
+      : /test|qa/.test(agentName)
+        ? 'dev-2'
+        : /sql|data|query/.test(agentName)
+          ? 'data-1'
+          : null;
+    const chosen = derivedId ? AGENT_CERT_CATALOG[derivedId] : null;
     const def = String((body && body.agent && body.agent.definition) || '');
     const answered = String((body && body.qualification && body.qualification.decisions) || '').length;
     // Deterministic tags from signals: richer definition + real "decisions"

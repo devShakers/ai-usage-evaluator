@@ -113,3 +113,26 @@ test('driver: enter with nothing marked -> empty array (caller treats as none)',
   keys(input, ['\r']);
   assert.deepEqual(await p, []);
 });
+
+// --- single-select mode (certify agents) -------------------------------------
+test('applyKey single: enter picks the highlighted item and finishes', () => {
+  let s = { cursor: 0, marked: new Set(), count: 3, done: false, cancelled: false };
+  s = applyKey(s, 'down', true); // cursor -> 1
+  s = applyKey(s, 'enter', true);
+  assert.equal(s.done, true);
+  assert.deepEqual([...s.marked], [1]);
+});
+
+test('applyKey single: space also picks the highlighted item (radio style)', () => {
+  let s = { cursor: 2, marked: new Set(), count: 3, done: false, cancelled: false };
+  s = applyKey(s, 'space', true);
+  assert.equal(s.done, true);
+  assert.deepEqual([...s.marked], [2]);
+});
+
+test('applyKey single: "all" is a no-op (no select-all in single mode)', () => {
+  let s = { cursor: 0, marked: new Set(), count: 3, done: false, cancelled: false };
+  s = applyKey(s, 'all', true);
+  assert.equal(s.done, false);
+  assert.equal(s.marked.size, 0);
+});

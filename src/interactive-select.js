@@ -36,7 +36,12 @@ function decodeKey(chunk) {
 
 // Pure reducer. `state` = { cursor, marked:Set<number>, count, done, cancelled }.
 // Returns a NEW state (marked copied) so callers/tests can compare snapshots.
-function applyKey(state, key) {
+//
+// `single` = SINGLE-SELECT mode (one item, e.g. `certify agents` picking one
+// agent): ENTER (or space) picks the HIGHLIGHTED item and finishes immediately;
+// there is no toggle and no "select all". `single=false` (default) keeps the
+// original multi-select behaviour used by `certify skills`.
+function applyKey(state, key, single = false) {
   const next = {
     cursor: state.cursor,
     marked: new Set(state.marked),
@@ -57,14 +62,23 @@ function applyKey(state, key) {
       next.cursor = (next.cursor + 1) % next.count;
       break;
     case 'space':
-      if (next.marked.has(next.cursor)) next.marked.delete(next.cursor);
-      else next.marked.add(next.cursor);
+      if (single) {
+        next.marked = new Set([next.cursor]);
+        next.done = true;
+      } else if (next.marked.has(next.cursor)) {
+        next.marked.delete(next.cursor);
+      } else {
+        next.marked.add(next.cursor);
+      }
       break;
     case 'all':
+      if (single) break; // no select-all in single mode
       if (next.marked.size === next.count) next.marked.clear();
       else for (let i = 0; i < next.count; i++) next.marked.add(i);
       break;
     case 'enter':
+      // Single mode: ENTER picks the highlighted item (radio style).
+      if (single) next.marked = new Set([next.cursor]);
       next.done = true;
       break;
     case 'cancel':
@@ -81,18 +95,19 @@ function selectedFrom(state, items) {
   return items.filter((_, i) => state.marked.has(i));
 }
 
-// Builds the visible block (array of lines) for the current state.
-function renderLines(state, { items, labelFor, header, hint }) {
+// Builds the visible block (array of lines) for the current state. In `single`
+// mode there is no checkbox — just the arrow pointer (radio style).
+function renderLines(state, { items, labelFor, header, hint, single = false }) {
   const lines = [];
   if (header) lines.push(`  ${ANSI.bold}${header}${ANSI.reset}`);
   if (hint) lines.push(`  ${ANSI.dim}${hint}${ANSI.reset}`);
   items.forEach((item, i) => {
     const isCursor = i === state.cursor;
     const pointer = isCursor ? `${ANSI.cyan}›${ANSI.reset}` : ' ';
-    const box = state.marked.has(i) ? `${ANSI.green}[x]${ANSI.reset}` : '[ ]';
+    const box = single ? '' : `${state.marked.has(i) ? `${ANSI.green}[x]${ANSI.reset}` : '[ ]'} `;
     const label = labelFor(item, i);
     const shown = isCursor ? `${ANSI.bold}${label}${ANSI.reset}` : label;
-    lines.push(`  ${pointer} ${box} ${shown}`);
+    lines.push(`  ${pointer} ${box}${shown}`);
   });
   return lines;
 }
@@ -106,6 +121,7 @@ function runInteractiveMultiSelect({
   labelFor = (x) => String(x),
   header = '',
   hint = '',
+  single = false,
   input = process.stdin,
   output = process.stdout,
 }) {
@@ -114,7 +130,7 @@ function runInteractiveMultiSelect({
     let printedLines = 0;
 
     function draw() {
-      const lines = renderLines(state, { items, labelFor, header, hint });
+      const lines = renderLines(state, { items, labelFor, header, hint, single });
       // Redraw in place: move up over the previous block and clear downward.
       if (printedLines > 0) output.write(`\x1b[${printedLines}A\x1b[0J`);
       output.write(lines.join('\n') + '\n');
@@ -130,7 +146,7 @@ function runInteractiveMultiSelect({
     function onData(chunk) {
       const key = decodeKey(chunk);
       if (!key) return;
-      state = applyKey(state, key);
+      state = applyKey(state, key, single);
       if (state.cancelled) {
         cleanup();
         resolve(null);

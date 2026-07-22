@@ -2,10 +2,15 @@
 
 /*
  * `certify agents` — interactive, LLM-in-the-loop agent certification
- * (skill-code-certification). Orchestrates the three stateless server steps
- * (categories → followups → verdict), asking the talent to choose at each turn,
- * then prints a single-agent terminal report and persists the level for the HTML
- * report. Re-run loop over the agents not yet certified this session.
+ * (skill-code-certification). Flow: pick ONE agent (dynamic selector, like
+ * `certify skills`) → two fixed qualification questions → model follow-ups →
+ * verdict. The verdict prints a single-agent terminal report and persists the
+ * level for the HTML report. Re-run loop over the agents not yet certified.
+ *
+ * The category is NO LONGER asked/suggested (the old `/categories` LLM step was
+ * removed — it was the live failure point). The verdict endpoint derives the
+ * category DETERMINISTICALLY server-side (catalog matcher); if it can't match,
+ * the report shows "no category" cleanly.
  *
  * Zero-dep. Reads through the SHARED `ask` (REPL nested stdin) when injected;
  * standalone it owns its own reader.
@@ -14,7 +19,6 @@
 const { parseCertifyArgs } = require('./certify-args');
 const { detectReportLang, getCatalog } = require('./i18n');
 const {
-  getAgentCertificationCategoriesEndpoint,
   getAgentCertificationFollowupsEndpoint,
   getAgentCertificationVerdictEndpoint,
   loadSuperadminSession,
@@ -22,7 +26,8 @@ const {
 const { parseAgentOrgChart, parseAgentDefinitions } = require('./agent-org-chart');
 const { getConsentStatus, isValidEmail, normalizeEmail } = require('./share');
 const { createStdinAsk } = require('./stdin-ask');
-const { requestCategories, requestFollowups, requestVerdict } = require('./agent-certification-client');
+const { runInteractiveMultiSelect } = require('./interactive-select');
+const { requestFollowups, requestVerdict } = require('./agent-certification-client');
 const { renderAgentCertification } = require('./render-certify-agents');
 const { persistAgentCertification } = require('./report-store');
 
@@ -43,12 +48,35 @@ function collectAgents(root) {
   }));
 }
 
-async function askChoice(ask, promptText, count) {
+async function askNumberedChoice(ask, promptText, count) {
   const raw = (await ask(promptText)).trim();
   if (!raw) return null;
   const n = Number.parseInt(raw, 10);
   if (!Number.isInteger(n) || n < 1 || n > count) return null;
   return n - 1; // 0-based
+}
+
+// Picks ONE agent. Uses the SAME dynamic selector as `certify skills`
+// (interactive-select) in single-select mode when stdin can be released for raw
+// mode (REPL shared reader exposes suspend/resume); falls back to a numbered
+// line prompt otherwise (non-TTY / standalone reader), so piped runs still work.
+async function chooseAgent(ask, stdinIsTTY, remaining, ca, out) {
+  if (stdinIsTTY && typeof ask.suspend === 'function') {
+    ask.suspend();
+    const picked = await runInteractiveMultiSelect({
+      items: remaining,
+      labelFor: (a) => a.name,
+      header: ca.chooseAgentHeading,
+      hint: ca.selectHint,
+      single: true,
+    });
+    ask.resume();
+    return picked && picked.length ? picked[0] : null;
+  }
+  out(`\n  ${ca.chooseAgentHeading}\n`);
+  remaining.forEach((a, i) => out(`    ${i + 1}) ${a.name}\n`));
+  const idx = await askNumberedChoice(ask, `  ${ca.choosePrompt(remaining.length)}`, remaining.length);
+  return idx === null ? null : remaining[idx];
 }
 
 async function resolveEmail(opts, ask, stdinIsTTY, catalog) {
@@ -67,10 +95,10 @@ async function runCertifyAgents(argv = [], { ask: injectedAsk = null } = {}) {
   const ca = catalog.certifyAgents;
   const out = (s) => process.stdout.write(s);
 
-  const categoriesEndpoint = getAgentCertificationCategoriesEndpoint();
   const followupsEndpoint = getAgentCertificationFollowupsEndpoint();
   const verdictEndpoint = getAgentCertificationVerdictEndpoint();
-  if (!categoriesEndpoint || !verdictEndpoint) {
+  // The verdict is the essential, gated call; without it there's no certification.
+  if (!verdictEndpoint) {
     process.stderr.write(`\n  ${catalog.certify.errorNoEndpoint}\n\n`);
     process.exitCode = 1;
     return;
@@ -114,40 +142,17 @@ async function runCertifyAgents(argv = [], { ask: injectedAsk = null } = {}) {
         break;
       }
 
-      out(`\n  ${ca.chooseAgentHeading}\n`);
-      remaining.forEach((a, i) => out(`    ${i + 1}) ${a.name}\n`));
-      const agentIdx = await askChoice(ask, `  ${ca.choosePrompt(remaining.length)}`, remaining.length);
-      if (agentIdx === null) break;
-      const agent = remaining[agentIdx];
+      const agent = await chooseAgent(ask, stdinIsTTY, remaining, ca, out);
+      if (!agent) break;
 
-      // Step 1: categories.
-      out(`\n  ${ca.resolvingCategories}\n`);
-      const cat = await requestCategories(agent, { endpoint: categoriesEndpoint, locale: localeArg });
-      if (!cat.ok || cat.candidates.length === 0) {
-        out(`  ${ca.categoriesUnavailable}\n`);
-        evaluated.add(agent.name);
-        if (!(await askAgain(ask, ca))) break;
-        continue;
-      }
-      out(`\n  ${ca.chooseCategoryHeading}\n`);
-      cat.candidates.forEach((c, i) => {
-        const catLabel = c.category && catalog.classification.categories[c.category]
-          ? catalog.classification.categories[c.category]
-          : c.category;
-        out(`    ${i + 1}) ${c.role || c.catalogId}${catLabel ? ` — ${catLabel}` : ''}\n`);
-      });
-      const catIdx = await askChoice(ask, `  ${ca.choosePrompt(cat.candidates.length)}`, cat.candidates.length);
-      if (catIdx === null) break;
-      const chosen = cat.candidates[catIdx];
-
-      // Step qualification: two fixed questions.
+      // Two fixed qualification questions.
       const achieve = (await ask(`\n  ${ca.qAchieve}\n  > `)).trim();
       const decisions = (await ask(`  ${ca.qDecisions}\n  > `)).trim();
       const qualification = { achieve, decisions };
 
-      // Step 2: follow-ups.
+      // Follow-ups (model-generated). Degrades to none if the endpoint is unset.
       out(`\n  ${ca.generatingFollowups}\n`);
-      const fu = await requestFollowups(agent, chosen.catalogId, qualification, {
+      const fu = await requestFollowups(agent, qualification, {
         endpoint: followupsEndpoint,
         locale: localeArg,
       });
@@ -159,13 +164,12 @@ async function runCertifyAgents(argv = [], { ask: injectedAsk = null } = {}) {
         followups.push({ question, answer });
       }
 
-      // Step 3: verdict (gated + persisted server-side).
+      // Verdict (gated + persisted server-side; category derived server-side).
       out(`\n  ${ca.certifying}\n`);
       const v = await requestVerdict(
         {
           email,
           agent,
-          chosenCategoryId: chosen.catalogId,
           qualification,
           followups,
           superadminToken: superadmin ? superadmin.token : null,

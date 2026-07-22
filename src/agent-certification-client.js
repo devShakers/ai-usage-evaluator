@@ -6,23 +6,23 @@ const { scrubSecrets } = require('./agent-synthesis');
 
 /*
  * Client for the interactive `certify agents` flow (skill-code-certification).
- * THREE server-side gemini-2.5-flash steps, each STATELESS — this client passes
+ * TWO server-side gemini-2.5-flash steps, each STATELESS — this client passes
  * the accumulated context every call (same shape as certify-client.js). The CLI
  * has no model key; the Hub runs the model. Observability lives server-side; the
- * client contributes the versioned prompt id.
+ * client contributes the versioned prompt id. (The old `/categories` step was
+ * removed — the category is derived deterministically server-side at verdict.)
  *
  * FROZEN CONTRACT (must match the hub-backend agent-certification controller):
- *   POST <ingest-sibling>/agent-certification/categories
- *     req  { agent:{name,definition,tools,model,parent}, promptVersion, locale? }
- *     resp { candidates:[{catalogId, category, role, level}] }        (up to 3)
  *   POST <ingest-sibling>/agent-certification/followups
- *     req  { agent, chosenCategoryId, qualification:{achieve,decisions}, promptVersion, locale? }
+ *     req  { agent, qualification:{achieve,decisions}, promptVersion, locale? }
  *     resp { questions:[string] }                                     (2-3)
  *   POST <ingest-sibling>/agent-certification/verdict   (GATED + PERSISTED)
- *     req  { email, agent, chosenCategoryId, qualification, followups:[{question,answer}],
+ *     req  { email, agent, qualification, followups:[{question,answer}],
  *            promptVersion, locale?, superadminToken? }
  *     resp { agentName, category, role, level, areas:[{area,tag,evidence}],
  *            verifiedEvidence:[], unverifiedEvidence:[], rationale }
+ *   (category/role in the verdict are derived server-side from the catalog
+ *    matcher — the client no longer sends a chosenCategoryId.)
  *
  * Resilience: like certify-client (inform-don't-hide) — every failure resolves
  * to a DISCRIMINATED result `{ok:false, reason}` so the interactive flow can
@@ -111,24 +111,9 @@ function withLocale(body, locale) {
   return locale === 'es' || locale === 'en' ? { ...body, locale } : body;
 }
 
-async function requestCategories(agent, { endpoint, locale = null, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
-  const body = withLocale({ agent: scrubAgent(agent), promptVersion: PROMPT_VERSION }, locale);
-  const r = await requestStep(endpoint, body, timeoutMs);
-  if (!r.ok) return r;
-  const candidates = (Array.isArray(r.data.candidates) ? r.data.candidates : [])
-    .filter((c) => c && typeof c.catalogId === 'string')
-    .map((c) => ({
-      catalogId: c.catalogId,
-      category: typeof c.category === 'string' ? c.category : null,
-      role: typeof c.role === 'string' ? c.role : null,
-      level: typeof c.level === 'string' ? c.level : null,
-    }));
-  return { ok: true, candidates };
-}
-
-async function requestFollowups(agent, chosenCategoryId, qualification, { endpoint, locale = null, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+async function requestFollowups(agent, qualification, { endpoint, locale = null, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   const body = withLocale(
-    { agent: scrubAgent(agent), chosenCategoryId, qualification: scrubQualification(qualification), promptVersion: PROMPT_VERSION },
+    { agent: scrubAgent(agent), qualification: scrubQualification(qualification), promptVersion: PROMPT_VERSION },
     locale,
   );
   const r = await requestStep(endpoint, body, timeoutMs);
@@ -141,14 +126,13 @@ async function requestFollowups(agent, chosenCategoryId, qualification, { endpoi
 }
 
 async function requestVerdict(
-  { email, agent, chosenCategoryId, qualification, followups, superadminToken },
+  { email, agent, qualification, followups, superadminToken },
   { endpoint, locale = null, timeoutMs = DEFAULT_TIMEOUT_MS } = {},
 ) {
   const body = withLocale(
     {
       email,
       agent: scrubAgent(agent),
-      chosenCategoryId,
       qualification: scrubQualification(qualification),
       followups: (Array.isArray(followups) ? followups : []).map((f) => ({
         question: String(f.question || ''),
@@ -179,7 +163,6 @@ async function requestVerdict(
 
 module.exports = {
   PROMPT_VERSION,
-  requestCategories,
   requestFollowups,
   requestVerdict,
 };

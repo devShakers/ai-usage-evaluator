@@ -287,9 +287,6 @@ function getAgentEvaluationEndpoint(env = process.env) {
  * back an interactive flow the user explicitly started: the caller treats a null
  * endpoint as an actionable error (like certify skills), not a silent no-op.
  */
-function getAgentCertificationCategoriesEndpoint(env = process.env) {
-  return deriveFromIngest(env, 'agent-certification/categories');
-}
 function getAgentCertificationFollowupsEndpoint(env = process.env) {
   return deriveFromIngest(env, 'agent-certification/followups');
 }
@@ -366,7 +363,6 @@ module.exports = {
   getRoadmapEndpoint,
   getCertifyEndpoint,
   getAgentEvaluationEndpoint,
-  getAgentCertificationCategoriesEndpoint,
   getAgentCertificationFollowupsEndpoint,
   getAgentCertificationVerdictEndpoint,
   getEmailVerificationRequestUrl,
