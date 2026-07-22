@@ -5,29 +5,36 @@
  * `map` — materializes and OPENS the LOCAL report (graph protagonist, v2): the
  * interactive AI/codebase graph as the hero + footprint & certs as drawers.
  *
- * By DEFAULT it builds the graph from a LIVE footprint scan of the given root
- * (src/graph-scan.js — the same deterministic detectors `footprint` uses),
- * then enriches it with an LLM pass (src/graph-infer-client.js → the backend
- * `graph-inference` endpoint) for the flows/services/stores we can't detect
- * statically. The enrichment is NON-authoritative and best-effort: no endpoint,
- * or any failure, degrades cleanly to the deterministic graph (never crashes,
- * never fabricates). See docs/graph-report.md.
+ * The GRAPH is a MAP OF WHAT THE REPO DOES (foglamp-style), produced by an
+ * INTEGRATED LLM analysis of the code: src/repo-context.js collects a
+ * content-free structural context (entrypoints, AI call-sites, provider/
+ * integration imports, Prisma stores, crons, modules, deps) and the backend
+ * `graph-inference` route (gemini-2.5-pro) assembles the whole foglamp graph;
+ * src/graph-assemble.js validates/caps it and derives stats/topX. This REPLACES
+ * the old footprint-derived base — footprint detection now feeds ONLY the
+ * AI-usage drawer.
+ *
+ * Graceful degrade: no endpoint / --no-llm / any LLM failure => fall back to the
+ * deterministic AI-agent subgraph (buildGraphScan + generateGraph). Never crashes,
+ * never fabricates. See docs/graph-report.md.
  *
  * Flags: --root <dir> --lang es|en --offline (no favicon fetch) --no-llm
- * (deterministic only) --contract <path> (render a pre-made foglamp contract
- * JSON instead of scanning) --stats (print enrichment counts + cost) --no-open.
+ * (skip analysis, deterministic agent graph) --contract <path> (render a
+ * pre-made foglamp scan.json instead) --stats (print nodes/edges/latency) --no-open.
  *
- * ZERO-network at view time: favicons embedded as data: URIs here. Localized
- * CLI copy is inline (es/en) so the i18n catalog / its parity test are untouched.
+ * ZERO-network at view time: favicons embedded as data: URIs here. Localized CLI
+ * copy is inline (es/en) so the i18n catalog / its parity test are untouched.
  */
 
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const { detectReportLang } = require('../src/i18n');
+const { collectRepoContext } = require('../src/repo-context');
+const { makeCodebaseAnalyzer } = require('../src/graph-infer-client');
+const { assembleContract } = require('../src/graph-assemble');
 const { buildGraphScan } = require('../src/graph-scan');
 const { generateGraph } = require('../src/graph-generator');
-const { makeGraphInferLlm } = require('../src/graph-infer-client');
 const { getGraphInferenceEndpoint } = require('../src/config');
 const { renderGraphReport } = require('../src/render-graph');
 const { embedFavicons } = require('../src/favicon-embed');
@@ -37,26 +44,23 @@ const { openPath } = require('../src/open-file');
 const { oscLink } = require('../src/osc-link');
 
 const VALID_LANGS = new Set(['es', 'en']);
-const LLM_NODE_KINDS = new Set(['entry', 'cron', 'service', 'store']);
 
 const COPY = {
   es: {
-    help: 'map — abre el report LOCAL (grafo protagonista + footprint y certificaciones en paneles). Uso: map [--root <dir>] [--lang es|en] [--offline] [--no-llm] [--contract <path>] [--stats] [--no-open]',
+    help: 'map — abre el report LOCAL (grafo del codebase por análisis IA + footprint y certificaciones en paneles). Uso: map [--root <dir>] [--lang es|en] [--offline] [--no-llm] [--contract <path>] [--stats] [--no-open]',
     error: 'No se pudo generar el report LOCAL.',
     ready: (link) => `Report LOCAL listo: ${link}`,
     opening: 'Abriendo en el navegador…',
-    degraded: 'Enriquecimiento IA no disponible (endpoint sin configurar o fallo) — grafo determinista.',
-    stats: (added, edges, cost, ms) =>
-      `Enriquecimiento IA: +${added} nodos, +${edges} edges de flujo · ${cost} · ${ms}ms`,
+    degraded: 'Análisis IA no disponible (endpoint sin configurar o fallo) — grafo de agentes determinista.',
+    stats: (n, e, ms) => `Análisis IA del codebase: ${n} nodos, ${e} edges · ${ms}ms`,
   },
   en: {
-    help: 'map — open the LOCAL report (graph hero + footprint & certifications as drawers). Usage: map [--root <dir>] [--lang es|en] [--offline] [--no-llm] [--contract <path>] [--stats] [--no-open]',
+    help: 'map — open the LOCAL report (codebase graph via AI analysis + footprint & certifications as drawers). Usage: map [--root <dir>] [--lang es|en] [--offline] [--no-llm] [--contract <path>] [--stats] [--no-open]',
     error: 'Could not generate the LOCAL report.',
     ready: (link) => `LOCAL report ready: ${link}`,
     opening: 'Opening in your browser…',
-    degraded: 'AI enrichment unavailable (endpoint unset or failed) — deterministic graph.',
-    stats: (added, edges, cost, ms) =>
-      `AI enrichment: +${added} nodes, +${edges} flow edges · ${cost} · ${ms}ms`,
+    degraded: 'AI analysis unavailable (endpoint unset or failed) — deterministic agent graph.',
+    stats: (n, e, ms) => `Codebase AI analysis: ${n} nodes, ${e} edges · ${ms}ms`,
   },
 };
 
@@ -88,6 +92,14 @@ function collectDomains(contract) {
   return Array.from(set);
 }
 
+// Deterministic fallback graph (AI-agent subgraph from detectors) when the LLM
+// analysis is unavailable — never fabricated, just the little we can prove.
+async function deterministicFallback(root) {
+  const built = buildGraphScan(root);
+  const contract = await generateGraph({ scan: built.scan, llm: null });
+  return { contract, footprint: built.footprint };
+}
+
 async function run(argv = process.argv.slice(2), { ask } = {}) { // eslint-disable-line no-unused-vars
   const o = parseArgs(argv);
   const lang = o.lang || detectReportLang();
@@ -95,42 +107,49 @@ async function run(argv = process.argv.slice(2), { ask } = {}) { // eslint-disab
   if (o.help) { process.stdout.write(`\n  ${c.help}\n\n`); return; }
 
   const root = path.resolve(o.root || process.cwd());
-  let contract;
+  let contract = null;
   let footprint = null;
-  const traces = [];
+  let analysis = null; // { latencyMs } when the LLM analysis produced the graph
+  let degraded = false;
 
   try {
     if (o.contract) {
-      // pre-made foglamp contract JSON (back-compat / demo) — no scan, no LLM
       contract = JSON.parse(fs.readFileSync(path.resolve(o.contract), 'utf8'));
       footprint = contract.footprint || null;
     } else {
-      // LIVE: deterministic scan (adapter) + optional LLM enrichment
-      const built = buildGraphScan(root);
-      footprint = built.footprint;
-      const llm = o.llm
-        ? makeGraphInferLlm({ endpoint: getGraphInferenceEndpoint(), locale: lang })
-        : null;
-      contract = await generateGraph({ scan: built.scan, llm, onTrace: (e) => traces.push(e) });
+      // Footprint drawer ALWAYS from the live scan (AI-usage), independent of graph.
+      try { footprint = buildGraphScan(root).footprint; } catch { footprint = null; }
+      // GRAPH: integrated LLM codebase analysis.
+      if (o.llm) {
+        const ctx = collectRepoContext(root);
+        const analyzer = makeCodebaseAnalyzer({ endpoint: getGraphInferenceEndpoint(), locale: lang });
+        const g = await analyzer.analyze(ctx);
+        if (g && Array.isArray(g.nodes) && g.nodes.length) {
+          const built = assembleContract(ctx.project, g);
+          if (built) { contract = built; analysis = { latencyMs: g.latencyMs }; }
+        }
+      }
+      // Degrade to the deterministic agent subgraph if analysis unavailable.
+      if (!contract) {
+        const fb = await deterministicFallback(root);
+        contract = fb.contract;
+        if (!footprint) footprint = fb.footprint;
+        degraded = true;
+      }
     }
   } catch {
     process.stdout.write(`\n  ${c.error}\n\n`);
     return;
   }
 
-  // Certifications drawer: real data from report-store state for this project
-  // (same source as `sheet`). `--contract` mode keeps whatever the contract carries.
-  let certs = contract.certs || null;
-  if (!o.contract) {
-    try {
-      const project = (loadState().projects || {})[root];
-      certs = project ? buildCertsPayload(project, lang) : null;
-    } catch {
-      certs = null; // never block the report over a cert-read failure
-    }
+  // Certifications drawer: real data from report-store (same source as `sheet`).
+  let certs = null;
+  try {
+    const project = (loadState().projects || {})[root];
+    certs = project ? buildCertsPayload(project, lang) : null;
+  } catch {
+    certs = null;
   }
-  // Localized clean empty-state when the project has no certs yet (the drawer
-  // shows this message instead of a misleading placeholder).
   if (!certs) {
     certs = {
       labels: { empty: lang === 'es' ? 'Aún no hay certificaciones para este proyecto. Ejecuta certify.' : 'No certifications for this project yet. Run certify.' },
@@ -170,26 +189,21 @@ async function run(argv = process.argv.slice(2), { ask } = {}) { // eslint-disab
   process.stdout.write(`\n  ${c.ready(oscLink(pathToFileURL(outPath).href))}\n`);
   if (opened) process.stdout.write(`  ${c.opening}\n`);
 
-  // enrichment stats / degrade note (live path only)
-  if (!o.contract && o.llm) {
-    const t = traces.find((x) => x.event === 'graph.infer');
-    const added = (contract.graph.nodes || []).filter((n) => LLM_NODE_KINDS.has(n.kind)).length;
-    const flowEdges = (contract.graph.edges || []).filter(
-      (e) => e.kind === 'triggers' || e.kind === 'reads' || e.kind === 'writes',
-    ).length;
-    if (t && t.ok) {
+  if (!o.contract) {
+    if (analysis) {
       if (o.stats) {
-        const cost = typeof t.costUsd === 'number' ? `$${t.costUsd.toFixed(4)}` : 'cost n/a';
-        process.stdout.write(`  ${c.stats(added, flowEdges, cost, t.latencyMs || 0)}\n`);
+        const n = (contract.graph.nodes || []).length;
+        const e = (contract.graph.edges || []).length;
+        process.stdout.write(`  ${c.stats(n, e, analysis.latencyMs || 0)}\n`);
       }
-    } else {
+    } else if (degraded && o.llm) {
       process.stdout.write(`  ${c.degraded}\n`);
     }
   }
   process.stdout.write('\n');
 }
 
-module.exports = { run, parseArgs, collectDomains };
+module.exports = { run, parseArgs, collectDomains, deterministicFallback };
 
 if (require.main === module) {
   run();

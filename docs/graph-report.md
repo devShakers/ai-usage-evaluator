@@ -97,25 +97,33 @@ A model infers the flows/services/stores/entrypoints we can't detect statically.
 - **Failure is graceful**: a throwing/empty LLM pass yields the deterministic
   graph — never a crash, never a fabricated flow.
 
-### Live wiring (implemented)
-- **Adapter (`src/graph-scan.js`)**: `buildGraphScan(root)` runs the SAME
-  detectors as `footprint` (`scanner.scan` + `maturity.classify`) → the
-  deterministic `scan` (agents from `.claude/agents` with model + orchestrator→
-  subagent hierarchy, models deduped by provider, technologies, store hints) and
-  the footprint drawer payload. `map` uses this by default for ANY project root;
-  `--contract <path>` renders a pre-made foglamp contract instead; `--no-llm`
-  skips enrichment.
-- **LLM pass endpoint**: CLI client `src/graph-infer-client.js` →
-  `POST <ingest-sibling>/graph-inference` (derive via
-  `config.getGraphInferenceEndpoint`, env override
-  `AI_FOOTPRINT_GRAPH_INFER_ENDPOINT`). Request (FROZEN, matches backend
-  `InferGraphInputDto`): `{ summary, promptVersion:'graph-infer-v1', locale? }`.
-  Response: `{ nodes, edges }` delta. Backend: `WorksGraphInferenceController`
-  (`@Public`, reuses the agent-evaluation 10/h-per-IP guard) →
-  `InferGraphService` (one `gemini-2.5-flash` call, `captureBodyInSpan:false`,
-  parse+sanitize, degrade-to-empty). Client resilience: ANY failure → `null` →
-  deterministic graph. **Keep the client's `GRAPH_INFER_PROMPT_VERSION` in the
-  backend's `ACCEPTED_GRAPH_INFERENCE_PROMPT_VERSIONS`** (the stub test guards it).
+### Live wiring (implemented) — the graph is the CODEBASE MAP
+The `map` graph is "what the repo DOES" (foglamp-style), produced by an
+INTEGRATED LLM analysis of the code — NOT our footprint detectors (those now
+feed ONLY the AI-usage drawer).
+- **Context (`src/repo-context.js`)**: `collectRepoContext(root)` does a bounded
+  walk (AI-/flow-likely files first) and extracts a CONTENT-FREE structural
+  context — entrypoints, AI call-sites (matched lines), provider/integration
+  imports, Prisma stores, crons, modules, deps — file PATHS + scrubbed lines,
+  never file contents/secrets. (base64 scrub excludes `/` so paths aren't
+  mangled.)
+- **Analysis endpoint**: CLI `src/graph-infer-client.js` `analyzeCodebase(context)`
+  → `POST <ingest-sibling>/graph-inference` (`config.getGraphInferenceEndpoint`,
+  env `AI_FOOTPRINT_GRAPH_INFER_ENDPOINT`). Request (FROZEN, matches
+  `InferGraphInputDto`): `{ context, promptVersion:'codebase-analyze-v1', locale? }`.
+  Response: full `{ nodes, edges }`. Backend `GraphInferenceController` (`@Public`,
+  reuses the agent-evaluation 10/h-per-IP guard) → `InferGraphService`: ONE
+  **`gemini-2.5-pro`** call (reasoning task — flash under-analyses; Pro reliably
+  hits 20-40 nodes), `captureBodyInSpan:false`, parse+sanitize (all 8 kinds),
+  degrade-to-empty. `src/graph-assemble.js` validates/caps and derives
+  stats/topX from node kinds.
+- **Graceful degrade**: no endpoint / `--no-llm` / any failure → the deterministic
+  AI-agent subgraph (`graph-scan` + `graph-generator`, the former primary, now
+  just the fallback). `--contract <path>` renders a pre-made foglamp scan.json.
+- **DTO alignment**: keep the client's `ANALYZE_PROMPT_VERSION` in the backend's
+  `ACCEPTED_GRAPH_INFERENCE_PROMPT_VERSIONS` (stub test guards it).
+- Real smoke (backend repo): 27 nodes / 32 edges (4 entry, 2 cron, 5 service,
+  7 agent, 2 model, 3 store, 4 external), ~49s on Pro.
 
 ### Drawers from real state
 - **Footprint drawer**: built from the live scan (`graph-scan.buildGraphScan` →

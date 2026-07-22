@@ -60,7 +60,9 @@ function clampStr(s, max) {
 const SECRET_RE = [
   /(?:sk|pk|ghp|gho|xox[baprs]|AKIA|ya29)[-_][A-Za-z0-9]{6,}/g, // known key prefixes
   /[A-Za-z0-9_-]{32,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}/g, // JWT-ish
-  /\b[A-Za-z0-9+/]{40,}={0,2}\b/g, // long base64 blobs
+  // long base64 blobs — excludes '/' so file PATHS (many slashes) are NOT
+  // mistaken for secrets; real token blobs are contiguous/URL-safe.
+  /\b[A-Za-z0-9+]{40,}={0,2}\b/g,
   /(?:password|secret|token|api[_-]?key|bearer)\s*[:=]\s*\S+/gi,
 ];
 
@@ -279,6 +281,7 @@ module.exports = {
   buildScrubbedSummary,
   mergeEnrichment,
   scrubString,
+  clampStr,
   CAPS,
   KINDS,
   EDGE_KINDS,

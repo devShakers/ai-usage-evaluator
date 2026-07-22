@@ -139,8 +139,9 @@ function renderBanner({ version = '', color = true, width = 80 } = {}) {
 
 function bannerWide({ title, color }) {
   const LW = 26;         // left (logo) column
-  const RW = 54;         // right (info) column — must fit the widest info row
-  const INNER = 1 + LW + 3 + RW + 1; // between the outer borders (85); box = 87
+  // RW/INNER are computed AFTER the rows are built (below), from the widest
+  // VISIBLE row width (ADR-016: strip ANSI, count columns) — including the new
+  // command rows — so the right border can never overflow the box.
 
   // Left column, with breathing room: welcome, blank, bolt tile, blank, product.
   const left = [];
@@ -163,7 +164,8 @@ function bannerWide({ title, color }) {
   right.push([{ t: 'map'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'LOCAL report — AI/codebase graph', st: { fg: BRAND.zinc } }]);
   right.push([{ t: 'sheet'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'SHAREABLE report — footprint + certs', st: { fg: BRAND.zinc } }]);
   right.push([{ t: 'share'.padEnd(NAME), st: { bold: true, fg: BRAND.white } }, { t: 'branded card for LinkedIn', st: { fg: BRAND.zinc } }]);
-  right.push([{ t: '─'.repeat(RW), st: { fg: BRAND.zinc } }]);
+  const SEP = { sep: true }; // separator placeholder — sized once RW is known
+  right.push(SEP);
   right.push([{ t: 'Getting started', st: { bold: true, fg: BRAND.violet } }]);
   right.push([
     { t: 'footprint', st: { fg: BRAND.white } }, { t: ' · ', st: { fg: BRAND.zinc } },
@@ -174,15 +176,23 @@ function bannerWide({ title, color }) {
     { t: ' · help · exit', st: { fg: BRAND.zinc } },
   ]);
 
+  // Box width from the widest VISIBLE row (ADR-016). RW must fit every right
+  // row (incl. the "Getting started" line and the command rows); the separator
+  // is then sized to RW, and LW never shrinks below its rows either.
+  const RW = Math.max(54, ...right.filter((r) => r !== SEP).map((r) => cellsPlain(r).length));
+  const LWv = Math.max(LW, ...left.map((r) => cellsPlain(r).length));
+  const INNER = 1 + LWv + 3 + RW + 1;
+  const rightRows = right.map((r) => (r === SEP ? [{ t: '─'.repeat(RW), st: { fg: BRAND.zinc } }] : r));
+
   // Vertically centre the (shorter) right column against the taller logo column.
-  const rows = Math.max(left.length, right.length);
-  const topPad = Math.max(0, (rows - right.length) >> 1);
-  const rightPadded = [...Array(topPad).fill([]), ...right];
+  const rows = Math.max(left.length, rightRows.length);
+  const topPad = Math.max(0, (rows - rightRows.length) >> 1);
+  const rightPadded = [...Array(topPad).fill([]), ...rightRows];
 
   const lines = [''];
   lines.push(topBorder(title, INNER, color));
   for (let i = 0; i < rows; i++) {
-    const l = centerCells(left[i] || [], LW, color);
+    const l = centerCells(left[i] || [], LWv, color);
     const r = padRightCells(rightPadded[i] || [], RW, color);
     lines.push(`${bd('│', color)} ${l} ${bd('│', color)} ${r} ${bd('│', color)}`);
   }
