@@ -142,7 +142,7 @@ async function run(argv = process.argv.slice(2), { ask } = {}) { // eslint-disab
     return;
   }
 
-  // Certifications drawer: real data from report-store (same source as `sheet`).
+  // Certifications drawer: real data from report-store (same source as `report`).
   let certs = null;
   try {
     const project = (loadState().projects || {})[root];

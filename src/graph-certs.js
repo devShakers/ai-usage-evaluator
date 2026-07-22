@@ -4,7 +4,7 @@
  * graph-certs.js — report-store → `map` cert-drawer payload adapter.
  *
  * The LOCAL report (`map`) shows the SAME real certifications the SHAREABLE
- * report (`sheet`) does — read from the SAME source of truth, the per-project
+ * report (`report`, alias `sheet`) does — read from the SAME source of truth, the per-project
  * `report-store` state (`project.certifications` = Skill certs;
  * `project.agentCertifications` = agent certs). We do NOT re-derive or
  * re-render the cert LOGIC: this adapter reuses the shared helpers
@@ -14,7 +14,7 @@
  *   - the i18n `certifyAgents` catalog        — P1–P5 levelNames (Familiar…
  *     Experto), areaNames, tagLabels, and the Why/Areas/Assessment headings;
  *   - `classification.categories`             — the agent category labels.
- * Only the PRESENTATION differs (`sheet` = white cards; `map` = the dark-capable
+ * Only the PRESENTATION differs (`report` = white cards; `map` = the dark-capable
  * accordion drawer from the mockup), so the drawer markup lives in the template
  * — the data shaping is shared here.
  */

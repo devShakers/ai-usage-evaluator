@@ -134,7 +134,7 @@ feed ONLY the AI-usage drawer).
 - **Footprint drawer**: built from the live scan (`graph-scan.buildGraphScan` →
   tier/level/score/technologies/tools from `maturity.classify`).
 - **Certifications drawer**: real data from `report-store` (SAME source as
-  `sheet`), adapted by `src/graph-certs.js` — REUSING the shared logic
+  `report`), adapted by `src/graph-certs.js` — REUSING the shared logic
   `deriveCertEvidence` (agent evidence derived from areas — a P5 never shows
   without evidence), `scoreBand`, and the i18n `certifyAgents` catalog (P1–P5
   Familiar→Experto, area/tag labels, headings). Skills: name (+tech) · score
