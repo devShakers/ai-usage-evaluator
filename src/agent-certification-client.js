@@ -38,6 +38,23 @@ const { scrubSecrets } = require('./agent-synthesis');
 const PROMPT_VERSION = 'agent-cert-v1';
 const DEFAULT_TIMEOUT_MS = 60000;
 
+// Hard cap on the agent definition we egress, matching the backend DTO's
+// @MaxLength (AgentCertAgentInputDto.definition, MAX_AGENT_CERT_DEFINITION_CHARS).
+// A large agent (e.g. hub-mr-reviewer, ~35k chars) must NEVER 400 the verdict on
+// size: we scrub THEN slice to this value so the sent definition is always
+// `<= MAX` (backend @MaxLength is inclusive). Scrub-first so a secret straddling
+// the cut can't leak a fragment — same discipline as the agent-eval cap. Realistic
+// agents sit well under this, so nothing is truncated in practice.
+const MAX_AGENT_CERT_DEFINITION_CHARS = 50000;
+
+// Scrub + cap a raw agent definition. Returns { definition, truncated } so the
+// caller can surface a one-line note when a rare oversized agent is trimmed.
+function capDefinition(raw) {
+  const scrubbed = scrubSecrets(raw || '');
+  if (scrubbed.length <= MAX_AGENT_CERT_DEFINITION_CHARS) return { definition: scrubbed, truncated: false };
+  return { definition: scrubbed.slice(0, MAX_AGENT_CERT_DEFINITION_CHARS), truncated: true };
+}
+
 function postJsonWithTimeout(url, body, timeoutMs) {
   return new Promise((resolve, reject) => {
     let u;
@@ -96,7 +113,7 @@ async function requestStep(url, body, timeoutMs) {
 function scrubAgent(agent) {
   return {
     name: agent.name,
-    definition: scrubSecrets(agent.definition || ''),
+    definition: capDefinition(agent.definition).definition,
     tools: Array.isArray(agent.tools) ? agent.tools : [],
     model: agent.model || null,
     parent: agent.parent || null,
@@ -163,6 +180,8 @@ async function requestVerdict(
 
 module.exports = {
   PROMPT_VERSION,
+  MAX_AGENT_CERT_DEFINITION_CHARS,
+  capDefinition,
   requestFollowups,
   requestVerdict,
 };

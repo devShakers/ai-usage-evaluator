@@ -431,8 +431,24 @@ async function handle(req, res) {
     'dev-2': { catalogId: 'dev-2', category: 'developer', role: 'QA Automation Engineer', level: 'L2' },
     'data-1': { catalogId: 'data-1', category: 'data', role: 'SQL Query Writer', level: 'L1' },
   };
+  // Mirror the real backend DTO cap (AgentCertAgentInputDto.definition,
+  // MAX_AGENT_CERT_DEFINITION_CHARS). The permissive stub used to accept ANY size
+  // and hid two 400s from us — enforce it here so a future smoke catches an
+  // over-limit definition instead of it only blowing up against :3001.
+  const MAX_AGENT_CERT_DEFINITION_CHARS = 50000;
+  const overLimitDefinition = (body) => {
+    const def = String((body && body.agent && body.agent.definition) || '');
+    return def.length > MAX_AGENT_CERT_DEFINITION_CHARS;
+  };
+  const definitionTooLong = () => ({
+    statusCode: 400,
+    message: [`definition must be shorter than or equal to ${MAX_AGENT_CERT_DEFINITION_CHARS} characters`],
+    error: 'Bad Request',
+  });
+
   if (method === 'POST' && url === '/works/ai-footprint/agent-certification/followups') {
     const body = await readJson(req);
+    if (overLimitDefinition(body)) return send(res, 400, definitionTooLong());
     const es = body && body.locale !== 'en';
     const questions = es
       ? ['¿Qué pasa si el agente falla?', '¿Qué decidiste NO delegarle?']
@@ -442,6 +458,7 @@ async function handle(req, res) {
   }
   if (method === 'POST' && url === '/works/ai-footprint/agent-certification/verdict') {
     const body = await readJson(req);
+    if (overLimitDefinition(body)) return send(res, 400, definitionTooLong());
     const es = body && body.locale !== 'en';
     // Category is DERIVED server-side (mirrors the real backend's deterministic
     // matcher) from the agent NAME — the client no longer sends chosenCategoryId.

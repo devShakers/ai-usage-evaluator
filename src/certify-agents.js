@@ -27,7 +27,12 @@ const { parseAgentOrgChart, parseAgentDefinitions } = require('./agent-org-chart
 const { getConsentStatus, isValidEmail, normalizeEmail } = require('./share');
 const { createStdinAsk } = require('./stdin-ask');
 const { runInteractiveMultiSelect } = require('./interactive-select');
-const { requestFollowups, requestVerdict } = require('./agent-certification-client');
+const {
+  requestFollowups,
+  requestVerdict,
+  capDefinition,
+  MAX_AGENT_CERT_DEFINITION_CHARS,
+} = require('./agent-certification-client');
 const { renderAgentCertification } = require('./render-certify-agents');
 const { persistAgentCertification } = require('./report-store');
 
@@ -157,6 +162,12 @@ async function runCertifyAgents(argv = [], { ask: injectedAsk = null } = {}) {
 
       const agent = await chooseAgent(ask, stdinIsTTY, remaining, ca, out);
       if (!agent) break;
+
+      // A rare oversized agent gets its definition capped client-side (matches the
+      // backend @MaxLength) so the verdict never 400s on size — tell the user.
+      if (capDefinition(agent.definition).truncated) {
+        out(`\n  ${ca.definitionTruncated(MAX_AGENT_CERT_DEFINITION_CHARS)}\n`);
+      }
 
       let qualification;
       const followups = [];

@@ -184,6 +184,8 @@ const catalogs = {
       generatingFollowups: 'Preparando preguntas de seguimiento…',
       followupsHeading: 'Preguntas de seguimiento:',
       certifying: 'Evaluando tu dominio del agente contra su implementación…',
+      definitionTruncated: (max) =>
+        `Nota: la definición de este agente supera el máximo; se recorta a ${max} caracteres antes de enviarla al servicio.`,
       rerunPrompt: 'Certificar otro agente de los pendientes? [s/N]',
       gateNotRegistered: 'La certificación de agentes solo está disponible para talentos registrados en Shakers. El email indicado no corresponde a un talento registrado.',
       gateNotVerified: 'Verifica la propiedad de tu email antes de certificar (ejecuta el flujo con verificación).',
@@ -966,6 +968,8 @@ const catalogs = {
       generatingFollowups: 'Preparing follow-up questions…',
       followupsHeading: 'Follow-up questions:',
       certifying: 'Assessing your command of the agent against its implementation…',
+      definitionTruncated: (max) =>
+        `Note: this agent's definition exceeds the maximum; it was trimmed to ${max} characters before sending.`,
       rerunPrompt: 'Certify another of the remaining agents? [y/N]',
       gateNotRegistered: 'Agent certification is only available to Talents registered on Shakers. The email provided is not a registered Talent.',
       gateNotVerified: 'Verify ownership of your email before certifying (run the flow with verification).',
