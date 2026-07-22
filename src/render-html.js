@@ -489,10 +489,38 @@ function certTagBucket(tag) {
   return 'low'; // claimed / not_evidenced
 }
 
+// Derives the "why" (confirmed vs not-confirmed) DIRECTLY from the five assessed
+// areas, NEVER from the model's free-text verifiedEvidence/unverifiedEvidence
+// lists. Those separate lists are model-filled and can come back EMPTY even when
+// every area is tagged `verified` — which is exactly what produced the incoherent
+// "Level: P5 · Expert" alongside "(no verified evidence)". Because the LEVEL is
+// itself derived server-side from these same area tags (aggregateAgentLevel), it
+// is impossible for the derived evidence to contradict the level: a P5 (five
+// `verified` areas) NECESSARILY yields five confirmed lines. `n_a` areas belong
+// to neither list (the area doesn't apply to this agent) — they still show in the
+// full areas block below.
+function deriveCertEvidence(areas, ca) {
+  const verified = [];
+  const unverified = [];
+  for (const a of Array.isArray(areas) ? areas : []) {
+    if (!a || typeof a.area !== 'string') continue;
+    const name = (ca.areaNames && ca.areaNames[a.area]) || a.area;
+    const evidence = typeof a.evidence === 'string' ? a.evidence.trim() : '';
+    if (a.tag === 'verified') {
+      verified.push({ name, evidence });
+    } else if (a.tag === 'partial' || a.tag === 'claimed' || a.tag === 'not_evidenced') {
+      const tagLabel = (ca.tagLabels && ca.tagLabels[a.tag]) || a.tag;
+      unverified.push({ name, tagLabel, evidence });
+    }
+    // n_a → neither list.
+  }
+  return { verified, unverified };
+}
+
 function agentCertLevelHtml(card, t) {
   if (!card.certification) return '';
   const ca = t.certifyAgents;
-  const { level, category, role, areas, verifiedEvidence, unverifiedEvidence, rationale } = card.certification;
+  const { level, category, role, areas, rationale } = card.certification;
   const levelName = (ca.levelNames && ca.levelNames[level]) || level;
   const catLabel = category && t.classification.categories[category]
     ? t.classification.categories[category]
@@ -504,25 +532,43 @@ function agentCertLevelHtml(card, t) {
     ${meta ? `<span class="agent-cert-meta">${meta}</span>` : ''}
   </div>`;
 
-  // Why: verified evidence (always shown, with a fallback line) + unverified
-  // (only when the model flagged unconfirmed claims).
-  const verifiedItems = (verifiedEvidence || []).map((e) => `<li>${esc(e)}</li>`).join('');
-  const verifiedBlock = `<div class="agent-cert-ev verified">
+  // Why: DERIVED from the areas (deriveCertEvidence) so it can never contradict
+  // the level. Rendered only when the agent actually has assessed areas — a
+  // legacy record carrying just a level (pre full-verdict persistence) shows the
+  // level chip alone, never a misleading "no verified evidence" line.
+  const hasAreas = Array.isArray(areas) && areas.length > 0;
+  let why = '';
+  if (hasAreas) {
+    const { verified, unverified } = deriveCertEvidence(areas, ca);
+    const verifiedItems = verified
+      .map((e) =>
+        e.evidence
+          ? `<li><strong>${esc(e.name)}:</strong> ${esc(e.evidence)}</li>`
+          : `<li><strong>${esc(e.name)}</strong></li>`,
+      )
+      .join('');
+    const verifiedBlock = `<div class="agent-cert-ev verified">
     <div class="agent-cert-ev-k">${esc(ca.verifiedHeading)}</div>
     ${verifiedItems ? `<ul>${verifiedItems}</ul>` : `<p class="agent-cert-none">${esc(ca.noVerified)}</p>`}
   </div>`;
-  const unverifiedItems = (unverifiedEvidence || []).map((e) => `<li>${esc(e)}</li>`).join('');
-  const unverifiedBlock = unverifiedItems
-    ? `<div class="agent-cert-ev unverified">
+    const unverifiedItems = unverified
+      .map(
+        (e) =>
+          `<li><strong>${esc(e.name)}</strong> <span class="chip pill cert-area-tag">${esc(e.tagLabel)}</span>${e.evidence ? ` ${esc(e.evidence)}` : ''}</li>`,
+      )
+      .join('');
+    const unverifiedBlock = unverifiedItems
+      ? `<div class="agent-cert-ev unverified">
     <div class="agent-cert-ev-k">${esc(ca.unverifiedHeading)}</div>
     <ul>${unverifiedItems}</ul>
   </div>`
-    : '';
-  const why = `<div class="agent-cert-why">
+      : '';
+    why = `<div class="agent-cert-why">
     <div class="agent-cert-k">${esc(ca.whyHeading)}</div>
     ${verifiedBlock}
     ${unverifiedBlock}
   </div>`;
+  }
 
   // The five assessed areas, each with its performance tag. The CSS class is a
   // SEVERITY BUCKET (ok/mid/low/na), not the raw tag, so the always-present
@@ -1501,4 +1547,4 @@ function renderHtml(report, maturity, lang) {
 // same merged (structural + synthesis) tree as the HTML card tree. And
 // footprintSectionsHtml / FOOTPRINT_CSS are exported for the cumulative report
 // (src/report-store.js) to embed a project's footprint into the shared doc.
-module.exports = { renderHtml, buildAgentCardTree, footprintSectionsHtml, FOOTPRINT_CSS, FOOTPRINT_SCRIPT };
+module.exports = { renderHtml, buildAgentCardTree, footprintSectionsHtml, FOOTPRINT_CSS, FOOTPRINT_SCRIPT, deriveCertEvidence, agentCertLevelHtml };
