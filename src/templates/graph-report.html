@@ -120,6 +120,12 @@ html[data-theme="dark"]  .brand svg.wordmark path{fill:#e6ebf2}
 .gp-band{fill:color-mix(in srgb,var(--emphasis) 7%,transparent);
   stroke:color-mix(in srgb,var(--emphasis) 26%,transparent);stroke-width:1.25;stroke-dasharray:5 4}
 .gp-label{fill:var(--emphasis);font:800 10px/1 var(--font-sans);letter-spacing:.07em;text-transform:uppercase}
+/* AGENT REGION — one distinct container around the whole agentic layer so the
+   agents read as the protagonists, separated from services/models/stores/etc. */
+.agent-region{fill:color-mix(in srgb,var(--emphasis) 5%,transparent);
+  stroke:var(--emphasis);stroke-width:1.6;stroke-dasharray:8 5}
+.agent-region-tab{fill:var(--emphasis)}
+.agent-region-label{fill:var(--surface);font:800 10px/1 var(--font-sans);letter-spacing:.12em;text-transform:uppercase}
 
 .edge{fill:none;stroke:var(--edge);stroke-width:1.6;opacity:.5;stroke-linejoin:round;stroke-linecap:round;
   transition:opacity .18s,stroke .18s,stroke-width .18s}
@@ -359,6 +365,24 @@ const gBands=document.getElementById('gBands'),gEdges=document.getElementById('g
       gLabels=document.getElementById('gLabels'),gNodes=document.getElementById('gNodes');
 const stage=document.getElementById('stage'),vp=document.getElementById('viewport');
 const reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
+
+/* AGENT REGION: a single distinct box around the whole agentic layer (the
+   protagonist), drawn FIRST (behind the per-group bands + nodes). Agents keep
+   their service association via the `triggers` edges that cross the boundary. */
+(function(){
+  const byIdLocal={}; DATA.graph.nodes.forEach(n=>{byIdLocal[n.id]=n;});
+  const ids=DATA.graph.nodes.filter(n=>n.kind==='agent').map(n=>n.id);
+  if(!ids.length)return;
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  ids.forEach(id=>{const p=pos[id];const nh=nodeH(byIdLocal[id]);x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x+NW);y1=Math.max(y1,p.y+nh);});
+  const pad=22, tabH=20;
+  const rx=x0-pad, ry=y0-pad-tabH, rw=(x1-x0)+pad*2, rh=(y1-y0)+pad*2+tabH;
+  gBands.appendChild(el('rect',{class:'agent-region',x:rx,y:ry,width:rw,height:rh,rx:18}));
+  const label=(document.documentElement.lang==='en')?'AGENTS':'AGENTES';
+  const tabW=label.length*7.2+20;
+  gBands.appendChild(el('rect',{class:'agent-region-tab',x:rx+14,y:ry,width:tabW,height:tabH-1,rx:9}));
+  const t=el('text',{class:'agent-region-label',x:rx+14+tabW/2,y:ry+13,'text-anchor':'middle'});t.textContent=label;gBands.appendChild(t);
+})();
 
 /* group bands: bbox per (group × dagre column), so bands stay tight instead of
    one giant box across ranks. Drawn behind everything. */

@@ -38,16 +38,32 @@ function slug(s) {
     .slice(0, 48) || 'x';
 }
 
-// Normalize a raw agent `model` string to a graph model node.
+// Bare Claude aliases → the current EXACT model id (Claude 5 family + Opus 4.8 +
+// Haiku 4.5). Only an EXACT bare alias resolves; an already-qualified id like
+// `claude-3-opus` is kept verbatim (it matches the /claude/ branch below).
+const CLAUDE_ALIASES = {
+  opus: 'claude-opus-4-8',
+  sonnet: 'claude-sonnet-5',
+  haiku: 'claude-haiku-4-5-20251001',
+};
+
+// Normalize a raw agent `model` string to a graph model node keyed by the EXACT
+// model id (one node per distinct exact id — never collapsed to a vendor family).
+// Honest on `inherit`/unknown: we surface it as-is, never a fabricated id.
 function modelNode(raw) {
-  const m = String(raw || '').toLowerCase();
+  const original = String(raw || '').trim();
+  const m = original.toLowerCase();
   if (!m) return null;
-  if (/gemini/.test(m)) return { id: 'gemini', label: 'Gemini', domain: 'gemini.google.com' };
-  if (/opus|sonnet|haiku|claude/.test(m)) return { id: 'claude', label: 'Claude', domain: 'claude.ai' };
-  if (/gpt|o1|o3|openai/.test(m)) return { id: 'openai', label: 'OpenAI', domain: 'openai.com' };
-  if (/llama|mistral|qwen|deepseek/.test(m)) return { id: slug(m), label: raw };
+  // `inherit` (or the session default): be honest — no specific id invented.
+  if (m === 'inherit' || m === 'default') return { id: 'inherit', label: 'inherit', domain: null };
+  // Bare Claude alias → exact id.
+  if (CLAUDE_ALIASES[m]) return { id: CLAUDE_ALIASES[m], label: CLAUDE_ALIASES[m], domain: 'claude.ai' };
+  // Already an exact/qualified id — keep it verbatim, key by it.
+  if (/claude/.test(m)) return { id: m, label: original, domain: 'claude.ai' };
+  if (/gemini/.test(m)) return { id: m, label: original, domain: 'gemini.google.com' };
+  if (/gpt|o1|o3|openai/.test(m)) return { id: m, label: original, domain: 'openai.com' };
   // unknown but present: keep it as a node so the agent has a call target
-  return { id: slug(m), label: raw };
+  return { id: slug(m), label: original, domain: null };
 }
 
 // Light, deterministic store hints from technologies (fed to the LLM pass only
@@ -94,7 +110,8 @@ function buildGraphScan(root, { scanFn = scan, classifyFn = classify } = {}) {
       _parentName: a.parent || null,
       ...(mn ? { model: mn.id } : {}),
       ...(a.aiProduct ? { group: a.aiProduct } : {}),
-      ...(a.model ? { sub: String(a.model) } : a.aiProduct ? { sub: a.aiProduct } : {}),
+      // Sub-label = the EXACT resolved model id (not the raw alias like "opus").
+      ...(mn ? { sub: mn.label } : a.aiProduct ? { sub: a.aiProduct } : {}),
     });
   }
   // second pass: resolve parent NAME -> parent agent id (orchestrator hierarchy)

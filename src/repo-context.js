@@ -17,6 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const { scrubString } = require('./graph-generator');
+const { modelNode } = require('./graph-scan'); // exact-model resolver (aliases → exact ids)
 
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', 'coverage', '.next', '.turbo', 'vendor', '__snapshots__', '__tests__', '__mocks__', 'test', 'tests', 'e2e']);
 const CODE_EXT = new Set(['.ts', '.js', '.tsx', '.jsx', '.mjs', '.cts', '.mts']);
@@ -134,10 +135,21 @@ function collectRepoContext(root, { readFileImpl = readSafe } = {}) {
     try { if (fs.statSync(d).isDirectory()) for (const f of fs.readdirSync(d)) if (f.endsWith('.prisma')) eatPrisma(readFileImpl(path.join(d, f))); } catch { /* none */ }
   }
 
-  // .claude/agents → agent candidates
+  // .claude/agents → agent candidates, carrying the EXACT model from each agent's
+  // `model:` field (aliases resolved to exact ids: opus→claude-opus-4-8, etc.) so
+  // the graph shows the real model, not a vendor family. `inherit`/missing is kept
+  // honest (never a fabricated id). The exact model is also fed as a model
+  // candidate so the analysis emits a per-exact-model node. Sourced deterministically
+  // from the scan — the LLM only renders what we resolved here.
   try {
     for (const f of fs.readdirSync(path.join(abs, '.claude', 'agents'))) {
-      if (f.endsWith('.md')) ctx.agents.push({ label: titleize(path.basename(f, '.md')), provider: null, path: scrubString(`.claude/agents/${f}`) });
+      if (!f.endsWith('.md')) continue;
+      const raw = readFileImpl(path.join(abs, '.claude', 'agents', f)) || '';
+      const mm = raw.match(/^\s*model\s*:\s*["']?([^"'\n]+?)["']?\s*$/im);
+      const mn = mm ? modelNode(mm[1].trim()) : null;
+      const provider = mn ? mn.label : null;
+      if (mn) modelSet.set(mn.label, { label: mn.label, ...(mn.domain ? { domain: mn.domain } : {}) });
+      ctx.agents.push({ label: titleize(path.basename(f, '.md')), provider, path: scrubString(`.claude/agents/${f}`) });
     }
   } catch { /* none */ }
 
