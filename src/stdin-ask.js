@@ -87,7 +87,29 @@ function createLineQueueAsk(writeQuestion) {
 function createStdinAsk({ onInterrupt } = {}) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   const { ask, pushLine, markEnded } = createLineQueueAsk((question) => {
-    process.stdout.write(`  ${question} `);
+    // Long-answer wrap bug (skill-code-certification, certify agents): in a TTY,
+    // `readline` runs in terminal mode and redraws the current line on every
+    // keystroke (wrap, cursor). It computes that redraw against ITS OWN internal
+    // prompt — which stayed `''` while we wrote the visible prompt by hand with
+    // `process.stdout.write`. So when an answer wrapped past the terminal width,
+    // `_refreshLine` redrew from column 0 (prompt width 0) instead of after the
+    // indented `  > `, leaving a duplicated/misaligned line. Piped (non-TTY)
+    // input never triggered it because terminal mode is off there — no redraw.
+    //
+    // Fix: hand the FINAL (editable) line to readline as its real prompt via
+    // setPrompt/prompt, so its wrap/cursor math uses the correct column. Any
+    // preceding header lines (the cyan question text, blank lines) are written
+    // directly — they're static and sit ABOVE the editable line, so readline's
+    // single-line prompt keeps a clean, ANSI-free width and never redraws them.
+    const text = `  ${question} `;
+    const lastNewline = text.lastIndexOf('\n');
+    if (lastNewline >= 0) {
+      process.stdout.write(text.slice(0, lastNewline + 1));
+      rl.setPrompt(text.slice(lastNewline + 1));
+    } else {
+      rl.setPrompt(text);
+    }
+    rl.prompt();
   });
   rl.on('line', pushLine);
   rl.on('close', markEnded);

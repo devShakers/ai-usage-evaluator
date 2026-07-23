@@ -338,8 +338,10 @@ test('bin/report.js: an agent (name + model) shows in the terminal report with n
   });
   assert.equal(code, 0);
   assert.match(stdout, /ddd-enforcer/);
-  // Model badge is part of the agent line ([opus] here).
-  assert.match(stdout, /\[opus\]/);
+  // The AI PRODUCT (derived from the .claude/agents source) is the badge now,
+  // NOT the LLM model — so [Claude Code], never [opus].
+  assert.match(stdout, /\[Claude Code\]/);
+  assert.equal(stdout.includes('[opus]'), false);
   // ADR-016 (2026-07-18): a SUMMARIZED description shows under the agent
   // (dim line, truncated ~90 chars). The fixture's description starts with this.
   assert.match(stdout, /Scans a module directory for DDD pattern violations/);

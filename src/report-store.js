@@ -8,8 +8,9 @@ const { pathToFileURL } = require('url');
 
 const { getCatalog } = require('./i18n');
 const { renderDocument } = require('./report-theme');
-const { footprintSectionsHtml, FOOTPRINT_CSS, FOOTPRINT_SCRIPT } = require('./render-html');
+const { footprintSectionsHtml, FOOTPRINT_CSS, FOOTPRINT_SCRIPT, agentCertificationSectionsHtml } = require('./render-html');
 const { certificationSectionsHtml, CERTIFICATION_CSS } = require('./render-certification');
+const { renderSheet } = require('./render-sheet');
 
 /*
  * Per-project local report store (skill-code-certification, reporting redesign
@@ -121,7 +122,17 @@ function saveState(state) {
 
 function getOrCreateProject(state, absRoot) {
   if (!state.projects[absRoot]) {
-    state.projects[absRoot] = { root: absRoot, updatedAt: null, footprint: null, certifications: {} };
+    state.projects[absRoot] = {
+      root: absRoot,
+      updatedAt: null,
+      footprint: null,
+      certifications: {},
+      agentCertifications: {},
+    };
+  }
+  // Backward-compat: a project persisted before agent certifications existed.
+  if (!state.projects[absRoot].agentCertifications) {
+    state.projects[absRoot].agentCertifications = {};
   }
   return state.projects[absRoot];
 }
@@ -155,56 +166,13 @@ const CUMULATIVE_CSS = `
 // included ONLY when the project actually has that kind of data — a cert-only
 // run shows no footprint section, a footprint-only run shows no certification
 // section, and both appear only when both ran for this same project.
+// The shareable report (`report`/`sheet`) now renders with the approved mockup
+// design (src/render-sheet.js → src/templates/report-sheet.html), wired to the
+// SAME live report-store data (footprint + certifications). The prior
+// section-based renderer (footprintSectionsHtml/certificationSectionsHtml/
+// renderDocument) is retained in render-html.js for the terminal/other surfaces.
 function renderProjectHtml(project, lang) {
-  const t = getCatalog(lang);
-  const c = t.cumulative;
-
-  const sections = [];
-
-  if (project && project.footprint && project.footprint.report) {
-    sections.push(`<section>
-    <h2 class="section-title">${esc(c.footprintHeading)}</h2>
-    ${footprintSectionsHtml(project.footprint.report, project.footprint.maturity, lang)}
-  </section>`);
-  }
-
-  const certItems = sortedByGeneratedAtDesc(Object.values((project && project.certifications) || {})).map((e) => e.item);
-  if (certItems.length) {
-    sections.push(`<section>
-    <h2 class="section-title">${esc(c.certificationHeading)}</h2>
-    ${certificationSectionsHtml({ items: certItems }, lang)}
-  </section>`);
-  }
-
-  const updatedWhen = project && project.updatedAt ? new Date(project.updatedAt).toLocaleString() : '';
-
-  const body = `<header>
-    <span class="badge"><span class="spark"></span>SHAKERS</span>
-    <h1>${esc(c.title)}</h1>
-    <p class="sub">${esc(c.subtitle)}</p>
-    <div class="block-meta">
-      <span class="path">${esc((project && project.root) || c.unknownProject)}</span>
-      ${updatedWhen ? `<span class="when">${esc(c.updatedLabel(updatedWhen))}</span>` : ''}
-    </div>
-  </header>
-
-  ${sections.join('\n')}
-
-  <footer>
-    <div class="priv">
-      <span class="lock" aria-hidden="true">🔒</span>
-      <span>${esc(c.privacyNote)}</span>
-    </div>
-    ${updatedWhen ? `<div class="meta-line">${esc(c.updatedLabel(updatedWhen))}</div>` : ''}
-  </footer>`;
-
-  return renderDocument({
-    lang: t.html.lang,
-    title: c.title,
-    componentCss: FOOTPRINT_CSS + CERTIFICATION_CSS + CUMULATIVE_CSS,
-    body,
-    script: FOOTPRINT_SCRIPT,
-  });
+  return renderSheet(project, lang);
 }
 
 /* ---------- persist (state only) + materialize (render HTML) ---------- */
@@ -244,6 +212,40 @@ function persistFootprint({ root, report, maturity }) {
     generatedAt: (report && report.generatedAt) || new Date().toISOString(),
     report,
     maturity,
+  };
+  return stampAndSaveState(state, absRoot);
+}
+
+// Persist an agent certification for THIS project (skill-code-certification,
+// `certify agents`), keyed by the local agent name. State only (no HTML). Stores
+// the FULL verdict — level + category + role AND the "why" (verified/unverified
+// evidence), the five areas with their tag, and the rationale — because the HTML
+// report card is now the full breakdown surface (the terminal shows only a
+// summary at cert time). Latest per agent name wins (the card shows the most
+// recent verdict).
+function persistAgentCertification({
+  root,
+  agentName,
+  level,
+  category,
+  role,
+  areas,
+  verifiedEvidence,
+  unverifiedEvidence,
+  rationale,
+}) {
+  const absRoot = path.resolve(root || process.cwd());
+  const state = loadState();
+  const project = getOrCreateProject(state, absRoot);
+  project.agentCertifications[agentName] = {
+    level: level || 'none',
+    category: category || null,
+    role: role || null,
+    areas: Array.isArray(areas) ? areas : [],
+    verifiedEvidence: Array.isArray(verifiedEvidence) ? verifiedEvidence : [],
+    unverifiedEvidence: Array.isArray(unverifiedEvidence) ? unverifiedEvidence : [],
+    rationale: rationale || null,
+    generatedAt: new Date().toISOString(),
   };
   return stampAndSaveState(state, absRoot);
 }
@@ -318,6 +320,7 @@ module.exports = {
   renderProjectHtml,
   persistFootprint,
   persistCertification,
+  persistAgentCertification,
   materializeProjectReport,
   upsertFootprint,
   upsertCertification,

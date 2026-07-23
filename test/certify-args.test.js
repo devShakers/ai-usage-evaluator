@@ -16,7 +16,13 @@ test('parseCertifyArgs: defaults', () => {
   assert.equal(opts.email, null);
   assert.equal(opts.lang, null);
   assert.equal(opts.acceptDisclaimer, false);
+  assert.equal(opts.fast, false);
   assert.equal(opts.help, false);
+});
+
+test('parseCertifyArgs: --fast is a standalone flag (certify agents superadmin shortcut)', () => {
+  assert.equal(parseCertifyArgs(['--fast']).fast, true);
+  assert.equal(parseCertifyArgs([]).fast, false);
 });
 
 test('parseCertifyArgs: --root (space and = forms)', () => {

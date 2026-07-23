@@ -69,21 +69,21 @@ test('renderHtml: missing report.agents entirely (older report) does not throw, 
 
 // --- fallback: agents present, no synthesis ----------------------------------
 
-test('renderHtml: agents without synthesis -> title is the real name, only the model chip (tools/MCP chips removed), no badge', () => {
+test('renderHtml: agents without synthesis -> real name, AI product chip + tool chips, NO model chip, no badge', () => {
   const report = {
     ...BASE_REPORT,
-    agents: [{ name: 'backend-developer', tools: ['Read', 'Write'], model: 'sonnet', parent: null }],
+    agents: [{ name: 'backend-developer', tools: ['Read', 'Write'], aiProduct: 'claude-code', model: 'sonnet', parent: null }],
   };
   const html = renderHtml(report, MATURITY, 'es');
   const section = treeSectionOf(html);
   assert.match(section, /agent-title">backend-developer</);
   assert.equal(section.includes('agent-badge'), false);
-  // Per-agent tool / MCP-server chips were removed on user request — the card
-  // shows identity + hierarchy only. The tools must NOT appear as chips.
-  assert.equal(/<span class="chip pill"><i class="dot"[^>]*><\/i>Read</.test(section), false);
-  assert.equal(/<span class="chip pill"><i class="dot"[^>]*><\/i>Write</.test(section), false);
-  // The model chip stays.
-  assert.match(section, /chip pill model[^>]*>[\s\S]*?sonnet/);
+  // AI product chip (derived from source) shown in place of the model chip.
+  assert.match(section, /chip pill product[^>]*>[\s\S]*?Claude Code/);
+  assert.equal(section.includes('chip pill model'), false); // model chip GONE
+  // The agent's wired tools ARE surfaced now as "technologies" chips.
+  assert.match(section, /chip pill tool">Read</);
+  assert.match(section, /chip pill tool">Write</);
 });
 
 // talents-ai-score: an earlier fix forced a deterministic FILLER phrase

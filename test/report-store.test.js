@@ -70,10 +70,13 @@ function mkproj(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
-// Precise section presence: the section HEADING markup (not a bare phrase,
-// which also appears in the subtitle/labels/CSS).
-const FOOTPRINT_H2_EN = '<h2 class="section-title">AI Footprint</h2>';
-const CERT_H2_EN = '<h2 class="section-title">Skill certification</h2>';
+// The shareable report now uses the mockup design (render-sheet.js): BOTH the
+// footprint and certifications columns ALWAYS render — a section with no data
+// shows a clean empty state instead of being omitted. So "section present" =
+// real content, "section absent" = its empty-state text.
+const RING = 'id="ringFill"'; // footprint hero ring — present only with footprint data
+const NOFOOT_EN = 'No AI footprint yet'; // footprint empty state (en)
+const NOSKILLS_EN = 'No certified skills yet'; // skills empty state (en)
 function countOf(html, needle) {
   return html.split(needle).length - 1;
 }
@@ -89,60 +92,63 @@ test('upsertFootprint: writes report-state.json + a per-project report-<hash>.ht
     assert.equal(paths.fileUrl.startsWith('file://'), true);
     const html = fs.readFileSync(paths.htmlPath, 'utf8');
     assert.match(html, /<!doctype html>/i);
-    assert.ok(html.includes(path.resolve(root)), 'the project path is shown in the report');
+    assert.ok(html.includes(path.basename(root)), 'the project name (basename) is shown in the report header');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('redesign: the report background is WHITE and there is NO prefers-color-scheme dark override', () => {
+test('redesign: the light theme background is WHITE and there is NO prefers-color-scheme dark override', () => {
   const root = mkproj('proj-');
   try {
     const paths = store.upsertFootprint({ root, report: report(), maturity: maturity(), lang: 'en' });
     const html = fs.readFileSync(paths.htmlPath, 'utf8');
-    assert.ok(html.includes('--bg:var(--ds-white)'), 'background token is white (#ffffff)');
+    // Mockup design: default light theme maps --bg to white; dark is a MANUAL
+    // data-theme toggle, never an automatic prefers-color-scheme override.
+    assert.ok(html.includes('--bg:var(--white)'), 'light background token is white');
     assert.equal(/prefers-color-scheme\s*:\s*dark/.test(html), false, 'no dark-mode media query');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('scoped: a footprint-only project shows ONLY the footprint section (no certification section)', () => {
+test('scoped: a footprint-only project shows the footprint content + a clean certs empty state', () => {
   const root = mkproj('proj-');
   try {
     const paths = store.upsertFootprint({ root, report: report(), maturity: maturity(), lang: 'en' });
     const html = fs.readFileSync(paths.htmlPath, 'utf8');
-    assert.ok(html.includes(FOOTPRINT_H2_EN), 'footprint section present');
-    assert.equal(html.includes(CERT_H2_EN), false, 'no certification section when none certified');
+    assert.ok(html.includes('col-left') && html.includes('col-right'), 'both columns always present');
+    assert.ok(html.includes(RING), 'footprint hero rendered (has data)');
+    assert.ok(html.includes(NOSKILLS_EN), 'certs column shows the empty state when none certified');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('scoped: a certification-only project shows ONLY the certification section (no footprint section)', () => {
+test('scoped: a certification-only project shows the certs content + a clean footprint empty state', () => {
   const root = mkproj('proj-');
   try {
     const paths = store.upsertCertification({ root, items: [certItem({ name: 'React' })], lang: 'en' });
     const html = fs.readFileSync(paths.htmlPath, 'utf8');
-    assert.ok(html.includes(CERT_H2_EN), 'certification section present');
     assert.ok(html.includes('React'), 'the certified Skill is present');
-    assert.equal(html.includes(FOOTPRINT_H2_EN), false, 'no footprint section when no footprint run');
+    assert.equal(html.includes(RING), false, 'no footprint hero when no footprint run');
+    assert.ok(html.includes(NOFOOT_EN), 'footprint column shows the empty state');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('scoped: footprint AND certification coexist ONLY when both ran for the SAME project', () => {
+test('scoped: footprint AND certification both render for the SAME project', () => {
   const root = mkproj('proj-');
   try {
     store.upsertFootprint({ root, report: report(), maturity: maturity(), lang: 'en' });
     const paths = store.upsertCertification({ root, items: [certItem({ name: 'React' })], lang: 'en' });
     const html = fs.readFileSync(paths.htmlPath, 'utf8');
     assert.equal((html.match(/<!doctype html>/gi) || []).length, 1, 'exactly one HTML document');
-    assert.ok(html.includes(FOOTPRINT_H2_EN), 'footprint section');
-    assert.ok(html.includes(CERT_H2_EN), 'certification section');
+    assert.ok(html.includes(RING), 'footprint hero present');
     assert.ok(html.includes('React'), 'the certified Skill is present');
-    assert.ok(html.includes(path.resolve(root)), 'the project path is present');
+    assert.equal(html.includes(NOSKILLS_EN), false, 'no certs empty state when a skill exists');
+    assert.ok(html.includes(path.basename(root)), 'the project name is present');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -158,10 +164,11 @@ test('scoped: different projects get SEPARATE report files and do NOT mix', () =
 
     const htmlA = fs.readFileSync(a.htmlPath, 'utf8');
     const htmlB = fs.readFileSync(b.htmlPath, 'utf8');
-    // A is footprint-only, B is cert-only — neither leaks the other's data.
-    assert.ok(htmlA.includes(FOOTPRINT_H2_EN) && !htmlA.includes(CERT_H2_EN), 'A: footprint only');
-    assert.ok(htmlB.includes(CERT_H2_EN) && !htmlB.includes(FOOTPRINT_H2_EN), 'B: certification only');
-    assert.ok(htmlA.includes(path.resolve(rootA)) && !htmlA.includes(path.resolve(rootB)), 'A does not show B');
+    // A is footprint-only (hero + certs empty state); B is cert-only (skill +
+    // footprint empty state) — neither leaks the other's data.
+    assert.ok(htmlA.includes(RING) && htmlA.includes(NOSKILLS_EN), 'A: footprint + empty certs');
+    assert.ok(htmlB.includes('Express') && htmlB.includes(NOFOOT_EN) && !htmlB.includes(RING), 'B: certs + empty footprint');
+    assert.ok(htmlA.includes(path.basename(rootA)) && !htmlA.includes('Express'), 'A does not show B data');
 
     // Two separate projects in state.
     const state = store.loadState();
@@ -180,10 +187,10 @@ test('upsert: re-scanning the SAME project replaces its footprint in place (neve
     const state = store.loadState();
     assert.equal(Object.keys(state.projects).length, 1, 'still one project');
     const html = fs.readFileSync(paths.htmlPath, 'utf8');
-    assert.ok(html.includes('55'), 'updated score present');
-    assert.equal(html.includes('data-target="20"'), false, 'old score no longer in the meter');
-    // Exactly one footprint section (no stacking).
-    assert.equal(countOf(html, FOOTPRINT_H2_EN), 1, 'a single footprint section');
+    assert.ok(html.includes('var SCORE = 55'), 'updated score drives the ring');
+    assert.equal(html.includes('var SCORE = 20'), false, 'old score no longer present');
+    // Exactly one footprint hero (no stacking).
+    assert.equal(countOf(html, RING), 1, 'a single footprint hero');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -237,9 +244,10 @@ test('i18n: a project report renders in both es and en with localized headings',
   const root = mkproj('proj-');
   try {
     let paths = store.upsertCertification({ root, items: [certItem()], lang: 'es' });
-    assert.ok(fs.readFileSync(paths.htmlPath, 'utf8').includes('Certificación de Skills'), 'Spanish heading');
+    assert.ok(fs.readFileSync(paths.htmlPath, 'utf8').includes('>Certificaciones<'), 'Spanish heading');
     paths = store.upsertCertification({ root, items: [certItem()], lang: 'en' });
-    assert.ok(fs.readFileSync(paths.htmlPath, 'utf8').includes('Skill certification'), 'English heading');
+    const enHtml = fs.readFileSync(paths.htmlPath, 'utf8');
+    assert.ok(enHtml.includes('>Certifications<') && enHtml.includes('>AI footprint<'), 'English headings');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

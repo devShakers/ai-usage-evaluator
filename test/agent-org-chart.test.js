@@ -124,6 +124,7 @@ test('parseAgentOrgChart: parses name/tools(inline comma list)/model from frontm
   assert.deepEqual(agents[0], {
     name: 'backend-developer',
     tools: ['Read', 'Write', 'Bash', 'Edit'],
+    aiProduct: 'claude-code',
     model: 'sonnet',
     parent: null,
   });
@@ -159,7 +160,7 @@ test('parseAgentOrgChart: model missing -> null; tools missing -> empty array', 
 
   const agents = parseAgentOrgChart(tmpDir);
   assert.equal(agents.length, 1);
-  assert.deepEqual(agents[0], { name: 'minimal', tools: [], model: null, parent: null });
+  assert.deepEqual(agents[0], { name: 'minimal', tools: [], aiProduct: 'claude-code', model: null, parent: null });
 });
 
 test('parseAgentOrgChart: EXCLUDES description content entirely — never present anywhere in the returned structure', () => {
@@ -341,7 +342,7 @@ test('parseAgentOrgChart: two agents named in one directive sentence is ambiguou
   assert.equal(byName['content-creator'].parent, null); // ambiguous -> skipped, not guessed
 });
 
-test('parseAgentOrgChart: derivation never leaks prose — returned agents carry only name/tools/model/parent', () => {
+test('parseAgentOrgChart: derivation never leaks prose — returned agents carry only name/tools/aiProduct/model/parent', () => {
   writeAgentFile(tmpDir, 'growth-manager.md', ['---', 'name: growth-manager', '---', 'Secret business framing here.'].join('\n'));
   writeAgentFile(
     tmpDir,
@@ -350,7 +351,7 @@ test('parseAgentOrgChart: derivation never leaks prose — returned agents carry
   );
 
   for (const a of parseAgentOrgChart(tmpDir)) {
-    assert.deepEqual(Object.keys(a).sort(), ['model', 'name', 'parent', 'tools']);
+    assert.deepEqual(Object.keys(a).sort(), ['aiProduct', 'model', 'name', 'parent', 'tools']);
     assert.equal(JSON.stringify(a).includes('Confidential'), false);
     assert.equal(JSON.stringify(a).includes('Secret'), false);
   }

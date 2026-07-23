@@ -23,6 +23,14 @@
  *                         selection).
  *   --skills 1,3          Certify the certifiable Skills at these 1-based
  *                         positions (non-interactive selection).
+ *   --fast                (`certify agents`, SUPERADMIN-ONLY testing shortcut)
+ *                         Skip the interactive Q&A: fill the two fixed questions
+ *                         with built-in sample answers and auto-answer any
+ *                         follow-ups, going straight to the (real) verdict. Hard-
+ *                         gated on a valid ADR-027 superadmin session — ignored
+ *                         (with a clear message) otherwise, so a real Talent can
+ *                         never skip the Q&A. Agent SELECTION still happens; the
+ *                         verdict is still `test_origin` (superadmin).
  *   -h, --help            Show help.
  *
  * Reporting redesign (skill-code-certification): `--html`/`-w` is RETIRED. The
@@ -45,6 +53,7 @@ function parseCertifyArgs(argv) {
     acceptDisclaimer: false,
     all: false,
     skills: null,
+    fast: false,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -61,6 +70,7 @@ function parseCertifyArgs(argv) {
     else if (a === '--all') opts.all = true;
     else if (a === '--skills') opts.skills = argv[++i];
     else if (a.startsWith('--skills=')) opts.skills = a.slice('--skills='.length);
+    else if (a === '--fast') opts.fast = true;
     else if (a === '--help' || a === '-h') opts.help = true;
   }
   return opts;

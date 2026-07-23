@@ -174,29 +174,24 @@ function normalizeImprovements(list) {
     .slice(0, 3);
 }
 
-// Server scores are never trusted verbatim: coerce to an integer, clamp to
-// [0,100], drop anything without a usable numeric score. rationale defaults to
-// '' rather than trusting a non-string.
+// Normalizes each evaluation. The NUMERIC SCORE was removed (footprint cards
+// show no number) — an entry is kept if it has a name that maps back to an input
+// agent; rationale/description/classification/improvements are coerced. Never
+// trusts the wire verbatim.
 function normalizeEvaluations(list) {
   return (Array.isArray(list) ? list : [])
     .filter((e) => e && typeof e.name === 'string')
-    .map((e) => {
-      const n = Number(e.score);
-      const score = Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : null;
-      return {
-        name: e.name,
-        score,
-        rationale: typeof e.rationale === 'string' ? e.rationale : '',
-        // ADR-026: target-language one-line description; null when the server
-        // (older prompt) omitted it — the caller falls back to the verbatim phrase.
-        description: typeof e.description === 'string' && e.description ? e.description : null,
-        // v4 (agent classification): closest catalog agent + how it was matched.
-        classification: normalizeClassification(e.classification),
-        // v4: 2-3 concrete improvement tips (target language).
-        improvements: normalizeImprovements(e.improvements),
-      };
-    })
-    .filter((e) => e.score !== null);
+    .map((e) => ({
+      name: e.name,
+      rationale: typeof e.rationale === 'string' ? e.rationale : '',
+      // ADR-026: target-language one-line description; null when the server
+      // omitted it — the caller falls back to the verbatim phrase.
+      description: typeof e.description === 'string' && e.description ? e.description : null,
+      // v4 (agent classification): closest catalog agent + how it was matched.
+      classification: normalizeClassification(e.classification),
+      // v4: 2-3 concrete improvement tips (target language).
+      improvements: normalizeImprovements(e.improvements),
+    }));
 }
 
 // Requests the agent-evaluation endpoint. Returns

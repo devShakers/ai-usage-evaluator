@@ -330,17 +330,22 @@ function buildAgentCardTree(report, t) {
       ? report.agentEvaluation.evaluations
       : [];
   const evalByName = new Map(evaluations.map((e) => [normalizeAgentName(e.name), e]));
-  const usageByAgent =
-    report.agentUsage && report.agentUsage.byAgent && typeof report.agentUsage.byAgent === 'object'
-      ? report.agentUsage.byAgent
-      : null;
+  // `certify agents` (skill-code-certification): per-agent proficiency LEVEL,
+  // keyed by the local agent name (exact), from report-state. Absent → no tag.
+  const certByName =
+    report.agentCertifications && typeof report.agentCertifications === 'object'
+      ? report.agentCertifications
+      : {};
 
   const cards = agents.map((a) => {
     const key = normalizeAgentName(a.name);
     const synth = synthesisByName.get(key);
     const parentKey = a.parent && byName.has(a.parent) && a.parent !== a.name ? a.parent : null;
     const tools = Array.isArray(a.tools) ? a.tools : [];
-    const model = a.model || null;
+    // AI product derived from the agent's SOURCE (agent-org-chart#deriveAiProduct)
+    // — shown on the card in place of the LLM model. Falls back to the report's
+    // catalog-independent default when a parsed agent predates the field.
+    const aiProduct = typeof a.aiProduct === 'string' && a.aiProduct ? a.aiProduct : null;
 
     const ev = evalByName.get(key);
     // ADR-026: the agent-evaluation `description` is a one-line caption written
@@ -358,9 +363,10 @@ function buildAgentCardTree(report, t) {
     const fallbackPhrase = t && t.html.agentDescriptionFromName ? t.html.agentDescriptionFromName(humanizeAgentName(a.name)) : null;
     const whatItDoes = evalPhrase || synthPhrase || rawPhrase || fallbackPhrase;
 
-    const score = ev && typeof ev.score === 'number' ? ev.score : null;
+    // The numeric score AND the local usage signal were removed from footprint
+    // cards (user decision) — not carried onto the card. rationale +
+    // classification + improvements stay.
     const rationale = ev && typeof ev.rationale === 'string' && ev.rationale.trim() ? ev.rationale.trim() : null;
-    const usageCount = usageByAgent ? (typeof usageByAgent[a.name] === 'number' ? usageByAgent[a.name] : null) : null;
     // v4 (agent classification): closest catalog agent + how it was matched, and
     // 2-3 improvement tips. `classification` is null ONLY when no evaluation ran
     // for this agent (no block rendered); when the evaluation ran but placed no
@@ -373,18 +379,34 @@ function buildAgentCardTree(report, t) {
       : null;
     const improvements = ev && Array.isArray(ev.improvements) ? ev.improvements : [];
 
+    const certRaw = certByName[a.name];
+    // The HTML card is now the FULL agent-certification breakdown surface (the
+    // terminal only prints a summary): carry level + category + role AND the
+    // evidence, the five areas with their tags, and the rationale.
+    const certification =
+      certRaw && typeof certRaw === 'object' && certRaw.level && certRaw.level !== 'none'
+        ? {
+            level: certRaw.level,
+            category: certRaw.category || null,
+            role: certRaw.role || null,
+            areas: Array.isArray(certRaw.areas) ? certRaw.areas : [],
+            verifiedEvidence: Array.isArray(certRaw.verifiedEvidence) ? certRaw.verifiedEvidence : [],
+            unverifiedEvidence: Array.isArray(certRaw.unverifiedEvidence) ? certRaw.unverifiedEvidence : [],
+            rationale: typeof certRaw.rationale === 'string' && certRaw.rationale.trim() ? certRaw.rationale.trim() : null,
+          }
+        : null;
+
     return {
       name: a.name,
       symbolicName: synth && synth.symbolicName ? synth.symbolicName : null,
       whatItDoes,
       tools,
-      model,
+      aiProduct,
       parent: parentKey,
-      score,
       rationale,
-      usageCount,
       classification,
       improvements,
+      certification,
     };
   });
 
@@ -397,6 +419,13 @@ function buildAgentCardTree(report, t) {
   return { childrenByParent, roots: childrenByParent.get(null) || [] };
 }
 
+// Maps an AI-product key (e.g. 'claude-code') to its display name via i18n,
+// falling back to the raw key. Product names are proper nouns (same es/en).
+function aiProductLabel(key, t) {
+  const map = (t && t.html && t.html.aiProducts) || {};
+  return map[key] || key;
+}
+
 function agentCardHtml(card, t) {
   const hasSymbolicName = !!card.symbolicName;
   const title = esc(hasSymbolicName ? card.symbolicName : card.name);
@@ -407,26 +436,20 @@ function agentCardHtml(card, t) {
     ? `<span class="agent-badge" title="${esc(t.html.agentRealNameLabel)}">${esc(card.name)}</span>`
     : '';
   const phrase = card.whatItDoes ? `<p class="agent-phrase">${esc(card.whatItDoes)}</p>` : '';
-  // Per-agent tool / MCP-server chips were REMOVED (user request, talents-ai-score):
-  // an agent card now shows only its identity + hierarchy — real name, symbolic
-  // name (when synthesized), one-line description and the MODEL chip. The
-  // structural `tools[]` (which surfaced the per-agent MCP servers) is still in
-  // the data model (buildAgentCardTree) but is no longer rendered in either
-  // surface (HTML here, and the terminal never listed it after the condense).
-  const modelChip = card.model
-    ? `<span class="chip pill model"><i class="dot" aria-hidden="true"></i>${esc(card.model)}</span>`
+  // The AI PRODUCT the agent belongs to (derived from its source — e.g. Claude
+  // Code for a `.claude/agents/*.md` file), shown in place of the LLM model
+  // (user decision: no model, show the product). Display name via i18n.
+  const productChip = card.aiProduct
+    ? `<span class="chip pill product"><i class="dot" aria-hidden="true"></i>${esc(aiProductLabel(card.aiProduct, t))}</span>`
     : '';
-  // ADR-016 agent evaluation: the full per-agent detail lives HERE (terminal
-  // keeps only a one-line summary). A definition-quality score badge (banded
-  // green/amber/red), its LLM rationale, and the local usage signal.
-  const scoreBadge = typeof card.score === 'number'
-    ? `<span class="agent-score ${scoreBand(card.score)}" title="${esc(t.html.agentScoreLabel)}">`
-      + `<b>${card.score}</b><span class="agent-score-max">/100</span></span>`
-    : '';
-  const usageChip = card.usageCount != null
-    ? `<span class="chip pill usage" title="${esc(t.html.agentUsageLabel)}">`
-      + `<i class="dot" aria-hidden="true"></i>${esc(card.usageCount === 0 ? t.html.agentUnused : t.html.agentUsedTimes(card.usageCount))}</span>`
-    : '';
+  // "Technologies" per card = the agent's own wired tools / integrations / MCP
+  // servers (re-surfaced — user wants MORE technologies visible, and these vary
+  // per agent). Deduped; empty → no chips.
+  const toolChips = Array.from(new Set((card.tools || []).filter((x) => typeof x === 'string' && x.trim())))
+    .map((tool) => `<span class="chip pill tool">${esc(tool)}</span>`)
+    .join('');
+  // The numeric score AND the local usage signal were REMOVED from footprint
+  // cards (user decision). rationale + classification + improvements stay.
   const rationale = card.rationale
     ? `<p class="agent-rationale"><span class="agent-rationale-k">${esc(t.html.agentQualityLabel)}</span> ${esc(card.rationale)}</p>`
     : '';
@@ -438,18 +461,186 @@ function agentCardHtml(card, t) {
   const reportsTo = card.parent || t.html.orchestratorLabel;
   const ariaLabel = `${hasSymbolicName ? card.symbolicName : card.name}. ${t.html.reportsToLabel} ${reportsTo}`;
 
+  // The card stays SMALL: only a compact proficiency-LEVEL tag to the right of
+  // the name when this agent is certified. The full verdict (why + areas +
+  // rationale) lives in its own skill-style section (agentCertificationSectionsHtml).
   return `<div class="agent-card" aria-label="${esc(ariaLabel)}">
     <div class="agent-card-head">
-      <span class="agent-title">${title}</span>
-      ${scoreBadge || badge}
+      <div class="agent-card-headline">
+        <span class="agent-title">${title}</span>
+        ${agentCardLevelTag(card, t)}
+      </div>
+      ${badge}
     </div>
-    ${hasSymbolicName && scoreBadge ? `<div class="agent-chips">${badge}</div>` : ''}
     ${phrase}
     ${rationale}
     ${classification}
     ${improvements}
-    <div class="agent-chips">${modelChip}${usageChip}</div>
+    <div class="agent-chips">${productChip}${toolChips}</div>
   </div>`;
+}
+
+// Compact level tag for the agent CARD head (right of the name). Level only —
+// no category/role/areas/rationale (those live in the certification section).
+function agentCardLevelTag(card, t) {
+  if (!card.certification || !card.certification.level || card.certification.level === 'none') return '';
+  const ca = t.certifyAgents;
+  const { level } = card.certification;
+  const levelName = (ca.levelNames && ca.levelNames[level]) || level;
+  return `<span class="chip pill cert-level cert-${esc(level)} agent-card-level">${esc(ca.levelLabel)}: ${esc(levelName)}</span>`;
+}
+
+// `certify agents`: the FULL verdict on the agent's card when the talent has
+// certified this agent (user decision — swap the surfaces: HTML gets the full
+// breakdown, the terminal only summarizes). The level tag + category · role stay
+// the header; below it the "why" (verified/unverified evidence), the five areas
+// with their performance tag, and the rationale.
+// Maps an area performance tag to a severity bucket used for the CSS class, so
+// the static stylesheet carries no domain literal (see areaItems note).
+function certTagBucket(tag) {
+  if (tag === 'verified') return 'ok';
+  if (tag === 'partial') return 'mid';
+  if (tag === 'n_a') return 'na';
+  return 'low'; // claimed / not_evidenced
+}
+
+// Derives the "why" (confirmed vs not-confirmed) DIRECTLY from the five assessed
+// areas, NEVER from the model's free-text verifiedEvidence/unverifiedEvidence
+// lists. Those separate lists are model-filled and can come back EMPTY even when
+// every area is tagged `verified` — which is exactly what produced the incoherent
+// "Level: P5 · Expert" alongside "(no verified evidence)". Because the LEVEL is
+// itself derived server-side from these same area tags (aggregateAgentLevel), it
+// is impossible for the derived evidence to contradict the level: a P5 (five
+// `verified` areas) NECESSARILY yields five confirmed lines. `n_a` areas belong
+// to neither list (the area doesn't apply to this agent) — they still show in the
+// full areas block below.
+function deriveCertEvidence(areas, ca) {
+  const verified = [];
+  const unverified = [];
+  for (const a of Array.isArray(areas) ? areas : []) {
+    if (!a || typeof a.area !== 'string') continue;
+    const name = (ca.areaNames && ca.areaNames[a.area]) || a.area;
+    const evidence = typeof a.evidence === 'string' ? a.evidence.trim() : '';
+    if (a.tag === 'verified') {
+      verified.push({ name, evidence });
+    } else if (a.tag === 'partial' || a.tag === 'claimed' || a.tag === 'not_evidenced') {
+      const tagLabel = (ca.tagLabels && ca.tagLabels[a.tag]) || a.tag;
+      unverified.push({ name, tagLabel, evidence });
+    }
+    // n_a → neither list.
+  }
+  return { verified, unverified };
+}
+
+// ONE certified agent as its own skill-style card (`.card.skill`, mirroring the
+// Skill-certification sections) — this is where the FULL verdict lives now (the
+// agent card in the footprint tree keeps only the level tag). `name` is the
+// local agent name; `cert` is the persisted verdict.
+function agentCertificationItemHtml(name, cert, t) {
+  const ca = t.certifyAgents;
+  const level = cert && cert.level ? cert.level : 'none';
+  const category = (cert && cert.category) || null;
+  const role = (cert && cert.role) || null;
+  const areas = Array.isArray(cert && cert.areas) ? cert.areas : [];
+  const rationale = typeof (cert && cert.rationale) === 'string' && cert.rationale.trim() ? cert.rationale.trim() : null;
+
+  const levelName = (ca.levelNames && ca.levelNames[level]) || level;
+  const catLabel =
+    category && t.classification.categories[category] ? t.classification.categories[category] : category;
+  const meta = [catLabel, role].filter(Boolean).map((x) => esc(x)).join(' · ');
+
+  // Head mirrors the Skill card: <h2>name<span class="tech">meta</span></h2> +
+  // a level BADGE on the right (the analogue of the Skill score-badge).
+  const head =
+    `<div class="skill-head"><h2>${esc(name)}` +
+    `${meta ? `<span class="tech">${meta}</span>` : ''}</h2>` +
+    `<span class="chip pill cert-level cert-${esc(level)} cert-level-badge">${esc(ca.levelLabel)}: ${esc(levelName)}</span></div>`;
+
+  // Why: DERIVED from the areas (deriveCertEvidence) so it can never contradict
+  // the level. Only when the agent actually has assessed areas — a legacy record
+  // carrying just a level shows the badge alone, never a misleading fallback.
+  const hasAreas = areas.length > 0;
+  let why = '';
+  if (hasAreas) {
+    const { verified, unverified } = deriveCertEvidence(areas, ca);
+    const verifiedItems = verified
+      .map((e) =>
+        e.evidence
+          ? `<li><strong>${esc(e.name)}:</strong> ${esc(e.evidence)}</li>`
+          : `<li><strong>${esc(e.name)}</strong></li>`,
+      )
+      .join('');
+    const verifiedBlock = `<div class="agent-cert-ev verified">
+    <div class="agent-cert-ev-k">${esc(ca.verifiedHeading)}</div>
+    ${verifiedItems ? `<ul>${verifiedItems}</ul>` : `<p class="agent-cert-none">${esc(ca.noVerified)}</p>`}
+  </div>`;
+    const unverifiedItems = unverified
+      .map(
+        (e) =>
+          `<li><strong>${esc(e.name)}</strong> <span class="chip pill cert-area-tag">${esc(e.tagLabel)}</span>${e.evidence ? ` ${esc(e.evidence)}` : ''}</li>`,
+      )
+      .join('');
+    const unverifiedBlock = unverifiedItems
+      ? `<div class="agent-cert-ev unverified">
+    <div class="agent-cert-ev-k">${esc(ca.unverifiedHeading)}</div>
+    <ul>${unverifiedItems}</ul>
+  </div>`
+      : '';
+    why = `<div class="agent-cert-why">
+    <div class="agent-cert-k">${esc(ca.whyHeading)}</div>
+    ${verifiedBlock}
+    ${unverifiedBlock}
+  </div>`;
+  }
+
+  // The five assessed areas, each with its performance tag. The CSS class is a
+  // SEVERITY BUCKET (ok/mid/low/na), not the raw tag, so the always-present
+  // stylesheet never leaks a domain literal like "not_evidenced" into a report
+  // that has no certification (keeps the "invents no framing" guarantee).
+  const areaItems = areas
+    .map((a) => {
+      const areaName = (ca.areaNames && ca.areaNames[a.area]) || a.area;
+      const tagLabel = (ca.tagLabels && ca.tagLabels[a.tag]) || a.tag;
+      const ev = a.evidence ? `<span class="cert-area-ev">${esc(a.evidence)}</span>` : '';
+      return `<li class="cert-area cert-tag-${certTagBucket(a.tag)}">
+        <span class="cert-area-name">${esc(areaName)}</span>
+        <span class="chip pill cert-area-tag">${esc(tagLabel)}</span>
+        ${ev}
+      </li>`;
+    })
+    .join('');
+  const areasBlock = areaItems
+    ? `<div class="agent-cert-areas">
+    <div class="agent-cert-k">${esc(ca.areasHeading)}</div>
+    <ul class="cert-areas-list">${areaItems}</ul>
+  </div>`
+    : '';
+
+  const rationaleBlock = rationale
+    ? `<p class="rationale"><span class="label">${esc(ca.rationaleHeading)}:</span> ${esc(rationale)}</p>`
+    : '';
+
+  return `<section class="card skill agent-cert-item">${head}
+    ${why}
+    ${areasBlock}
+    ${rationaleBlock}
+  </section>`;
+}
+
+// The AGENT-CERTIFICATION section body: one skill-style card per certified
+// agent. Empty string when the project has no (non-`none`) agent certifications
+// — the caller then renders no section at all. Latest-first by generatedAt.
+function agentCertificationSectionsHtml(report, t) {
+  const certs =
+    report && report.agentCertifications && typeof report.agentCertifications === 'object'
+      ? report.agentCertifications
+      : {};
+  const names = Object.keys(certs).filter(
+    (n) => certs[n] && typeof certs[n] === 'object' && certs[n].level && certs[n].level !== 'none',
+  );
+  if (!names.length) return '';
+  names.sort((a, b) => String(certs[b].generatedAt || '').localeCompare(String(certs[a].generatedAt || '')));
+  return names.map((n) => agentCertificationItemHtml(n, certs[n], t)).join('\n');
 }
 
 // Agent classification (report req 2): presented AFFIRMATIVELY — Category · Role
@@ -484,14 +675,6 @@ function agentImprovementsHtml(card, t) {
     <div class="agent-improve-k">${esc(t.classification.improvementsHeading)}</div>
     <ul>${items}</ul>
   </div>`;
-}
-
-// Score band for the badge colour: >=80 strong, >=50 mid, else low. Mirrors the
-// terminal's green/amber/red banding (src/render-terminal.js#scoreColor).
-function scoreBand(score) {
-  if (score >= 80) return 'good';
-  if (score >= 50) return 'mid';
-  return 'low';
 }
 
 // Recursive: renders a card plus its children, indented and rail-connected,
@@ -1033,6 +1216,8 @@ const FOOTPRINT_CSS = `
     width:100%;max-width:400px;box-sizing:border-box}
   .agent-card-head{display:flex;align-items:flex-start;justify-content:space-between;
     gap:10px}
+  .agent-card-headline{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-width:0}
+  .agent-card-level{flex:none;font-size:11px;font-weight:700}
   .agent-title{font-size:18px;font-weight:700;letter-spacing:-.01em;line-height:1.3}
   .agent-badge{flex:none;font-size:11px;font-weight:600;letter-spacing:.02em;
     color:var(--faint);font-family:var(--font-mono);background:var(--track);
@@ -1058,6 +1243,10 @@ const FOOTPRINT_CSS = `
     flex:none}
   .chip.pill.model{color:var(--model-fg);background:var(--model-bg)}
   .chip.pill.model .dot{background:var(--model-fg)}
+  /* AI product (replaces the model chip) + the agent's wired tools/tech chips */
+  .chip.pill.product{color:var(--model-fg);background:var(--model-bg);font-weight:600}
+  .chip.pill.product .dot{background:var(--model-fg)}
+  .chip.pill.tool{color:var(--secondary-fg);background:var(--track)}
 
   /* ---- Agent classification + improvements (v4) ---- */
   .agent-class{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:2px}
@@ -1070,6 +1259,31 @@ const FOOTPRINT_CSS = `
   .agent-improve-k{font-size:12px;font-weight:600;color:var(--fg);margin-bottom:4px}
   .agent-improve ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:3px}
   .agent-improve li{font-size:13px;line-height:1.45;color:var(--muted)}
+  /* certify agents: level TAG on the card (compact) + the FULL verdict lives in
+     its own skill-style section (.agent-cert-item), mirroring Skill cert cards */
+  .agent-cert-item{display:flex;flex-direction:column;gap:12px}
+  .cert-level-badge{flex:none}
+  .agent-cert-k{font-size:12px;font-weight:600;color:var(--fg);margin-bottom:4px}
+  .chip.pill.cert-level{font-weight:700;color:var(--fg);background:var(--card,#fff)}
+  .chip.pill.cert-P4,.chip.pill.cert-P5{color:var(--ds-emerald-700,#047857);background:var(--ds-emerald-50,#ecfdf5)}
+  .chip.pill.cert-P1,.chip.pill.cert-P2,.chip.pill.cert-P3{color:var(--ds-amber-700,#b45309);background:var(--ds-amber-50,#fffbeb)}
+  .chip.pill.cert-none{color:var(--muted);background:var(--card,#fff)}
+  .agent-cert-why{display:flex;flex-direction:column;gap:6px}
+  .agent-cert-ev{display:flex;flex-direction:column;gap:2px}
+  .agent-cert-ev-k{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.02em}
+  .agent-cert-ev.verified .agent-cert-ev-k{color:var(--ds-emerald-700,#047857)}
+  .agent-cert-ev.unverified .agent-cert-ev-k{color:var(--ds-amber-700,#b45309)}
+  .agent-cert-ev ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:2px}
+  .agent-cert-ev li{font-size:13px;line-height:1.45;color:var(--muted)}
+  .agent-cert-none{margin:0;font-size:13px;color:var(--muted);font-style:italic}
+  .cert-areas-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+  .cert-area{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px}
+  .cert-area-name{color:var(--fg);font-weight:500}
+  .cert-area-ev{flex-basis:100%;font-size:12px;color:var(--muted);padding-left:2px}
+  .chip.pill.cert-area-tag{font-size:11px;color:var(--muted);background:var(--card,#fff)}
+  .cert-area.cert-tag-ok .chip.pill.cert-area-tag{color:var(--ds-emerald-700,#047857);background:var(--ds-emerald-50,#ecfdf5)}
+  .cert-area.cert-tag-mid .chip.pill.cert-area-tag{color:var(--ds-amber-700,#b45309);background:var(--ds-amber-50,#fffbeb)}
+  .cert-area.cert-tag-low .chip.pill.cert-area-tag{color:var(--ds-red-700,#b91c1c);background:var(--ds-red-50,#fef2f2)}
 
   /* ---- Progression ladder (levels 0-4 + tiers T0-T7, report req 1) ---- */
   /* Maturity-ladder card: give the content room to breathe and drop the border
@@ -1369,4 +1583,4 @@ function renderHtml(report, maturity, lang) {
 // same merged (structural + synthesis) tree as the HTML card tree. And
 // footprintSectionsHtml / FOOTPRINT_CSS are exported for the cumulative report
 // (src/report-store.js) to embed a project's footprint into the shared doc.
-module.exports = { renderHtml, buildAgentCardTree, footprintSectionsHtml, FOOTPRINT_CSS, FOOTPRINT_SCRIPT };
+module.exports = { renderHtml, buildAgentCardTree, footprintSectionsHtml, FOOTPRINT_CSS, FOOTPRINT_SCRIPT, deriveCertEvidence, agentCertificationItemHtml, agentCertificationSectionsHtml };

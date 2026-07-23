@@ -67,7 +67,7 @@ test('report: after footprint persisted state, materializes the HTML and prints 
 
     const { code, stdout } = runReport(['--root', root, '--lang', 'en', '--no-open'], { AI_FOOTPRINT_CONFIG_DIR: configDir });
     assert.equal(code, 0);
-    assert.match(stdout, /Your report is ready/);
+    assert.match(stdout, /✓ Report updated/); // clear "updated" notice (en)
     assert.match(stdout, /file:\/\/\S+report-[a-f0-9]{12}\.html/);
     // --no-open => no "Opening…" line.
     assert.equal(/Opening it in your browser/.test(stdout), false);
@@ -75,7 +75,7 @@ test('report: after footprint persisted state, materializes the HTML and prints 
     const htmlFile = fs.readdirSync(configDir).find((f) => /^report-[a-f0-9]{12}\.html$/.test(f));
     assert.ok(htmlFile, 'report materialized the per-project html');
     const html = fs.readFileSync(path.join(configDir, htmlFile), 'utf8');
-    assert.ok(html.includes('--bg:var(--ds-white)'), 'Shakers white theme');
+    assert.ok(html.includes('--bg:var(--white)'), 'mockup light theme (white background)');
   } finally {
     fs.rmSync(configDir, { recursive: true, force: true });
     fs.rmSync(root, { recursive: true, force: true });

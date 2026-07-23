@@ -59,25 +59,26 @@ test('requestAgentEvaluation: null when no endpoint (graceful degrade)', async (
   assert.equal(await requestAgentEvaluation({ agents: [] }, { endpoint: null }), null);
 });
 
-test('requestAgentEvaluation: valid response is normalized (score coerced int, clamped 0-100)', async () => {
+test('requestAgentEvaluation: valid response is normalized (NO score; rationale/classification/improvements)', async () => {
   const server = await startServer((_body, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ evaluations: [
-      { name: 'a', score: 87.6, rationale: 'clear boundaries' },
-      { name: 'b', score: 250, rationale: 'over cap' },
+      { name: 'a', rationale: 'clear boundaries' },
+      { name: 'b', rationale: 'thin' },
     ] }));
   });
   try {
     const r = await requestAgentEvaluation(buildAgentEvaluationRequest([{ name: 'a' }, { name: 'b' }], []), { endpoint: urlFor(server) });
     assert.equal(r.promptVersion, 'agent-eval-v1');
-    // ADR-026 `description` + v4 `classification`/`improvements` default when the
-    // server omits them (older backend) — classification degrades to unclassified.
+    // No numeric score anymore. classification/improvements default when the
+    // server omits them — classification degrades to unclassified.
     assert.deepEqual(r.evaluations[0], {
-      name: 'a', score: 88, rationale: 'clear boundaries', description: null,
+      name: 'a', rationale: 'clear boundaries', description: null,
       classification: { catalogId: null, category: null, role: null, level: null, method: 'unclassified' },
       improvements: [],
     });
-    assert.equal(r.evaluations[1].score, 100); // clamped
+    assert.equal('score' in r.evaluations[0], false);
+    assert.equal(r.evaluations.length, 2);
   } finally {
     server.close();
   }
@@ -165,12 +166,12 @@ test('requestAgentEvaluation: degradation by OMISSION — fewer evaluations than
   }
 });
 
-test('requestAgentEvaluation: entries without a usable score are dropped', async () => {
+test('requestAgentEvaluation: entries without a usable name are dropped (never trusts a nameless entry)', async () => {
   const server = await startServer((_body, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ evaluations: [
-      { name: 'a', score: 'not-a-number', rationale: 'x' },
-      { name: 'b', score: 55, rationale: 'y' },
+      { rationale: 'no name' },
+      { name: 'b', rationale: 'y' },
     ] }));
   });
   try {

@@ -77,8 +77,10 @@ async function run(argv = process.argv.slice(2), { ask } = {}) { // eslint-disab
 
   const opened = opts.open ? openPath(result.htmlPath) : false;
 
-  // OSC 8: clickable file:// link in iTerm2 &c.; plain URL elsewhere.
-  process.stdout.write(`\n  ${r.ready(oscLink(result.fileUrl))}\n`);
+  // Clear "the report was UPDATED" notice (fires once per run — this is the sole
+  // report write point, ADR-016). OSC 8: clickable file:// link where supported.
+  const updatedLabel = lang === 'es' ? 'Report actualizado' : 'Report updated';
+  process.stdout.write(`\n  ✓ ${updatedLabel} · ${oscLink(result.fileUrl)}\n`);
   if (opened) process.stdout.write(`  ${r.opening}\n`);
   process.stdout.write('\n');
 }

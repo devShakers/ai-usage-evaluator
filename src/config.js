@@ -266,20 +266,42 @@ function deriveEmailVerificationUrl(env, segment) {
 }
 
 /*
- * Agent-evaluation endpoint (ADR-016, agent definition-quality scoring). Same
- * ingest-sibling derivation as certify/OTP: the route lives in the Hub
- * `ai-footprint` module next to `reports`, so a single configured ingest
- * endpoint (env var / config.json / installer default) makes it resolve too —
- * no separate config. `AI_FOOTPRINT_AGENT_EVAL_ENDPOINT` is kept ONLY as an
- * explicit override for the rare case of a different mount. Unlike certify,
- * unset is NOT an error: the caller (src/agent-evaluation.js / bin/report.js)
- * treats a null endpoint as a graceful "no scores this run", exactly like
- * synthesis — the footprint report is always shown regardless.
+ * Agent-evaluation endpoint (footprint agent cards — RESTORED). Ingest-sibling
+ * derivation like the others; `AI_FOOTPRINT_AGENT_EVAL_ENDPOINT` is an optional
+ * override. Unset is NOT an error: the caller treats a null endpoint as a
+ * graceful "no card enrichment this run" (the footprint report is always shown).
+ * NOTE: the footprint cards no longer show a numeric score — the endpoint now
+ * returns classification + improvements + rationale + description only.
  */
 function getAgentEvaluationEndpoint(env = process.env) {
   const explicit = env.AI_FOOTPRINT_AGENT_EVAL_ENDPOINT;
   if (explicit && explicit.trim()) return explicit.trim();
   return deriveFromIngest(env, 'agent-evaluation');
+}
+
+// Graph-inference (LLM enrichment) endpoint for the LOCAL report (`map`).
+// Derived as a sibling of the ingest endpoint, exactly like agent-evaluation;
+// override with AI_FOOTPRINT_GRAPH_INFER_ENDPOINT. Null when ingest is unset →
+// `map` degrades to the deterministic graph (no enrichment).
+function getGraphInferenceEndpoint(env = process.env) {
+  const explicit = env.AI_FOOTPRINT_GRAPH_INFER_ENDPOINT;
+  if (explicit && explicit.trim()) return explicit.trim();
+  return deriveFromIngest(env, 'graph-inference');
+}
+
+/*
+ * Agent-certification endpoints (`certify agents`). Three ingest-siblings under
+ * `.../works/ai-footprint/agent-certification/{categories,followups,verdict}`,
+ * derived exactly like the other routes — a single configured ingest endpoint
+ * makes all three resolve. Unlike footprint's optional agent-evaluation, these
+ * back an interactive flow the user explicitly started: the caller treats a null
+ * endpoint as an actionable error (like certify skills), not a silent no-op.
+ */
+function getAgentCertificationFollowupsEndpoint(env = process.env) {
+  return deriveFromIngest(env, 'agent-certification/followups');
+}
+function getAgentCertificationVerdictEndpoint(env = process.env) {
+  return deriveFromIngest(env, 'agent-certification/verdict');
 }
 
 function getEmailVerificationRequestUrl(env = process.env) {
@@ -351,6 +373,9 @@ module.exports = {
   getRoadmapEndpoint,
   getCertifyEndpoint,
   getAgentEvaluationEndpoint,
+  getGraphInferenceEndpoint,
+  getAgentCertificationFollowupsEndpoint,
+  getAgentCertificationVerdictEndpoint,
   getEmailVerificationRequestUrl,
   getEmailVerificationVerifyUrl,
   getSuperadminSessionEndpoint,

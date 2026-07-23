@@ -66,7 +66,16 @@ FILES=(
   "bin/certify.js"
   "bin/share.js"
   "bin/report-html.js"
+  "bin/map.js"
   "bin/superadmin.js"
+)
+
+# Non-.js assets under src/ that the src/*.js discovery below does NOT pick up
+# but that modules read at runtime (e.g. the LOCAL report HTML template that
+# render-graph.js loads). Ship these explicitly.
+ASSETS=(
+  "src/templates/graph-report.html"
+  "src/templates/report-sheet.html"
 )
 
 say()  { printf "  %b\n" "$1"; }
@@ -174,6 +183,16 @@ for f in "${SRC_FILES[@]}"; do
   fi
   say "    ${G}+${N} src/$f"
 done
+for f in "${ASSETS[@]}"; do
+  dest="$INSTALL_DIR/$f"
+  mkdir -p "$(dirname "$dest")"
+  if [ "$LOCAL" -eq 1 ]; then
+    cp "$SCRIPT_DIR/$f" "$dest" || die "Could not copy $f"
+  else
+    curl -fsSL "$RAW/$f" -o "$dest" || die "Could not download $f\n    Check your connection or the script's OWNER/REPO/BRANCH config."
+  fi
+  say "    ${G}+${N} $f"
+done
 
 # ─── Create the single `sh-eval` launcher (ADR-014) ─────────────────────────
 # The branded REPL is the ONLY command. bin/report.js / bin/certify.js are
@@ -181,6 +200,18 @@ done
 SHIM="$BIN_DIR/sh-eval"
 cat > "$SHIM" <<EOF
 #!/usr/bin/env bash
+# Runtime prerequisite preflight — a CLEAR message instead of a cryptic
+# "node: command not found" / modern-syntax SyntaxError if this install is run
+# on a machine where Node is missing or too old (e.g. copied elsewhere).
+if ! command -v node >/dev/null 2>&1; then
+  printf '\n  sh-eval: Node.js was not found on your PATH.\n  Install Node 18+ from https://nodejs.org and re-run.\n\n' >&2
+  exit 1
+fi
+_nm="\$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
+if [ "\${_nm:-0}" -lt 18 ] 2>/dev/null; then
+  printf '\n  sh-eval: Node 18+ is required (found %s).\n  Update Node from https://nodejs.org and re-run.\n\n' "\$(node -v 2>/dev/null || echo none)" >&2
+  exit 1
+fi
 exec node "$INSTALL_DIR/bin/sh-eval.js" "\$@"
 EOF
 chmod +x "$SHIM"

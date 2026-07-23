@@ -423,6 +423,96 @@ async function handle(req, res) {
     return send(res, 200, { evaluations });
   }
 
+  /* ---- certify agents (skill-code-certification): 2 deterministic stub steps ----
+   * (The /categories step was removed — the category is derived server-side at
+   *  verdict from the agent name.) */
+  const AGENT_CERT_CATALOG = {
+    'dev-3': { catalogId: 'dev-3', category: 'developer', role: 'Code Reviewer', level: 'L1' },
+    'dev-2': { catalogId: 'dev-2', category: 'developer', role: 'QA Automation Engineer', level: 'L2' },
+    'data-1': { catalogId: 'data-1', category: 'data', role: 'SQL Query Writer', level: 'L1' },
+  };
+  // Mirror the real backend DTO cap (AgentCertAgentInputDto.definition,
+  // MAX_AGENT_CERT_DEFINITION_CHARS). The permissive stub used to accept ANY size
+  // and hid two 400s from us — enforce it here so a future smoke catches an
+  // over-limit definition instead of it only blowing up against :3001.
+  const MAX_AGENT_CERT_DEFINITION_CHARS = 50000;
+  const overLimitDefinition = (body) => {
+    const def = String((body && body.agent && body.agent.definition) || '');
+    return def.length > MAX_AGENT_CERT_DEFINITION_CHARS;
+  };
+  const definitionTooLong = () => ({
+    statusCode: 400,
+    message: [`definition must be shorter than or equal to ${MAX_AGENT_CERT_DEFINITION_CHARS} characters`],
+    error: 'Bad Request',
+  });
+
+  if (method === 'POST' && url === '/works/ai-footprint/agent-certification/followups') {
+    const body = await readJson(req);
+    if (overLimitDefinition(body)) return send(res, 400, definitionTooLong());
+    const es = body && body.locale !== 'en';
+    const questions = es
+      ? ['¿Qué pasa si el agente falla?', '¿Qué decidiste NO delegarle?']
+      : ['What happens if the agent fails?', 'What did you decide NOT to delegate to it?'];
+    console.log('[agent-cert/followups] →', questions.length);
+    return send(res, 200, { questions });
+  }
+  if (method === 'POST' && url === '/works/ai-footprint/agent-certification/verdict') {
+    const body = await readJson(req);
+    if (overLimitDefinition(body)) return send(res, 400, definitionTooLong());
+    const es = body && body.locale !== 'en';
+    // Category is DERIVED server-side (mirrors the real backend's deterministic
+    // matcher) from the agent NAME — the client no longer sends chosenCategoryId.
+    const agentName = String((body && body.agent && body.agent.name) || '').toLowerCase();
+    const derivedId = /review/.test(agentName)
+      ? 'dev-3'
+      : /test|qa/.test(agentName)
+        ? 'dev-2'
+        : /sql|data|query/.test(agentName)
+          ? 'data-1'
+          : null;
+    const chosen = derivedId ? AGENT_CERT_CATALOG[derivedId] : null;
+    const def = String((body && body.agent && body.agent.definition) || '');
+    const answered = String((body && body.qualification && body.qualification.decisions) || '').length;
+    // Deterministic tags from signals: richer definition + real "decisions"
+    // answer → more verified areas. NOTE the stub returns `level` directly (the
+    // REAL backend derives it from the tags via the fixed formula).
+    const strong = def.length >= 120 && answered >= 20;
+    const tag = strong ? 'verified' : def.length >= 60 ? 'partial' : 'claimed';
+    const AREAS = ['purpose_fit', 'design_ownership', 'boundaries_guardrails', 'failure_handling', 'operation_evolution'];
+    const areas = AREAS.map((area, i) => ({
+      area,
+      // First areas verified when strong; taper off — exercises mixed tags.
+      tag: strong ? (i < 4 ? 'verified' : 'partial') : tag,
+      evidence: es ? 'Derivado de la definición (stub).' : 'Derived from the definition (stub).',
+    }));
+    // Mirror the real server formula (aggregate-agent-level.util): P5 only if ALL
+    // five areas verified (strict gate); else ratio r=(verified+0.5·partial)/A
+    // over applicable (non-n_a) areas, floor bands P4≥.80 P3≥.60 P2≥.35 P1≥.15.
+    const applicable = areas.filter((a) => a.tag !== 'n_a');
+    const points = applicable.reduce((s, a) => s + (a.tag === 'verified' ? 1 : a.tag === 'partial' ? 0.5 : 0), 0);
+    let level;
+    if (areas.every((a) => a.tag === 'verified')) level = 'P5';
+    else {
+      const r = applicable.length ? points / applicable.length : 0;
+      level = r >= 0.8 ? 'P4' : r >= 0.6 ? 'P3' : r >= 0.35 ? 'P2' : r >= 0.15 ? 'P1' : 'none';
+    }
+    console.log(`[agent-cert/verdict] agent=${body && body.agent && body.agent.name} level=${level}`);
+    return send(res, 200, {
+      agentName: (body && body.agent && body.agent.name) || 'agent',
+      category: chosen ? chosen.category : null,
+      role: chosen ? chosen.role : null,
+      level,
+      areas,
+      verifiedEvidence: strong
+        ? [es ? 'La definición incluye el guardrail que mencionaste.' : 'The definition includes the guardrail you mentioned.']
+        : [],
+      unverifiedEvidence: [es ? 'Afirmaste reintentos; la definición no los recoge.' : 'You claimed retries; the definition does not cover them.'],
+      rationale: es
+        ? 'Veredicto stub determinista (sin LLM); el servidor real es shakers-hub-backend (gemini-2.5-flash).'
+        : 'Deterministic stub verdict (no LLM); the real server is shakers-hub-backend (gemini-2.5-flash).',
+    });
+  }
+
   send(res, 404, { error: 'no encontrado' });
 }
 

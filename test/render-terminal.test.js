@@ -69,20 +69,23 @@ test('renderTerminal: the agents section is OMITTED entirely when there are no a
 
 // ADR-016: one line per agent — name (+ symbolic name) + model + hierarchy. NO
 // tools list, NO description sub-line (those stay in the HTML report).
-test('renderTerminal: renders each agent name + model; no tools list, no "Reports to:" line', () => {
+test('renderTerminal: renders each agent name + AI product + tools; NO model, no "Reports to:" line', () => {
   const report = {
     ...BASE_REPORT,
     agents: [
-      { name: 'orchestrator', tools: ['Read', 'Task'], model: 'claude-opus-4', parent: null },
-      { name: 'backend-dev', tools: ['Read', 'Write'], model: 'claude-sonnet-4', parent: 'orchestrator' },
+      { name: 'orchestrator', tools: ['Read', 'Task'], aiProduct: 'claude-code', model: 'claude-opus-4', parent: null },
+      { name: 'backend-dev', tools: ['Read', 'Write'], aiProduct: 'claude-code', model: 'claude-sonnet-4', parent: 'orchestrator' },
     ],
   };
   const html = strip(renderTerminal(report, MATURITY_NO_TIER, 'es'));
   assert.match(html, /orchestrator/);
   assert.match(html, /backend-dev/);
-  assert.match(html, /claude-opus-4/);
-  assert.match(html, /claude-sonnet-4/);
-  assert.equal(html.includes('Read, Task'), false);
+  // AI product replaces the model; the model string must NOT appear.
+  assert.match(html, /\[Claude Code\]/);
+  assert.equal(html.includes('claude-opus-4'), false);
+  assert.equal(html.includes('claude-sonnet-4'), false);
+  // The agent's wired tools ARE surfaced now (the per-card "technologies").
+  assert.match(html, /Read · Task/);
   assert.equal(html.includes('Reporta a:'), false);
 });
 
@@ -102,24 +105,25 @@ test('renderTerminal: nested subagents drawn with stacked ↓ per depth', () => 
 });
 
 // ADR-016 agent evaluation: compact score + usage shown per line (join by NAME).
-test('renderTerminal: shows the definition-quality score and local usage per agent (joined by name)', () => {
+test('renderTerminal: agent cards show NO numeric score AND NO usage signal (both removed)', () => {
   const report = {
     ...BASE_REPORT,
     agents: [
-      { name: 'scored', tools: [], model: 'opus', parent: null },
-      { name: 'unscored', tools: [], model: 'haiku', parent: null },
+      { name: 'alpha', tools: [], aiProduct: 'claude-code', model: 'opus', parent: null },
+      { name: 'beta', tools: [], aiProduct: 'claude-code', model: 'haiku', parent: null },
     ],
-    // Fewer evaluations than agents (backend drops what it couldn't score) —
-    // matched by name, NOT index, so `unscored` renders with no number.
-    agentEvaluation: { evaluations: [{ name: 'scored', score: 88, rationale: 'clear' }], promptVersion: 'agent-eval-v1' },
-    agentUsage: { available: true, byAgent: { scored: 4, unscored: 0 } },
+    agentEvaluation: { evaluations: [{ name: 'alpha', rationale: 'clear' }], promptVersion: 'agent-eval-v1' },
+    // Usage is provided but must NOT render anymore.
+    agentUsage: { available: true, byAgent: { alpha: 4, beta: 0 } },
   };
   const html = strip(renderTerminal(report, MATURITY_NO_TIER, 'es'));
-  assert.match(html, /scored.*88\/100/); // scored agent shows its number
-  assert.match(html, /usado 4×/);
-  assert.match(html, /sin uso local/);
-  // `unscored` line present but carries no "/100" score badge.
-  assert.match(html, /unscored/);
+  assert.match(html, /alpha/);
+  assert.match(html, /beta/);
+  // Usage signal is GONE from the cards.
+  assert.equal(html.includes('usado 4×'), false);
+  assert.equal(html.includes('sin uso local'), false);
+  // Per-agent numeric score badge is GONE (maturity meter's own /100 is separate).
+  assert.equal(/alpha[^\n]*\d+\/100/.test(html), false);
 });
 
 test('renderTerminal: a note is shown when local usage history is unavailable', () => {

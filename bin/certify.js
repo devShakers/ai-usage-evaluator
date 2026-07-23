@@ -32,6 +32,7 @@
  */
 
 const { parseCertifyArgs } = require('../src/certify-args');
+const { runCertifyAgents } = require('../src/certify-agents');
 const { detectReportLang, getCatalog } = require('../src/i18n');
 const { getCertifyEndpoint, loadSuperadminSession } = require('../src/config');
 const { detectTechnologies } = require('../src/tech-detector');
@@ -392,7 +393,7 @@ async function runCertifyPhase({ endpoint, email, resolveResult, root, opts, cat
 // consent / email / OTP / selection all read through it, and this function
 // NEVER closes it (the REPL owns its lifecycle). Standalone (no `ask`) it
 // creates and closes its own, exactly as before.
-async function run(argv = process.argv.slice(2), { ask: injectedAsk = null } = {}) {
+async function runCertifySkills(argv = [], { ask: injectedAsk = null } = {}) {
   const opts = parseCertifyArgs(argv);
   const lang = opts.lang || detectReportLang();
   const catalog = getCatalog(lang);
@@ -493,7 +494,43 @@ async function run(argv = process.argv.slice(2), { ask: injectedAsk = null } = {
   }
 }
 
-module.exports = { run };
+// Subcommand router (skill-code-certification): `certify skills` (the flow
+// above, moved) + `certify agents` (the interactive agent-certification flow).
+// Bare `certify` = a chooser in a TTY, usage in non-TTY. Back-compat: old
+// `certify --all`/`--skills` scripts must move to `certify skills ...`.
+async function run(argv = process.argv.slice(2), { ask: injectedAsk = null } = {}) {
+  const sub = argv[0];
+  if (sub === 'skills') return runCertifySkills(argv.slice(1), { ask: injectedAsk });
+  if (sub === 'agents') return runCertifyAgents(argv.slice(1), { ask: injectedAsk });
+
+  const lang = detectReportLang();
+  const catalog = getCatalog(lang);
+  const cc = catalog.certify;
+  const stdinIsTTY = !!process.stdin.isTTY;
+
+  // Non-TTY with no explicit subcommand: print usage, exit 0 (never guess).
+  if (!stdinIsTTY) {
+    process.stdout.write(`\n  ${cc.flowUsage}\n\n`);
+    return;
+  }
+
+  // TTY: interactive chooser.
+  const ask = injectedAsk || createStdinAsk();
+  try {
+    process.stdout.write(
+      `\n  ${cc.flowHeading}\n    1) ${cc.flowSkills}\n    2) ${cc.flowAgents}\n`,
+    );
+    const answer = (await ask(`  ${cc.flowPrompt}`)).trim();
+    if (answer === '1') return runCertifySkills(argv.slice(1), { ask });
+    if (answer === '2') return runCertifyAgents(argv.slice(1), { ask });
+    // empty / anything else → cancel.
+    return;
+  } finally {
+    if (!injectedAsk) ask.close();
+  }
+}
+
+module.exports = { run, runCertifySkills, runCertifyAgents };
 
 // Only auto-run when executed directly (`node bin/certify.js`). Guarded so the
 // REPL can `require()` this module and call `run()` without a second execution
