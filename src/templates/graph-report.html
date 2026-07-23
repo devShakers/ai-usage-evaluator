@@ -76,7 +76,7 @@ html[data-theme="dark"]  .brand svg.wordmark path{fill:#e6ebf2}
   background:var(--surface);border-bottom:1px solid var(--border)}
 /* LOUD degrade banner — theme-independent amber/red so a reduced fallback graph
    can never be mistaken for the full codebase analysis. Hidden on normal runs. */
-.degrade-banner{position:fixed;top:100px;left:0;right:0;z-index:40;
+.degrade-banner{position:fixed;top:56px;left:0;right:0;z-index:40;
   display:flex;align-items:center;gap:9px;padding:10px 18px;
   font-size:12.5px;font-weight:700;line-height:1.35;
   background:#7c2d12;color:#fff;border-bottom:2px solid #f59e0b;
@@ -95,13 +95,13 @@ html[data-theme="dark"]  .brand svg.wordmark path{fill:#e6ebf2}
 .pill .mono{width:15px;height:15px;border-radius:4px;display:grid;place-items:center;font-size:9px;font-weight:800;color:#fff}
 
 /* stage */
-#stage{position:fixed;inset:100px 0 0 264px;background:var(--canvas);
+#stage{position:fixed;inset:56px 0 0 264px;background:var(--canvas);
   background-image:radial-gradient(var(--grid) 1px,transparent 1px);background-size:26px 26px;
   overflow:hidden;cursor:grab}
 #stage.panning{cursor:grabbing}
 /* Persistent LEFT RAIL (foglamp-style): Models / Tools / Integrations, always
    visible, larger than the old top bar. Integrations show brand favicons. */
-.rail{position:fixed;left:0;top:100px;bottom:0;width:264px;z-index:28;overflow-y:auto;
+.rail{position:fixed;left:0;top:56px;bottom:0;width:264px;z-index:28;overflow-y:auto;
   background:var(--surface);border-right:1px solid var(--border);padding:16px 15px 24px}
 .rail .rsec{margin-bottom:20px}
 .rail .rh{font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);
@@ -285,7 +285,6 @@ html[data-theme="dark"] .area .bar{background:#232b3a}
   <button class="hbtn" id="btnTheme">◐ Tema</button>
 </header>
 
-<div class="stats" id="stats"></div>
 <div class="degrade-banner" id="degradeBanner" hidden></div>
 <aside class="rail" id="rail"></aside>
 
@@ -341,7 +340,7 @@ const KIND={
   store:{c:"#64748b",tag:"store",g:"▤"}, external:{c:"#b06a86",tag:"external",g:"↗"}
 };
 const NS="http://www.w3.org/2000/svg";
-const NW=212, NH=60, NH_AGENT=90, IY=30;
+const NW=212, NH=60, NH_AGENT=98, IY=30;
 // Agents are the PROTAGONISTS (foglamp): when an agent carries a description we
 // give its node extra height to render it, so the agentic layer reads first.
 // Agents are taller (protagonists): full height with a description, still
@@ -477,10 +476,11 @@ DATA.graph.nodes.forEach((n,i)=>{
     mono.textContent=k.g||(n.domain?n.domain[0]:n.label[0]).toUpperCase();
     g2.appendChild(mono);
   }
-  // Agent PROTAGONIST: render its description (content-free) inside the node.
+  // Agent PROTAGONIST: render its description (content-free) inside the node,
+  // STACKED BELOW the model chip (which occupies y44–59) so they never collide.
   if(n.kind==='agent'&&n.detail){
     wrap2(n.detail,30).forEach((line,li)=>{
-      const d=el('text',{class:'ndesc',x:14,y:64+li*13});d.textContent=line;g2.appendChild(d);
+      const d=el('text',{class:'ndesc',x:14,y:74+li*12});d.textContent=line;g2.appendChild(d);
     });
   }
   // kind tag lives on its OWN top row (never shares a line with the title)
@@ -584,12 +584,8 @@ document.getElementById('pTag').textContent=DATA.project.tagline;
 const domColor=d=>{let h=0;for(const c of(d||''))h=(h*31+c.charCodeAt(0))>>>0;return`hsl(${h%360} 42% 45%)`;};
 // LOUD fallback banner — shown only when the full AI analysis didn't run.
 if(DATA.degrade&&DATA.degrade.banner){const b=document.getElementById('degradeBanner');b.textContent=DATA.degrade.banner;b.hidden=false;}
-const s=DATA.stats;
-document.getElementById('stats').innerHTML=
-  `<div class="stat"><b>${s.agents}</b><span>agentes</span></div>
-   <div class="stat"><b>${s.models}</b><span>modelos</span></div>
-   <div class="stat"><b>${s.tools}</b><span>tools</span></div>
-   <div class="stat"><b>${s.integrations}</b><span>integraciones</span></div>`;
+// Top counts bar removed (user: "si quiere saber los números que cuente") — the
+// stage reclaims that vertical space; the rail keeps models/tools/integrations.
 // LEFT RAIL (foglamp): Models / Tools / Integrations — always visible. Integrations
 // show their brand favicon (already fetched); models/tools get a per-kind chip.
 const fav=DATA.favicons||{};
