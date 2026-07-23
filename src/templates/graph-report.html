@@ -95,10 +95,26 @@ html[data-theme="dark"]  .brand svg.wordmark path{fill:#e6ebf2}
 .pill .mono{width:15px;height:15px;border-radius:4px;display:grid;place-items:center;font-size:9px;font-weight:800;color:#fff}
 
 /* stage */
-#stage{position:fixed;inset:100px 0 0 0;background:var(--canvas);
+#stage{position:fixed;inset:100px 0 0 264px;background:var(--canvas);
   background-image:radial-gradient(var(--grid) 1px,transparent 1px);background-size:26px 26px;
   overflow:hidden;cursor:grab}
 #stage.panning{cursor:grabbing}
+/* Persistent LEFT RAIL (foglamp-style): Models / Tools / Integrations, always
+   visible, larger than the old top bar. Integrations show brand favicons. */
+.rail{position:fixed;left:0;top:100px;bottom:0;width:264px;z-index:28;overflow-y:auto;
+  background:var(--surface);border-right:1px solid var(--border);padding:16px 15px 24px}
+.rail .rsec{margin-bottom:20px}
+.rail .rh{font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);
+  margin:0 0 9px;display:flex;align-items:center;gap:6px}
+.rail .rh .rc{font-size:10px;font-weight:700;color:var(--muted);background:var(--surface-2);
+  border-radius:var(--r-full);padding:1px 7px;margin-left:auto}
+.rail .ri{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--r-md);
+  background:var(--surface-2);border:1px solid var(--border);margin-bottom:6px;font-size:12.5px;font-weight:600;color:var(--fg)}
+.rail .ri .ic{width:22px;height:22px;border-radius:6px;flex:none;display:grid;place-items:center;
+  font-size:12px;font-weight:800;color:#fff;overflow:hidden}
+.rail .ri .ic img{width:100%;height:100%;object-fit:contain;border-radius:6px;background:#fff}
+.rail .ri .sub{font-size:10.5px;font-weight:500;color:var(--faint);margin-left:auto}
+.rail .empty{font-size:11.5px;color:var(--faint);font-style:italic}
 #svg{width:100%;height:100%;display:block;touch-action:none}
 
 .gp-band{fill:color-mix(in srgb,var(--emphasis) 7%,transparent);
@@ -125,6 +141,9 @@ html[data-theme="dark"]  .brand svg.wordmark path{fill:#e6ebf2}
 .node .mono{font:800 12px/1 var(--font-sans);fill:#fff}
 .node .lbl{font:700 12.5px/1 var(--font-sans);fill:var(--fg)}
 .node .sub{font:500 9.5px/1 var(--font-mono);fill:var(--faint)}
+.node .ndesc{font:500 9px/1.3 var(--font-sans);fill:var(--muted)}
+/* Agents are the protagonists — a slightly stronger card so the agentic layer reads first. */
+.node.is-agent .box{stroke:color-mix(in srgb,var(--emphasis) 45%,var(--border-strong));stroke-width:1.8}
 .node .kindtag{font:800 8px/1 var(--font-sans);letter-spacing:.09em;text-transform:uppercase}
 .node:hover .box{stroke:var(--emphasis);stroke-width:2}
 .node.sel .box{stroke:var(--emphasis);stroke-width:2.5;filter:drop-shadow(0 0 6px color-mix(in srgb,var(--emphasis) 55%,transparent))}
@@ -150,11 +169,14 @@ html[data-theme="dark"]  .brand svg.wordmark path{fill:#e6ebf2}
 .tool{width:32px;height:32px;border-radius:var(--r-md);border:none;background:transparent;color:var(--muted);
   font-size:16px;font-weight:700;cursor:pointer;display:grid;place-items:center}
 .tool:hover{background:var(--surface-2);color:var(--fg)}
-.legend{position:fixed;right:18px;bottom:18px;z-index:35;display:flex;flex-wrap:wrap;gap:4px 10px;max-width:360px;
-  padding:9px 12px;background:color-mix(in srgb,var(--surface) 92%,transparent);
-  border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--node-shadow)}
+/* Legend CENTERED (foglamp-style) — horizontally centered over the stage
+   (which starts after the 264px rail), pinned near the bottom. */
+.legend{position:fixed;left:calc(264px + (100vw - 264px)/2);transform:translateX(-50%);bottom:16px;
+  z-index:35;display:flex;flex-wrap:wrap;justify-content:center;gap:5px 12px;max-width:min(760px,calc(100vw - 300px));
+  padding:9px 14px;background:color-mix(in srgb,var(--surface) 94%,transparent);
+  border:1px solid var(--border);border-radius:var(--r-full);box-shadow:var(--node-shadow)}
 .legend .li{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:var(--muted)}
-.legend .sw{width:9px;height:9px;border-radius:3px}
+.legend .sw{width:15px;height:15px;border-radius:4px;display:grid;place-items:center;font-size:9px;font-weight:800;color:#fff}
 .legend .ed{width:16px;height:0;border-top-width:2px;border-top-style:solid}
 
 /* panels */
@@ -250,6 +272,7 @@ html[data-theme="dark"] .area .bar{background:#232b3a}
 
 <div class="stats" id="stats"></div>
 <div class="degrade-banner" id="degradeBanner" hidden></div>
+<aside class="rail" id="rail"></aside>
 
 <div id="stage">
   <svg id="svg"><defs>
@@ -303,7 +326,16 @@ const KIND={
   store:{c:"#64748b",tag:"store",g:"▤"}, external:{c:"#b06a86",tag:"external",g:"↗"}
 };
 const NS="http://www.w3.org/2000/svg";
-const NW=212, NH=60;
+const NW=212, NH=60, NH_AGENT=90, IY=30;
+// Agents are the PROTAGONISTS (foglamp): when an agent carries a description we
+// give its node extra height to render it, so the agentic layer reads first.
+const nodeH=(n)=>(n && n.kind==='agent' && n.detail)?NH_AGENT:NH;
+// Wrap a short description into up to 2 lines of ~N chars (word-boundary).
+function wrap2(s,per){s=String(s||'').trim();if(!s)return[];const w=s.split(/\s+/);const out=[];let cur='';
+  for(const t of w){if((cur+' '+t).trim().length<=per){cur=(cur+' '+t).trim();}else{if(cur)out.push(cur);cur=t;if(out.length===1&&cur.length>per){break;}}}
+  if(cur&&out.length<2)out.push(cur);
+  if(out.length===2&&(w.join(' ').length>out.join(' ').length))out[1]=out[1].replace(/.{1}$/,'…');
+  return out.slice(0,2);}
 const byId={}; DATA.graph.nodes.forEach(n=>byId[n.id]=n);
 const el=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -313,7 +345,7 @@ const clip=(s,m)=>{s=String(s||'');return s.length>m?s.slice(0,m-1)+'…':s;};
 const g=new dagre.graphlib.Graph({multigraph:true})
   .setGraph({rankdir:"LR",nodesep:22,edgesep:12,ranksep:96,marginx:60,marginy:50,ranker:"network-simplex"})
   .setDefaultEdgeLabel(()=>({}));
-DATA.graph.nodes.forEach(n=>g.setNode(n.id,{width:NW,height:NH}));
+DATA.graph.nodes.forEach(n=>g.setNode(n.id,{width:NW,height:nodeH(n)}));
 DATA.graph.edges.forEach((e,i)=>g.setEdge(e.from,e.to,{},"e"+i));
 dagre.layout(g);
 // dagre gives node CENTER; convert to top-left. Expose positions for verification.
@@ -384,21 +416,29 @@ DATA.graph.edges.forEach((e,i)=>{
 const nodeEls={};
 DATA.graph.nodes.forEach((n,i)=>{
   const p=pos[n.id], k=KIND[n.kind]||KIND.service;
-  const outer=el('g',{class:'node',transform:`translate(${p.x},${p.y})`,'data-id':n.id});
+  const nh=nodeH(n);
+  const outer=el('g',{class:'node'+(n.kind==='agent'?' is-agent':''),transform:`translate(${p.x},${p.y})`,'data-id':n.id});
   const g2=el('g',{class:'ni'+(reduce?'':' animate')}); if(!reduce)g2.style.animationDelay=(i*0.02)+'s';
-  g2.appendChild(el('rect',{class:'box',x:0,y:0,width:NW,height:NH,rx:12}));
-  g2.appendChild(el('rect',{x:0,y:10,width:4,height:NH-20,rx:2,fill:k.c}));
+  g2.appendChild(el('rect',{class:'box',x:0,y:0,width:NW,height:nh,rx:12}));
+  g2.appendChild(el('rect',{x:0,y:10,width:4,height:nh-20,rx:2,fill:k.c}));
+  // Icon TOP-aligned (fixed IY) so it lines up with the title row on tall nodes.
   if(DATA.favicons&&n.domain&&DATA.favicons[n.domain]){
-    g2.appendChild(el('rect',{x:14,y:NH/2-11,width:22,height:22,rx:7,fill:'#fff',stroke:k.c,'stroke-width':1.2}));
-    const im=el('image',{x:15,y:NH/2-10,width:20,height:20,href:DATA.favicons[n.domain],preserveAspectRatio:'xMidYMid meet'});im.style.clipPath='inset(0 round 6px)';g2.appendChild(im);
+    g2.appendChild(el('rect',{x:14,y:IY-11,width:22,height:22,rx:7,fill:'#fff',stroke:k.c,'stroke-width':1.2}));
+    const im=el('image',{x:15,y:IY-10,width:20,height:20,href:DATA.favicons[n.domain],preserveAspectRatio:'xMidYMid meet'});im.style.clipPath='inset(0 round 6px)';g2.appendChild(im);
   }else{
     // No brand favicon (non-domain kind, or fetch unavailable/offline): a
     // per-kind GLYPH on the colour chip, so the node still reads as an icon —
     // falls back to an initial only if the kind somehow has no glyph.
-    g2.appendChild(el('rect',{x:14,y:NH/2-11,width:22,height:22,rx:7,fill:k.c}));
-    const mono=el('text',{class:'mono',x:25,y:NH/2+4,'text-anchor':'middle'});
+    g2.appendChild(el('rect',{x:14,y:IY-11,width:22,height:22,rx:7,fill:k.c}));
+    const mono=el('text',{class:'mono',x:25,y:IY+4,'text-anchor':'middle'});
     mono.textContent=k.g||(n.domain?n.domain[0]:n.label[0]).toUpperCase();
     g2.appendChild(mono);
+  }
+  // Agent PROTAGONIST: render its description (content-free) inside the node.
+  if(n.kind==='agent'&&n.detail){
+    wrap2(n.detail,30).forEach((line,li)=>{
+      const d=el('text',{class:'ndesc',x:14,y:64+li*13});d.textContent=line;g2.appendChild(d);
+    });
   }
   // kind tag lives on its OWN top row (never shares a line with the title)
   const kt=el('text',{class:'kindtag',x:NW-12,y:16,'text-anchor':'end',fill:k.c});kt.textContent=k.tag;g2.appendChild(kt);
@@ -500,11 +540,18 @@ document.getElementById('stats').innerHTML=
   `<div class="stat"><b>${s.agents}</b><span>agentes</span></div>
    <div class="stat"><b>${s.models}</b><span>modelos</span></div>
    <div class="stat"><b>${s.tools}</b><span>tools</span></div>
-   <div class="stat"><b>${s.integrations}</b><span>integraciones</span></div>
-   <div class="stat-sep"></div>
-   <div class="toplist"><span class="lbl">Modelos</span>${DATA.topModels.map(m=>`<span class="pill"><span class="mono" style="background:${domColor(m.domain)}">${m.label[0]}</span>${esc(m.label)}</span>`).join('')}</div>
-   <div class="stat-sep"></div>
-   <div class="toplist"><span class="lbl">Integr.</span>${DATA.topIntegrations.map(t=>`<span class="pill"><span class="mono" style="background:${domColor(t.domain)}">${t.label[0]}</span>${esc(t.label)}</span>`).join('')}</div>`;
+   <div class="stat"><b>${s.integrations}</b><span>integraciones</span></div>`;
+// LEFT RAIL (foglamp): Models / Tools / Integrations — always visible. Integrations
+// show their brand favicon (already fetched); models/tools get a per-kind chip.
+const fav=DATA.favicons||{};
+const railSec=(title,count,body)=>`<div class="rsec"><div class="rh">${title}<span class="rc">${count}</span></div>${body||'<div class="empty">—</div>'}</div>`;
+const modelRow=m=>`<div class="ri"><span class="ic" style="background:${domColor(m.domain)}">${esc(String(m.label||'?')[0]).toUpperCase()}</span>${esc(m.label)}${m.domain?`<span class="sub">${esc(m.domain)}</span>`:''}</div>`;
+const toolRow=t=>`<div class="ri"><span class="ic" style="background:${KIND.tool.c}">${KIND.tool.g}</span>${esc(t.label)}</div>`;
+const integRow=t=>{const f=t.domain&&fav[t.domain];const inner=f?`<img src="${f}" alt="">`:esc(String(t.label||'?')[0]).toUpperCase();return `<div class="ri"><span class="ic" style="${f?'':`background:${KIND.external.c}`}">${inner}</span>${esc(t.label)}${t.domain?`<span class="sub">${esc(t.domain)}</span>`:''}</div>`;};
+document.getElementById('rail').innerHTML=
+  railSec('Modelos',DATA.topModels.length,DATA.topModels.map(modelRow).join(''))+
+  railSec('Herramientas',DATA.topTools.length,DATA.topTools.map(toolRow).join(''))+
+  railSec('Integraciones',DATA.topIntegrations.length,DATA.topIntegrations.map(integRow).join(''));
 
 const f=DATA.footprint;
 document.getElementById('footBody').innerHTML=
@@ -545,7 +592,7 @@ document.getElementById('certBody').innerHTML= hasCerts
     +`${c.pnScaleNote?`<div class="callout" style="margin-top:16px;font-size:11.5px">${esc(c.pnScaleNote)}</div>`:''}`
   : `<div class="callout" style="font-size:12.5px">${esc(L.empty||'No certifications for this project yet.')}</div>`;
 document.getElementById('legend').innerHTML=
-  Object.entries(KIND).map(([k,v])=>`<span class="li"><span class="sw" style="background:${v.c}"></span>${v.tag}</span>`).join('')+
+  Object.entries(KIND).map(([k,v])=>`<span class="li"><span class="sw" style="background:${v.c}">${v.g||''}</span>${v.tag}</span>`).join('')+
   `<span class="li"><span class="ed" style="border-color:var(--ds-teal-400)"></span>calls</span>
    <span class="li"><span class="ed" style="border-color:var(--ds-lime-600);border-top-style:dashed"></span>triggers</span>
    <span class="li"><span class="ed" style="border-color:#8aa0b4"></span>writes</span>
