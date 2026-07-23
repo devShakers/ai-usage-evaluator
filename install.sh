@@ -200,6 +200,18 @@ done
 SHIM="$BIN_DIR/sh-eval"
 cat > "$SHIM" <<EOF
 #!/usr/bin/env bash
+# Runtime prerequisite preflight — a CLEAR message instead of a cryptic
+# "node: command not found" / modern-syntax SyntaxError if this install is run
+# on a machine where Node is missing or too old (e.g. copied elsewhere).
+if ! command -v node >/dev/null 2>&1; then
+  printf '\n  sh-eval: Node.js was not found on your PATH.\n  Install Node 18+ from https://nodejs.org and re-run.\n\n' >&2
+  exit 1
+fi
+_nm="\$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
+if [ "\${_nm:-0}" -lt 18 ] 2>/dev/null; then
+  printf '\n  sh-eval: Node 18+ is required (found %s).\n  Update Node from https://nodejs.org and re-run.\n\n' "\$(node -v 2>/dev/null || echo none)" >&2
+  exit 1
+fi
 exec node "$INSTALL_DIR/bin/sh-eval.js" "\$@"
 EOF
 chmod +x "$SHIM"

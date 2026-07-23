@@ -1,6 +1,19 @@
 #!/usr/bin/env node
 'use strict';
 
+// Runtime Node preflight — a CLEAR message instead of a cryptic failure when the
+// tool is launched on too-old Node (the installed `sh-eval` shim also checks
+// before invoking node; this covers a direct `node bin/sh-eval.js`). ES5-only so
+// it always parses.
+var _nodeMajor = parseInt((process.versions && process.versions.node || '0').split('.')[0], 10);
+if (_nodeMajor < 18) {
+  process.stderr.write(
+    '\n  sh-eval requires Node 18 or newer (you have ' + process.version + ').\n'
+    + '  Update Node from https://nodejs.org and re-run.\n\n',
+  );
+  process.exit(1);
+}
+
 /*
  * `sh-eval` — the SINGLE entrypoint of this tool (ADR-014). Opens a branded
  * Shakers mini-shell (REPL, Claude-Code style) where the commands run:
