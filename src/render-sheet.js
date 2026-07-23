@@ -98,13 +98,33 @@ function heroHtml(fp, c) {
   </div>`;
 }
 
-function ladderHtml(fp, c) {
+// Real 0-4 rung ↔ T0-T7 mapping (tier-engine `BAND_BY_TIER = [0,1,2,3,3,4,4,4]`,
+// index=tier → band): band0→T0, band1→T1, band2→T2, band3→T3-T4, band4→T5-T7.
+const BAND_BY_TIER = [0, 1, 2, 3, 3, 4, 4, 4];
+const LEVEL_KEYS = ['none', 'exploring', 'integrated', 'power', 'orchestrator'];
+function tierBadgeForBand(band) {
+  const tiers = BAND_BY_TIER.map((b, tier) => (b === band ? `T${tier}` : null)).filter(Boolean);
+  if (!tiers.length) return '';
+  return tiers.length === 1 ? tiers[0] : `${tiers[0]}–${tiers[tiers.length - 1]}`;
+}
+
+// The maturity ladder, with each rung's TIER (T0-T7) and its short meaning
+// inline — meanings from the localized i18n `ladder.levelDesc` (never invented).
+function ladderHtml(fp, c, t) {
   const cur = fp.tier.level;
+  const desc = (t.ladder && t.ladder.levelDesc) || {};
   const items = (fp.ladder || []).map((r) => {
     const cls = r.n < cur ? 'done' : r.n === cur ? 'current' : 'pending';
     const node = r.n < cur ? '✓' : '';
-    const here = r.n === cur ? `<div class="desc">${esc(c.hereYouAre)}.</div>` : '';
-    return `<li class="${cls}"><span class="node">${node}</span><span class="k">${r.n}</span> · <span class="name">${esc(r.name)}</span>${here}</li>`;
+    const badge = tierBadgeForBand(r.n);
+    // levelDesc starts with the rung name ("Sin rastro de IA: …") — strip that
+    // prefix so it isn't doubled next to the name we already show.
+    const meaningRaw = desc[LEVEL_KEYS[r.n]] || '';
+    const meaning = meaningRaw.replace(/^[^:]+:\s*/, '');
+    const here = r.n === cur ? ` — ${esc(c.hereYouAre)}` : '';
+    const line = meaning ? `<div class="desc">${esc(meaning)}${here}</div>` : (here ? `<div class="desc">${esc(c.hereYouAre)}</div>` : '');
+    const tierChip = badge ? ` · <span style="font:700 10px/1 var(--font-mono);color:var(--accent)">${badge}</span>` : '';
+    return `<li class="${cls}"><span class="node">${node}</span><span class="k">${r.n}</span> · <span class="name">${esc(r.name)}</span>${tierChip}${line}</li>`;
   }).join('');
   return `<div class="card reveal"><h3>${esc(c.ladderT)}</h3><p class="sub">${esc(c.ladderS)}</p><ul class="ladder">${items}</ul></div>`;
 }
@@ -162,30 +182,6 @@ function agentAcc(a, c, improvements) {
     </div></div></div></div>`;
 }
 
-// Compact TIER explainer (T0–T7) — real meanings from the localized i18n
-// `ladder.tierDesc` (sourced from tier-engine), never invented.
-function tierLegendCard(t, L) {
-  const ladder = t.ladder || {};
-  const td = ladder.tierDesc || {};
-  const keys = ['T0', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'].filter((k) => td[k]);
-  if (!keys.length) return '';
-  const rows = keys.map((k) => `<div style="font-size:11px;line-height:1.5;margin:3px 0;color:var(--fg-soft)"><b style="color:var(--fg)">${k}</b> · ${esc(td[k])}</div>`).join('');
-  const title = ladder.tiersHeading || (L === 'es' ? 'Escalera de tiers (T0-T7)' : 'Tier ladder (T0-T7)');
-  return `<div class="card reveal"><h3>${esc(title)}</h3><p class="sub">${L === 'es' ? 'Qué significa cada tier.' : 'What each tier means.'}</p>${rows}</div>`;
-}
-
-// Compact PROFICIENCY-level explainer (P1–P5) — from the localized certifyAgents
-// `levelNames` + `levelDesc` (the scale used for agents/skills).
-function levelLegendCard(t, L) {
-  const ca = t.certifyAgents || {};
-  const ln = ca.levelNames || {};
-  const ld = ca.levelDesc || {};
-  const keys = ['P1', 'P2', 'P3', 'P4', 'P5'].filter((k) => ld[k]);
-  if (!keys.length) return '';
-  const rows = keys.map((k) => `<div style="font-size:11px;line-height:1.5;margin:3px 0;color:var(--fg-soft)"><b style="color:var(--fg)">${esc(ln[k] || k)}</b> — ${esc(ld[k])}</div>`).join('');
-  return `<div class="card reveal"><h3>${L === 'es' ? 'Niveles de dominio (P1-P5)' : 'Proficiency levels (P1-P5)'}</h3><p class="sub">${L === 'es' ? 'Qué mide cada nivel de las certificaciones.' : 'What each certification level measures.'}</p>${rows}</div>`;
-}
-
 /*
  * renderSheet(project, lang) -> full self-contained HTML string with the mockup
  * design, populated from live report-store data. `project` is the report-store
@@ -212,11 +208,11 @@ function renderSheet(project, lang) {
     if (e && typeof e.name === 'string' && Array.isArray(e.improvements)) improvementsByName.set(e.name, e.improvements);
   }
 
-  // LEFT column — footprint (or a clean empty state) + a compact TIERS explainer.
-  const left = (hasFoot
-    ? heroHtml(fp, c) + ladderHtml(fp, c) + chipsCard(c.toolsT, c.toolsS, fp.tools, true) + chipsCard(c.techT, c.techS, fp.technologies, false)
-    : `<div class="card reveal"><p class="sub">${esc(c.noFoot)}</p></div>`)
-    + tierLegendCard(t, L);
+  // LEFT column — footprint (or a clean empty state). The tier explainer now
+  // lives INSIDE the maturity ladder (per rung), so no separate tiers card.
+  const left = hasFoot
+    ? heroHtml(fp, c) + ladderHtml(fp, c, t) + chipsCard(c.toolsT, c.toolsS, fp.tools, true) + chipsCard(c.techT, c.techS, fp.technologies, false)
+    : `<div class="card reveal"><p class="sub">${esc(c.noFoot)}</p></div>`;
 
   // RIGHT column — certifications, tabs + accordions (or clean empty states).
   const skillsBody = certs.skills.length
@@ -241,7 +237,6 @@ function renderSheet(project, lang) {
       <div class="panel-controls"><button class="mini-btn" id="expandAll">Expandir todo</button></div>
       <div class="tabpanel show" data-panel="skills">${skillsBody}</div>
       <div class="tabpanel" data-panel="agents">${agentsBody}</div>
-      ${levelLegendCard(t, L)}
     </section>`;
 
   const projectName = project && project.root ? path.basename(String(project.root)) : 'project';
