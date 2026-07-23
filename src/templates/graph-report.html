@@ -122,8 +122,10 @@ html[data-theme="dark"]  .brand svg.wordmark path{fill:#e6ebf2}
 .gp-label{fill:var(--emphasis);font:800 10px/1 var(--font-sans);letter-spacing:.07em;text-transform:uppercase}
 /* AGENT REGION — one distinct container around the whole agentic layer so the
    agents read as the protagonists, separated from services/models/stores/etc. */
-.agent-region{fill:color-mix(in srgb,var(--emphasis) 5%,transparent);
-  stroke:var(--emphasis);stroke-width:1.6;stroke-dasharray:8 5}
+/* Agent region — its OWN colour fill (not just a border) so the agent layer
+   is unmistakably its own zone. */
+.agent-region{fill:color-mix(in srgb,var(--emphasis) 12%,transparent);
+  stroke:var(--emphasis);stroke-width:2}
 .agent-region-tab{fill:var(--emphasis)}
 .agent-region-label{fill:var(--surface);font:800 10px/1 var(--font-sans);letter-spacing:.12em;text-transform:uppercase}
 
@@ -149,7 +151,14 @@ html[data-theme="dark"]  .brand svg.wordmark path{fill:#e6ebf2}
 .node .sub{font:500 9.5px/1 var(--font-mono);fill:var(--faint)}
 .node .ndesc{font:500 9px/1.3 var(--font-sans);fill:var(--muted)}
 /* Agents are the protagonists — a slightly stronger card so the agentic layer reads first. */
-.node.is-agent .box{stroke:color-mix(in srgb,var(--emphasis) 45%,var(--border-strong));stroke-width:1.8}
+/* Agents are the PROTAGONISTS — a stronger card than any other kind: accent
+   border, a subtle accent-tinted fill and a soft shadow so they pop. */
+.node.is-agent .box{fill:color-mix(in srgb,var(--emphasis) 9%,var(--node-bg));
+  stroke:var(--emphasis);stroke-width:2.4;
+  filter:drop-shadow(0 2px 7px color-mix(in srgb,var(--emphasis) 24%,transparent))}
+/* Exact-model chip shown ON each agent card. */
+.node .model-chip{fill:var(--emphasis)}
+.node .model-chip-tx{fill:var(--surface);font:700 8.5px/1 var(--font-mono)}
 .node .kindtag{font:800 8px/1 var(--font-sans);letter-spacing:.09em;text-transform:uppercase}
 .node:hover .box{stroke:var(--emphasis);stroke-width:2}
 .node.sel .box{stroke:var(--emphasis);stroke-width:2.5;filter:drop-shadow(0 0 6px color-mix(in srgb,var(--emphasis) 55%,transparent))}
@@ -335,7 +344,9 @@ const NS="http://www.w3.org/2000/svg";
 const NW=212, NH=60, NH_AGENT=90, IY=30;
 // Agents are the PROTAGONISTS (foglamp): when an agent carries a description we
 // give its node extra height to render it, so the agentic layer reads first.
-const nodeH=(n)=>(n && n.kind==='agent' && n.detail)?NH_AGENT:NH;
+// Agents are taller (protagonists): full height with a description, still
+// enlarged without one so the model chip sits comfortably.
+const nodeH=(n)=>{ if(!n||n.kind!=='agent')return NH; return n.detail?NH_AGENT:72; };
 // Wrap a short description into up to 2 lines of ~N chars (word-boundary).
 function wrap2(s,per){s=String(s||'').trim();if(!s)return[];const w=s.split(/\s+/);const out=[];let cur='';
   for(const t of w){if((cur+' '+t).trim().length<=per){cur=(cur+' '+t).trim();}else{if(cur)out.push(cur);cur=t;if(out.length===1&&cur.length>per){break;}}}
@@ -353,6 +364,14 @@ const g=new dagre.graphlib.Graph({multigraph:true})
   .setDefaultEdgeLabel(()=>({}));
 DATA.graph.nodes.forEach(n=>g.setNode(n.id,{width:NW,height:nodeH(n)}));
 DATA.graph.edges.forEach((e,i)=>g.setEdge(e.from,e.to,{},"e"+i));
+/* ENFORCE the reading order APIs(entry) -> services -> agents -> the rest, via a
+   hidden layer-root with a per-kind minimum rank. Real edges refine within that;
+   an agent with no service edge still lands in the agent layer (not dropped). The
+   root + its edges are only in the dagre graph (never in DATA.graph → not rendered). */
+const LAYER={entry:1,cron:1,service:2,agent:3,model:4,tool:4,integration:4,external:4,store:4};
+const LAYER_ROOT='__layerroot__';
+g.setNode(LAYER_ROOT,{width:1,height:1});
+DATA.graph.nodes.forEach(n=>g.setEdge(LAYER_ROOT,n.id,{minlen:LAYER[n.kind]||4},'lr_'+n.id));
 dagre.layout(g);
 // dagre gives node CENTER; convert to top-left. Expose positions for verification.
 const pos={};
@@ -467,7 +486,13 @@ DATA.graph.nodes.forEach((n,i)=>{
   // kind tag lives on its OWN top row (never shares a line with the title)
   const kt=el('text',{class:'kindtag',x:NW-12,y:16,'text-anchor':'end',fill:k.c});kt.textContent=k.tag;g2.appendChild(kt);
   const lbl=el('text',{class:'lbl',x:47,y:34});lbl.textContent=clip(n.label,21);g2.appendChild(lbl);
-  const sub=el('text',{class:'sub',x:47,y:48});sub.textContent=clip(n.sub||'',30);g2.appendChild(sub);
+  // Non-agents: plain sub line. Agents render their exact MODEL as a chip below.
+  if(n.kind!=='agent'){const sub=el('text',{class:'sub',x:47,y:48});sub.textContent=clip(n.sub||'',30);g2.appendChild(sub);}
+  else if(n.sub){
+    const mtxt=clip(n.sub,24), cw=mtxt.length*5.3+16;
+    g2.appendChild(el('rect',{class:'model-chip',x:14,y:44,width:cw,height:15,rx:7}));
+    const mt=el('text',{class:'model-chip-tx',x:14+cw/2,y:54.5,'text-anchor':'middle'});mt.textContent=mtxt;g2.appendChild(mt);
+  }
   outer.appendChild(g2);
   outer.addEventListener('mouseenter',()=>hover(n.id,true));
   outer.addEventListener('mouseleave',()=>hover(n.id,false));
