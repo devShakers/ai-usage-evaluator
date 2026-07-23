@@ -61,6 +61,10 @@ function scrubDeep(v) {
  * analyzeCodebase(context, { endpoint, timeoutMs, locale }) ->
  *   Promise<{ nodes, edges } | null>
  */
+const RETRY_DELAY_MS = 1500;
+const MAX_ATTEMPTS = 2; // 1 retry — the analyze is a long Pro call, don't loop.
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 async function analyzeCodebase(context, { endpoint, timeoutMs = DEFAULT_TIMEOUT_MS, locale } = {}) {
   if (!endpoint || !context) return null;
   const body = {
@@ -68,20 +72,32 @@ async function analyzeCodebase(context, { endpoint, timeoutMs = DEFAULT_TIMEOUT_
     promptVersion: ANALYZE_PROMPT_VERSION,
     ...(locale ? { locale } : {}),
   };
-  let res;
-  try {
-    res = await postJsonWithTimeout(endpoint, body, timeoutMs);
-  } catch {
+  // Retry ONCE on a TRANSIENT failure (network error, or a 5xx — the backend
+  // maps an overloaded/unavailable Gemini to 502/503). Do NOT retry a 4xx
+  // (400 = bad contract, 429 = rate limit) — those won't recover on a retry.
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    let res;
+    try {
+      res = await postJsonWithTimeout(endpoint, body, timeoutMs);
+    } catch {
+      if (attempt < MAX_ATTEMPTS) { await sleep(RETRY_DELAY_MS); continue; } // network error → transient
+      return null;
+    }
+    if (res && res.status >= 200 && res.status < 300) {
+      let parsed;
+      try { parsed = JSON.parse(res.body); } catch { return null; }
+      if (!parsed || typeof parsed !== 'object') return null;
+      return {
+        nodes: Array.isArray(parsed.nodes) ? parsed.nodes : [],
+        edges: Array.isArray(parsed.edges) ? parsed.edges : [],
+      };
+    }
+    // Non-2xx: retry only transient 5xx; give up immediately on 4xx.
+    const transient = res && res.status >= 500;
+    if (transient && attempt < MAX_ATTEMPTS) { await sleep(RETRY_DELAY_MS); continue; }
     return null;
   }
-  if (!res || res.status < 200 || res.status >= 300) return null;
-  let parsed;
-  try { parsed = JSON.parse(res.body); } catch { return null; }
-  if (!parsed || typeof parsed !== 'object') return null;
-  return {
-    nodes: Array.isArray(parsed.nodes) ? parsed.nodes : [],
-    edges: Array.isArray(parsed.edges) ? parsed.edges : [],
-  };
+  return null;
 }
 
 /*

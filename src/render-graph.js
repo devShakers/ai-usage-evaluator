@@ -54,6 +54,7 @@ function buildPayload({
   footprint = null,
   certs = null,
   favicons = null,
+  degrade = null,
 } = {}) {
   if (!project || !graph || !Array.isArray(graph.nodes)) {
     throw new Error('render-graph: payload requires project and graph.nodes');
@@ -76,6 +77,9 @@ function buildPayload({
     footprint: footprint || emptyFootprint(),
     certs: certs || { agents: [], skills: [] },
     favicons: favicons || null,
+    // When present, the template shows a LOUD banner so a reduced fallback graph
+    // is never mistaken for the full codebase analysis. null on a normal run.
+    degrade: degrade && degrade.banner ? { reason: String(degrade.reason || ''), banner: String(degrade.banner) } : null,
   };
 }
 

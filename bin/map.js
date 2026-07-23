@@ -52,7 +52,7 @@ const COPY = {
     error: 'No se pudo generar el report LOCAL.',
     ready: (link) => `Report LOCAL listo: ${link}`,
     opening: 'Abriendo en el navegador…',
-    degraded: 'Análisis IA no disponible (endpoint sin configurar o fallo) — grafo de agentes determinista.',
+    degradeReduced: (n) => `Mostrando vista REDUCIDA (subgrafo de agentes determinista, ${n} nodos) — NO es el grafo completo del codebase.`,
     stats: (n, e, ms) => `Análisis IA del codebase: ${n} nodos, ${e} edges · ${ms}ms`,
     collecting: 'Recogiendo contexto del repo…',
     // Rotating reassurance during the single long (~1 min) Pro analysis wait —
@@ -69,7 +69,7 @@ const COPY = {
     error: 'Could not generate the LOCAL report.',
     ready: (link) => `LOCAL report ready: ${link}`,
     opening: 'Opening in your browser…',
-    degraded: 'AI analysis unavailable (endpoint unset or failed) — deterministic agent graph.',
+    degradeReduced: (n) => `Showing a REDUCED view (deterministic agent subgraph, ${n} nodes) — NOT the full codebase graph.`,
     stats: (n, e, ms) => `Codebase AI analysis: ${n} nodes, ${e} edges · ${ms}ms`,
     collecting: 'Collecting repo context…',
     // Rotating reassurance during the single long (~1 min) Pro analysis wait —
@@ -80,6 +80,40 @@ const COPY = {
       'Mapping flows, stores and integrations…',
       'Composing the codebase graph…',
     ],
+  },
+};
+
+// Loud, reason-specific fallback copy. `cli` is the prominent stderr warning;
+// `banner` is the in-report banner text — so the reduced 4-node agent subgraph
+// is NEVER mistaken for the real codebase graph (regression fix).
+const DEGRADE = {
+  es: {
+    'no-endpoint': {
+      cli: 'Análisis IA OMITIDO — endpoint no configurado. Define AI_FOOTPRINT_GRAPH_INFER_ENDPOINT (o el ingest) y reintenta.',
+      banner: 'Vista REDUCIDA (solo agentes): el análisis IA del codebase no se ejecutó — endpoint no configurado. Este NO es el grafo completo.',
+    },
+    'analysis-failed': {
+      cli: 'Análisis IA FALLÓ (endpoint inaccesible, rate-limit, o error del proveedor). Reintenta en un momento.',
+      banner: 'Vista REDUCIDA (solo agentes): el análisis IA del codebase FALLÓ (inaccesible / rate-limit / error del proveedor). Este NO es el grafo completo — reintenta.',
+    },
+    'no-llm': {
+      cli: 'Análisis IA desactivado (--no-llm).',
+      banner: 'Vista REDUCIDA (solo agentes) por --no-llm. Este NO es el grafo completo del codebase.',
+    },
+  },
+  en: {
+    'no-endpoint': {
+      cli: 'AI analysis SKIPPED — endpoint not configured. Set AI_FOOTPRINT_GRAPH_INFER_ENDPOINT (or the ingest) and retry.',
+      banner: 'REDUCED view (agents only): the AI codebase analysis did not run — endpoint not configured. This is NOT the full graph.',
+    },
+    'analysis-failed': {
+      cli: 'AI analysis FAILED (endpoint unreachable, rate-limited, or provider error). Retry in a moment.',
+      banner: 'REDUCED view (agents only): the AI codebase analysis FAILED (unreachable / rate-limited / provider error). This is NOT the full graph — retry.',
+    },
+    'no-llm': {
+      cli: 'AI analysis disabled (--no-llm).',
+      banner: 'REDUCED view (agents only) due to --no-llm. This is NOT the full codebase graph.',
+    },
   },
 };
 
@@ -130,6 +164,7 @@ async function run(argv = process.argv.slice(2), { ask } = {}) { // eslint-disab
   let footprint = null;
   let analysis = null; // { latencyMs } when the LLM analysis produced the graph
   let degraded = false;
+  let degradeReason = null; // 'no-llm' | 'no-endpoint' | 'analysis-failed'
 
   try {
     if (o.contract) {
@@ -142,16 +177,23 @@ async function run(argv = process.argv.slice(2), { ask } = {}) { // eslint-disab
       // stays clean for the report path + --stats): a static status for the
       // fast synchronous context collection, then a phased spinner rotating
       // reassuring copy through the one long, opaque Pro wait (~1 min).
-      if (o.llm) {
+      if (!o.llm) {
+        degradeReason = 'no-llm';
+      } else {
         const ctx = withStaticStatus(c.collecting, () => collectRepoContext(root));
         const endpoint = getGraphInferenceEndpoint();
-        const analyzer = makeCodebaseAnalyzer({ endpoint, locale: lang });
-        const g = endpoint
-          ? await withPhasedSpinner(c.phases, () => analyzer.analyze(ctx))
-          : await analyzer.analyze(ctx); // no endpoint → instant null, no spinner flash
-        if (g && Array.isArray(g.nodes) && g.nodes.length) {
-          const built = assembleContract(ctx.project, g);
-          if (built) { contract = built; analysis = { latencyMs: g.latencyMs }; }
+        if (!endpoint) {
+          degradeReason = 'no-endpoint'; // nothing to call — don't flash the spinner
+        } else {
+          const analyzer = makeCodebaseAnalyzer({ endpoint, locale: lang });
+          const g = await withPhasedSpinner(c.phases, () => analyzer.analyze(ctx));
+          if (g && Array.isArray(g.nodes) && g.nodes.length) {
+            const built = assembleContract(ctx.project, g);
+            if (built) { contract = built; analysis = { latencyMs: g.latencyMs }; }
+          }
+          // endpoint was set but the call/parse yielded nothing usable — the
+          // analysis FAILED (unreachable, rate-limited, upstream 5xx, bad body).
+          if (!contract) degradeReason = 'analysis-failed';
         }
       }
       // Degrade to the deterministic agent subgraph if analysis unavailable.
@@ -183,6 +225,8 @@ async function run(argv = process.argv.slice(2), { ask } = {}) { // eslint-disab
     };
   }
 
+  const degradeCopy = degraded && degradeReason ? (DEGRADE[lang] || DEGRADE.en)[degradeReason] : null;
+
   let outPath;
   try {
     const favicons = o.offline ? null : await embedFavicons(collectDomains(contract), { enabled: true });
@@ -198,6 +242,8 @@ async function run(argv = process.argv.slice(2), { ask } = {}) { // eslint-disab
         footprint,
         certs,
         favicons,
+        // Loud in-report banner so a reduced fallback is never taken for the answer.
+        degrade: degradeCopy ? { reason: degradeReason, banner: degradeCopy.banner } : null,
       },
       { lang }
     );
@@ -221,8 +267,11 @@ async function run(argv = process.argv.slice(2), { ask } = {}) { // eslint-disab
         const e = (contract.graph.edges || []).length;
         process.stdout.write(`  ${c.stats(n, e, analysis.latencyMs || 0)}\n`);
       }
-    } else if (degraded && o.llm) {
-      process.stdout.write(`  ${c.degraded}\n`);
+    } else if (degradeCopy) {
+      // LOUD, reason-specific warning on stderr (side channel) — never a quiet
+      // one-liner mistaken for success. Names the reason + how to recover.
+      const nodeCount = (contract.graph && contract.graph.nodes ? contract.graph.nodes.length : 0);
+      process.stderr.write(`\n  ⚠  ${degradeCopy.cli}\n     ${c.degradeReduced(nodeCount)}\n`);
     }
   }
   process.stdout.write('\n');
