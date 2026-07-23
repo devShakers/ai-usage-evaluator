@@ -10,6 +10,7 @@ const { getCatalog } = require('./i18n');
 const { renderDocument } = require('./report-theme');
 const { footprintSectionsHtml, FOOTPRINT_CSS, FOOTPRINT_SCRIPT, agentCertificationSectionsHtml } = require('./render-html');
 const { certificationSectionsHtml, CERTIFICATION_CSS } = require('./render-certification');
+const { renderSheet } = require('./render-sheet');
 
 /*
  * Per-project local report store (skill-code-certification, reporting redesign
@@ -165,78 +166,13 @@ const CUMULATIVE_CSS = `
 // included ONLY when the project actually has that kind of data — a cert-only
 // run shows no footprint section, a footprint-only run shows no certification
 // section, and both appear only when both ran for this same project.
+// The shareable report (`report`/`sheet`) now renders with the approved mockup
+// design (src/render-sheet.js → src/templates/report-sheet.html), wired to the
+// SAME live report-store data (footprint + certifications). The prior
+// section-based renderer (footprintSectionsHtml/certificationSectionsHtml/
+// renderDocument) is retained in render-html.js for the terminal/other surfaces.
 function renderProjectHtml(project, lang) {
-  const t = getCatalog(lang);
-  const c = t.cumulative;
-
-  const sections = [];
-
-  if (project && project.footprint && project.footprint.report) {
-    // Enrich the footprint report's agent cards with any agent-certification
-    // LEVEL tags for this project (skill-code-certification, `certify agents`) —
-    // read by render-html.js#buildAgentCardTree. The HTML level tag therefore
-    // requires a footprint (which builds the agents section); the per-agent
-    // detail always shows in the terminal at cert time.
-    const report = {
-      ...project.footprint.report,
-      agentCertifications: (project && project.agentCertifications) || {},
-    };
-    sections.push(`<section>
-    <h2 class="section-title">${esc(c.footprintHeading)}</h2>
-    ${footprintSectionsHtml(report, project.footprint.maturity, lang)}
-  </section>`);
-  }
-
-  // Agent certifications (skill-code-certification, `certify agents`): their OWN
-  // section (skill-style cards) with the full verdict — the agent card in the
-  // footprint tree above keeps only the level tag. Independent of footprint
-  // (keyed by agent name), rendered whenever the project has any certified agent.
-  const agentCerts = (project && project.agentCertifications) || {};
-  const agentCertBody = agentCertificationSectionsHtml({ agentCertifications: agentCerts }, t);
-  if (agentCertBody) {
-    sections.push(`<section>
-    <h2 class="section-title">${esc(c.agentCertificationHeading)}</h2>
-    ${agentCertBody}
-  </section>`);
-  }
-
-  const certItems = sortedByGeneratedAtDesc(Object.values((project && project.certifications) || {})).map((e) => e.item);
-  if (certItems.length) {
-    sections.push(`<section>
-    <h2 class="section-title">${esc(c.certificationHeading)}</h2>
-    ${certificationSectionsHtml({ items: certItems }, lang)}
-  </section>`);
-  }
-
-  const updatedWhen = project && project.updatedAt ? new Date(project.updatedAt).toLocaleString() : '';
-
-  const body = `<header>
-    <span class="badge"><span class="spark"></span>SHAKERS</span>
-    <h1>${esc(c.title)}</h1>
-    <p class="sub">${esc(c.subtitle)}</p>
-    <div class="block-meta">
-      <span class="path">${esc((project && project.root) || c.unknownProject)}</span>
-      ${updatedWhen ? `<span class="when">${esc(c.updatedLabel(updatedWhen))}</span>` : ''}
-    </div>
-  </header>
-
-  ${sections.join('\n')}
-
-  <footer>
-    <div class="priv">
-      <span class="lock" aria-hidden="true">🔒</span>
-      <span>${esc(c.privacyNote)}</span>
-    </div>
-    ${updatedWhen ? `<div class="meta-line">${esc(c.updatedLabel(updatedWhen))}</div>` : ''}
-  </footer>`;
-
-  return renderDocument({
-    lang: t.html.lang,
-    title: c.title,
-    componentCss: FOOTPRINT_CSS + CERTIFICATION_CSS + CUMULATIVE_CSS,
-    body,
-    script: FOOTPRINT_SCRIPT,
-  });
+  return renderSheet(project, lang);
 }
 
 /* ---------- persist (state only) + materialize (render HTML) ---------- */

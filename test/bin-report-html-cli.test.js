@@ -75,7 +75,7 @@ test('report: after footprint persisted state, materializes the HTML and prints 
     const htmlFile = fs.readdirSync(configDir).find((f) => /^report-[a-f0-9]{12}\.html$/.test(f));
     assert.ok(htmlFile, 'report materialized the per-project html');
     const html = fs.readFileSync(path.join(configDir, htmlFile), 'utf8');
-    assert.ok(html.includes('--bg:var(--ds-white)'), 'Shakers white theme');
+    assert.ok(html.includes('--bg:var(--white)'), 'mockup light theme (white background)');
   } finally {
     fs.rmSync(configDir, { recursive: true, force: true });
     fs.rmSync(root, { recursive: true, force: true });

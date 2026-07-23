@@ -75,6 +75,7 @@ FILES=(
 # render-graph.js loads). Ship these explicitly.
 ASSETS=(
   "src/templates/graph-report.html"
+  "src/templates/report-sheet.html"
 )
 
 say()  { printf "  %b\n" "$1"; }
