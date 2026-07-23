@@ -44,6 +44,7 @@ const COPY = {
     techT: 'Tecnologías del proyecto', techS: 'Stack reconocido en el repositorio.',
     skills: 'Skills', agents: 'Agentes',
     valoracion: 'Valoración', comoMejorar: 'Cómo mejorar', porQue: 'Por qué', areas: 'Áreas evaluadas',
+    noNextSteps: 'Sin próximos pasos para este agente.',
     bandLine: (lvl, name) => `Nivel de madurez <b>${esc(lvl)} · ${esc(name)}</b>.`,
     hereYouAre: 'Estás aquí',
     noFoot: 'Aún no hay huella de IA. Ejecuta footprint en este proyecto.',
@@ -58,6 +59,7 @@ const COPY = {
     techT: 'Project technologies', techS: 'Stack recognized in the repository.',
     skills: 'Skills', agents: 'Agents',
     valoracion: 'Assessment', comoMejorar: 'How to improve', porQue: 'Why', areas: 'Assessed areas',
+    noNextSteps: 'No next steps for this agent.',
     bandLine: (lvl, name) => `Maturity level <b>${esc(lvl)} · ${esc(name)}</b>.`,
     hereYouAre: 'You are here',
     noFoot: 'No AI footprint yet. Run footprint in this project.',
@@ -122,11 +124,20 @@ function skillAcc(s, c) {
     </div></div></div></div>`;
 }
 
-function agentAcc(a, c) {
-  const evi = [];
-  (a.verified || []).forEach((v) => evi.push(`<li>${esc(v)}</li>`));
-  const verifiedUl = a.verified && a.verified.length ? `<ul class="evi ok">${a.verified.map((v) => `<li>${esc(v)}</li>`).join('')}</ul>` : '';
-  const unverifiedUl = a.unverified && a.unverified.length ? `<ul class="evi no">${a.unverified.map((v) => `<li>${esc(v)}</li>`).join('')}</ul>` : '';
+// `a.verified`/`a.unverified` are OBJECTS from deriveCertEvidence
+// (verified: {name, evidence}; unverified: {name, tagLabel, evidence}) — render
+// their fields, NOT the object (which stringifies to "[object Object]").
+function eviLine(v) {
+  const label = v && v.name ? `<b>${esc(v.name)}</b>` : '';
+  const tag = v && v.tagLabel ? ` <em>(${esc(v.tagLabel)})</em>` : '';
+  const ev = v && v.evidence ? `${label || tag ? ' — ' : ''}${esc(v.evidence)}` : '';
+  const line = `${label}${tag}${ev}`.trim();
+  return `<li>${line || esc(typeof v === 'string' ? v : (v && v.name) || '')}</li>`;
+}
+
+function agentAcc(a, c, improvements) {
+  const verifiedUl = a.verified && a.verified.length ? `<ul class="evi ok">${a.verified.map(eviLine).join('')}</ul>` : '';
+  const unverifiedUl = a.unverified && a.unverified.length ? `<ul class="evi no">${a.unverified.map(eviLine).join('')}</ul>` : '';
   const areas = (a.areas || []).map((ar) => {
     const [cls, glyph] = AREA_TAG[ar.tagKey] || ['tag-na', '–'];
     return `<div class="area"><span class="icn">${glyph}</span><span class="nm">${esc(ar.name)}</span><span class="tag ${cls}">${esc(ar.tag)}</span></div>`;
@@ -134,10 +145,18 @@ function agentAcc(a, c) {
   const meta = a.meta ? `<span class="meta">· ${esc(a.meta)}</span>` : '';
   const lvlCls = a.level && a.level !== 'none' ? `lvl-${esc(a.level)}` : '';
   const rationale = a.rationale ? `<div class="blk"><p>${esc(a.rationale)}</p></div>` : '';
+  // Next-step prompts (BUG 2): from the agent-evaluation improvements for this
+  // agent (matched by name). Clean empty state when the agent has none — never
+  // fabricated.
+  const imps = Array.isArray(improvements) ? improvements.filter((i) => typeof i === 'string' && i.trim()) : [];
+  const nextSteps = imps.length
+    ? `<div class="blk"><h5>${esc(c.comoMejorar)}</h5><ul>${imps.map((i) => `<li>${esc(i)}</li>`).join('')}</ul></div>`
+    : `<div class="blk"><h5>${esc(c.comoMejorar)}</h5><p class="sub">${esc(c.noNextSteps)}</p></div>`;
   return `<div class="acc"><button class="acc-head"><span class="caret">▸</span><span class="title">${esc(a.name)}</span>${meta}<span class="spacer"></span><span class="level-chip ${lvlCls}">${esc(a.levelName || a.level)}</span></button>
     <div class="acc-body-wrap"><div class="acc-body-inner"><div class="acc-body">
       <div class="blk"><h5>${esc(c.porQue)}</h5>${verifiedUl}${unverifiedUl}</div>
       ${areas ? `<div class="blk"><h5>${esc(c.areas)}</h5>${areas}</div>` : ''}
+      ${nextSteps}
       ${rationale}
     </div></div></div></div>`;
 }
@@ -157,6 +176,16 @@ function renderSheet(project, lang) {
   // sheet still renders both columns, so normalize to empty lists (clean state).
   const certs = buildCertsPayload(project, L) || { skills: [], agents: [] };
 
+  // Agent next-step prompts come from the agent-EVALUATION improvements (the
+  // certify-agents verdict carries no improvements), matched by agent name.
+  const evalList = (hasFoot && project.footprint.report.agentEvaluation
+    && Array.isArray(project.footprint.report.agentEvaluation.evaluations))
+    ? project.footprint.report.agentEvaluation.evaluations : [];
+  const improvementsByName = new Map();
+  for (const e of evalList) {
+    if (e && typeof e.name === 'string' && Array.isArray(e.improvements)) improvementsByName.set(e.name, e.improvements);
+  }
+
   // LEFT column — footprint (or a clean empty state).
   const left = hasFoot
     ? heroHtml(fp, c) + ladderHtml(fp, c) + chipsCard(c.toolsT, c.toolsS, fp.tools, true) + chipsCard(c.techT, c.techS, fp.technologies, false)
@@ -167,7 +196,7 @@ function renderSheet(project, lang) {
     ? certs.skills.map((s) => skillAcc(s, c)).join('')
     : `<div class="card reveal"><p class="sub">${esc(c.noSkills)}</p></div>`;
   const agentsBody = certs.agents.length
-    ? certs.agents.map((a) => agentAcc(a, c)).join('')
+    ? certs.agents.map((a) => agentAcc(a, c, improvementsByName.get(a.name))).join('')
     : `<div class="card reveal"><p class="sub">${esc(c.noAgents)}</p></div>`;
 
   const body = `
