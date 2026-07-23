@@ -67,7 +67,7 @@ test('report: after footprint persisted state, materializes the HTML and prints 
 
     const { code, stdout } = runReport(['--root', root, '--lang', 'en', '--no-open'], { AI_FOOTPRINT_CONFIG_DIR: configDir });
     assert.equal(code, 0);
-    assert.match(stdout, /Your report is ready/);
+    assert.match(stdout, /✓ Report updated/); // clear "updated" notice (en)
     assert.match(stdout, /file:\/\/\S+report-[a-f0-9]{12}\.html/);
     // --no-open => no "Opening…" line.
     assert.equal(/Opening it in your browser/.test(stdout), false);

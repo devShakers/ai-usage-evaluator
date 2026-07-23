@@ -25,6 +25,7 @@ const fs = require('fs');
 const path = require('path');
 const { buildFootprintDrawer } = require('./graph-scan');
 const { buildCertsPayload } = require('./graph-certs');
+const { getCatalog } = require('./i18n');
 
 const TEMPLATE_PATH = path.join(__dirname, 'templates', 'report-sheet.html');
 let _tpl = null;
@@ -161,6 +162,30 @@ function agentAcc(a, c, improvements) {
     </div></div></div></div>`;
 }
 
+// Compact TIER explainer (T0–T7) — real meanings from the localized i18n
+// `ladder.tierDesc` (sourced from tier-engine), never invented.
+function tierLegendCard(t, L) {
+  const ladder = t.ladder || {};
+  const td = ladder.tierDesc || {};
+  const keys = ['T0', 'T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'].filter((k) => td[k]);
+  if (!keys.length) return '';
+  const rows = keys.map((k) => `<div style="font-size:11px;line-height:1.5;margin:3px 0;color:var(--fg-soft)"><b style="color:var(--fg)">${k}</b> · ${esc(td[k])}</div>`).join('');
+  const title = ladder.tiersHeading || (L === 'es' ? 'Escalera de tiers (T0-T7)' : 'Tier ladder (T0-T7)');
+  return `<div class="card reveal"><h3>${esc(title)}</h3><p class="sub">${L === 'es' ? 'Qué significa cada tier.' : 'What each tier means.'}</p>${rows}</div>`;
+}
+
+// Compact PROFICIENCY-level explainer (P1–P5) — from the localized certifyAgents
+// `levelNames` + `levelDesc` (the scale used for agents/skills).
+function levelLegendCard(t, L) {
+  const ca = t.certifyAgents || {};
+  const ln = ca.levelNames || {};
+  const ld = ca.levelDesc || {};
+  const keys = ['P1', 'P2', 'P3', 'P4', 'P5'].filter((k) => ld[k]);
+  if (!keys.length) return '';
+  const rows = keys.map((k) => `<div style="font-size:11px;line-height:1.5;margin:3px 0;color:var(--fg-soft)"><b style="color:var(--fg)">${esc(ln[k] || k)}</b> — ${esc(ld[k])}</div>`).join('');
+  return `<div class="card reveal"><h3>${L === 'es' ? 'Niveles de dominio (P1-P5)' : 'Proficiency levels (P1-P5)'}</h3><p class="sub">${L === 'es' ? 'Qué mide cada nivel de las certificaciones.' : 'What each certification level measures.'}</p>${rows}</div>`;
+}
+
 /*
  * renderSheet(project, lang) -> full self-contained HTML string with the mockup
  * design, populated from live report-store data. `project` is the report-store
@@ -170,6 +195,7 @@ function agentAcc(a, c, improvements) {
 function renderSheet(project, lang) {
   const L = lang === 'en' ? 'en' : 'es';
   const c = COPY[L];
+  const t = getCatalog(L);
   const hasFoot = !!(project && project.footprint && project.footprint.report);
   const fp = hasFoot ? buildFootprintDrawer(project.footprint.report, project.footprint.maturity) : null;
   // buildCertsPayload returns null when the project has no certs at all — the
@@ -186,10 +212,11 @@ function renderSheet(project, lang) {
     if (e && typeof e.name === 'string' && Array.isArray(e.improvements)) improvementsByName.set(e.name, e.improvements);
   }
 
-  // LEFT column — footprint (or a clean empty state).
-  const left = hasFoot
+  // LEFT column — footprint (or a clean empty state) + a compact TIERS explainer.
+  const left = (hasFoot
     ? heroHtml(fp, c) + ladderHtml(fp, c) + chipsCard(c.toolsT, c.toolsS, fp.tools, true) + chipsCard(c.techT, c.techS, fp.technologies, false)
-    : `<div class="card reveal"><p class="sub">${esc(c.noFoot)}</p></div>`;
+    : `<div class="card reveal"><p class="sub">${esc(c.noFoot)}</p></div>`)
+    + tierLegendCard(t, L);
 
   // RIGHT column — certifications, tabs + accordions (or clean empty states).
   const skillsBody = certs.skills.length
@@ -214,6 +241,7 @@ function renderSheet(project, lang) {
       <div class="panel-controls"><button class="mini-btn" id="expandAll">Expandir todo</button></div>
       <div class="tabpanel show" data-panel="skills">${skillsBody}</div>
       <div class="tabpanel" data-panel="agents">${agentsBody}</div>
+      ${levelLegendCard(t, L)}
     </section>`;
 
   const projectName = project && project.root ? path.basename(String(project.root)) : 'project';
