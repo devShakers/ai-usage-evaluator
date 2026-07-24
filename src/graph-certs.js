@@ -21,7 +21,7 @@
 
 const { getCatalog } = require('./i18n');
 const { deriveCertEvidence } = require('./render-html');
-const { scoreBand } = require('./render-certification');
+const { scoreBand, skillLevelForScore } = require('./render-certification');
 
 // P1–P5 → a tag colour band for the level pill (purely visual, mirrors
 // render-certify-agents.levelColor: higher greener, floor red).
@@ -76,10 +76,15 @@ function buildCertsPayload(project, lang) {
       const res = item.result || {};
       const base = item.skillName || (item.skillId != null ? String(item.skillId) : 'Skill');
       const name = item.technology ? `${base} · ${item.technology}` : base;
+      // ADR-016: named level (Middle/Senior/Expert) instead of the numeric grade.
+      const skillReport = (t.certify && t.certify.report) || {};
+      const skillLevelNames = skillReport.skillLevels || {};
+      const { key: levelKey, band } = skillLevelForScore(res.score);
       return {
         name,
-        score: typeof res.score === 'number' ? res.score : 0,
-        band: scoreBand(res.score),
+        band, // retained for the badge colour (unchanged palette)
+        levelKey,
+        levelName: levelKey ? (skillLevelNames[levelKey] || levelKey) : (skillLevelNames.na || '—'),
         rationale: typeof res.rationale === 'string' ? res.rationale : '',
         improvements: Array.isArray(res.improvements) ? res.improvements : [],
       };

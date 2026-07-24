@@ -40,13 +40,13 @@ function esc(s) {
 const COPY = {
   es: {
     footprint: 'Huella de IA', certs: 'Certificaciones',
-    ladderT: 'Escalera de madurez', ladderS: 'Tu nivel de uso de IA, de 0 a 4.',
+    ladderT: 'Nivel de setup', ladderS: 'Tu nivel de uso de IA: S1–S3.',
     toolsT: 'Herramientas detectadas', toolsS: 'Clientes de IA presentes en tu entorno.',
     techT: 'Tecnologías del proyecto', techS: 'Stack reconocido en el repositorio.',
     skills: 'Skills', agents: 'Agentes',
     valoracion: 'Valoración', comoMejorar: 'Cómo mejorar', porQue: 'Por qué', areas: 'Áreas evaluadas',
     noNextSteps: 'Sin próximos pasos para este agente.',
-    bandLine: (lvl, name) => `Nivel de madurez <b>${esc(lvl)} · ${esc(name)}</b>.`,
+    bandLine: (label) => `Nivel de setup <b>${esc(label)}</b>.`,
     hereYouAre: 'Estás aquí',
     noFoot: 'Aún no hay huella de IA. Ejecuta footprint en este proyecto.',
     noSkills: 'Aún no hay skills certificadas. Ejecuta certify.',
@@ -55,13 +55,13 @@ const COPY = {
   },
   en: {
     footprint: 'AI footprint', certs: 'Certifications',
-    ladderT: 'Maturity ladder', ladderS: 'Your AI-usage level, 0 to 4.',
+    ladderT: 'Setup Level', ladderS: 'Your AI-usage level: S1–S3.',
     toolsT: 'Detected tools', toolsS: 'AI clients present in your environment.',
     techT: 'Project technologies', techS: 'Stack recognized in the repository.',
     skills: 'Skills', agents: 'Agents',
     valoracion: 'Assessment', comoMejorar: 'How to improve', porQue: 'Why', areas: 'Assessed areas',
     noNextSteps: 'No next steps for this agent.',
-    bandLine: (lvl, name) => `Maturity level <b>${esc(lvl)} · ${esc(name)}</b>.`,
+    bandLine: (label) => `Setup Level <b>${esc(label)}</b>.`,
     hereYouAre: 'You are here',
     noFoot: 'No AI footprint yet. Run footprint in this project.',
     noSkills: 'No certified skills yet. Run certify.',
@@ -76,10 +76,20 @@ const AREA_TAG = { // tagKey -> [css class, glyph]
 };
 function bandClass(b) { return b === 'high' ? 'band-high' : b === 'mid' ? 'band-mid' : 'band-low'; }
 
-function heroHtml(fp, c) {
-  const lvl = fp.tier.level;
-  const pills = Array.from({ length: 5 }, (_, i) => `<span class="${i <= lvl ? 'on' : ''}"></span>`).join('');
-  const chipK = fp.tier.key && fp.tier.key !== 'none' ? esc(fp.tier.key) : String(lvl);
+// Localized Setup Level label from the drawer payload (ADR-016): prefer the
+// i18n `setupLevels` catalog by key, fall back to the label baked into `fp`.
+function setupLabel(fp, t) {
+  const key = (fp.setup && fp.setup.key) || 'none';
+  return (t && t.setupLevels && t.setupLevels[key] && t.setupLevels[key].label)
+    || (fp.setup && fp.setup.label) || key;
+}
+
+function heroHtml(fp, c, t) {
+  const rank = (fp.setup && typeof fp.setup.rank === 'number') ? fp.setup.rank : 0;
+  const label = setupLabel(fp, t);
+  // Four pips: Not certified + S1/S2/S3, current filled (ADR-016).
+  const pills = Array.from({ length: 4 }, (_, i) => `<span class="${i <= rank ? 'on' : ''}"></span>`).join('');
+  const chipK = fp.tier.key && fp.tier.key !== 'none' ? esc(fp.tier.key) : (fp.setup && fp.setup.code) || '';
   return `<div class="card reveal">
     <div class="hero">
       <div class="ring" id="ring">
@@ -91,40 +101,30 @@ function heroHtml(fp, c) {
       </div>
       <div class="hero-meta">
         <span class="tier-chip"><span class="k">${chipK}</span> ${esc(fp.tier.name)}</span>
-        <div class="band-line">${c.bandLine(lvl, fp.tier.name)}</div>
-        <div class="lvl-pills" title="0-4">${pills}</div>
+        <div class="band-line">${c.bandLine(label)}</div>
+        <div class="lvl-pills" title="S1–S3">${pills}</div>
       </div>
     </div>
   </div>`;
 }
 
-// Real 0-4 rung ↔ T0-T7 mapping (tier-engine `BAND_BY_TIER = [0,1,2,3,3,4,4,4]`,
-// index=tier → band): band0→T0, band1→T1, band2→T2, band3→T3-T4, band4→T5-T7.
-const BAND_BY_TIER = [0, 1, 2, 3, 3, 4, 4, 4];
-const LEVEL_KEYS = ['none', 'exploring', 'integrated', 'power', 'orchestrator'];
-function tierBadgeForBand(band) {
-  const tiers = BAND_BY_TIER.map((b, tier) => (b === band ? `T${tier}` : null)).filter(Boolean);
-  if (!tiers.length) return '';
-  return tiers.length === 1 ? tiers[0] : `${tiers[0]}–${tiers[tiers.length - 1]}`;
-}
-
-// The maturity ladder, with each rung's TIER (T0-T7) and its short meaning
-// inline — meanings from the localized i18n `ladder.levelDesc` (never invented).
+// The Setup Level ladder (ADR-016), with each rung's tiers and short meaning
+// inline — meanings from the localized i18n `setupLevels` catalog (never
+// invented). Nested tier keys come from the tier engine's grouping.
 function ladderHtml(fp, c, t) {
-  const cur = fp.tier.level;
-  const desc = (t.ladder && t.ladder.levelDesc) || {};
+  const cur = (fp.setup && typeof fp.setup.rank === 'number') ? fp.setup.rank : 0;
+  const catalog = (t && t.setupLevels) || {};
   const items = (fp.ladder || []).map((r) => {
-    const cls = r.n < cur ? 'done' : r.n === cur ? 'current' : 'pending';
-    const node = r.n < cur ? '✓' : '';
-    const badge = tierBadgeForBand(r.n);
-    // levelDesc starts with the rung name ("Sin rastro de IA: …") — strip that
-    // prefix so it isn't doubled next to the name we already show.
-    const meaningRaw = desc[LEVEL_KEYS[r.n]] || '';
-    const meaning = meaningRaw.replace(/^[^:]+:\s*/, '');
-    const here = r.n === cur ? ` — ${esc(c.hereYouAre)}` : '';
+    const cls = r.rank < cur ? 'done' : r.rank === cur ? 'current' : 'pending';
+    const node = r.rank < cur ? '✓' : '';
+    const copy = catalog[r.key] || {};
+    const label = copy.label || r.label || r.key;
+    // desc starts with the label prefix ("Assisted: …") — strip it so it isn't
+    // doubled next to the name we already show.
+    const meaning = (copy.desc || '').replace(/^[^:]+:\s*/, '');
+    const here = r.rank === cur ? ` — ${esc(c.hereYouAre)}` : '';
     const line = meaning ? `<div class="desc">${esc(meaning)}${here}</div>` : (here ? `<div class="desc">${esc(c.hereYouAre)}</div>` : '');
-    const tierChip = badge ? ` · <span style="font:700 10px/1 var(--font-mono);color:var(--accent)">${badge}</span>` : '';
-    return `<li class="${cls}"><span class="node">${node}</span><span class="k">${r.n}</span> · <span class="name">${esc(r.name)}</span>${tierChip}${line}</li>`;
+    return `<li class="${cls}"><span class="node">${node}</span><span class="name">${esc(label)}</span>${line}</li>`;
   }).join('');
   return `<div class="card reveal"><h3>${esc(c.ladderT)}</h3><p class="sub">${esc(c.ladderS)}</p><ul class="ladder">${items}</ul></div>`;
 }
@@ -138,7 +138,7 @@ function chipsCard(title, sub, items, withDot) {
 function skillAcc(s, c) {
   const imps = (s.improvements || []).map((i) => `<li>${esc(i)}</li>`).join('');
   const improveBlk = imps ? `<div class="blk"><h5>${esc(c.comoMejorar)}</h5><ul>${imps}</ul></div>` : '';
-  return `<div class="acc"><button class="acc-head"><span class="caret">▸</span><span class="title">${esc(s.name)}</span><span class="spacer"></span><span class="score-badge ${bandClass(s.band)}">${Number.isFinite(s.score) ? s.score : 0}</span></button>
+  return `<div class="acc"><button class="acc-head"><span class="caret">▸</span><span class="title">${esc(s.name)}</span><span class="spacer"></span><span class="score-badge ${bandClass(s.band)}">${esc(s.levelName || '—')}</span></button>
     <div class="acc-body-wrap"><div class="acc-body-inner"><div class="acc-body">
       <div class="blk"><h5>${esc(c.valoracion)}</h5><p>${esc(s.rationale) || '—'}</p></div>
       ${improveBlk}
@@ -211,7 +211,7 @@ function renderSheet(project, lang) {
   // LEFT column — footprint (or a clean empty state). The tier explainer now
   // lives INSIDE the maturity ladder (per rung), so no separate tiers card.
   const left = hasFoot
-    ? heroHtml(fp, c) + ladderHtml(fp, c, t) + chipsCard(c.toolsT, c.toolsS, fp.tools, true) + chipsCard(c.techT, c.techS, fp.technologies, false)
+    ? heroHtml(fp, c, t) + ladderHtml(fp, c, t) + chipsCard(c.toolsT, c.toolsS, fp.tools, true) + chipsCard(c.techT, c.techS, fp.technologies, false)
     : `<div class="card reveal"><p class="sub">${esc(c.noFoot)}</p></div>`;
 
   // RIGHT column — certifications, tabs + accordions (or clean empty states).

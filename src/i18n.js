@@ -118,6 +118,12 @@ const catalogs = {
     // "what it represents" descriptions live here.
     ladder: {
       levelsHeading: 'Niveles de madurez (0-4)',
+      // ADR-016: the ladder now groups tiers by SETUP LEVEL, not the 0-4 band.
+      setupHeading: 'Nivel de setup',
+      setupIntro:
+        'Tu nivel de setup (S1–S3) resume tu uso de IA de un vistazo; el tier (T0-T7) es el eje '
+        + 'fino del que se deriva. Ambos son deterministas. Abajo se marca lo que ya has superado (✓), '
+        + 'dónde estás ahora (●) y lo que queda por delante (○) con el criterio exacto que lo desbloquea.',
       tiersHeading: 'Escalera de tiers (T0-T7)',
       levelLabel: (n) => `Nivel ${n}`,
       intro:
@@ -239,12 +245,37 @@ const catalogs = {
       sampleDecisions: 'Definí yo su propósito y sus límites, elegí sus herramientas y sus guardarraíles, y decidí cómo maneja los fallos.',
       sampleFollowupAnswer: 'Lo diseñé así deliberadamente por las restricciones del proyecto y lo he iterado según los resultados reales.',
     },
+    // LEGACY 0-4 band names — kept only for older persisted reports / the
+    // unchanged sent payload (ADR-016); the report shows `setupLevels` instead.
     levelNames: {
       none: 'Sin rastro de IA',
       exploring: 'Explorando',
       integrated: 'Integrado',
       power: 'Power user',
       orchestrator: 'Orquestador',
+    },
+    // Setup Level (Talent Certification Framework, ADR-016): the 3-value rollup
+    // that REPLACES the 0-4 band on every surface. Keyed by tier-engine.js's
+    // stable `setupLevel.key`. The `S1/S2/S3` codes are framework identifiers
+    // (verbatim, not translated); only the descriptive word is localized.
+    // `desc` is the one-line meaning shown in the ladder.
+    setupLevels: {
+      none: {
+        label: 'Sin certificar',
+        desc: 'Sin setup de IA: no se detecta ninguna herramienta de IA en tu entorno.',
+      },
+      S1: {
+        label: 'S1 · Asistido',
+        desc: 'Asistido: usas IA con contexto persistente (instrucciones/configuración) en tus proyectos.',
+      },
+      S2: {
+        label: 'S2 · Extendido',
+        desc: 'Extendido: amplías la IA con MCP y activos propios (skills, comandos o reglas).',
+      },
+      S3: {
+        label: 'S3 · Orquestado',
+        desc: 'Orquestado: operas CLIs agénticas, equipos de agentes y automatización de punta a punta.',
+      },
     },
     nextSteps: {
       0: 'Instala una herramienta de IA (Claude Code, Cursor o Copilot) y pruébala en un proyecto real.',
@@ -264,6 +295,8 @@ const catalogs = {
       brandSub: 'perfil de uso de IA',
       toolsDetected: (n, total) => `${n}/${total} herramientas detectadas`,
       level: (level, name) => `Nivel ${level} · ${name}`,
+      // ADR-016: Setup Level shown in the top bar (replaces the 0-4 level line).
+      setupLevel: (label) => `Setup · ${label}`,
       // Current tier appended to the top bar, next to the level (report req 1 addendum).
       tierInline: (key, name) => ` · Tier ${key} · ${name}`,
       detectedHeading: 'Detectadas',
@@ -284,10 +317,12 @@ const catalogs = {
     },
     html: {
       lang: 'es',
-      title: (level) => `AI Footprint · Nivel ${level}`,
+      title: (setupLabel) => `AI Footprint · ${setupLabel}`,
       h1: 'Tu perfil de uso de IA',
       sub: 'Un vistazo local a qué herramientas de IA tienes y cuánto las has configurado.',
       levelOf: (level) => `Nivel ${level} de 4`,
+      // ADR-016: hero label for the Setup Level (replaces the 0-4 "Nivel X de 4").
+      setupLevelOf: 'Nivel de setup',
       // Current tier shown in the hero bar next to the level (report req 1 addendum).
       currentTier: (key, name) => `Tier ${key} · ${name}`,
       // Suffix only: the number is already bolded separately in the markup
@@ -716,15 +751,23 @@ const catalogs = {
       report: {
         heading: 'Resultado de certificación de Skills',
         disclaimer:
-          'Nota: la puntuación se calcula con una rúbrica anclada (dimensiones de 0 a 4) y una '
-          + 'fórmula fija, por lo que el cálculo es determinista: con las mismas valoraciones '
-          + 'sale la misma nota. Solo los juicios por criterio del modelo pueden variar '
-          + 'ligeramente entre ejecuciones. Es una valoración indicativa, no una certificación '
-          + 'oficial de cara al Client.',
+          'Nota: el nivel se determina con una rúbrica anclada y una fórmula fija, por lo que '
+          + 'el cálculo es determinista: con las mismas valoraciones sale el mismo nivel. Solo '
+          + 'los juicios por criterio del modelo pueden variar ligeramente entre ejecuciones. Es '
+          + 'una valoración indicativa, no una certificación oficial de cara al Client.',
         partialSampleWarning:
           'Muestra parcial: por los límites de tamaño la valoración se basa en una muestra del '
           + 'código, no en todo el proyecto.',
         scoreLine: (score) => `Puntuación: ${score == null ? 'n/d' : `${score}/100`}`,
+        // ADR-016 skill levels (by decision power, NOT points) — replace the
+        // numeric grade in the skill output. `key` from skillLevelForScore.
+        levelLine: (label) => `Nivel: ${label}`,
+        skillLevels: {
+          middle: 'Middle',
+          senior: 'Senior',
+          expert: 'Expert',
+          na: '—',
+        },
         // ADR-024 rubric dimensions.
         dimensionsLabel: 'Dimensiones',
         dimensionNA: 'N/A',
@@ -888,7 +931,7 @@ const catalogs = {
         t6Met: (n) => `You have a team of at least 2 specialized agents defined (\`agentCounts.agents = ${n}\`).`,
         t7Met: (n) => `You have hook-based automation configured (\`hooks = ${n}\`).`,
         t1Blocking: (n) => `To reach T1 (First tool) you need at least one detected AI tool — currently \`totalDetected = ${n}\`.`,
-        t2Blocking: (n) => `To reach T2 (Notebook bench) you need at least one persistent context file (instructions, config or rules) — currently \`context = ${n}\`.`,
+        t2Blocking: (n) => `To reach T2 (Bench with notes) you need at least one persistent context file (instructions, config or rules) — currently \`context = ${n}\`.`,
         t3Blocking: (n) => `To reach T3 (Connected bench) you need to connect at least one MCP server — currently \`mcpServers = ${n}\`.`,
         t4Blocking: (n) => `To reach T4 (Own tooling) you need to create at least one asset of your own — skill, command or rule — currently \`custom = ${n}\`.`,
         t5Blocking: (hasAgentic, mcp, custom) => {
@@ -905,6 +948,13 @@ const catalogs = {
     // Progression ladder (skill-code-certification, report req 1) — see the es block.
     ladder: {
       levelsHeading: 'Maturity levels (0-4)',
+      // ADR-016: the ladder now groups tiers by SETUP LEVEL, not the 0-4 band.
+      setupHeading: 'Setup Level',
+      setupIntro:
+        'Your setup level (S1–S3) sums up your AI usage at a glance; the tier (T0-T7) is the '
+        + 'fine-grained axis it is derived from. Both are deterministic. Below marks what you have '
+        + 'already passed (✓), where you are now (●), and what lies ahead (○) with the exact criterion '
+        + 'that unlocks it.',
       tiersHeading: 'Tier ladder (T0-T7)',
       levelLabel: (n) => `Level ${n}`,
       intro:
@@ -1023,12 +1073,36 @@ const catalogs = {
       sampleDecisions: 'I defined its purpose and boundaries myself, chose its tools and guardrails, and decided how it handles failures.',
       sampleFollowupAnswer: 'I designed it this way deliberately for the project constraints and have iterated on it based on real results.',
     },
+    // LEGACY 0-4 band names — kept only for older persisted reports / the
+    // unchanged sent payload (ADR-016); the report shows `setupLevels` instead.
     levelNames: {
       none: 'No AI footprint',
       exploring: 'Exploring',
       integrated: 'Integrated',
       power: 'Power user',
       orchestrator: 'Orchestrator',
+    },
+    // Setup Level (Talent Certification Framework, ADR-016): the 3-value rollup
+    // that REPLACES the 0-4 band on every surface. Keyed by tier-engine.js's
+    // stable `setupLevel.key`. The `S1/S2/S3` codes are framework identifiers
+    // (verbatim). `desc` is the one-line meaning shown in the ladder.
+    setupLevels: {
+      none: {
+        label: 'Not certified',
+        desc: 'No AI setup: no AI tool detected in your environment.',
+      },
+      S1: {
+        label: 'S1 · Assisted',
+        desc: 'Assisted: you use AI with persistent context (instructions/config) across your projects.',
+      },
+      S2: {
+        label: 'S2 · Extended',
+        desc: 'Extended: you extend AI with MCP and your own assets (skills, commands or rules).',
+      },
+      S3: {
+        label: 'S3 · Orchestrated',
+        desc: 'Orchestrated: you run agentic CLIs, agent teams and end-to-end automation.',
+      },
     },
     nextSteps: {
       0: 'Install an AI tool (Claude Code, Cursor or Copilot) and try it on a real project.',
@@ -1048,6 +1122,8 @@ const catalogs = {
       brandSub: 'AI usage profile',
       toolsDetected: (n, total) => `${n}/${total} tools detected`,
       level: (level, name) => `Level ${level} · ${name}`,
+      // ADR-016: Setup Level shown in the top bar (replaces the 0-4 level line).
+      setupLevel: (label) => `Setup · ${label}`,
       // Current tier appended to the top bar, next to the level (report req 1 addendum).
       tierInline: (key, name) => ` · Tier ${key} · ${name}`,
       detectedHeading: 'Detected',
@@ -1068,10 +1144,12 @@ const catalogs = {
     },
     html: {
       lang: 'en',
-      title: (level) => `AI Footprint · Level ${level}`,
+      title: (setupLabel) => `AI Footprint · ${setupLabel}`,
       h1: 'Your AI usage profile',
       sub: 'A local snapshot of which AI tools you have and how deeply you have configured them.',
       levelOf: (level) => `Level ${level} of 4`,
+      // ADR-016: hero label for the Setup Level (replaces the 0-4 "Level X of 4").
+      setupLevelOf: 'Setup Level',
       // Current tier shown in the hero bar next to the level (report req 1 addendum).
       currentTier: (key, name) => `Tier ${key} · ${name}`,
       detectedSuffix: (total) => `of ${total} tools detected`,
@@ -1439,15 +1517,23 @@ const catalogs = {
       report: {
         heading: 'Skill certification result',
         disclaimer:
-          'Note: the score is computed from an anchored rubric (0-4 dimensions) with a fixed '
-          + 'formula, so the aggregation is deterministic — the same per-dimension judgments '
-          + 'always yield the same score. Only the model’s per-criterion judgments may vary '
-          + 'slightly between runs. It is an indicative assessment, not an official '
-          + 'Client-facing certification.',
+          'Note: the level is determined from an anchored rubric with a fixed formula, so the '
+          + 'aggregation is deterministic — the same per-dimension judgments always yield the '
+          + 'same level. Only the model’s per-criterion judgments may vary slightly between '
+          + 'runs. It is an indicative assessment, not an official Client-facing certification.',
         partialSampleWarning:
           'Partial sample: due to size limits the assessment is based on a sample of the code, '
           + 'not the whole project.',
         scoreLine: (score) => `Score: ${score == null ? 'n/a' : `${score}/100`}`,
+        // ADR-016 skill levels (by decision power, NOT points) — replace the
+        // numeric grade in the skill output. `key` from skillLevelForScore.
+        levelLine: (label) => `Level: ${label}`,
+        skillLevels: {
+          middle: 'Middle',
+          senior: 'Senior',
+          expert: 'Expert',
+          na: '—',
+        },
         // ADR-024 rubric dimensions.
         dimensionsLabel: 'Dimensions',
         dimensionNA: 'N/A',

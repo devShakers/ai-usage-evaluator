@@ -19,7 +19,11 @@ function fakeScan() {
   });
 }
 function fakeClassify() {
-  return () => ({ level: 4, key: 'orchestrator', name: 'Orquestador', score: 82, tierKey: 'T6' });
+  return () => ({
+    level: 4, key: 'orchestrator', name: 'Orquestador', score: 82,
+    tier: 6, tierKey: 'T6', tierName: 'Multi-agente',
+    setupLevel: { key: 'S3', code: 'S3', rank: 3, emoji: '●' }, // T6 -> S3
+  });
 }
 
 test('adapter maps agents, derives models, resolves parent hierarchy', () => {
@@ -40,13 +44,16 @@ test('adapter maps agents, derives models, resolves parent hierarchy', () => {
 
 test('footprint drawer is built from the live maturity + technologies (#3)', () => {
   const { footprint } = buildGraphScan('/tmp/p', { scanFn: fakeScan(), classifyFn: fakeClassify() });
-  assert.equal(footprint.tier.level, 4);
-  assert.equal(footprint.tier.name, 'Orquestador');
+  // ADR-016: Setup Level (S3) is the drawer's headline rollup; tier chip carries T6.
+  assert.equal(footprint.setup.key, 'S3');
+  assert.equal(footprint.setup.rank, 3);
+  assert.equal(footprint.tier.key, 'T6');
+  assert.equal(footprint.tier.name, 'Multi-agente');
   assert.equal(footprint.score, 82);
   assert.ok(footprint.technologies.includes('Prisma'));
   assert.ok(footprint.tools.includes('Claude Code'));
   assert.ok(!footprint.tools.includes('Cursor')); // not installed
-  assert.equal(footprint.ladder.length, 5);
+  assert.equal(footprint.ladder.length, 4); // Not certified + S1/S2/S3
 });
 
 test('generateGraph over the adapter scan emits calls + hierarchy triggers edges', async () => {

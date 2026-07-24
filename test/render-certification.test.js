@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { renderCertificationTerminal, renderCertificationHtml } = require('../src/render-certification');
+const { renderCertificationTerminal, renderCertificationHtml, skillLevelForScore } = require('../src/render-certification');
 
 /*
  * skill-code-certification, issue 005: certify report renderers (terminal +
@@ -11,6 +11,25 @@ const { renderCertificationTerminal, renderCertificationHtml } = require('../src
  * disclaimer, a partial-sample warning when truncated, and per-Skill score/
  * rationale/improvements — or a clear not-certified / not-sampleable state.
  */
+
+// --- ADR-016 skill level mapping (Middle/Senior/Expert by decision power) ----
+test('skillLevelForScore: maps score bands to the three named levels', () => {
+  assert.equal(skillLevelForScore(90).key, 'expert'); // >=70 high
+  assert.equal(skillLevelForScore(70).key, 'expert'); // boundary
+  assert.equal(skillLevelForScore(69).key, 'senior'); // 40-69 mid
+  assert.equal(skillLevelForScore(40).key, 'senior'); // boundary
+  assert.equal(skillLevelForScore(39).key, 'middle'); // <40 low
+  assert.equal(skillLevelForScore(0).key, 'middle');
+});
+
+test('skillLevelForScore: level rank is monotonic with the score, and band colour is preserved', () => {
+  assert.equal(skillLevelForScore(90).band, 'high');
+  assert.equal(skillLevelForScore(55).band, 'mid');
+  assert.equal(skillLevelForScore(10).band, 'low');
+  // A non-numeric score (model degraded) yields no level key, never a crash.
+  assert.equal(skillLevelForScore(null).key, null);
+  assert.equal(skillLevelForScore(undefined).key, null);
+});
 
 function certification(overrides = {}) {
   return {
@@ -26,25 +45,27 @@ function certification(overrides = {}) {
   };
 }
 
-test('terminal: shows heading, disclaimer, score, rationale, improvements, sample summary', () => {
+test('terminal: shows heading, disclaimer, named level, rationale, improvements, sample summary', () => {
   const out = renderCertificationTerminal(certification(), 'en');
   assert.match(out, /Skill certification result/);
   // ADR-024: the disclaimer now describes the deterministic rubric aggregation.
   assert.match(out, /anchored rubric/);
   assert.match(out, /deterministic/);
-  assert.match(out, /Score: 82\/100/);
+  // ADR-016: numeric grade replaced by the named level (82 -> high band -> Expert).
+  assert.match(out, /Level: Expert/);
+  assert.doesNotMatch(out, /Score: \d+\/100/); // numeric grade removed
   assert.match(out, /Solid component patterns/);
   assert.match(out, /Add tests/);
   assert.match(out, /Sample: 3\/5 files/);
 });
 
-test('terminal: renders the anchored rubric dimensions when present (ADR-024)', () => {
+test('terminal (ADR-016): named level headline, but the ADR-024 rubric dimensions stay visible', () => {
   const cert = {
     items: [{
       skillId: 1, skillName: 'React', technology: 'React',
       sampling: { sampleable: true, includedCount: 2, candidateCount: 2, estTokens: 800, truncated: false, capReason: null },
       result: {
-        score: 64,
+        score: 64, // mid band -> Senior
         dimensions: { idiomatic: 3, correctness: 2, depth: 3, structure: 2, testing: null },
         rationale: 'ok',
         improvements: ['a', 'b'],
@@ -54,6 +75,9 @@ test('terminal: renders the anchored rubric dimensions when present (ADR-024)', 
   };
   // Strip ANSI so label/value assertions aren't split by color codes.
   const out = renderCertificationTerminal(cert, 'en').replace(/\x1b\[[0-9;]*m/g, '');
+  assert.match(out, /Level: Senior/); // headline: 64 -> mid -> Senior (no numeric grade)
+  assert.doesNotMatch(out, /Score: \d+\/100/); // top-line numeric grade removed
+  // The detailed rubric breakdown is retained (only the headline changed).
   assert.match(out, /Dimensions/);
   assert.match(out, /Idiomatic usage: 3\/4/);
   assert.match(out, /Testing: N\/A/); // null dimension shown as N/A, not 0
@@ -128,7 +152,7 @@ test('HTML: self-contained, zero-network (no external URLs), escapes content, in
   assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   assert.match(html, /React &lt;x&gt;/);
   assert.match(html, /a &amp; b/);
-  assert.match(html, /Score: 90\/100/);
+  assert.match(html, /Level: Expert/); // ADR-016: named level (90 -> high -> Expert), not a numeric grade
   // Issue 011: a remediation prompt exists (improvements present) -> copy
   // button + the shared, zero-network copy script. Reporting redesign: the
   // copy-target id is keyed by Skill id (rem-<skillId>), not a run-relative

@@ -143,7 +143,11 @@ function classify(report) {
   });
 
   // Band 0-4 derived from the tier engine (issue 019, single source of
-  // truth) — replaces the old ad-hoc level rules entirely.
+  // truth). ADR-016: the band is RETIRED from every display surface — the
+  // 3-value Setup Level (below) is what the report shows. `level`/`key`/
+  // `name`/`emoji` are kept in the returned shape ONLY so the sent payload
+  // (share.js#derivePayload) stays byte-for-byte unchanged until the backend
+  // reconciles the contract (issue 023); they are no longer rendered.
   const tierResult = computeTierResult(report);
   const level = tierResult.band;
   const meta = LEVELS[level];
@@ -164,6 +168,9 @@ function classify(report) {
     tier: tierResult.tier,
     tierKey: tierResult.tierKey,
     tierName: tierResult.tierName,
+    // Setup Level (ADR-016): the 3-value rollup shown to the talent, derived
+    // from the tier. `{key, code, rank, emoji}`; label localized via i18n.
+    setupLevel: tierResult.setupLevel,
   };
 }
 

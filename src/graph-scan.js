@@ -29,6 +29,7 @@
 const path = require('path');
 const { scan } = require('./scanner');
 const { classify } = require('./maturity');
+const { setupLevelForTier } = require('./tier-engine');
 
 function slug(s) {
   return String(s || '')
@@ -145,21 +146,32 @@ function buildGraphScan(root, { scanFn = scan, classifyFn = classify } = {}) {
   };
 }
 
-const LADDER = [
-  { n: 0, name: 'Sin rastro de IA' },
-  { n: 1, name: 'Explorando' },
-  { n: 2, name: 'Integrado' },
-  { n: 3, name: 'Power user' },
-  { n: 4, name: 'Orquestador' },
+// Setup-level ladder for the drawer (ADR-016): the 3 Setup Levels + "Not
+// certified", replacing the retired 0-4 maturity ladder. Labels are es (the
+// drawer is Spanish); render-sheet localizes via the i18n `setupLevels` catalog
+// when a locale is available.
+const SETUP_LADDER = [
+  { rank: 0, key: 'none', label: 'Sin certificar' },
+  { rank: 1, key: 'S1', label: 'S1 · Asistido' },
+  { rank: 2, key: 'S2', label: 'S2 · Extendido' },
+  { rank: 3, key: 'S3', label: 'S3 · Orquestado' },
 ];
 
 // #3 — footprint drawer payload from the live scan (defensive: tolerates
 // whatever fields classify()/scan() expose).
 function buildFootprintDrawer(report, maturity) {
-  const level = maturity && typeof maturity.level === 'number' ? maturity.level : 0;
-  const name = (maturity && maturity.name) || (LADDER[level] && LADDER[level].name) || '—';
   const score = maturity && typeof maturity.score === 'number' ? maturity.score : 0;
   const tierKey = (maturity && (maturity.tierKey || maturity.key)) || '';
+  const tierNum = maturity && typeof maturity.tier === 'number'
+    ? maturity.tier
+    : (/^T([0-7])$/.test(tierKey) ? Number(tierKey.slice(1)) : null);
+  const tierName = (maturity && maturity.tierName) || '—';
+  // Setup Level (ADR-016) replaces the 0-4 band as the drawer's headline rollup.
+  // Prefer the maturity's own `setupLevel`; derive from the tier for older /
+  // partial maturity objects that predate it.
+  const setup = (maturity && maturity.setupLevel)
+    || (tierNum != null ? setupLevelForTier(tierNum) : { key: 'none', code: null, rank: 0, emoji: '○' });
+  const setupLabel = (SETUP_LADDER.find((s) => s.key === setup.key) || SETUP_LADDER[0]).label;
   const technologies = Array.isArray(report.technologies) ? report.technologies : [];
   // Installed AI dev tools (assistants). `report.tools` is an ARRAY of tool
   // objects ({ id, name, detected, ... }) — earlier code indexed it as an
@@ -179,11 +191,15 @@ function buildFootprintDrawer(report, maturity) {
 
   return {
     score,
-    tier: { level, key: (maturity && maturity.key) || 'none', name, label: tierKey ? `${tierKey} · ${name}` : name },
-    ladder: LADDER,
+    // `setup` is the ADR-016 rollup shown in the drawer hero; `tier` keeps the
+    // tierKey · tierName chip. `level`/`name` on `tier` retained (legacy) so an
+    // older render-sheet build reading them never crashes — no longer shown.
+    setup: { key: setup.key, code: setup.code, rank: setup.rank, emoji: setup.emoji, label: setupLabel },
+    tier: { key: tierKey || 'none', name: tierName, label: tierKey ? `${tierKey} · ${tierName}` : tierName },
+    ladder: SETUP_LADDER,
     // "Lectura": a deterministic, human-readable one-liner from the scan (no LLM,
     // no fabricated content). Previously hardcoded '' → an empty box in the drawer.
-    summary: buildReading({ level, name, score, tierKey, nTools: tools.length, nTech: technologies.length }),
+    summary: buildReading({ setupLabel, tierKey, tierName, score, nTools: tools.length, nTech: technologies.length }),
     tools,
     technologies,
   };
@@ -194,11 +210,11 @@ function buildFootprintDrawer(report, maturity) {
  * ONLY from real scan numbers — never invented prose. Kept factual so it can't
  * leak a dangling token like an unfilled `(${…})`.
  */
-function buildReading({ level, name, score, tierKey, nTools, nTech }) {
-  const tier = tierKey ? `${tierKey} · ${name}` : name;
+function buildReading({ setupLabel, tierKey, tierName, score, nTools, nTech }) {
+  const tier = tierKey ? `${tierKey} · ${tierName}` : tierName;
   const toolsPart = nTools > 0 ? `${nTools} herramienta${nTools === 1 ? '' : 's'} de IA detectada${nTools === 1 ? '' : 's'}` : 'sin herramientas de IA detectadas';
   const techPart = nTech > 0 ? `${nTech} tecnología${nTech === 1 ? '' : 's'} en el proyecto` : 'sin tecnologías detectadas';
-  return `Madurez de IA nivel ${level} (${tier}), score ${score}/100. ${toolsPart[0].toUpperCase()}${toolsPart.slice(1)} y ${techPart}.`;
+  return `Nivel de setup ${setupLabel} (${tier}), score ${score}/100. ${toolsPart[0].toUpperCase()}${toolsPart.slice(1)} y ${techPart}.`;
 }
 
 function prettyTool(key) {

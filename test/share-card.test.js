@@ -72,11 +72,11 @@ test('loadProjectFootprint: null when the project has no footprint', () => {
   assert.strictEqual(bad, null);
 });
 
-test('buildCardModel: tier and band labels resolve to ENGLISH regardless of locale', () => {
-  const model = buildCardModel({ tierKey: 'T5', levelKey: 'orchestrator', score: 78 });
+test('buildCardModel: tier and setup-level labels resolve to ENGLISH regardless of locale (ADR-016)', () => {
+  const model = buildCardModel({ tierKey: 'T5', setupLevelKey: 'S3', score: 78 });
   assert.strictEqual(model.tierKey, 'T5');
   assert.strictEqual(model.tierName, 'Agentic operator'); // en catalog, not the Spanish tier-engine name
-  assert.strictEqual(model.bandName, 'Orchestrator'); // en levelNames
+  assert.strictEqual(model.bandName, 'S3 · Orchestrated'); // en setupLevels label (replaces the 0-4 band)
   assert.strictEqual(model.score, 78);
   // Never the Spanish tier-engine name.
   assert.ok(!/Operador/.test(model.tierName));
@@ -171,8 +171,8 @@ test('renderCardSvg: omits the technologies line when there are none; no stats l
   assert.match(svg, />T1</);
 });
 
-test('renderCardSvg: correct dimensions and the tier/score/band content', () => {
-  const svg = renderCardSvg(buildCardModel({ tierKey: 'T5', levelKey: 'orchestrator', score: 78 }));
+test('renderCardSvg: correct dimensions and the tier/score/setup-level content', () => {
+  const svg = renderCardSvg(buildCardModel({ tierKey: 'T5', setupLevelKey: 'S3', score: 78 }));
   assert.match(svg, new RegExp(`width="${CARD_W}"`));
   assert.match(svg, new RegExp(`height="${CARD_H}"`));
   assert.match(svg, /viewBox="0 0 1200 627"/);
@@ -180,7 +180,7 @@ test('renderCardSvg: correct dimensions and the tier/score/band content', () => 
   assert.match(svg, /id="share-card-svg"/);
   assert.match(svg, />T5</); // tier key
   assert.match(svg, />Agentic operator</); // tier name (english)
-  assert.match(svg, />Orchestrator</); // band pill (english)
+  assert.match(svg, /S3 · Orchestrated</); // setup-level pill (english, ADR-016)
   assert.match(svg, />78</); // score
 });
 

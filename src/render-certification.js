@@ -97,6 +97,24 @@ function bandColor(band) {
   return band === 'high' ? C.green : band === 'low' ? C.red : C.yellow;
 }
 
+// ADR-016: named skill level (by decision power, not points) shown INSTEAD of
+// the numeric grade. Derived deterministically from the same score bands, so
+// the mapping stays in lockstep with `scoreBand`'s cutoffs:
+//   high (>=70) -> expert · mid (40-69) -> senior · low (<40) -> middle.
+// `key` is null for a result without a numeric score (rare: model degraded).
+// `band` is still returned for the badge colour (unchanged palette).
+function skillLevelForScore(score) {
+  const band = scoreBand(score);
+  if (typeof score !== 'number') return { key: null, band };
+  return { key: band === 'high' ? 'expert' : band === 'low' ? 'middle' : 'senior', band };
+}
+
+// Localized level label from the certify.report.skillLevels catalog.
+function skillLevelLabel(key, r) {
+  const names = (r && r.skillLevels) || {};
+  return key ? (names[key] || key) : (names.na || '—');
+}
+
 function escapeHtml(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;')
@@ -172,9 +190,13 @@ function renderCertificationTerminal(certification, lang) {
       continue;
     }
 
-    const band = scoreBand(item.result.score);
-    lines.push(`${C.cyan}│${C.reset}  ${C.bold}${bandColor(band)}${r.scoreLine(item.result.score)}${C.reset}`);
-    // ADR-024: show the anchored rubric dimensions so the score is explainable.
+    // ADR-016: the HEADLINE is the named level (Middle/Senior/Expert) instead of
+    // the numeric 0-100 grade. The ADR-024 rubric-dimension breakdown below is
+    // retained (the detailed numeric notes stay; only the top-line score is
+    // replaced by the level, per the framework's "by decision power" headline).
+    const { key: levelKey, band } = skillLevelForScore(item.result.score);
+    lines.push(`${C.cyan}│${C.reset}  ${C.bold}${bandColor(band)}${r.levelLine(skillLevelLabel(levelKey, r))}${C.reset}`);
+    // ADR-024: show the anchored rubric dimensions so the level is explainable.
     if (item.result.dimensions && r.dimensionsLabel && r.dimensionLabels) {
       lines.push(`${C.cyan}│${C.reset}  ${C.bold}${r.dimensionsLabel}:${C.reset}`);
       for (const key of DIMENSION_KEYS) {
@@ -289,14 +311,17 @@ function certificationSectionsHtml(certification, lang) {
       return `<section class="card skill not-certified">${head}</div><p class="note">${escapeHtml(r.notCertified)}</p></section>`;
     }
 
-    const band = scoreBand(item.result.score);
-    const scoreBadge = `<span class="score-badge band-${band}">${escapeHtml(r.scoreLine(item.result.score))}</span></div>`;
+    // ADR-016: the HEADLINE badge is the named level (Middle/Senior/Expert)
+    // instead of the numeric 0-100 grade, coloured by the same band. The
+    // ADR-024 rubric-dimension breakdown below is retained.
+    const { key: levelKey, band } = skillLevelForScore(item.result.score);
+    const scoreBadge = `<span class="score-badge band-${band}">${escapeHtml(r.levelLine(skillLevelLabel(levelKey, r)))}</span></div>`;
 
     const improvements =
       Array.isArray(item.result.improvements) && item.result.improvements.length
         ? `<p class="label">${escapeHtml(r.improvementsLabel)}</p><ul>${item.result.improvements.map((i) => `<li>${escapeHtml(i)}</li>`).join('')}</ul>`
         : '';
-    // ADR-024: render the anchored rubric dimensions so the score is explainable.
+    // ADR-024: render the anchored rubric dimensions so the level is explainable.
     const dimensions =
       item.result.dimensions && r.dimensionsLabel && r.dimensionLabels
         ? `<p class="label">${escapeHtml(r.dimensionsLabel)}</p><ul class="dimensions">${DIMENSION_KEYS.map(
@@ -371,4 +396,5 @@ module.exports = {
   CERTIFICATION_CSS,
   anyTruncated,
   scoreBand,
+  skillLevelForScore,
 };

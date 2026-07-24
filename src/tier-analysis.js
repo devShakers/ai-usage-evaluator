@@ -1,7 +1,6 @@
 'use strict';
 
-const { computeTierResult, bandForTier, TIERS } = require('./tier-engine');
-const { LEVELS } = require('./maturity');
+const { computeTierResult, setupLevelForTier, SETUP_LEVELS, TIERS } = require('./tier-engine');
 
 /*
  * Deterministic "why this tier" analysis (talents-ai-score): builds a
@@ -105,23 +104,25 @@ function analyzeTier(report, t) {
   return { ...result, tierName, metCriteria, blockingCriterion };
 }
 
-// Builds the FULL progression ladder (skill-code-certification, report req 1):
-// every maturity LEVEL (0-4) and every TIER (T0-T7) with its status relative to
-// where the talent currently sits — so the report explains what each level/tier
-// MEANS and shows, at a glance, which checks are already passed (✓), which is
-// current (●) and which remain (○) with the exact criterion that unlocks them.
+// Builds the FULL progression ladder (skill-code-certification, report req 1;
+// ADR-016): every SETUP LEVEL (S1-S3, plus "Not certified") and every TIER
+// (T0-T7) with its status relative to where the talent currently sits — so the
+// report explains what each setup level/tier MEANS and shows, at a glance,
+// which checks are already passed (✓), which is current (●) and which remain
+// (○) with the exact criterion that unlocks them.
 //
-// Fully DETERMINISTIC: the current tier/band come straight from the tier engine,
-// and the per-tier unlock text reuses tier-analysis's own already-translated
-// `blockingText` criteria — no LLM, no new copy for the criteria themselves
-// (only the plain-language "what it represents" descriptions are new i18n, in
-// `t.ladder`). `t` is the FULL catalog (needs `t.tierNames`, `t.levelNames`,
-// `t.tierAnalysis`, `t.ladder`).
+// Fully DETERMINISTIC: the current tier / setup level come straight from the
+// tier engine, and the per-tier unlock text reuses tier-analysis's own
+// already-translated `blockingText` criteria — no LLM, no new copy for the
+// criteria themselves (only the plain-language "what it represents"
+// descriptions are new i18n, in `t.ladder` / `t.setupLevels`). `t` is the FULL
+// catalog (needs `t.tierNames`, `t.setupLevels`, `t.tierAnalysis`, `t.ladder`).
 function buildLadder(report, t) {
   const tt = t.tierAnalysis;
   const ld = t.ladder;
   const result = computeTierResult(report || {});
-  const { signals, tier, band } = result;
+  const { signals, tier } = result;
+  const currentSetupRank = setupLevelForTier(tier).rank;
 
   const statusFor = (index, current) =>
     index < current ? 'done' : index === current ? 'current' : 'pending';
@@ -145,33 +146,35 @@ function buildLadder(report, t) {
     };
   };
 
-  // NESTED ladder (user decision): each maturity LEVEL groups the TIERS that
-  // compose it. The grouping is DERIVED from the tier engine's single source of
-  // truth (`bandForTier`, i.e. BAND_BY_TIER) — never a hardcoded second copy —
-  // so if that table changes, the grouping follows. Today that inversion yields
-  // L0→[T0] L1→[T1] L2→[T2] L3→[T3,T4] L4→[T5,T6,T7].
-  const tiersByBand = new Map();
+  // NESTED ladder: each SETUP LEVEL groups the TIERS that compose it. The
+  // grouping is DERIVED from the tier engine's single source of truth
+  // (`setupLevelForTier`, i.e. SETUP_LEVEL_BY_TIER) — never a hardcoded second
+  // copy — so if that table changes, the grouping follows. Today that
+  // inversion yields none→[T0] S1→[T1,T2] S2→[T3,T4] S3→[T5,T6,T7].
+  const tiersBySetup = new Map();
   for (const meta of TIERS) {
-    const b = bandForTier(meta.tier);
-    if (!tiersByBand.has(b)) tiersByBand.set(b, []);
-    tiersByBand.get(b).push(tierNode(meta));
+    const key = setupLevelForTier(meta.tier).key;
+    if (!tiersBySetup.has(key)) tiersBySetup.set(key, []);
+    tiersBySetup.get(key).push(tierNode(meta));
   }
 
-  const levels = LEVELS.map((meta) => {
-    const tiers = (tiersByBand.get(meta.level) || []).sort((a, b) => a.tier - b.tier);
+  const setupLevels = SETUP_LEVELS.map((meta) => {
+    const tiers = (tiersBySetup.get(meta.key) || []).sort((a, b) => a.tier - b.tier);
+    const copy = (t.setupLevels && t.setupLevels[meta.key]) || {};
     return {
-      level: meta.level,
       key: meta.key,
+      code: meta.code,
+      rank: meta.rank,
       emoji: meta.emoji,
-      name: (t.levelNames && t.levelNames[meta.key]) || meta.name,
-      description: (ld && ld.levelDesc && ld.levelDesc[meta.key]) || '',
-      status: statusFor(meta.level, band),
+      label: copy.label || meta.key,
+      description: copy.desc || '',
+      status: statusFor(meta.rank, currentSetupRank),
       tierKeys: tiers.map((x) => x.tierKey),
       tiers,
     };
   });
 
-  return { currentTier: tier, currentBand: band, levels };
+  return { currentTier: tier, currentSetupRank, setupLevels };
 }
 
 module.exports = { analyzeTier, buildLadder, CRITERIA };
