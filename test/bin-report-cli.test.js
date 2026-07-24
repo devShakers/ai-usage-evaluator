@@ -87,7 +87,7 @@ test('bin/report.js: asks about persisting BEFORE the report, and the report is 
   });
   assert.equal(code, 0);
   assert.match(stdout, /AI FOOTPRINT/); // the report banner is still present
-  assert.match(stdout, /Level \d|Nivel \d/); // the maturity level line
+  assert.match(stdout, /Setup · |Setup Level/); // ADR-016: the Setup Level line (replaces the 0-4 maturity level)
 
   const reportIdx = stdout.search(/AI FOOTPRINT/);
   const consentIdx = stdout.search(/Save this report in Shakers\?|Guardar este informe en Shakers\?/);

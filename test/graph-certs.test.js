@@ -46,15 +46,20 @@ test('agents: P1-P5 level name, evidence DERIVED from areas (P5 never without ev
   assert.ok(a.rationale.includes('Deep ownership'));
 });
 
-test('skills: name(+tech), score, band, rationale, improvements', () => {
+test('skills: name(+tech), named level, band, rationale, improvements (ADR-016)', () => {
   const p = buildCertsPayload(projectWithCerts(), 'es');
   const ts = p.skills.find((s) => s.name.startsWith('TypeScript'));
   assert.equal(ts.name, 'TypeScript · NestJS');
-  assert.equal(ts.score, 88);
+  // ADR-016: numeric grade replaced by the named level (88 -> high band -> Expert).
+  assert.equal(ts.levelKey, 'expert');
+  assert.equal(ts.levelName, 'Expert');
   assert.equal(ts.band, 'high');
+  assert.equal(ts.score, undefined); // numeric grade removed from the skill output
   assert.ok(ts.improvements.length === 2);
   const pr = p.skills.find((s) => s.name === 'Prompting');
   assert.equal(pr.band, 'low'); // 35 -> low
+  assert.equal(pr.levelKey, 'middle'); // low band -> Middle
+  assert.equal(pr.levelName, 'Middle');
   assert.deepEqual(pr.improvements, []);
 });
 

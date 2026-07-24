@@ -259,22 +259,22 @@ function ladderMark(status) {
 
 function printLadder(report, t, p) {
   const ld = t.ladder;
-  const { levels } = buildLadder(report, t);
-  const allTiers = levels.flatMap((lvl) => lvl.tiers);
+  const { setupLevels } = buildLadder(report, t);
+  const allTiers = setupLevels.flatMap((lvl) => lvl.tiers);
   const done = allTiers.filter((x) => x.status === 'done').length;
   const current = allTiers.filter((x) => x.status === 'current').length;
   const pending = allTiers.filter((x) => x.status === 'pending').length;
 
-  p(`  ${c.bold}${ld.levelsHeading}${c.reset}`);
-  p(`  ${c.gray}${ld.intro}${c.reset}`);
+  p(`  ${c.bold}${ld.setupHeading}${c.reset}`);
+  p(`  ${c.gray}${ld.setupIntro}${c.reset}`);
   p(`  ${c.dim}${ld.legend(done, current, pending)}${c.reset}`);
   p();
-  // NESTED (user decision): each maturity level, then its tiers indented beneath.
-  for (const lvl of levels) {
+  // NESTED (ADR-016): each SETUP LEVEL, then its tiers indented beneath.
+  for (const lvl of setupLevels) {
     const nameStyle = lvl.status === 'pending' ? c.gray : `${c.bold}${c.white}`;
     const keys = lvl.tierKeys.length ? ` ${c.gray}— [${lvl.tierKeys.join(', ')}]${c.reset}` : '';
     // "You are here" lives ONLY on the current TIER, not the level header (user request).
-    p(`  ${ladderMark(lvl.status)} ${nameStyle}${lvl.emoji} ${ld.levelLabel(lvl.level)} · ${lvl.name}${c.reset}${keys}`);
+    p(`  ${ladderMark(lvl.status)} ${nameStyle}${lvl.emoji} ${lvl.label}${c.reset}${keys}`);
     p(`      ${c.dim}${lvl.description}${c.reset}`);
     for (const tier of lvl.tiers) {
       const tierNameStyle = tier.status === 'pending' ? c.gray : c.white;
@@ -410,7 +410,9 @@ function renderTerminal(report, maturity, lang, opts = {}) {
   const lines = [];
   const p = (s = '') => lines.push(s);
 
-  const levelName = t.levelNames[maturity.key] || maturity.name;
+  // ADR-016: Setup Level (S1-S3 / Not certified) replaces the 0-4 band label.
+  const setupKey = (maturity.setupLevel && maturity.setupLevel.key) || 'none';
+  const setupLabel = (t.setupLevels && t.setupLevels[setupKey] && t.setupLevels[setupKey].label) || setupKey;
 
   // A compact brand header in BOTH modes for orientation.
   p();
@@ -439,7 +441,7 @@ function renderTerminal(report, maturity, lang, opts = {}) {
   sep(p);
   const tierName = (maturity.tierKey && t.tierNames[maturity.tierKey]) || maturity.tierName || '';
   const tierBit = maturity.tierKey ? t.terminal.tierInline(maturity.tierKey, tierName) : '';
-  p(`  ${c.bold}${c.white}${t.terminal.level(maturity.level, levelName)}${c.reset}${c.gray}${tierBit}${c.reset}`);
+  p(`  ${c.bold}${c.white}${t.terminal.setupLevel(setupLabel)}${c.reset}${c.gray}${tierBit}${c.reset}`);
   p(`  ${c.cyan}${bar(maturity.score)}${c.reset} ${c.dim}${maturity.score}/100${c.reset}`);
 
   // 2. WHY that score/tier — the rationale, right after the number.

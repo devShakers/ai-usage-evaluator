@@ -912,20 +912,20 @@ function ladderTierHtml(tier, ld) {
 
 function ladderSection(report, t) {
   const ld = t.ladder;
-  const { levels } = buildLadder(report, t);
-  const allTiers = levels.flatMap((lvl) => lvl.tiers);
+  const { setupLevels } = buildLadder(report, t);
+  const allTiers = setupLevels.flatMap((lvl) => lvl.tiers);
   const doneCount = allTiers.filter((x) => x.status === 'done').length;
   const currentCount = allTiers.filter((x) => x.status === 'current').length;
   const pendingCount = allTiers.filter((x) => x.status === 'pending').length;
 
-  const levelItems = levels
+  const levelItems = setupLevels
     .map((lvl) => {
       const keys = lvl.tierKeys.length ? ` — [${lvl.tierKeys.join(', ')}]` : '';
       const nestedTiers = lvl.tiers.map((tier) => ladderTierHtml(tier, ld)).join('');
       return `<div class="ladder-level ${lvl.status}">
         <div class="ladder-level-head">
           <span class="ladder-mark">${ladderStatusMark(lvl.status)}</span>
-          <span class="ladder-level-name">${esc(lvl.emoji)} ${esc(ld.levelLabel(lvl.level))} · ${esc(lvl.name)}</span>
+          <span class="ladder-level-name">${esc(lvl.emoji)} ${esc(lvl.label)}</span>
           <span class="ladder-level-tiers">${esc(keys)}</span>
         </div>
         <p class="ladder-desc">${esc(lvl.description)}</p>
@@ -935,9 +935,9 @@ function ladderSection(report, t) {
     .join('');
 
   return `<section>
-    <div class="h2">${esc(ld.levelsHeading)}</div>
+    <div class="h2">${esc(ld.setupHeading)}</div>
     <div class="card ladder-card">
-      <p class="ladder-intro">${esc(ld.intro)}</p>
+      <p class="ladder-intro">${esc(ld.setupIntro)}</p>
       <p class="ladder-legend">${esc(ld.legend(doneCount, currentCount, pendingCount))}</p>
       <div class="ladder-levels">${levelItems}</div>
     </div>
@@ -1465,7 +1465,11 @@ function footprintSectionsHtml(report, maturity, lang) {
   const detectedTools = report.tools.filter((tool) => tool.detected);
   const rows = detectedTools.map((tool) => toolRow(tool, t, lang)).join('\n');
   const detectedCount = detectedTools.length;
-  const levelName = t.levelNames[maturity.key] || maturity.name;
+  // ADR-016: Setup Level (S1-S3 / Not certified) replaces the 0-4 band in the
+  // hero. Resolved from the tier-derived `maturity.setupLevel`; label localized.
+  const setup = maturity.setupLevel || { key: 'none', rank: 0, emoji: '○' };
+  const setupCopy = (t.setupLevels && t.setupLevels[setup.key]) || {};
+  const setupLabel = setupCopy.label || setup.key;
 
   const env = report.environment || {};
   const editors = Array.isArray(env.editorsInstalled) ? env.editorsInstalled : [];
@@ -1473,8 +1477,9 @@ function footprintSectionsHtml(report, maturity, lang) {
     ? editors.map((id) => `<span class="chip">${esc(id)}</span>`).join('')
     : `<span class="chip empty">${esc(t.html.noEditorsDetected)}</span>`;
 
-  const levelPips = Array.from({ length: 5 }, (_, i) => {
-    const cls = i < maturity.level ? 'done' : (i === maturity.level ? 'here' : '');
+  // Four pips: Not certified + S1/S2/S3, current highlighted (ADR-016).
+  const levelPips = Array.from({ length: 4 }, (_, i) => {
+    const cls = i < setup.rank ? 'done' : (i === setup.rank ? 'here' : '');
     return `<span class="pip ${cls}"></span>`;
   }).join('');
 
@@ -1487,10 +1492,10 @@ function footprintSectionsHtml(report, maturity, lang) {
 
   return `<div class="card hero">
     <div class="lvl">
-      <div class="k">${esc(t.html.levelOf(maturity.level))}</div>
+      <div class="k">${esc(t.html.setupLevelOf)}</div>
       <div class="v">
-        <span class="glyph">${maturity.emoji}</span>
-        <span class="name">${esc(levelName)}</span>
+        <span class="glyph">${setup.emoji}</span>
+        <span class="name">${esc(setupLabel)}</span>
       </div>
       ${tierLine}
       <div class="pips">${levelPips}</div>
@@ -1569,9 +1574,11 @@ function renderHtml(report, maturity, lang) {
 
   ${footprintFooterHtml(report, maturity, t)}`;
 
+  const setupKey = (maturity.setupLevel && maturity.setupLevel.key) || 'none';
+  const setupLabel = (t.setupLevels && t.setupLevels[setupKey] && t.setupLevels[setupKey].label) || setupKey;
   return renderDocument({
     lang: t.html.lang,
-    title: t.html.title(maturity.level),
+    title: t.html.title(setupLabel),
     componentCss: FOOTPRINT_CSS,
     body,
     script: FOOTPRINT_SCRIPT,

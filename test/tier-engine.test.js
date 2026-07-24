@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { computeTierResult, computeTier, aggregateTierSignals, bandForTier, AGENTIC_IDS } = require('../src/tier-engine');
+const { computeTierResult, computeTier, aggregateTierSignals, bandForTier, setupLevelForTier, AGENTIC_IDS } = require('../src/tier-engine');
 
 /*
  * talents-ai-score, issue 019 (ADR-014): deterministic T0-T7 tier engine +
@@ -150,4 +150,46 @@ test('aggregateTierSignals: ignores non-detected tools entirely', () => {
 test('computeTier: never throws on missing/malformed report fields', () => {
   assert.doesNotThrow(() => computeTier(aggregateTierSignals({})));
   assert.doesNotThrow(() => computeTierResult({}));
+});
+
+// --- Setup Level derivation (ADR-016) ----------------------------------------
+// The 3-value Setup Level REPLACES the retired 0-4 band on every display
+// surface. Mapping: (T0)->Not certified · T1-T2->S1 · T3-T4->S2 · T5-T7->S3.
+
+test('setupLevelForTier: maps every tier to its framework Setup Level', () => {
+  assert.equal(setupLevelForTier(0).key, 'none'); // T0 -> Not certified
+  assert.equal(setupLevelForTier(1).key, 'S1');
+  assert.equal(setupLevelForTier(2).key, 'S1');
+  assert.equal(setupLevelForTier(3).key, 'S2');
+  assert.equal(setupLevelForTier(4).key, 'S2');
+  assert.equal(setupLevelForTier(5).key, 'S3');
+  assert.equal(setupLevelForTier(6).key, 'S3');
+  assert.equal(setupLevelForTier(7).key, 'S3');
+});
+
+test('setupLevelForTier: exposes stable code + monotonically non-decreasing rank', () => {
+  assert.equal(setupLevelForTier(0).code, null); // "Not certified" has no S-code
+  assert.equal(setupLevelForTier(1).code, 'S1');
+  assert.equal(setupLevelForTier(7).code, 'S3');
+  // Rank never decreases as the tier climbs (monotonic rollup) — a higher tier
+  // can never map to a lower Setup Level.
+  let prev = -1;
+  for (let tier = 0; tier <= 7; tier++) {
+    const rank = setupLevelForTier(tier).rank;
+    assert.ok(rank >= prev, `rank must be non-decreasing at tier ${tier} (got ${rank} after ${prev})`);
+    prev = rank;
+  }
+});
+
+test('setupLevelForTier: defensive on out-of-range / bad tier -> Not certified', () => {
+  assert.equal(setupLevelForTier(99).key, 'none');
+  assert.equal(setupLevelForTier(-1).key, 'none');
+  assert.equal(setupLevelForTier(undefined).key, 'none');
+});
+
+test('computeTierResult: exposes the Setup Level alongside the tier', () => {
+  const result = computeTierResult(report({ tools: [tool('claude-code', { instructions: 1, mcpServers: 1, skills: 1 })] }));
+  assert.equal(result.tier, 5);
+  assert.equal(result.setupLevel.key, 'S3'); // T5 -> S3
+  assert.equal(result.setupLevel.code, 'S3');
 });

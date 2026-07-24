@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const { getCatalog } = require('./i18n');
+const { setupLevelForTier } = require('./tier-engine');
 const { renderDocument } = require('./report-theme');
 const { loadState, configDir, projectSlug, fileUrl } = require('./report-store');
 const { WORDMARK_VIEWBOX, WORDMARK_PATHS } = require('./shakers-wordmark');
@@ -114,6 +115,10 @@ function loadProjectFootprint(root, { load = loadState } = {}) {
     score: m.score,
     level: m.level,
     levelKey: m.key,
+    // ADR-016: Setup Level for the card pill (replaces the 0-4 band). Prefer the
+    // persisted `setupLevel`; derive from the tier for older stored reports.
+    setupLevelKey: (m.setupLevel && m.setupLevel.key)
+      || (typeof m.tier === 'number' ? setupLevelForTier(m.tier).key : 'none'),
     generatedAt: fp.generatedAt || null,
     signals: {
       toolsDetected,
@@ -146,7 +151,9 @@ function buildCardModel(fp) {
   const en = getCatalog('en');
   const tierKey = fp.tierKey;
   const tierName = (en.tierNames && en.tierNames[tierKey]) || tierKey;
-  const bandName = (en.levelNames && en.levelNames[fp.levelKey]) || '';
+  // ADR-016: Setup Level label for the pill (English-fixed like the tier name).
+  const setupKey = fp.setupLevelKey || 'none';
+  const bandName = (en.setupLevels && en.setupLevels[setupKey] && en.setupLevels[setupKey].label) || '';
 
   const s = fp.signals || {};
   const n = (v) => (typeof v === 'number' && isFinite(v) ? v : 0);
