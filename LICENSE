@@ -1,0 +1,13 @@
+© Shakers Works S.L. — All rights reserved.
+
+This repository is a distribution channel for the Shakers connector (a Claude
+Code plugin marketplace and a host for the Shakers .mcpb bundle). It contains
+configuration and documentation only; it carries no Shakers source code.
+
+No license is granted. You may not copy, modify, redistribute, or create
+derivative works from the contents of this repository without the prior
+written permission of Shakers Works S.L.
+
+The connector itself is distributed as the public npm package `shakers-cli-beta`
+(staging) / `shakers-cli` (prod); its use is governed by its own license and by
+the Shakers terms at https://shakersworks.com/legal.

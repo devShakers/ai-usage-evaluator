@@ -1,0 +1,46 @@
+{
+  "manifest_version": "0.3",
+  "name": "shakers",
+  "display_name": "Shakers (staging)",
+  "version": "0.0.0",
+  "description": "All-in-one local Shakers connector: scan your AI usage, build your profile, find projects, register, onboard, certify and ask Alma — the full toolset runs on your machine and talks to Shakers over HTTP with your CLI login.",
+  "long_description": "A local MCP server exposing the complete Shakers talent toolset. The local scan tools (ai_usage, read_cv, suggest_register_context) run on-device with on-device redaction; the server-backed tools (profile, projects, applications, certifications, register, onboarding, roles, Alma) call hub/certs over HTTP authenticated with your Shakers CLI session. Includes slash-command prompts for the key actions.",
+  "author": {
+    "name": "Shakers",
+    "url": "https://shakersworks.com"
+  },
+  "homepage": "https://shakersworks.com",
+  "documentation": "https://shakersworks.com",
+  "privacy_policies": [
+    "https://shakersworks.com/legal/mcp-privacy"
+  ],
+  "server": {
+    "type": "node",
+    "entry_point": "bin/mcp.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/bin/mcp.js"],
+      "env": {
+        "SHAKERS_CLI_ENV": "staging",
+        "SHAKERS_CLI_ALMA_BASE": "https://works.staging.shakersworks.com"
+      }
+    }
+  },
+  "tools": [
+    { "name": "ai_usage", "description": "Scan this machine's AI-tool sessions + git repos and (with consent) submit the redacted AI-usage report to Shakers." },
+    { "name": "get_profile", "description": "Your Shakers profile: role, rate, and 'My work with AI'." },
+    { "name": "find_projects", "description": "Find open Shakers positions matched to you." },
+    { "name": "register", "description": "Register and set up your Shakers talent profile." },
+    { "name": "onboarding_interview_start", "description": "Start the onboarding interview (LiveKit; degrades if the optional native dep is absent)." },
+    { "name": "ask", "description": "Ask Alma, the Shakers AI assistant." },
+    { "name": "read_cv", "description": "Read a CV file you confirmed is yours (local, with permission)." },
+    { "name": "suggest_register_context", "description": "Content-free local hints (timezone, git identity, CV candidates) to speed up registration." }
+  ],
+  "keywords": ["shakers", "ai-usage", "developer-tools", "mcp"],
+  "license": "SEE LICENSE IN LICENSE",
+  "compatibility": {
+    "runtimes": {
+      "node": ">=18"
+    }
+  }
+}

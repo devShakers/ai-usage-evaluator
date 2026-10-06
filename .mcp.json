@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "shakers": {
+      "command": "npx",
+      "args": ["-y", "shakers-cli-beta", "mcp"],
+      "env": {
+        "SHAKERS_CLI_ENV": "staging",
+        "SHAKERS_CLI_ALMA_BASE": "https://works.staging.shakersworks.com"
+      }
+    }
+  }
+}

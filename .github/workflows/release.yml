@@ -1,0 +1,124 @@
+name: Build and publish .mcpb
+
+# Builds the Shakers connector .mcpb bundle from the PUBLIC npm package
+# (shakers-cli-beta for staging, shakers-cli for prod) and uploads it as a
+# GitHub Release asset with a STABLE name, so that
+#   https://github.com/devShakers/ai-usage-evaluator/releases/latest/download/shakers-ai-usage-staging.mcpb
+# always resolves to the newest bundle.
+
+on:
+  # A published GitHub Release attaches the asset to that release (default: staging).
+  release:
+    types: [published]
+  # Manual run: pick the env and (optionally) pin the CLI version to bundle.
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "Target environment (injected as SHAKERS_CLI_ENV)"
+        type: choice
+        options: [staging, prod]
+        default: staging
+      cli_version:
+        description: "Version of the CLI npm package to bundle (dist-tag or exact)"
+        type: string
+        default: latest
+      release_tag:
+        description: "Existing release tag to attach the asset to (required for manual runs)"
+        type: string
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      MCPB_VERSION: "2.1.2"
+      # env input only exists on workflow_dispatch; release events default to staging.
+      TARGET_ENV: ${{ github.event.inputs.env || 'staging' }}
+      CLI_VERSION: ${{ github.event.inputs.cli_version || 'latest' }}
+    steps:
+      - name: Checkout (for the vendored manifest)
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Resolve CLI package name for the target env
+        id: pkg
+        run: |
+          if [ "$TARGET_ENV" = "prod" ]; then
+            echo "name=shakers-cli" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=shakers-cli-beta" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install the public CLI package from npm (no auth)
+        run: |
+          mkdir -p "$RUNNER_TEMP/cli"
+          cd "$RUNNER_TEMP/cli"
+          npm init -y >/dev/null
+          npm install "${{ steps.pkg.outputs.name }}@${CLI_VERSION}" --no-audit --no-fund
+
+      - name: Stage bundle contents + vendored manifest
+        id: stage
+        run: |
+          SRC="$RUNNER_TEMP/cli/node_modules/${{ steps.pkg.outputs.name }}"
+          STAGE="$RUNNER_TEMP/stage"
+          rm -rf "$STAGE" && mkdir -p "$STAGE"
+
+          cp -R "$SRC/bin" "$STAGE/bin"
+          cp -R "$SRC/src" "$STAGE/src"
+          [ -f "$SRC/README.md" ] && cp "$SRC/README.md" "$STAGE/README.md" || true
+          [ -f "$SRC/LICENSE" ] && cp "$SRC/LICENSE" "$STAGE/LICENSE" || true
+
+          # Resolve the exact installed version to stamp the manifest.
+          RESOLVED="$(node -p "require('$SRC/package.json').version")"
+          echo "resolved_version=$RESOLVED" >> "$GITHUB_OUTPUT"
+          echo "stage=$STAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Inject env + version into the staged manifest
+        run: |
+          STAGE="${{ steps.stage.outputs.stage }}"
+          node -e '
+            const fs = require("fs");
+            const env = process.env.TARGET_ENV;
+            const version = process.env.RESOLVED_VERSION;
+            const m = JSON.parse(fs.readFileSync("mcpb/manifest.json", "utf8"));
+            m.version = version;
+            m.display_name = env === "prod" ? "Shakers" : "Shakers (staging)";
+            m.server.mcp_config.env = { ...(m.server.mcp_config.env || {}), SHAKERS_CLI_ENV: env };
+            fs.writeFileSync(process.env.STAGE + "/manifest.json", JSON.stringify(m, null, 2));
+          '
+        env:
+          TARGET_ENV: ${{ env.TARGET_ENV }}
+          RESOLVED_VERSION: ${{ steps.stage.outputs.resolved_version }}
+          STAGE: ${{ steps.stage.outputs.stage }}
+
+      - name: Pack the .mcpb with the official Anthropic packer
+        id: pack
+        run: |
+          OUT="$RUNNER_TEMP/shakers-ai-usage-${TARGET_ENV}.mcpb"
+          npx -y "@anthropic-ai/mcpb@${MCPB_VERSION}" pack "${{ steps.stage.outputs.stage }}" "$OUT"
+          echo "out=$OUT" >> "$GITHUB_OUTPUT"
+          ls -la "$OUT"
+
+      - name: Resolve the release tag to attach to
+        id: tag
+        run: |
+          TAG="${{ github.event.release.tag_name || github.event.inputs.release_tag }}"
+          if [ -z "$TAG" ]; then
+            echo "No release tag available. On a manual run, pass release_tag." >&2
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the .mcpb as a Release asset (stable name)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          files: ${{ steps.pack.outputs.out }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

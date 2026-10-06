@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin.json",
+  "name": "shakers",
+  "displayName": "Shakers",
+  "version": "0.1.0",
+  "description": "Local-first Shakers connector: scan your AI usage, build your 'My work with AI' profile, find projects, register, onboard, certify role dimensions and ask Alma. The MCP server runs on your machine via the public shakers-cli-beta npm package.",
+  "author": {
+    "name": "Shakers Works S.L.",
+    "url": "https://shakersworks.com"
+  },
+  "homepage": "https://shakersworks.com",
+  "repository": "https://github.com/devShakers/ai-usage-evaluator",
+  "license": "SEE LICENSE IN LICENSE",
+  "keywords": ["shakers", "ai-usage", "developer-tools", "mcp", "talent"],
+  "privacyPolicyUrl": "https://shakersworks.com/legal/mcp-privacy"
+}
