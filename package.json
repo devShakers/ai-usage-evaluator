@@ -1,0 +1,42 @@
+{
+  "name": "@shakers/shakers-cli",
+  "version": "0.7.9",
+  "description": "Shakers AI usage & skills evaluator: a local-first CLI (`shakers` binary) plus a local MCP server. Commands: ai-usage (scan + classify your AI-tool setup, T0-T7), certify (certify Skills from your code), share (branded LinkedIn card).",
+  "type": "commonjs",
+  "bin": {
+    "shakers": "bin/shakers.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node bin/shakers.js",
+    "shakers": "node bin/shakers.js",
+    "test": "node --test test/*.test.js",
+    "build:mcpb": "sh scripts/build-mcpb.sh",
+    "publish:beta": "node scripts/prepare-beta.js && npm publish --tag latest && git checkout -- package.json"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@livekit/rtc-node": "0.13.35"
+  },
+  "keywords": [
+    "shakers",
+    "cli",
+    "ai-usage",
+    "ai",
+    "developer-tools",
+    "skills",
+    "certification"
+  ],
+  "license": "SEE LICENSE IN LICENSE",
+  "publishConfig": {
+    "access": "restricted",
+    "registry": "https://git.shakers.tools/api/v4/projects/201/packages/npm/"
+  }
+}

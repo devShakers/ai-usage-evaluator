@@ -1,0 +1,6 @@
+# Paths NOT copied to the public GitHub repo by the `sync:github` job (GNU tar -X patterns,
+# matched against any path component). Everything else in the repo is published.
+.git
+node_modules
+.gitlab-ci.yml
+.gitlab

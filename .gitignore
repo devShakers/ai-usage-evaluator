@@ -1,8 +1,14 @@
-node_modules/
-dist/
-stage/
-*.mcpb
-*.dxt
-.mcpb-cache/
+# Generated report output (the `report`/`map` commands write here)
+.ai-usage/
+
+# Scratch design mockups — already ported into src/templates/*; kept on disk
+# for reference but not tracked.
+mockup-report.html
+mockup-report-v2.html
+
+# OS / editor noise
 .DS_Store
-npm-debug.log*
+
+# build artifacts (the .mcpb bundle is a release artifact, never committed)
+dist/
+node_modules/

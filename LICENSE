@@ -1,13 +1,59 @@
-© Shakers Works S.L. — All rights reserved.
+Shakers Proprietary Source-Available License
 
-This repository is a distribution channel for the Shakers connector (a Claude
-Code plugin marketplace and a host for the Shakers .mcpb bundle). It contains
-configuration and documentation only; it carries no Shakers source code.
+Copyright (c) 2026 Shakers Works S.L. All rights reserved.
 
-No license is granted. You may not copy, modify, redistribute, or create
-derivative works from the contents of this repository without the prior
-written permission of Shakers Works S.L.
+1. DEFINITIONS
+"Software" means the Shakers CLI (the `shakers` command-line tool) and its
+source code, as made available by Shakers Works S.L. ("Shakers") through the
+npm ecosystem. "Licensee" means any person or entity that accesses, downloads,
+or uses the Software.
 
-The connector itself is distributed as the public npm package `shakers-cli-beta`
-(staging) / `shakers-cli` (prod); its use is governed by its own license and by
-the Shakers terms at https://shakersworks.com/legal.
+2. LIMITED GRANT
+Subject to full compliance with this License, Shakers grants Licensee a
+personal, limited, non-exclusive, non-transferable, non-sublicensable,
+revocable, royalty-free right, solely to:
+  (a) download and install the Software from the npm registry on which
+      Shakers has made it available; and
+  (b) run the Software's command-line interface for internal evaluation
+      and use.
+No other rights are granted, whether express or implied. All rights not
+expressly granted are reserved to Shakers.
+
+3. RESTRICTIONS
+Licensee shall NOT, in whole or in part:
+  (a) redistribute, republish, resell, rent, lend, or otherwise make the
+      Software available to any third party by any means;
+  (b) modify, adapt, translate, or create derivative works of the Software;
+  (c) decompile, reverse engineer, or otherwise attempt to derive the
+      source code beyond what is permitted by mandatory applicable law;
+  (d) use the Software for commercial resale or to develop a competing
+      product or service;
+  (e) remove, obscure, or alter any copyright, trademark, or license notice.
+
+4. OWNERSHIP
+The Software is proprietary information of Shakers and is protected by
+intellectual property laws. Shakers retains all right, title, and interest
+in and to the Software.
+
+5. TERM AND TERMINATION
+This License is revocable by Shakers at any time and terminates
+automatically if Licensee breaches any of its terms. Upon termination,
+Licensee shall cease all use and destroy all copies of the Software in its
+possession.
+
+6. NO WARRANTY
+The Software is provided "AS IS", without warranty of any kind, express or
+implied, including without limitation the warranties of merchantability,
+fitness for a particular purpose, and non-infringement.
+
+7. LIMITATION OF LIABILITY
+To the maximum extent permitted by law, Shakers shall not be liable for any
+direct, indirect, incidental, or consequential damages arising out of the
+use of or inability to use the Software.
+
+8. GOVERNING LAW AND JURISDICTION
+This License is governed by the laws of Spain and subject to the courts of
+Madrid, Spain, waiving any other jurisdiction.
+
+To request commercial-use permissions or special licenses, contact:
+legal@shakersworks.com

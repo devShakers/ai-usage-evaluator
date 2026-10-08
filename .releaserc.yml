@@ -1,0 +1,34 @@
+# semantic-release on the `release` branch. Plain release branch (a prerelease-only
+# config is rejected by semantic-release); versions are X.Y.Z, tags are v<version>.
+# Baseline tag: v0.8.0 (published betas were 0.8.0-beta.N, all lower than 0.8.0).
+# No @semantic-release/git: the tag is the only artifact (the protected `release`
+# branch is never pushed to), and the pipeline stamps package.json from the tag.
+branches:
+  - release
+
+tagFormat: "v${version}"
+
+plugins:
+  - - "@semantic-release/commit-analyzer"
+    - preset: angular
+      releaseRules:
+        - message: "/\\[skip\\]/"
+          release: false
+        - message: "/\\[major\\]/"
+          release: major
+        - message: "/\\[minor\\]/"
+          release: minor
+        - type: feat
+          release: minor
+        - type: fix
+          release: patch
+        - type: hotfix
+          release: patch
+        - type: chore
+          release: patch
+        - type: refactor
+          release: patch
+        - type: perf
+          release: patch
+  - "@semantic-release/release-notes-generator"
+  - "@semantic-release/gitlab"

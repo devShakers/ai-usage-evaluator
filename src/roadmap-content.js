@@ -1,0 +1,453 @@
+'use strict';
+
+// Curated tier roadmap content (talents-ai-score, issue 020 / ADR-013/014).
+
+const TIER_JUMPS_ES = {
+  T0: {
+    title: 'T0 → T1 · Banco vacío → Primera herramienta',
+    upgradeWhen: '`totalDetected >= 1` (una herramienta de IA detectada por existencia de fichero/dir/binario/extensión — `detectors.js`).',
+    unlocks: 'Tu primera herramienta de IA en el entorno de trabajo. Dejas de alternar con una pestaña de chat aparte: la IA vive donde escribes código y ve el fichero que tienes delante. Es el salto de "consulto a la IA" a "trabajo con la IA".',
+    steps: [
+      { text: 'Elige una herramienta acorde a cómo trabajas — si vives en la terminal, una CLI agéntica (Claude Code, Codex CLI); si vives en el editor, un asistente de IDE (Copilot, Cursor).', estimate: '5 min' },
+      { text: 'Instálala siguiendo la vía oficial de su proveedor.', estimate: '10-15 min' },
+      { text: 'Ábrela en un proyecto real y pídele algo que ibas a hacer igualmente (explicar una función, escribir un test).', estimate: '10 min' },
+    ],
+    snippet: {
+      language: 'bash',
+      label: 'instalación de una CLI agéntica (deja el binario `claude` en el PATH y `~/.claude`, dos de las señales de T1)',
+      filename: null,
+      code: '# Claude Code (CLI agéntica) — instalación oficial\nnpm install -g @anthropic-ai/claude-code\n# arráncala una vez en tu proyecto para que cree ~/.claude\nclaude',
+    },
+    tips: [
+      'Empieza por una herramienta, no cinco. El tier premia tenerla, pero tu soltura la da usar una a fondo, no coleccionarlas.',
+      'Pruébala en trabajo real desde el minuto uno; los tutoriales de juguete no enseñan dónde te ayuda de verdad.',
+    ],
+    commonMistakes: [
+      'Usar una IA solo en el navegador (chat web) y nada en el entorno local → el CLI no deja rastro de eso y te mantiene en T0. La herramienta mide huella local, no lo que haces en una pestaña.',
+      'Instalar la extensión pero en un editor que el CLI no rastrea. Las señales de extensión miran ~/.vscode, ~/.vscode-insiders y ~/.cursor; una extensión en otro editor puede no contar.',
+    ],
+  },
+
+  T1: {
+    title: 'T1 → T2 · Primera herramienta → Banco con notas',
+    upgradeWhen: '`context >= 1`, es decir ≥1 fichero de contexto persistente (`instructions + config + rules`: `CLAUDE.md`, `GEMINI.md`, `AGENTS.md`, `.github/copilot-instructions.md`, `.cursorrules`/`.cursor/rules/*.mdc`, `.windsurfrules`/`.windsurf/rules/*.md`, config de Aider/Continue).',
+    unlocks: 'Contexto que no tienes que reexplicar cada vez. Un fichero de instrucciones deja escrito cómo es tu proyecto (stack, convenciones, qué no tocar) y la IA lo lee en cada sesión. El salto de "le repito lo mismo cada mañana" a "ya sabe cómo trabajamos aquí".',
+    steps: [
+      { text: 'Crea el fichero de instrucciones que corresponda a tu herramienta, en la raíz del proyecto.', estimate: '5 min' },
+      { text: 'Escribe lo mínimo que repites siempre: qué es el proyecto, stack, 3-4 convenciones, qué está prohibido tocar.', estimate: '15-20 min' },
+      { text: 'Prueba una tarea y ajusta el fichero cuando la IA se salte una convención.', estimate: '10 min' },
+    ],
+    snippet: {
+      language: 'markdown',
+      label: 'CLAUDE.md en la raíz del proyecto (su mera existencia cuenta como instructions = 1 y te sube a T2)',
+      filename: 'CLAUDE.md',
+      code: '# <Nombre del proyecto>\n\n## Qué es\nUna frase sobre qué hace este proyecto y para quién.\n\n## Stack\n- Lenguaje / framework principal\n- Base de datos\n- Cómo se ejecutan los tests\n\n## Convenciones\n- Estilo de commits.\n- Cómo se nombran los ficheros.\n- Qué NO tocar sin avisar.',
+    },
+    tips: [
+      'Corto y vivo gana a largo y muerto. Un fichero de 20 líneas que actualizas vale más que uno de 200 que nadie mantiene.',
+      'Guárdalo en el repo: viaja con el equipo y no lo pierdes al cambiar de máquina.',
+      'Escribe las prohibiciones explícitas ("no toques las migraciones ya aplicadas"): es donde más se desvía la IA sin contexto.',
+    ],
+    commonMistakes: [
+      'Poner las instrucciones en un README o en un fichero con nombre inventado → el CLI solo cuenta los nombres canónicos (CLAUDE.md, .cursorrules, etc.). Nombre equivocado, no sube de tier.',
+      'Crear el fichero vacío o solo con el título. Existe, sí, pero no te da lo que el tier promete: el valor está en el contenido, no en el fichero.',
+    ],
+  },
+
+  T2: {
+    title: 'T2 → T3 · Banco con notas → Banco conectado',
+    upgradeWhen: '`mcpServers >= 1` (conteo de claves en `mcpServers` de `.mcp.json`, `~/.claude.json`, `.cursor/mcp.json`, `~/.codeium/windsurf/mcp_config.json`, `~/.gemini/settings.json` — `scanner.js::countJsonKeys`).',
+    unlocks: 'Conectar tu primer servidor MCP deja de darle a la IA solo tu código: le das acceso a tus datos y sistemas reales (tu base de datos, tu tracker de incidencias, tu documentación) sin copiar y pegar. El salto de "la IA lee mi proyecto" a "la IA consulta mis fuentes" es el que más tiempo ahorra en tareas repetitivas.',
+    steps: [
+      { text: 'Elige una fuente que consultes a diario (tu BD de desarrollo, tu sistema de tickets, tu sistema de ficheros).', estimate: '5 min' },
+      { text: 'Instala un servidor MCP para esa fuente y decláralo en tu config.', estimate: '15-20 min' },
+      { text: 'Verifica que la herramienta lo carga (arranca la CLI/editor y comprueba que el servidor aparece disponible).', estimate: '5 min' },
+      { text: 'Haz una consulta real que antes hacías a mano (ej. "resume los últimos 5 tickets abiertos").', estimate: '5 min' },
+    ],
+    snippet: {
+      language: 'json',
+      label: '.mcp.json en la raíz del proyecto (el CLI cuenta las claves de mcpServers; con una ya subes a T3)',
+      filename: '.mcp.json',
+      code: '{\n  "mcpServers": {\n    "filesystem": {\n      "command": "npx",\n      "args": ["-y", "@modelcontextprotocol/server-filesystem", "./docs"]\n    }\n  }\n}',
+    },
+    tips: [
+      'Empieza por un MCP de solo lectura (filesystem, docs): el valor aparece rápido y el riesgo es mínimo.',
+      'Un MCP bien elegido rinde más que cinco a medias. El tier premia tenerlo conectado, pero tu productividad la mueve usarlo.',
+      'Guarda el .mcp.json en el repo del proyecto: así viaja con el equipo y no lo pierdes al cambiar de máquina.',
+    ],
+    commonMistakes: [
+      'Configurar el MCP en un fichero que la herramienta no lee (ruta equivocada) → el servidor no arranca y el CLI no lo cuenta. Verifica siempre el paso 3.',
+      'Dejar el bloque mcpServers vacío ({}) — cuenta como 0 servidores, no sube de tier.',
+      'Pegar credenciales dentro del .mcp.json y subirlo al repo. Usa variables de entorno; nunca claves en claro (además, es justo el tipo de fuga que el AI Footprint evita capturar).',
+    ],
+  },
+
+  T3: {
+    title: 'T3 → T4 · Banco conectado → Herramienta propia',
+    upgradeWhen: '`custom >= 1`, es decir ≥1 asset propio reutilizable (`skills + commands + rules`: dirs en `.claude/skills/`, ficheros `.claude/commands/*.md`, o reglas propias de Cursor/Windsurf).',
+    unlocks: 'Dejas de escribir el mismo prompt largo una y otra vez: lo conviertes en un asset reutilizable (un comando, una skill) que invocas por su nombre. El salto de "reescribo las instrucciones cada vez" a "tengo mis propias herramientas empaquetadas".',
+    steps: [
+      { text: 'Identifica un prompt que repites (revisar un PR, generar un test, redactar un changelog).', estimate: '5 min' },
+      { text: 'Empaquétalo como comando o skill en la carpeta que tu herramienta reconoce.', estimate: '15-25 min' },
+      { text: 'Invócalo por su nombre en una tarea real y púlelo hasta que no tengas que corregirlo.', estimate: '10 min' },
+    ],
+    snippet: {
+      language: 'markdown',
+      label: 'una skill propia en .claude/skills/review-diff/SKILL.md (cada subcarpeta de .claude/skills/ cuenta como skills += 1 y te sube a T4)',
+      filename: '.claude/skills/review-diff/SKILL.md',
+      code: '---\nname: review-diff\ndescription: Revisa el diff actual contra los estándares del proyecto\n---\n1. Muestra el diff frente a la rama base.\n2. Marca cualquier cosa que rompa las convenciones de CLAUDE.md.\n3. Señala tests que falten para el código nuevo.',
+    },
+    tips: [
+      'Empaqueta lo que ya haces cada día, no lo que crees que "deberías" automatizar. El uso real es la señal de qué merece ser un asset.',
+      'Nómbralos con verbos claros (review-diff, write-migration): un catálogo legible se usa; uno críptico se olvida.',
+    ],
+    commonMistakes: [
+      'Meter la skill/comando en una carpeta con otro nombre → el CLI cuenta subdirectorios de .claude/skills/ y ficheros .md de .claude/commands/; fuera de ahí no cuenta.',
+      'Guardar el comando con extensión distinta de .md en commands/ → no entra en el conteo.',
+      'Crear diez comandos de una línea para "subir rápido": cuentan para el número, pero es justo el tipo de inflado que el dato asume como indicativo, no verificado. No te hace mejor; te hace medible.',
+    ],
+  },
+
+  T4: {
+    title: 'T4 → T5 · Herramienta propia → Operador agéntico',
+    upgradeWhen: '`hasAgentic` y `mcp >= 1` y `custom >= 1`. `hasAgentic` = tener una CLI agéntica del conjunto AGENTIC_IDS (Claude Code, Aider, Gemini CLI, Codex CLI y Amazon Q, añadido por decisión cerrada #4).',
+    unlocks: 'T5 es el punto donde tu setup deja de asistirte paso a paso y empieza a ejecutar tareas de principio a fin: una CLI agéntica que, apoyada en tus MCP y en tus skills/comandos propios, encadena varios pasos sola. Es el salto de "me sugiere" a "lo hace y me lo trae para revisar".',
+    steps: [
+      { text: 'Asegúrate de tener una CLI agéntica (Claude Code, Aider, Gemini CLI, Codex CLI o Amazon Q). Si trabajas solo en un editor con autocompletado, instala una.', estimate: '15 min' },
+      { text: 'Confirma que ya cumples los prerrequisitos de T5: al menos 1 MCP (T3) y al menos 1 skill/comando/regla propia (T4). Si te falta alguno, el CLI te mantiene en T4.', estimate: '5 min' },
+      { text: 'Crea un comando propio que orqueste una tarea recurrente completa (ej. "prepara el PR": lint + tests + resumen de cambios).', estimate: '30-45 min' },
+      { text: 'Ejecútalo en un flujo real y ajusta hasta que necesites intervenir lo mínimo.', estimate: 'variable' },
+    ],
+    snippet: {
+      language: 'markdown',
+      label: 'un comando propio en .claude/commands/prep-pr.md (el CLI cuenta los .md de commands/ como customización)',
+      filename: '.claude/commands/prep-pr.md',
+      code: '---\ndescription: Prepara una rama para PR — lint, tests y resumen de cambios\n---\n1. Ejecuta el linter y los tests del proyecto; si algo falla, párate y muéstramelo.\n2. Resume en 5 bullets los cambios frente a la rama base.\n3. Redacta un título de PR en Conventional Commits.',
+    },
+    tips: [
+      'El operador agéntico rinde cuando le das límites claros en el comando: qué puede tocar, cuándo parar, qué revisar contigo.',
+      'Reutiliza tus MCP dentro del comando (el que conectaste en T3): ahí es donde el agente pasa de "escribe código" a "consulta, decide y actúa".',
+      'Un comando que ejecutas cada día vale más que diez que escribiste una vez. Mide por uso, no por cantidad.',
+    ],
+    commonMistakes: [
+      'Tener CLI agéntica y skills, pero ningún MCP → te quedas en T4: T5 exige las tres piezas a la vez.',
+      'Crear comandos que solo envuelven un prompt trivial de una línea: cuentan para el número, pero no te dan la orquestación real que el tier promete.',
+      'Dar al agente permiso total sin puntos de revisión: sube el tier, pero es la vía más rápida a un cambio que no querías. La ladder mide setup, no criterio — el criterio lo pones tú.',
+    ],
+  },
+
+  T5: {
+    title: 'T5 → T6 · Operador agéntico → Multi-agente',
+    upgradeWhen: '`agentCounts.agents >= 2` (≥2 ficheros .claude/agents/*.md con frontmatter name válido — agent-org-chart.js::parseAgentOrgChart).',
+    unlocks: 'Dejas de tener un asistente todoterreno y pasas a un equipo de agentes especializados: uno para backend, otro para revisar, otro para tests. Cada uno con su rol y sus herramientas. El salto de "un ayudante que hace de todo" a "un equipo donde cada pieza sabe lo suyo".',
+    steps: [
+      { text: 'Parte tu trabajo en 2-3 roles claros que hoy mezclas (ej. "escribir código" vs. "revisar").', estimate: '10 min' },
+      { text: 'Crea un fichero de agente por rol en .claude/agents/, cada uno con su name, sus tools y su model.', estimate: '20-30 min' },
+      { text: 'Úsalos en una tarea real delegando cada parte al agente que toca.', estimate: 'variable' },
+    ],
+    snippet: {
+      language: 'markdown',
+      label: 'dos definiciones de agente (dos ficheros con name válido → agents = 2, te sube a T6). El CLI lee solo la estructura del frontmatter (name, tools, model), nunca el cuerpo ni la descripción',
+      filename: '.claude/agents/reviewer.md',
+      code: '---\nname: reviewer\ntools: Read, Grep\nmodel: sonnet\n---\nRevisa código contra las convenciones del proyecto. No modifica ficheros.',
+      secondFile: {
+        filename: '.claude/agents/tester.md',
+        code: '---\nname: tester\ntools: Read, Write, Bash\nmodel: sonnet\n---\nEscribe y ejecuta tests para el código nuevo.',
+      },
+    },
+    tips: [
+      'Roles con fronteras nítidas rinden más que muchos agentes solapados. Dos bien definidos baten a cinco difusos.',
+      'Limita las tools de cada agente a lo que su rol necesita (un revisor no necesita escribir): además de más seguro, hace el organigrama legible.',
+    ],
+    commonMistakes: [
+      'Escribir un agente sin la clave name en el frontmatter → el parser lo descarta y no cuenta. Necesitas name en cada fichero.',
+      'Dejar un solo agente (agents = 1): T6 exige dos o más. Un único agente es todavía T5.',
+      'Meter los ficheros fuera de .claude/agents/ → el parser está acotado a esa carpeta (en proyecto y en home, por el alcance proyecto ∪ home). Fuera de ahí no se ven.',
+    ],
+  },
+
+  T6: {
+    title: 'T6 → T7 · Multi-agente → Taller orquestado',
+    upgradeWhen: '`hooks >= 1` (≥1 hook declarado en .claude/settings.json — scanner.js::countJsonKeys(settings.json, \'hooks\')).',
+    unlocks: 'Automatización que se dispara sola en los momentos clave: un hook ejecuta lint antes de cada commit, o bloquea un comando peligroso sin que tengas que acordarte. El salto de "delego tareas a mis agentes" a "mi taller reacciona solo a lo que pasa".',
+    steps: [
+      { text: 'Elige un momento que quieras blindar (antes de commit, antes de ejecutar un comando, al terminar una tarea).', estimate: '5 min' },
+      { text: 'Declara un hook para ese evento en .claude/settings.json.', estimate: '15-25 min' },
+      { text: 'Provoca el evento y confirma que el hook se dispara como esperabas.', estimate: '10 min' },
+    ],
+    snippet: {
+      language: 'json',
+      label: '.claude/settings.json con un hook (la clave hooks con ≥1 entrada te sube a T7)',
+      filename: '.claude/settings.json',
+      code: '{\n  "hooks": {\n    "PreToolUse": [\n      {\n        "matcher": "Bash",\n        "hooks": [\n          { "type": "command", "command": "echo \'Revisa el comando antes de ejecutarlo\'" }\n        ]\n      }\n    ]\n  }\n}',
+    },
+    tips: [
+      'Empieza por un hook defensivo (avisar o bloquear), no destructivo: aprendes el mecanismo sin riesgo.',
+      'Un hook que se dispara siempre y estorba lo acabas desactivando. Acótalo con matcher a los casos que de verdad importan.',
+    ],
+    commonMistakes: [
+      'Escribir la automatización como un script suelto en el repo en vez de declararla en settings.json → hoy el CLI cuenta hooks por la clave hooks del settings.json; un script suelto no es una categoría detectada todavía y no sube de tier.',
+      'Dejar la clave hooks presente pero vacía → cuenta como 0, no sube.',
+      'Un JSON con error de sintaxis en settings.json → el conteo devuelve 0 (el parser falla en silencio). Valida el JSON.',
+    ],
+  },
+};
+
+// T7 has no "next tier" — a distinct terminal shape (source doc: "Sin pasos
+// de subida. No hay tier superior").
+const T7_TERMINAL_ES = {
+  title: 'T7 · Taller orquestado — nivel máximo',
+  intro: 'Ya estás en el tier más alto de la escala. Tu setup combina multi-agente + MCP + assets propios + automatización por hooks: está equipado de arriba a abajo.',
+  whatRemains: 'El tier ya no sube, pero el equipamiento no es el trabajo. A partir de aquí el margen está en usar lo que tienes, no en instalar más: documentar tu setup para que otros lo repliquen, podar lo que no usas, y afilar cada agente/comando con el trabajo real. La escala mide cómo tienes montado el banco; que salgan buenas piezas de él depende de ti.',
+  consolidationSteps: [
+    'Afina tus hooks y agentes con el trabajo real: recorta lo que estorba, acota los matchers y ajusta las tools/límites de cada agente a su rol.',
+    'Poda lo que no usas: revisa qué assets llevas tiempo sin tocar (el CLI expone recency/mtime de forma informativa, no como gate — ADR-003) y elimina lo redundante.',
+    'Mantén vivos tus ficheros de contexto (CLAUDE.md, reglas, comandos): actualízalos cuando cambien el stack o las convenciones, o dejan de ayudar.',
+    'Empaqueta y contribuye tus skills/comandos a un repo compartido del equipo para que tu setup escale más allá de tu máquina.',
+    'Documenta tu organigrama de agentes y compártelo como referencia interna para que otros lo repliquen.',
+    'Mide el impacto real (tiempo ahorrado, tareas delegadas de principio a fin) y usa ese dato para decidir qué merece seguir en tu banco.',
+  ],
+  honestyNote: 'Estar en T7 significa que tienes el banco de trabajo mejor equipado que el CLI sabe medir. No significa que seas quien mejor usa la IA: el dato es una proxy de setup, indicativa y no verificada (ADR-007). No se lee como "calidad IA del Talent".',
+};
+
+const TIER_JUMPS_EN = {
+  T0: {
+    title: 'T0 → T1 · Empty bench → First tool',
+    upgradeWhen: '`totalDetected >= 1` (one AI tool detected by existence of a file/dir/binary/extension — `detectors.js`).',
+    unlocks: 'Your first AI tool inside your work environment. You stop juggling a separate chat tab: the AI lives where you write code and sees the file in front of you. The jump from "I ask the AI" to "I work with the AI".',
+    steps: [
+      { text: 'Pick a tool that fits how you work — if you live in the terminal, an agentic CLI (Claude Code, Codex CLI); if you live in the editor, an IDE assistant (Copilot, Cursor).', estimate: '5 min' },
+      { text: "Install it following your vendor's official path.", estimate: '10-15 min' },
+      { text: 'Open it in a real project and ask for something you were going to do anyway (explain a function, write a test).', estimate: '10 min' },
+    ],
+    snippet: {
+      language: 'bash',
+      label: 'installing an agentic CLI (drops the `claude` binary on your PATH and creates `~/.claude`, two of the T1 signals)',
+      filename: null,
+      code: '# Claude Code (agentic CLI) — official install\nnpm install -g @anthropic-ai/claude-code\n# run it once in your project so it creates ~/.claude\nclaude',
+    },
+    tips: [
+      'Start with one tool, not five. The tier rewards having it, but your fluency comes from using one deeply, not from collecting them.',
+      "Try it on real work from day one; toy tutorials won't show you where it actually helps.",
+    ],
+    commonMistakes: [
+      'Using AI only in the browser (web chat) and nothing locally → the CLI leaves no trace of that and keeps you at T0. The tool measures the local footprint, not what you do in a tab.',
+      "Installing the extension but in an editor the CLI doesn't scan. Extension signals look at ~/.vscode, ~/.vscode-insiders and ~/.cursor; an extension in another editor may not count.",
+    ],
+  },
+
+  T1: {
+    title: 'T1 → T2 · First tool → Bench with notes',
+    upgradeWhen: '`context >= 1`, i.e. ≥1 persistent context file (`instructions + config + rules`: `CLAUDE.md`, `GEMINI.md`, `AGENTS.md`, `.github/copilot-instructions.md`, `.cursorrules`/`.cursor/rules/*.mdc`, `.windsurfrules`/`.windsurf/rules/*.md`, Aider/Continue config).',
+    unlocks: 'Context you don\'t have to re-explain every time. An instructions file writes down what your project is (stack, conventions, what not to touch) and the AI reads it every session. The jump from "I repeat the same thing every morning" to "it already knows how we work here".',
+    steps: [
+      { text: 'Create the instructions file that matches your tool, at the project root.', estimate: '5 min' },
+      { text: "Write the minimum you always repeat: what the project is, stack, 3-4 conventions, what's off-limits.", estimate: '15-20 min' },
+      { text: 'Run a task and refine the file whenever the AI skips a convention.', estimate: '10 min' },
+    ],
+    snippet: {
+      language: 'markdown',
+      label: '`CLAUDE.md` at the project root (its mere existence counts as instructions = 1 and moves you to T2)',
+      filename: 'CLAUDE.md',
+      code: '# <Project name>\n\n## What it is\nOne sentence on what this project does and for whom.\n\n## Stack\n- Main language / framework\n- Database\n- How tests are run\n\n## Conventions\n- Commit style.\n- How files are named.\n- What NOT to touch without asking.',
+    },
+    tips: [
+      'Short and alive beats long and dead. A 20-line file you keep updated is worth more than a 200-line one nobody maintains.',
+      "Keep it in the repo: it travels with the team and you won't lose it when you switch machines.",
+      'Write the explicit prohibitions ("don\'t touch already-applied migrations"): that\'s where the AI drifts most without context.',
+    ],
+    commonMistakes: [
+      'Putting the instructions in a README or a made-up filename → the CLI only counts the canonical names (CLAUDE.md, .cursorrules, etc.). Wrong name, no level-up.',
+      "Creating the file empty or with just the title. It exists, sure, but it doesn't give you what the tier promises: the value is in the content, not the file.",
+    ],
+  },
+
+  T2: {
+    title: 'T2 → T3 · Bench with notes → Connected bench',
+    upgradeWhen: '`mcpServers >= 1` (count of keys under `mcpServers` in `.mcp.json`, `~/.claude.json`, `.cursor/mcp.json`, `~/.codeium/windsurf/mcp_config.json`, `~/.gemini/settings.json` — `scanner.js::countJsonKeys`).',
+    unlocks: 'Connecting your first MCP server stops giving the AI only your code: you give it access to your real data and systems (your database, your issue tracker, your docs) without copy-pasting. The jump from "the AI reads my project" to "the AI queries my sources" is the one that saves the most time on repetitive tasks.',
+    steps: [
+      { text: 'Pick a source you consult daily (your dev database, your ticketing system, your file system).', estimate: '5 min' },
+      { text: 'Install an MCP server for that source and declare it in your config.', estimate: '15-20 min' },
+      { text: 'Verify the tool loads it (start the CLI/editor and check the server shows up as available).', estimate: '5 min' },
+      { text: 'Run a real query you used to do by hand (e.g. "summarize the last 5 open tickets").', estimate: '5 min' },
+    ],
+    snippet: {
+      language: 'json',
+      label: '`.mcp.json` at the project root (the CLI counts the keys under mcpServers; one already moves you to T3)',
+      filename: '.mcp.json',
+      code: '{\n  "mcpServers": {\n    "filesystem": {\n      "command": "npx",\n      "args": ["-y", "@modelcontextprotocol/server-filesystem", "./docs"]\n    }\n  }\n}',
+    },
+    tips: [
+      'Start with a read-only MCP (filesystem, docs): the value shows up fast and the risk is minimal.',
+      'One well-chosen MCP pays off more than five half-baked ones. The tier rewards having it connected, but your productivity comes from using it.',
+      "Keep the .mcp.json in the project repo: it travels with the team and you won't lose it when you switch machines.",
+    ],
+    commonMistakes: [
+      "Configuring the MCP in a file the tool doesn't read (wrong path) → the server won't start and the CLI won't count it. Always verify step 3.",
+      'Leaving the mcpServers block empty ({}) — counts as 0 servers, no level-up.',
+      "Pasting credentials inside .mcp.json and committing it. Use environment variables; never plaintext keys (that's exactly the kind of leak the AI Footprint avoids capturing).",
+    ],
+  },
+
+  T3: {
+    title: 'T3 → T4 · Connected bench → Your own tooling',
+    upgradeWhen: '`custom >= 1`, i.e. ≥1 reusable asset of your own (`skills + commands + rules`: dirs under `.claude/skills/`, `.claude/commands/*.md` files, or your own Cursor/Windsurf rules).',
+    unlocks: 'You stop writing the same long prompt over and over: you turn it into a reusable asset (a command, a skill) you invoke by name. The jump from "I rewrite the instructions every time" to "I have my own packaged tools".',
+    steps: [
+      { text: 'Identify a prompt you repeat (review a PR, generate a test, write a changelog).', estimate: '5 min' },
+      { text: 'Package it as a command or skill in the folder your tool recognizes.', estimate: '15-25 min' },
+      { text: "Invoke it by name on a real task and polish it until you don't have to correct it.", estimate: '10 min' },
+    ],
+    snippet: {
+      language: 'markdown',
+      label: 'a skill of your own at .claude/skills/review-diff/SKILL.md (each subfolder of .claude/skills/ counts as skills += 1 and moves you to T4)',
+      filename: '.claude/skills/review-diff/SKILL.md',
+      code: '---\nname: review-diff\ndescription: Review the current diff against the project\'s standards\n---\n1. Show the diff against the base branch.\n2. Flag anything that breaks the conventions in CLAUDE.md.\n3. Point out tests missing for the new code.',
+    },
+    tips: [
+      'Package what you already do every day, not what you think you "should" automate. Real usage is the signal for what deserves to be an asset.',
+      'Name them with clear verbs (review-diff, write-migration): a readable catalog gets used; a cryptic one gets forgotten.',
+    ],
+    commonMistakes: [
+      'Putting the skill/command in a folder with another name → the CLI counts subdirectories of .claude/skills/ and .md files in .claude/commands/; outside those, nothing counts.',
+      "Saving the command with an extension other than .md in commands/ → it won't enter the count.",
+      'Creating ten one-line commands just to "level up fast": they count toward the number, but that\'s exactly the kind of padding the data assumes as indicative, not verified. It doesn\'t make you better; it makes you measurable.',
+    ],
+  },
+
+  T4: {
+    title: 'T4 → T5 · Your own tooling → Agentic operator',
+    upgradeWhen: '`hasAgentic` and `mcp >= 1` and `custom >= 1`. `hasAgentic` = having an agentic CLI from the AGENTIC_IDS set (Claude Code, Aider, Gemini CLI, Codex CLI and Amazon Q, added by closed decision #4).',
+    unlocks: 'T5 is where your setup stops assisting you step by step and starts running tasks end to end: an agentic CLI that, backed by your MCPs and your own skills/commands, chains several steps on its own. The jump from "it suggests" to "it does it and brings it back for me to review".',
+    steps: [
+      { text: 'Make sure you have an agentic CLI (Claude Code, Aider, Gemini CLI, Codex CLI or Amazon Q). If you only work in an editor with autocomplete, install one.', estimate: '15 min' },
+      { text: 'Confirm you already meet the T5 prerequisites: at least 1 MCP (T3) and at least 1 skill/command/rule of your own (T4). If either is missing, the CLI keeps you at T4.', estimate: '5 min' },
+      { text: 'Create a command of your own that orchestrates a full recurring task (e.g. "prep the PR": lint + tests + change summary).', estimate: '30-45 min' },
+      { text: 'Run it on a real flow and tune it until you need to step in as little as possible.', estimate: 'variable' },
+    ],
+    snippet: {
+      language: 'markdown',
+      label: 'a command of your own at .claude/commands/prep-pr.md (the CLI counts the .md files in commands/ as customization)',
+      filename: '.claude/commands/prep-pr.md',
+      code: '---\ndescription: Prepare a branch for PR — lint, tests and change summary\n---\n1. Run the project\'s linter and tests; if anything fails, stop and show it to me.\n2. Summarize the changes against the base branch in 5 bullets.\n3. Draft a PR title in Conventional Commits.',
+    },
+    tips: [
+      'The agentic operator pays off when you give it clear limits in the command: what it may touch, when to stop, what to review with you.',
+      'Reuse your MCPs inside the command (the one you connected at T3): that\'s where the agent goes from "writes code" to "queries, decides and acts".',
+      'A command you run every day is worth more than ten you wrote once. Measure by usage, not by count.',
+    ],
+    commonMistakes: [
+      'Having an agentic CLI and skills, but no MCP → you stay at T4: T5 requires all three pieces at once.',
+      "Creating commands that just wrap a trivial one-line prompt: they count toward the number, but they don't give you the real orchestration the tier promises.",
+      "Giving the agent full permissions with no review points: it raises the tier, but it's the fastest path to a change you didn't want. The ladder measures setup, not judgment — the judgment is yours.",
+    ],
+  },
+
+  T5: {
+    title: 'T5 → T6 · Agentic operator → Multi-agent',
+    upgradeWhen: '`agentCounts.agents >= 2` (≥2 `.claude/agents/*.md` files with valid `name` frontmatter — `agent-org-chart.js::parseAgentOrgChart`).',
+    unlocks: 'You stop having one all-purpose assistant and move to a team of specialized agents: one for backend, one for reviewing, one for tests. Each with its role and its tools. The jump from "a helper that does everything" to "a team where each piece knows its own job".',
+    steps: [
+      { text: 'Split your work into 2-3 clear roles you mix today (e.g. "write code" vs. "review").', estimate: '10 min' },
+      { text: 'Create one agent file per role in .claude/agents/, each with its name, its tools and its model.', estimate: '20-30 min' },
+      { text: 'Use them on a real task delegating each part to the right agent.', estimate: 'variable' },
+    ],
+    snippet: {
+      language: 'markdown',
+      label: 'two agent definitions (two files with a valid name → agents = 2, moves you to T6). The CLI reads only the frontmatter structure (name, tools, model), never the body or the description',
+      filename: '.claude/agents/reviewer.md',
+      code: '---\nname: reviewer\ntools: Read, Grep\nmodel: sonnet\n---\nReviews code against the project\'s conventions. Does not modify files.',
+      secondFile: {
+        filename: '.claude/agents/tester.md',
+        code: '---\nname: tester\ntools: Read, Write, Bash\nmodel: sonnet\n---\nWrites and runs tests for new code.',
+      },
+    },
+    tips: [
+      'Roles with sharp boundaries pay off more than many overlapping agents. Two well-defined beat five fuzzy ones.',
+      "Limit each agent's tools to what its role needs (a reviewer doesn't need to write): besides being safer, it keeps the org chart readable.",
+    ],
+    commonMistakes: [
+      "Writing an agent without the name key in the frontmatter → the parser discards it and it doesn't count. You need name in every file.",
+      'Leaving a single agent (agents = 1): T6 requires two or more. A single agent is still T5.',
+      "Placing the files outside .claude/agents/ → the parser is scoped to that folder (in project and in home, per the project ∪ home scope). Anywhere else, they're invisible.",
+    ],
+  },
+
+  T6: {
+    title: 'T6 → T7 · Multi-agent → Orchestrated workshop',
+    upgradeWhen: "`hooks >= 1` (≥1 hook declared in `.claude/settings.json` — `scanner.js::countJsonKeys(settings.json, 'hooks')`).",
+    unlocks: 'Automation that fires on its own at the key moments: a hook runs lint before every commit, or blocks a dangerous command without you having to remember. The jump from "I delegate tasks to my agents" to "my workshop reacts on its own to what happens".',
+    steps: [
+      { text: 'Pick a moment you want to harden (before commit, before running a command, when a task finishes).', estimate: '5 min' },
+      { text: 'Declare a hook for that event in .claude/settings.json.', estimate: '15-25 min' },
+      { text: 'Trigger the event and confirm the hook fires as you expected.', estimate: '10 min' },
+    ],
+    snippet: {
+      language: 'json',
+      label: '.claude/settings.json with a hook (the hooks key with ≥1 entry moves you to T7)',
+      filename: '.claude/settings.json',
+      code: '{\n  "hooks": {\n    "PreToolUse": [\n      {\n        "matcher": "Bash",\n        "hooks": [\n          { "type": "command", "command": "echo \'Review the command before running it\'" }\n        ]\n      }\n    ]\n  }\n}',
+    },
+    tips: [
+      "Start with a defensive hook (warn or block), not destructive: you learn the mechanism without risk.",
+      'A hook that fires always and gets in the way ends up disabled. Scope it with matcher to the cases that actually matter.',
+    ],
+    commonMistakes: [
+      'Writing the automation as a loose script in the repo instead of declaring it in settings.json → today the CLI counts hooks via the hooks key of settings.json; a loose script is not a detected category yet and won\'t level you up.',
+      'Leaving the hooks key present but empty → counts as 0, no level-up.',
+      'A JSON with a syntax error in settings.json → the count returns 0 (the parser fails silently). Validate the JSON.',
+    ],
+  },
+};
+
+// T7 has no "next tier" — a distinct terminal shape (source doc: "No
+// level-up steps. There's no higher tier.").
+const T7_TERMINAL_EN = {
+  title: 'T7 · Orchestrated workshop — top level',
+  intro: "You're at the top tier of the ladder. Your setup combines multi-agent + MCP + your own assets + hook-based automation: it's equipped top to bottom.",
+  whatRemains: "The tier no longer rises, but equipment isn't the work. From here the margin is in using what you have, not installing more: documenting your setup so others can replicate it, pruning what you don't use, and sharpening each agent/command with real work. The ladder measures how your bench is set up; whether good pieces come out of it is up to you.",
+  consolidationSteps: [
+    "Sharpen your hooks and agents against real work: trim what gets in the way, scope the matchers, and tune each agent's tools/limits to its role.",
+    "Prune what you don't use: review which assets you haven't touched in a while (the CLI exposes recency/mtime informatively, not as a gate — ADR-003) and drop the redundant ones.",
+    'Keep your context files (CLAUDE.md, rules, commands) alive: update them when the stack or conventions change, or they stop helping.',
+    'Package and contribute your skills/commands to a shared team repo so your setup scales beyond your own machine.',
+    'Document your agent org chart and share it as an internal reference so others can replicate it.',
+    'Measure the real impact (time saved, tasks delegated end to end) and use that to decide what deserves to stay on your bench.',
+  ],
+  honestyNote: 'Being at T7 means you have the best-equipped bench the CLI knows how to measure. It does not mean you\'re the one who uses AI best: the data is a proxy for setup, indicative and unverified (ADR-007). It\'s not read as "the Talent\'s AI quality".',
+};
+
+const CONTENT_BY_LANG = {
+  es: { jumps: TIER_JUMPS_ES, terminal: T7_TERMINAL_ES },
+  en: { jumps: TIER_JUMPS_EN, terminal: T7_TERMINAL_EN },
+};
+
+// Returns the roadmap entry for the CURRENT tier only (never the whole ladder), or `null` for a genuinely unrecognized tier key (in ANY language).
+function getRoadmapEntry(tierKey, lang = 'es') {
+  const requested = lang === 'en' ? 'en' : 'es';
+
+  if (tierKey === 'T7') {
+    const terminalContent = CONTENT_BY_LANG[requested].terminal;
+    if (terminalContent) {
+      return { tierKey: 'T7', maxTier: true, lang: requested, ...terminalContent };
+    }
+    return { tierKey: 'T7', maxTier: true, lang: requested, contentUnavailable: true };
+  }
+
+  const esJump = TIER_JUMPS_ES[tierKey];
+  if (!esJump) return null; // genuinely unrecognized tier key, in any language
+
+  const jump = CONTENT_BY_LANG[requested].jumps[tierKey];
+  if (jump) return { tierKey, maxTier: false, lang: requested, ...jump };
+
+  return { tierKey, maxTier: false, lang: requested, contentUnavailable: true };
+}
+
+module.exports = {
+  getRoadmapEntry,
+  TIER_JUMPS_ES,
+  T7_TERMINAL_ES,
+  TIER_JUMPS_EN,
+  T7_TERMINAL_EN,
+};
