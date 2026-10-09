@@ -487,6 +487,39 @@ const catalogs = {
         yes: 'Sí, iniciar sesión',
         no: 'No, continuar sin cuenta',
       },
+      // `update` command: actualiza el CLI a la última versión publicada (solo CLI, no MCP).
+      update: {
+        help:
+          'update — actualiza el CLI de Shakers a la última versión publicada.\n\n'
+          + '  Uso: shakers update [--check]\n\n'
+          + '    (sin flag)   Comprueba la última versión y, si hay una más nueva, la instala\n'
+          + '                 por el mismo método con el que se instaló este CLI.\n'
+          + '    --check      Solo informa de tu versión frente a la última publicada; no instala.\n'
+          + '    --json       Salida JSON (paquete, versión actual/última, si hay actualización).\n',
+        checking: 'Comprobando actualizaciones…',
+        current: (v) => `Versión instalada: ${v}`,
+        upToDate: (v) => `Ya tienes la última versión (${v}).`,
+        available: (from, to) => `Hay una actualización disponible: ${from} → ${to}`,
+        checkHint: 'Ejecuta `shakers update` (sin --check) para instalarla.',
+        detected: (label) => `Instalación detectada: ${label}`,
+        updating: (name, from, to) => `Actualizando ${name}: ${from} → ${to}…`,
+        success: (v) => `Actualizado a la versión ${v}.`,
+        reRun: 'Vuelve a ejecutar tu comando para usar la nueva versión.',
+        latestUnknown: (reason) =>
+          `No se pudo determinar la última versión (${reason}). Revisa tu conexión y el acceso al registro.`,
+        failInstall: (reason) => `La actualización falló (${reason}).`,
+        failHint: (cmd) =>
+          `Revisa tu conexión y permisos y vuelve a intentarlo, o actualiza a mano:\n    ${cmd}`,
+        sourceCheckout:
+          'Este CLI se ejecuta desde un checkout de código — actualízalo con `git pull` en ese repositorio.',
+        unknownInstall: (cmd) =>
+          `No se pudo detectar cómo se instaló este CLI. Actualiza a mano:\n    ${cmd}`,
+      },
+      // Aviso pasivo "hay una versión nueva" al arrancar cualquier comando (lectura de caché, sin red en el camino caliente).
+      updateNotifier: {
+        available: (from, to) => `Hay una versión nueva del CLI de Shakers: ${from} → ${to}`,
+        howTo: 'Ejecuta `shakers update` para actualizar.',
+      },
       // `report` command (ADR-016): genera y ABRE el informe HTML completo y compartible de este proyecto (uso de IA + Skills certificadas).
       report: {
         help: 'report — genera y abre el informe HTML completo de este proyecto (uso de IA + Skills certificadas) para compartir con tu equipo.\n'
@@ -982,6 +1015,7 @@ const catalogs = {
       noTerminal: 'No hay una terminal donde preguntarte, así que no he tocado nada. Vuelve a ejecutar el instalador en tu terminal para conectarlo.',
       restart: 'Reinicia las apps que estén abiertas para que carguen Shakers.',
       noneFound: 'No he encontrado ninguna app de IA compatible en esta máquina.',
+      failedAll: 'No he podido conectar Shakers a tus apps de IA. Vuelve a ejecutar el instalador para reintentarlo.',
     },
     rate: {
       help: 'rate — ver o fijar tu tarifa por proyecto.\n\nUso:\n  rate [--lang es|en] [--json]      ver tu tarifa\n  rate --set [--lang es|en]         fijarla (interactivo, con confirmación)\n\nRequiere una sesión activa (shakers login).',
@@ -2122,6 +2156,39 @@ const catalogs = {
         yes: 'Yes, sign in',
         no: 'No, continue without an account',
       },
+      // `update` command: updates the CLI to the latest published version (CLI-only, not MCP).
+      update: {
+        help:
+          'update — update the Shakers CLI to the latest published version.\n\n'
+          + '  Usage: shakers update [--check]\n\n'
+          + '    (no flag)    Check the latest version and, if a newer one exists, install it\n'
+          + '                 the same way this CLI was installed.\n'
+          + '    --check      Only report your version vs the latest published; do not install.\n'
+          + '    --json       JSON output (package, current/latest version, whether an update exists).\n',
+        checking: 'Checking for updates…',
+        current: (v) => `Installed version: ${v}`,
+        upToDate: (v) => `You are on the latest version (${v}).`,
+        available: (from, to) => `An update is available: ${from} → ${to}`,
+        checkHint: 'Run `shakers update` (without --check) to install it.',
+        detected: (label) => `Detected install: ${label}`,
+        updating: (name, from, to) => `Updating ${name}: ${from} → ${to}…`,
+        success: (v) => `Updated to version ${v}.`,
+        reRun: 'Re-run your command to use the new version.',
+        latestUnknown: (reason) =>
+          `Could not determine the latest version (${reason}). Check your network and registry access.`,
+        failInstall: (reason) => `The update failed (${reason}).`,
+        failHint: (cmd) =>
+          `Check your network and permissions and try again, or update manually:\n    ${cmd}`,
+        sourceCheckout:
+          'This CLI is running from a source checkout — update it with `git pull` in that repository.',
+        unknownInstall: (cmd) =>
+          `Could not detect how this CLI was installed. Update manually:\n    ${cmd}`,
+      },
+      // Passive "a newer version exists" notice printed when any command starts (cache read, no network on the hot path).
+      updateNotifier: {
+        available: (from, to) => `A newer Shakers CLI is available: ${from} → ${to}`,
+        howTo: 'Run `shakers update` to upgrade.',
+      },
       // `report` command (ADR-016): builds and OPENS the full, shareable HTML report for this project (AI usage + certified Skills).
       report: {
         help: 'report — build and open the full HTML report for this project (AI usage + certified Skills) to share with your team.\n'
@@ -2610,6 +2677,7 @@ const catalogs = {
       noTerminal: 'There is no terminal to ask you on, so nothing was touched. Run the installer again in your terminal to connect it.',
       restart: 'Restart any of these apps that is open so it loads Shakers.',
       noneFound: 'Found no supported AI app on this machine.',
+      failedAll: 'Could not connect Shakers to your AI apps. Re-run this installer to retry.',
     },
     rate: {
       help: 'rate — view or set your per-project rate.\n\nUsage:\n  rate [--lang es|en] [--json]      view your rate\n  rate --set [--lang es|en]         set it (interactive, with confirmation)\n\nRequires an active session (shakers login).',

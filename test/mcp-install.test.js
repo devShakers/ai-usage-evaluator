@@ -241,3 +241,22 @@ test('install connects the MCP: SHAKERS_MCP_INSTALL=1 connects without asking', 
   await runMcpInstall({ lang: 'en', out: () => {}, ask, platform: 'darwin', homedir: home, nodePath: NODE, cliPath: CLI, env: { SHAKERS_MCP_INSTALL: '1' }, spawn: noClaudeCli });
   assert.ok(fs.existsSync(desktop));
 });
+
+test('install connects the MCP: when every found client fails, the Talent is told to re-run the installer, not to restart', async () => {
+  const { getCatalog } = require('../src/i18n');
+  const c = getCatalog('en').mcpInstall;
+  const { home, desktop } = sandbox();
+  fs.mkdirSync(path.dirname(desktop), { recursive: true });
+  fs.writeFileSync(desktop, '{ not valid json');
+  const prevExit = process.exitCode;
+  let printed = '';
+  try {
+    const res = await runMcpInstall({ lang: 'en', out: (s) => { printed += s; }, ask: async () => '', platform: 'darwin', homedir: home, nodePath: NODE, cliPath: CLI, env: { SHAKERS_MCP_INSTALL: '1' }, spawn: noClaudeCli });
+    assert.ok(res.results.every((r) => r.status !== 'configured' && r.status !== 'unchanged'));
+    assert.ok(printed.includes(c.failedAll));
+    assert.ok(!printed.includes(c.restart));
+    assert.equal(process.exitCode, 1);
+  } finally {
+    process.exitCode = prevExit;
+  }
+});

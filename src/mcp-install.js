@@ -266,7 +266,8 @@ async function runMcpInstall({ out = (s) => process.stdout.write(s), lang = null
     out(`  ${c.clients[r.client]}: ${c.status[r.status]}\n`);
     if (r.removedLegacy) out(`    ${c.removedLegacy}\n`);
   }
-  out(`\n  ${c.restart}\n\n`);
+  const touched = results.some((r) => r.status === 'configured' || r.status === 'unchanged');
+  out(`\n  ${touched ? c.restart : c.failedAll}\n\n`);
   if (results.some((r) => r.status === 'failed' || r.status === 'invalid-json')) process.exitCode = 1;
   return { ok: true, results };
 }

@@ -46,7 +46,11 @@ const { run: runRegister } = require('./register');
 const { run: runOnboarding } = require('./onboarding');
 const { run: runConfig } = require('./config');
 const { run: runMcp } = require('./mcp');
+const { run: runUpdate } = require('./update');
 const { checkOnboardingCompleted } = require('../src/onboarding-availability');
+const { emitCommandAudit } = require('../src/command-audit');
+const { readPackageInfo } = require('../src/update-flow');
+const { isSuppressed, maybeNotify, triggerBackgroundCheck } = require('../src/update-notifier');
 
 let VERSION = '';
 try {
@@ -95,13 +99,14 @@ const HANDLERS = {
   register: runRegister,
   onboarding: runOnboarding,
   config: runConfig,
+  update: runUpdate,
   login: runLogin,
   logout: runLogout,
   superadmin: runSuperadmin,
   mcp: runMcp,
 };
 
-const SESSION_EXEMPT = new Set(['ai-usage', 'register', 'config', 'login', 'logout', 'superadmin', 'mcp', 'share', 'alma']);
+const SESSION_EXEMPT = new Set(['ai-usage', 'register', 'config', 'login', 'logout', 'superadmin', 'mcp', 'share', 'alma', 'update']);
 
 // Command FAMILIES — a navigation layer over the flat commands (which all stay
 // valid as aliases). `shakers <family> <sub>` resolves to the flat handler; every
@@ -119,7 +124,7 @@ const FAMILIES = {
     invitations: 'invitations', applications: 'applications',
   },
   usage: { run: 'ai-usage', report: 'report', share: 'share' },
-  account: { login: 'login', logout: 'logout', register: 'register', config: 'config' },
+  account: { login: 'login', logout: 'logout', register: 'register', config: 'config', update: 'update' },
   certs: { list: 'certifications', certify: 'certify' },
 };
 
@@ -212,12 +217,13 @@ function usageText(lang, { hideOnboarding = false } = {}) {
       + `  Sesión:\n`
       + `    login        Inicia sesión en tu cuenta de Shakers\n`
       + `    logout       Cierra la sesión\n`
-      + `    config       Lee/escribe la configuración (bases de hub/certs)\n\n`
+      + `    config       Lee/escribe la configuración (bases de hub/certs)\n`
+      + `    update       Actualiza el CLI a la última versión publicada (--check solo informa)\n\n`
       + `  Familias (agrupan los comandos de arriba; los nombres planos siguen valiendo como alias):\n`
       + `    add <skill|agent|project|role>     ·  role <add|change>\n`
       + `    profile <show|rate|languages|socials|experiences|portfolios|availability|certifications>\n`
       + `    projects <find|show|save|unsave|invitations|applications>\n`
-      + `    usage <run|report|share>  ·  certs <list|certify>  ·  account <login|logout|register|config>\n`
+      + `    usage <run|report|share>  ·  certs <list|certify>  ·  account <login|logout|register|config|update>\n`
       + `    Ejecuta \`shakers <familia>\` (sin subcomando) para ver sus subcomandos.\n\n`
       + `  Ejecuta shakers <comando> --help para las opciones de cada comando.\n\n`;
   }
@@ -255,12 +261,13 @@ function usageText(lang, { hideOnboarding = false } = {}) {
     + `  Session:\n`
     + `    login        Sign in to your Shakers account\n`
     + `    logout       Sign out\n`
-    + `    config       Read/write configuration (hub/certs bases)\n\n`
+    + `    config       Read/write configuration (hub/certs bases)\n`
+    + `    update       Update the CLI to the latest published version (--check only reports)\n\n`
     + `  Families (group the commands above; the flat names still work as aliases):\n`
     + `    add <skill|agent|project|role>     ·  role <add|change>\n`
     + `    profile <show|rate|languages|socials|experiences|portfolios|availability|certifications>\n`
     + `    projects <find|show|save|unsave|invitations|applications>\n`
-    + `    usage <run|report|share>  ·  certs <list|certify>  ·  account <login|logout|register|config>\n`
+    + `    usage <run|report|share>  ·  certs <list|certify>  ·  account <login|logout|register|config|update>\n`
     + `    Run \`shakers <family>\` (no subcommand) to list its subcommands.\n\n`
     + `  Run \`shakers <command> --help\` for a command's options.\n\n`;
 }
@@ -295,6 +302,18 @@ async function main() {
   try { await ensureFreshSession(process.env); } catch { /* never blocks a command */ }
 
   const token = argv.find((a) => !a.startsWith('-'));
+
+  // Single dispatch choke-point (ADR-060): audit EXACTLY once before branching, fire-and-forget (never awaited). MCP tool calls run in-process and never reach here.
+  const auditCommand =
+    !token || token.toLowerCase() === 'help' ? 'help' : token.toLowerCase();
+  emitCommandAudit({ command: auditCommand, argv, env: process.env });
+
+  // Non-blocking update notice: reads a cached version synchronously, registry check runs in a detached worker; stderr-only, suppressed for --json/non-TTY/CI/update/opt-out.
+  if (!isSuppressed({ argv, command: auditCommand, env: process.env })) {
+    maybeNotify({ currentVersion: VERSION, lang, env: process.env });
+    triggerBackgroundCheck({ name: readPackageInfo().name, env: process.env });
+  }
+
   if (!token || token.toLowerCase() === 'help') {
     let hideOnboarding = false;
     try {
