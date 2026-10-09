@@ -9,20 +9,20 @@ const path = require('path');
 const { makeSignupTools, isSignupPending, signupPhase, isPersonalEmail } = require('../src/mcp-signup-tools');
 const { signupCopy, legalCopy } = require('../src/signup-copy');
 const { resetSignupLanguage } = require('../src/signup-language');
+const { takeNotices } = require('../src/mcp-choice');
 const { needle } = require('../test-fixtures/copy-needle');
 
 const ES = signupCopy('es');
 const SESSION = { accessToken: 'jwt', hubAccessToken: 'jwt', email: 'ada@example.com', expiresAt: '2999-01-01T00:00:00.000Z' };
 const DRAFT = { name: 'Ada Lovelace', role: 'Data Engineer', city: 'Madrid', yearsOfExperience: 8, stack: 'Spark, dbt', languages: 'Español nativo, inglés C1', workMode: 'Remoto', monthlyHours: '120-160', hourlyRate: 45, annualRate: 60000 };
 const CREATE = {
-  windowAnnounced: true,
   linkedinUrl: 'https://www.linkedin.com/in/ada',
   firstName: 'Ada',
   lastName: 'Lovelace',
   userQuery: 'Data engineer, 8 years, Spark and dbt.\nWants remote projects.',
 };
 
-test.beforeEach(() => resetSignupLanguage());
+test.beforeEach(() => { resetSignupLanguage(); takeNotices(); });
 
 function tmpPdf(name = 'ada-cv.pdf', body = '%PDF-1.4 ada') {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'signup-cv-'));
@@ -78,8 +78,9 @@ function harness(overrides = {}) {
     getAuthTokenEndpoint: () => 'https://hub.test/auth/token',
     getCompleteRegistrationEndpoint: () => 'https://hub.test/works/auth/complete-registration',
     checkOnboardingCompleted: async () => false,
-    fetchPricingRate: async () => ({ ok: true, pricing: { partTimePrice: { amount: 40, currency: 'EUR' }, fullTimePrice: null } }),
+    fetchPricingRate: async () => ({ ok: true, pricing: { partTimeSelected: true, partTimePrice: { amount: 40, currency: 'EUR' }, fullTimeSelected: false, fullTimePrice: null } }),
     fetchAvailability: async () => ({ ok: true, availability: { monthlyHours: '80-120' } }),
+    fetchLanguages: async () => ({ ok: true, languageCount: 1, languageCodes: ['es'] }),
     openBrowser: (url) => { calls.opened.push(url); },
     sleep: () => new Promise((resolve) => setImmediate(resolve)),
     ...(overrides.deps || {}),
@@ -100,11 +101,10 @@ test('signup_start: the welcome and its one question, word for word in the langu
   const { tools, calls, win } = harness();
   const r = await tools.signup_start.handler({ language: 'es' });
   assert.equal(r.reason, 'answer-required');
-  assert.deepEqual(r.relayVerbatim, [needle(ES.welcome(null))]);
-  assert.equal(r.question, needle(ES.welcomeQuestion));
+  assert.equal(r.say, [needle(ES.welcome(null)), needle(ES.welcomeQuestion), `1. ${ES.cvSearch}\n2. ${ES.cvAttach}`].join('\n\n'));
   assert.deepEqual(r.options, [ES.cvSearch, ES.cvAttach]);
   assert.equal(r.language, 'es');
-  assert.equal((r.relayVerbatim[0] + r.question).split('?').length - 1, 1, 'one question only, at the end');
+  assert.equal(r.say.split('?').length - 1, 1, 'one question only, at the end');
   assert.equal(calls.signup.length, 0);
   assert.equal(win.calls.length, 0);
 });
@@ -112,7 +112,7 @@ test('signup_start: the welcome and its one question, word for word in the langu
 test('signup_start: greets by name when the AI knows it, and the answer leads to the CV search or the attachment', async () => {
   const { tools } = harness();
   const r = await tools.signup_start.handler({ language: 'es', firstName: 'Ada' });
-  assert.match(r.relayVerbatim[0], /^¡Hola, Ada! Gracias por querer unirte a Shakers/);
+  assert.match(r.say, /^¡Hola, Ada! Gracias por querer unirte a Shakers/);
   const search = await tools.signup_start.handler({ answer: ES.cvSearch });
   assert.equal(search.step, 'cv-search');
   assert.equal(search.cvNotFound, needle(ES.cvNotFound));
@@ -127,25 +127,26 @@ test('signup_start: the language of the first message is kept by every later sig
   const { tools } = harness();
   await tools.signup_start.handler({ language: 'it' });
   const later = await tools.signup_start.handler({ answer: 'nope' });
-  assert.equal(later.question, needle(signupCopy('it').welcomeQuestion));
+  assert.ok(later.say.includes(needle(signupCopy('it').welcomeQuestion)));
+  assert.equal((await tools.signup_start.handler({ answer: '2' })).step, 'cv-attach', 'the number of an option is that option');
   const email = await tools.signup_email.handler({});
   assert.equal(email.relayVerbatim, needle(signupCopy('it').emailUnknown));
   const pt = harness();
   await pt.tools.signup_start.handler({ language: 'pt-PT' });
   const draft = await pt.tools.signup_draft.handler(DRAFT);
-  assert.ok(draft.relayVerbatim[0].startsWith(needle(signupCopy('pt').draftTitle)));
-  assert.equal(draft.relayVerbatim[1], needle(legalCopy('pt').signupNotice));
+  assert.ok(draft.say.startsWith(needle(signupCopy('pt').draftTitle)));
+  assert.ok(draft.say.includes(needle(legalCopy('pt').signupNotice)));
 });
 
 test('signup_email: a known personal email is asked with its two options; a company domain adds the work-email hint', async () => {
   const { tools } = harness();
   await tools.signup_start.handler({ language: 'es' });
   const personal = await tools.signup_email.handler({ email: 'ada@gmail.com' });
-  assert.equal(personal.question, needle(ES.emailKnown('ada@gmail.com')));
+  assert.equal(personal.say, `${needle(ES.emailKnown('ada@gmail.com'))}\n\n1. ${ES.emailYes}\n2. ${ES.emailOther}`);
   assert.deepEqual(personal.options, [ES.emailYes, ES.emailOther]);
   const work = await tools.signup_email.handler({ email: 'ada@acme-corp.com' });
-  assert.equal(work.question, `${ES.emailKnown('ada@acme-corp.com')} ${needle(ES.emailWorkHint)}`);
-  assert.doesNotMatch(work.question, /corporativo/i);
+  assert.ok(work.say.startsWith(`${ES.emailKnown('ada@acme-corp.com')} ${needle(ES.emailWorkHint)}\n\n`));
+  assert.doesNotMatch(work.say, /corporativo/i);
   assert.equal(isPersonalEmail('x@outlook.es'), true);
   assert.equal(isPersonalEmail('x@shakersworks.com'), false);
 });
@@ -173,41 +174,41 @@ test('signup_draft: shows the draft with hourly and annual rates and the data no
   const { tools } = harness();
   await tools.signup_start.handler({ language: 'es' });
   const r = await tools.signup_draft.handler(DRAFT);
-  assert.equal(r.relayVerbatim[0], [
+  const draft = [
     'Esto es lo que he preparado para tu perfil:',
     'Ada Lovelace · Data Engineer · Madrid',
     '8 años de experiencia · Spark, dbt',
     'Español nativo, inglés C1 · Remoto · 120-160 h/mes',
     'Tarifa estimada: 45 €/h · 60.000 €/año (estimación mía, ajústala)',
-  ].join('\n'));
-  assert.equal(r.relayVerbatim[1], needle(legalCopy('es').signupNotice));
-  assert.equal(r.question, needle(ES.draftQuestion));
+  ].join('\n');
+  assert.equal(r.say, [draft, needle(legalCopy('es').signupNotice), needle(ES.windowNotice), needle(ES.draftQuestion), `1. ${ES.draftOk}\n2. ${ES.draftChange}`].join('\n\n'));
   assert.deepEqual(r.options, [ES.draftOk, ES.draftChange]);
-  assert.doesNotMatch(r.relayVerbatim[0], /proyecto/);
+  assert.doesNotMatch(draft, /proyecto/);
 });
 
-test('signup_draft: a change request asks what; a confirmation returns the window text; an implausible rate or a missing role is refused', async () => {
+test('signup_draft: a change request asks what; a confirmation leads to the account; an implausible rate or a missing role is refused', async () => {
   const { tools } = harness();
   await tools.signup_start.handler({ language: 'es' });
   const change = await tools.signup_draft.handler({ ...DRAFT, answer: ES.draftChange });
   assert.equal(change.reason, 'draft-change');
   const ok = await tools.signup_draft.handler({ ...DRAFT, answer: ES.draftOk });
   assert.equal(ok.ok, true);
-  assert.equal(ok.relayVerbatim, needle(ES.windowOpening));
+  assert.equal(ok.relayVerbatim, undefined, 'the window text comes with the window');
   assert.equal(ok.next, 'signup_create_account');
   assert.equal((await tools.signup_draft.handler({ ...DRAFT, hourlyRate: 3000 })).reason, 'implausible-rate');
   assert.equal((await tools.signup_draft.handler({ name: 'Ada' })).reason, 'draft-incomplete');
 });
 
-test('signup_create_account: refused until the talent confirmed the draft, and until the window text was shown', async () => {
+test('signup_create_account: refused until the talent confirmed the draft; then it opens the window with nothing to print', async () => {
   const h = harness();
   await h.tools.signup_start.handler({ language: 'es' });
   assert.equal((await h.tools.signup_create_account.handler(CREATE)).reason, 'draft-not-confirmed');
-  await h.tools.signup_draft.handler({ ...DRAFT, answer: ES.draftOk });
-  const unannounced = await h.tools.signup_create_account.handler({ ...CREATE, windowAnnounced: false });
-  assert.equal(unannounced.reason, 'window-not-announced');
-  assert.equal(unannounced.relayVerbatim, needle(ES.windowOpening));
   assert.equal(h.calls.signup.length, 0);
+  await h.tools.signup_draft.handler({ ...DRAFT, answer: ES.draftOk });
+  const created = await h.tools.signup_create_account.handler(CREATE);
+  assert.equal(created.say, undefined);
+  assert.match(created.message, /Say nothing about the window/);
+  h.win.finish({ ok: false, reason: 'cancelled' });
 });
 
 test('signup_create_account: sends LinkedIn, the PDF, identity and userQuery to hub, opens the window, never returns the claim code', async () => {
@@ -244,10 +245,10 @@ test('signup_create_account: a non-PDF CV travels as text; no source is named be
 
   const none = harness();
   await readyToCreate(none);
-  const missing = await none.tools.signup_create_account.handler({ windowAnnounced: true });
+  const missing = await none.tools.signup_create_account.handler({});
   assert.equal(missing.reason, 'missing-source');
   assert.equal(missing.linkedinAsk, needle(ES.linkedinAsk));
-  assert.equal((await none.tools.signup_create_account.handler({ windowAnnounced: true, cvPath: '/nope/cv.pdf' })).reason, 'cv-not-found');
+  assert.equal((await none.tools.signup_create_account.handler({ cvPath: '/nope/cv.pdf' })).reason, 'cv-not-found');
   for (const linkedinUrl of ['https://www.linkedin.com/in/me/', 'https://www.linkedin.com/feed/']) {
     assert.equal((await none.tools.signup_create_account.handler({ ...CREATE, linkedinUrl })).reason, 'invalid-linkedin-url');
   }
@@ -300,7 +301,7 @@ test('signup_status: waits for the account, then the import from the session, sa
   assert.equal(signupPhase(), 'account');
 });
 
-test('signup_status: a failed LinkedIn import says to tell the talent once, retry once, then ask for another source, without codes', async () => {
+test('signup_status: a failed LinkedIn import queues its fixed line once, then says to retry once and ask for another source, never with codes', async () => {
   const h = harness({ session: null, importStatus: () => ({ ok: true, state: 'done', sources: { linkedin: { state: 'failed', code: 'source.not_found' } } }) });
   await readyToCreate(h);
   await h.tools.signup_create_account.handler(CREATE);
@@ -308,9 +309,10 @@ test('signup_status: a failed LinkedIn import says to tell the talent once, retr
   h.setSession(SESSION);
   await new Promise((resolve) => setImmediate(resolve));
   const r = await h.tools.signup_status.handler({});
-  assert.match(r.message, /retry once/);
+  assert.match(r.message, /retry once/i);
   assert.match(r.message, /website or GitHub/);
-  assert.match(r.message, /without codes/);
+  assert.match(r.message, /never with codes/);
+  assert.deepEqual(takeNotices(), [ES.importFailed([ES.importSources.linkedin])]);
 });
 
 test('signup_status: the window link only when the talent says it did not open, as fixed text', async () => {
@@ -357,7 +359,7 @@ test('signup_status: unclaimed account, closed window and nothing started each g
   assert.equal((await harness().tools.signup_status.handler({})).reason, 'no-signup');
 });
 
-test('update_existing_profile: shows what would change against the current profile and, on yes, re-imports filling only empty fields', async () => {
+test('update_existing_profile: shows only what the draft would fill in empty fields and, on yes, re-imports filling only empty fields', async () => {
   const cvPath = tmpPdf();
   const h = harness();
   await readyToCreate(h);
@@ -365,12 +367,10 @@ test('update_existing_profile: shows what would change against the current profi
   h.win.finish({ ok: true, email: 'ada@gmail.com', accountExists: true });
   h.setSession(SESSION);
   const ask = await h.tools.update_existing_profile.handler({});
-  assert.equal(ask.question, [
+  assert.equal(ask.say.split('\n\n1. ')[0], [
     needle(ES.existingTitle),
     '',
-    '· Tarifa por hora: 40 €/h → 45 €/h',
     '· Tarifa anual: sin indicar → 60.000 €/año',
-    '· Disponibilidad: 80-120 h/mes → 120-160 h/mes',
     `· ${needle(ES.existingLists)}`,
   ].join('\n'));
   assert.deepEqual(ask.options, [ES.existingYes, ES.existingNo]);
@@ -481,7 +481,8 @@ test('save_profile_details: implausible rates and invalid sections fail alone; w
   assert.equal(hourly.results.pricing.reason, 'implausible-rate');
   assert.equal(h.calls.pricing, undefined);
   const mixed = await h.tools.save_profile_details.handler({ workSituation: { situation: 'NOT_A_SITUATION' }, pricing: { hourlyRate: 45 } });
-  assert.deepEqual(mixed.results.workSituation, { ok: false, reason: 'bad-situation' });
+  assert.equal(mixed.results.workSituation.reason, 'bad-situation');
+  assert.match(mixed.results.workSituation.message, /enum/);
   assert.deepEqual(mixed.results.pricing, { ok: true });
   assert.equal((await harness().tools.save_profile_details.handler({ pricing: { hourlyRate: 45 } })).reason, 'no-session');
   const props = h.tools.save_profile_details.inputSchema.properties;

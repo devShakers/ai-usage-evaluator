@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "shakers",
   "display_name": "Shakers",
-  "version": "0.7.9",
+  "version": "0.7.13",
   "description": "All-in-one local Shakers connector: scan your AI usage, build your profile, find projects, sign up, onboard and ask Alma — the full toolset runs on your machine and talks to Shakers over HTTP with your CLI login.",
   "long_description": "A local MCP server exposing the complete Shakers talent toolset. The local scan tools (ai_usage, read_cv, suggest_register_context) run on-device with on-device redaction; the server-backed tools (profile, projects, applications, certifications, sign-up, onboarding, roles, Alma) call hub/certs over HTTP authenticated with your Shakers CLI session. Includes slash-command prompts for the key actions.",
   "author": {

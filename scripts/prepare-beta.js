@@ -24,7 +24,7 @@ if (process.env.CI && !process.env.BETA_VERSION) {
 
 const BETA = {
   name: 'shakers-cli-beta',
-  version: process.env.BETA_VERSION || '0.8.0-beta.10',
+  version: process.env.BETA_VERSION || '0.8.0-beta.14',
   publishConfig: { access: 'public', registry: 'https://registry.npmjs.org/' },
 };
 

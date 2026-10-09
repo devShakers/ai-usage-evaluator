@@ -39,13 +39,19 @@ function makeCertifyDimensionTools(deps = {}) {
         state: d.state,
         band: d.band || null,
       })),
+      onCooldown: (res.onCooldown || []).map((d) => ({
+        dimensionKey: d.dimensionKey,
+        slug: d.slug,
+        clusterId: d.clusterId,
+        availableAt: d.availableAt,
+      })),
     };
   }
 
   return [
     {
       name: 'list_certifiable_dimensions',
-      description: "List the dimensions the talent can certify right now: their main role's hub dimensions whose interview runs by text (terminal or spoken-case templates) and not already CERTIFIED (UNCERTIFIED/EXPIRED). Requires an active session. The certification interview itself is done on the web; running `shakers certify` in the terminal hands the talent the web link to take it. The dimensionKey/clusterId in each item are INTERNAL handles for tools only — never show or mention them to the talent; refer to a dimension by its name.",
+      description: "List the dimensions the talent can certify right now: their main role's hub dimensions whose interview runs by text (terminal or spoken-case templates) and not already CERTIFIED (UNCERTIFIED/EXPIRED). Dimensions the talent cannot retake yet are NOT in `dimensions`; they come in `onCooldown` with the ISO date they free up, so tell the talent when they can retry instead of offering them. Requires an active session. The certification interview itself is done on the web; running `shakers certify` in the terminal hands the talent the web link to take it. The dimensionKey/clusterId in each item are INTERNAL handles for tools only — never show or mention them to the talent; refer to a dimension by its name.",
       inputSchema: LIST_CERTIFIABLE_DIMENSIONS_SCHEMA,
       handler: listCertifiableDimensions,
     },

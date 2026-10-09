@@ -59,6 +59,7 @@ function signupHarness({ deps = {} } = {}) {
     checkOnboardingCompleted: async () => false,
     fetchPricingRate: async () => ({ ok: false }),
     fetchAvailability: async () => ({ ok: false }),
+    fetchLanguages: async () => ({ ok: false }),
     openBrowser: (url) => { calls.opened.push(url); },
     // Browser openings wait on a sleep the test releases; every other wait is instant.
     sleep: (ms) => {
@@ -75,7 +76,7 @@ async function toWindow(tools) {
   await tools.signup_start.handler({ language: 'es' });
   await tools.signup_email.handler({ email: 'ada@gmail.com', typed: true });
   await tools.signup_draft.handler({ ...DRAFT, answer: ES.draftOk });
-  return tools.signup_create_account.handler({ windowAnnounced: true, linkedinUrl: 'https://www.linkedin.com/in/ada', firstName: 'Ada', lastName: 'Lovelace' });
+  return tools.signup_create_account.handler({ linkedinUrl: 'https://www.linkedin.com/in/ada', firstName: 'Ada', lastName: 'Lovelace' });
 }
 
 test('Adrián\'s copy (es), word for word: welcome, question and options', () => {
@@ -93,8 +94,8 @@ test('Adrián\'s copy (es), word for word: email, draft, window, AI usage, exist
   assert.equal(renderDraft('es', DRAFT), 'Esto es lo que he preparado para tu perfil:\nAda Lovelace · Data Engineer · Madrid\n8 años de experiencia · Spark, dbt\nEspañol nativo, inglés C1 · Remoto · 120-160 h/mes\nTarifa estimada: 45 €/h · 60.000 €/año (estimación mía, ajústala)');
   assert.equal(ES.draftQuestion, '¿Está bien o cambio algo?');
   assert.deepEqual([ES.draftOk, ES.draftChange], ['Todo correcto', 'Quiero cambiar algo']);
-  assert.equal(ES.windowOpening, 'Perfecto. Ahora solo falta crear tu cuenta para guardar todo esto y que puedas entrar en Shakers cuando quieras.\n\nTe abro una ventana en el navegador, elige cómo entrar:\n· Con Google\n· Con email y contraseña\n\nLa contraseña la escribes allí directamente, nunca pasa por este chat. En esa misma pantalla aceptas los términos y la política de privacidad.\n\n👉 Mira tu navegador. Cuando termines, vuelve aquí y seguimos.');
-  assert.doesNotMatch(ES.windowOpening, /LinkedIn/);
+  assert.equal(ES.windowNotice, 'Cuando confirmes, te abro una ventana en el navegador para crear tu cuenta y guardar todo esto. Allí eliges cómo entrar:\n· Con Google\n· Con email y contraseña\n\nLa contraseña la escribes allí directamente, nunca pasa por este chat. En esa misma pantalla aceptas los términos y la política de privacidad. Cuando termines, vuelve aquí y seguimos.');
+  assert.doesNotMatch(ES.windowNotice, /LinkedIn/);
   assert.equal(ES.aiUsageQuestion, '¿Quieres que analice cómo trabajas con IA? Es opcional y tarda 1-2 min. Solo veo qué herramientas usas, tu código y tus prompts no salen de tu máquina. Te ayuda a destacar en proyectos de IA.');
   assert.deepEqual([ES.aiUsageYes, ES.aiUsageSkip], ['Sí, analízalo', 'Saltar este paso']);
   assert.equal(ES.existingTitle, 'He visto que ya tienes cuenta. ¿Actualizo tu perfil con esto?');
@@ -187,8 +188,10 @@ test('legal texts: the draft step carries the data notice verbatim, before its q
   const { tools } = signupHarness();
   await tools.signup_start.handler({ language: 'es' });
   const r = await tools.signup_draft.handler(DRAFT);
-  assert.equal(r.relayVerbatim[1], needle(legalCopy('es').signupNotice));
-  assert.match(r.message, /word for word, each as its own block/);
+  const notice = needle(legalCopy('es').signupNotice);
+  assert.ok(r.say.includes(notice));
+  assert.ok(r.say.indexOf(notice) < r.say.indexOf(ES.draftQuestion));
+  assert.match(r.message, /Print `say` word for word/);
 });
 
 test('legal texts: the two AI-usage disclaimers come right before the AI-usage question, never in the welcome', async () => {
@@ -198,20 +201,18 @@ test('legal texts: the two AI-usage disclaimers come right before the AI-usage q
   fixSignupLanguage('es');
   const usage = makeAiUsageTool({ signupPhase: () => 'account', recordConsent: () => {} });
   const chat = await usage.handler({});
-  assert.deepEqual(chat.relayVerbatim, [legalCopy('es').usageInfoAccessed, legalCopy('es').usageGoalDuration]);
-  assert.equal(chat.question, needle(ES.aiUsageQuestion));
+  assert.equal(chat.say, [legalCopy('es').usageInfoAccessed, legalCopy('es').usageGoalDuration, needle(ES.aiUsageQuestion), `1. ${ES.aiUsageYes}\n2. ${ES.aiUsageSkip}`].join('\n\n'));
   assert.deepEqual(chat.options, [ES.aiUsageYes, ES.aiUsageSkip]);
   const dialog = await usage.handler({}, { elicitation: true, elicit: async () => null });
-  assert.deepEqual(dialog.relayVerbatim, chat.relayVerbatim, 'the dialog path shows the disclaimers first too');
-  assert.equal(dialog.question, undefined);
+  assert.equal(dialog.say, chat.say, 'a dialog that cannot open prints the disclaimers with the question too');
 });
 
 test('legal texts: the interview disclaimers come back in the talent\'s language before the interview can start', async () => {
-  fixSignupLanguage('pt');
+  fixSignupLanguage('en');
   const register = Object.fromEntries(makeRegisterTools({ lang: 'es', checkOnboardingCompleted: async () => false, }).map((t) => [t.name, t]));
   const r = await register.onboarding_interview_start.handler({ where: 'here' });
-  assert.equal(r.reason, 'disclaimers-not-acknowledged');
-  assert.deepEqual(r.relayVerbatim, [legalCopy('pt').interviewInfoAccessed, legalCopy('pt').interviewGoalDuration]);
+  assert.equal(r.reason, 'answer-mode-required');
+  assert.ok(r.say.startsWith([legalCopy('en').interviewInfoAccessed, legalCopy('en').interviewGoalDuration, signupCopy('en').answerModeQuestion].join('\n\n')));
 });
 
 test('window warning: signup_create_account answers at once and the browser opens about 4 s later, so the text is read first', async () => {

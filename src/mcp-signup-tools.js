@@ -8,12 +8,12 @@ const { signupCopy, legalCopy, renderDraft, amount } = require('./signup-copy');
 const { fixSignupLanguage, signupLanguage } = require('./signup-language');
 const { readLocalCv } = require('./cv-file');
 const { emailFromHubToken } = require('./auth-session-store');
-const { askAfterTexts } = require('./mcp-choice');
+const { askAfterTexts, queueNotice, takeNotices } = require('./mcp-choice');
 
 // MCP sign-up (ticket 39540): hub imports into an UNREGISTERED profile that the local window claims with a code kept only in memory.
 
 const SIGNUP_WINDOW_TIMEOUT_MS = 15 * 60 * 1000;
-// The browser opens this long after the tool answers, so the AI's line announcing it is on screen first.
+// The browser opens this long after the tool answers, so the AI's reply is on screen first.
 const BROWSER_OPEN_DELAY_MS = 4000;
 const MAX_WAIT_SECONDS = 25;
 const IMPORT_POLL_MS = 3000;
@@ -29,7 +29,14 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Personal mailbox providers; any other domain may be the talent's employer, so the email question adds the work-email hint.
 const PERSONAL_EMAIL_DOMAINS = new Set(['gmail.com', 'googlemail.com', 'outlook.com', 'outlook.es', 'hotmail.com', 'hotmail.es', 'hotmail.it', 'live.com', 'msn.com', 'yahoo.com', 'yahoo.es', 'yahoo.it', 'ymail.com', 'icloud.com', 'me.com', 'mac.com', 'proton.me', 'protonmail.com', 'pm.me', 'gmx.com', 'gmx.es', 'gmx.de', 'aol.com', 'zoho.com', 'tutanota.com', 'libero.it', 'virgilio.it', 'tiscali.it', 'sapo.pt', 'mail.com', 'yandex.com', 'fastmail.com', 'hey.com', 'uol.com.br', 'bol.com.br']);
 const INVALID_LINKEDIN_MESSAGE = 'That is not a LinkedIn profile URL (linkedin.com/in/<slug>; /in/me only redirects to it). Ask the talent once more to copy the address bar of their profile page, or continue with the CV only.';
-const VERBATIM = 'Show relayVerbatim word for word, as its own block, with nothing of your own added to it.';
+// What the model must send instead when a work-situation section is refused.
+const SECTION_HELP = {
+  'bad-situation': 'workSituation.situation must be one of its enum codes.',
+  'bad-participation': 'workSituation.participation (FULL_TIME or PART_TIME) is required when situation is EMPLOYED.',
+  'bad-opinion': 'workSituation.opinion is required unless situation is FREELANCE: pick your best match from its enum.',
+  'bad-motivation': 'workSituation.changeMotivators is required when situation is FREELANCE or opinion is WAS_FREELANCE_BEFORE or OPEN_TO_FREELANCE: pick your best match from its enum.',
+};
+const VERBATIM = 'Print relayVerbatim word for word now, as its own block, before any other tool call, with nothing of your own added to it.';
 
 function isPersonalEmail(email) {
   return PERSONAL_EMAIL_DOMAINS.has(String(email).split('@').pop().toLowerCase());
@@ -70,8 +77,8 @@ function buildDetailsSchema(lang) {
         properties: {
           situation: { type: 'string', enum: WORK_SITUATIONS, description: `${show}: ${labelledOptions(WORK_SITUATIONS, L.workSituationLabels)}. 'EMPLOYED' requires participation.` },
           participation: { type: 'string', enum: EMPLOYMENT_PARTICIPATIONS, description: `Only when EMPLOYED. ${show}: ${labelledOptions(EMPLOYMENT_PARTICIPATIONS, L.employmentParticipationLabels)}.` },
-          opinion: { type: 'string', enum: FREELANCE_OPINIONS, description: `Opinion on freelancing, required unless FREELANCE. ${show}: ${labelledOptions(FREELANCE_OPINIONS, L.freelanceOpinionLabels)}.` },
-          changeMotivators: { type: 'string', enum: CHANGE_MOTIVATORS, description: `Motivation, your best match; omit when opinion is NOT_INTERESTED. ${show}: ${labelledOptions(CHANGE_MOTIVATORS, L.changeMotivatorLabels)}.` },
+          opinion: { type: 'string', enum: FREELANCE_OPINIONS, description: `Opinion on freelancing. Required unless situation is FREELANCE. ${show}: ${labelledOptions(FREELANCE_OPINIONS, L.freelanceOpinionLabels)}.` },
+          changeMotivators: { type: 'string', enum: CHANGE_MOTIVATORS, description: `Motivation, your best match. Required when situation is FREELANCE or opinion is WAS_FREELANCE_BEFORE or OPEN_TO_FREELANCE; omit it only when opinion is NOT_INTERESTED. ${show}: ${labelledOptions(CHANGE_MOTIVATORS, L.changeMotivatorLabels)}.` },
         },
         required: ['situation'],
       },
@@ -126,8 +133,8 @@ const WELCOME_SCHEMA = {
   properties: {
     language: { type: 'string', description: "ISO code of the language the talent wrote their first message in (es, en, it, pt...). It fixes the language of every sign-up text from here on." },
     firstName: { type: 'string', description: 'Only if you already know it: the welcome greets them by name.' },
-    shown: { type: 'boolean', description: 'true only after you showed relayVerbatim from the previous call: it then asks the question in a dialog.' },
     answer: { type: 'string', description: 'The option the talent picked when you asked the question in the chat.' },
+    cvPath: { type: 'string', description: 'When the talent\'s answer (either option) already gives their CV as a path on this machine: that exact file is read, with no search and no request for the file.' },
   },
   required: ['language'],
 };
@@ -137,7 +144,6 @@ const EMAIL_SCHEMA = {
   properties: {
     email: { type: 'string', description: 'The best email you know for the talent (CV first, then what they told you). Omit it when you know none.' },
     typed: { type: 'boolean', description: 'true when `email` is the one the talent just wrote in answer to the email question: it is taken as is.' },
-    shown: { type: 'boolean' },
     answer: { type: 'string', description: 'The option the talent picked when you asked the question in the chat.' },
   },
 };
@@ -154,17 +160,17 @@ const DRAFT_SCHEMA = {
     languages: { type: 'string', description: 'Languages and level, e.g. "Español nativo, inglés C1".' },
     workMode: { type: 'string', description: 'Remote, hybrid or on site, in the talent\'s language.' },
     monthlyHours: { type: 'string', description: `Hours a month they can work: one of ${MONTHLY_HOURS.join(', ')}.` },
-    hourlyRate: { type: 'number', description: `Your estimate in euros per hour (part-time projects), at most ${MAX_HOURLY_RATE}.` },
-    annualRate: { type: 'number', description: `Your estimate in euros per year (full-time projects), at least ${MIN_ANNUAL_RATE}.` },
-    shown: { type: 'boolean' },
+    hourlyRate: { type: 'number', description: `Euros per hour (part-time projects), at most ${MAX_HOURLY_RATE}: the talent's figure, else your estimate from role, seniority, stack and location.` },
+    annualRate: { type: 'number', description: `Euros per year (full-time projects), at least ${MIN_ANNUAL_RATE}: the talent's figure, else your estimate.` },
+    ratesFromTalent: { type: 'boolean', description: 'true only when the talent gave you both rates; omit it when you estimated them (they are shown as your estimate).' },
     answer: { type: 'string', description: 'The option the talent picked when you asked the question in the chat.' },
   },
+  required: ['name', 'role', 'hourlyRate', 'annualRate'],
 };
 
 const CREATE_SCHEMA = {
   type: 'object',
   properties: {
-    windowAnnounced: { type: 'boolean', description: 'true only after you showed the talent, word for word, the text announcing the window (signup_draft returns it).' },
     linkedinUrl: { type: 'string', description: 'The talent\'s LinkedIn profile URL (linkedin.com/in/<slug>, never /in/me).' },
     cvPath: { type: 'string', description: 'Path of the talent\'s own CV on this machine (from read_cv / suggest_register_context, ~/ form is fine). Only a PDF is uploaded at sign-up.' },
     firstName: { type: 'string' },
@@ -254,6 +260,7 @@ function makeSignupTools(deps = {}) {
     checkOnboardingCompleted = require('./onboarding-availability').checkOnboardingCompleted,
     fetchPricingRate = (opts) => require('./rate-client').fetchPricingRate({}, opts),
     fetchAvailability = (opts) => require('./availability-client').fetchAvailability({}, opts),
+    fetchLanguages = (opts) => require('./profile-client').fetchLanguages({}, opts),
     openBrowser = require('./open-file').openPath,
     sleep = defaultSleep,
     now = () => Date.now(),
@@ -267,9 +274,12 @@ function makeSignupTools(deps = {}) {
     email: null,
     draft: null,
     draftConfirmed: false,
+    keepProfile: false,
     sources: null,
     account: { state: 'not-started' },
     reported: { account: null, import: null },
+    failedSources: new Set(),
+    cvPath: null,
     wake: null,
   };
   currentSignup = state;
@@ -377,23 +387,38 @@ function makeSignupTools(deps = {}) {
 
   // Step 1: welcome, value proposal, the three steps and one question (may I look for your CV here?).
   async function signupStart(args = {}, ctx = {}) {
-    if (args.shown !== true && !nonEmpty(args.answer)) {
+    if (!nonEmpty(args.answer)) {
       fixSignupLanguage(args.language);
       state.draft = null;
       state.draftConfirmed = false;
       state.email = null;
+      state.failedSources.clear();
+      state.cvPath = null;
+      takeNotices();
     }
+    if (nonEmpty(args.cvPath)) state.cvPath = nonEmpty(args.cvPath);
     const c = copy();
     const asked = await askAfterTexts(ctx, {
       tool: 'signup_start',
       texts: [c.welcome(nonEmpty(args.firstName))],
       question: c.welcomeQuestion,
       options: [c.cvSearch, c.cvAttach],
-      shown: args.shown,
       answer: args.answer,
     });
     if (asked.reply) return { ...asked.reply, language: lang() };
     const linkedin = `LinkedIn: use the URL in the CV (read_cv returns links.linkedin). Only if it has none, ask \`linkedinAsk\` word for word; only if they say they do not know where to find it, say \`linkedinOpening\` and call open_linkedin_profile. Then call signup_email.`;
+    // A CV path the talent gave wins over both answers: searching could read another candidate.
+    const cvPath = state.cvPath;
+    if (cvPath) {
+      return {
+        ok: true,
+        step: 'cv-given',
+        cvPath,
+        linkedinAsk: c.linkedinAsk,
+        linkedinOpening: c.linkedinOpening,
+        message: `The talent already gave their CV: read_cv it now with talentConsent:true, saying nothing about attaching it. ${linkedin}`,
+      };
+    }
     if (asked.answer === c.cvSearch) {
       return {
         ok: true,
@@ -401,7 +426,7 @@ function makeSignupTools(deps = {}) {
         cvNotFound: c.cvNotFound,
         linkedinAsk: c.linkedinAsk,
         linkedinOpening: c.linkedinOpening,
-        message: `The talent allowed you to look for their CV: call suggest_register_context and read_cv on the most likely one without asking again. If there is none, show \`cvNotFound\` word for word and wait for the file. ${linkedin}`,
+        message: `The talent allowed you to look for their CV: call suggest_register_context, then read_cv on its first candidate without asking again, even when nameMatch is null (their name is just unknown). Only if there is no candidate, or every one comes back mentionsTalent:false, show \`cvNotFound\` word for word and wait for the file. ${linkedin}`,
       };
     }
     return {
@@ -410,7 +435,7 @@ function makeSignupTools(deps = {}) {
       relayVerbatim: c.cvAttachAsk,
       linkedinAsk: c.linkedinAsk,
       linkedinOpening: c.linkedinOpening,
-      message: `${VERBATIM} Then wait for the CV in the chat. ${linkedin}`,
+      message: `If their message already holds the CV (attached, pasted or as a path), do not print relayVerbatim: use that CV. Otherwise ${VERBATIM} Then wait for the CV in the chat. ${linkedin}`,
     };
   }
 
@@ -436,7 +461,7 @@ function makeSignupTools(deps = {}) {
     return { ok: false, reason: 'email-required', relayVerbatim: c.emailUnknown, message: `${VERBATIM} Then call signup_email with email set to what they write and typed:true.` };
   }
 
-  // Step 3: the draft of the profile and the data notice; the talent confirms it before the window opens.
+  // Step 3: the draft, the data notice and how the window works; confirming it is what opens the window.
   async function signupDraft(args = {}, ctx = {}) {
     const c = copy();
     const pricing = pricingFromRates(args);
@@ -446,12 +471,15 @@ function makeSignupTools(deps = {}) {
       if (args[key] !== undefined && args[key] !== null && args[key] !== '') draft[key] = args[key];
     }
     if (!draft.name || !draft.role) return { ok: false, reason: 'draft-incomplete', message: 'The draft needs at least name and role: read the CV first.' };
+    if (draft.hourlyRate === undefined || draft.annualRate === undefined) {
+      return { ok: false, reason: 'draft-rates-required', message: 'The draft needs both rates: if the talent gave them, send them with ratesFromTalent:true; otherwise estimate hourlyRate (€/h) and annualRate (€/year) from role, seniority, stack and location, and send them without it. Then call signup_draft again.' };
+    }
+    if (args.ratesFromTalent === true) draft.ratesFromTalent = true;
     const asked = await askAfterTexts(ctx, {
       tool: 'signup_draft',
-      texts: [renderDraft(lang(), draft), legalCopy(lang()).signupNotice],
+      texts: [renderDraft(lang(), draft), legalCopy(lang()).signupNotice, c.windowNotice],
       question: c.draftQuestion,
       options: [c.draftOk, c.draftChange],
-      shown: args.shown,
       answer: args.answer,
     });
     if (asked.reply) return { ...asked.reply, message: `${asked.reply.message} Pass the same draft fields again.` };
@@ -464,8 +492,7 @@ function makeSignupTools(deps = {}) {
     return {
       ok: true,
       next: 'signup_create_account',
-      relayVerbatim: c.windowOpening,
-      message: `Confirmed. ${VERBATIM} Then call signup_create_account with windowAnnounced:true: the window opens a few seconds later.`,
+      message: 'Confirmed. Call signup_create_account now: the talent already read how the window works, so say nothing before it.',
     };
   }
 
@@ -489,9 +516,6 @@ function makeSignupTools(deps = {}) {
     const c = copy();
     if (!state.draftConfirmed) {
       return { ok: false, reason: 'draft-not-confirmed', message: 'Show the draft with signup_draft and get the talent\'s confirmation first.' };
-    }
-    if (args.windowAnnounced !== true) {
-      return { ok: false, reason: 'window-not-announced', relayVerbatim: c.windowOpening, message: `${VERBATIM} Then call signup_create_account again with windowAnnounced:true.` };
     }
     const session = resolved.loadAuthSession();
     if (resolved.sessionStatus(session) === 'active' && state.account.state !== 'waiting') {
@@ -535,8 +559,8 @@ function makeSignupTools(deps = {}) {
       status: 'window-open',
       ...(cvNote ? { cvNote } : {}),
       next: 'signup_status',
-      message: (reused ? 'The sign-up window was already open; it now uses the new data. ' : 'The window opens in the talent\'s browser in a few seconds: they create the account with Google or a password there, or sign in if they already have one. ')
-        + 'Say nothing more about it. Only if they say it did not open, call signup_status with windowLink:true. Call signup_status (waitSeconds 20) until the account exists.',
+      message: (reused ? 'The sign-up window was already open; it now uses the new data. ' : 'The window opens in the talent\'s browser in a few seconds; they read how it works in the draft they confirmed. ')
+        + 'Say nothing about the window. Only if they say it did not open, call signup_status with windowLink:true. Now call signup_status (waitSeconds 20) until the account exists.',
     };
   }
 
@@ -550,7 +574,7 @@ function makeSignupTools(deps = {}) {
   }
 
   function nextSteps(account) {
-    const interview = 'Then the onboarding interview: if onboardingInterview.completed is true do not offer it; otherwise call onboarding_interview_start without disclaimerAcknowledged (it asks here now or later on the web). Then, also if they skip it, the main role: list_my_roles (waitSeconds 20) and set_main_role without clusterId. Finally open_web.';
+    const interview = 'Then the onboarding interview: if onboardingInterview.completed is true do not offer it; otherwise call onboarding_interview_start without disclaimerAcknowledged (it asks here now or later on the web). Then, also if they skip it, the main role: list_my_roles (waitSeconds 20), then set_main_role without clusterId only when its next says so. Finally open_web.';
     const aiUsage = 'Then ai_usage without consent: it returns the two AI-usage disclaimers and the question (show them right before asking; no scan happens before a yes).';
     if (account.state === 'existing') {
       return `This talent already had an account and signed in. Call update_existing_profile: it shows what would change and asks whether to update. ${aiUsage} ${interview}`;
@@ -559,11 +583,21 @@ function makeSignupTools(deps = {}) {
     return `The account exists.${unclaimed} Now, without asking: save_profile_details with the confirmed draft (situation, motivation, both rates, availability and location, languages). ${aiUsage} ${interview}`;
   }
 
+  // A source that did not import gets its fixed line once, on the next question block.
+  function noticeFailed(sources) {
+    const fresh = sources.filter((s) => !state.failedSources.has(s));
+    fresh.forEach((s) => state.failedSources.add(s));
+    const c = copy();
+    if (fresh.length) queueNotice(c.importFailed(fresh.map((s) => c.importSources[s] || s)));
+    return fresh.length > 0;
+  }
+
   function guidance(account, imp) {
     const lines = [];
     const linkedin = imp.sources && imp.sources.linkedin;
     if (linkedin && linkedin.state === 'failed') {
-      lines.push('The LinkedIn import failed. Tell the talent once, without codes, and check the URL with them; retry once with import_profile; if it fails again, ask for their website or GitHub and send them with import_profile.');
+      noticeFailed(['linkedin']);
+      lines.push('The LinkedIn import failed. Its fixed line for the talent comes with the next question: do not add your own, never with codes; retry once with import_profile; if it fails again, ask for their website or GitHub and send them with import_profile.');
     }
     if (account.state === 'waiting') lines.push('The talent is still in the sign-up window. Call signup_status again.');
     if (account.state === 'failed') lines.push('The sign-up window ended without an account. Ask the talent whether to try again; signup_create_account reopens it.');
@@ -616,12 +650,13 @@ function makeSignupTools(deps = {}) {
       }
       return { ok: false, reason: res.reason };
     }
-    const failed = res.report ? res.report.sources.filter((src) => src.status === 'failed') : [];
+    const failed = res.report ? res.report.sources.filter((src) => src.status === 'failed').map((src) => src.source) : [];
+    noticeFailed(failed);
     return {
       ok: true,
       report: res.report,
       message: failed.length
-        ? `Imported, except: ${failed.map((src) => src.source).join(', ')}. Tell the talent which source did not come through, without codes.`
+        ? `Imported, except: ${failed.join(', ')}. Its fixed line for the talent comes with the next question: do not add your own, never with codes.`
         : 'Imported. Existing texts and languages were kept; lists were added without duplicates.',
     };
   }
@@ -630,28 +665,93 @@ function makeSignupTools(deps = {}) {
     return value === null || value === undefined ? copy().existingEmpty : `${amount(lang(), value)} ${unit}`;
   }
 
-  // What the confirmed draft would change in an existing profile: the rates and hours it overwrites, plus the import that only adds.
+  // The existing profile as far as it can be read; a field that could not be read counts as set, so it is never overwritten.
+  async function currentProfile() {
+    const session = resolved.loadAuthSession();
+    const hubAccessToken = session && session.hubAccessToken;
+    const [rate, availability, languages] = await Promise.all([
+      fetchPricingRate({ hubAccessToken }).catch(() => ({ ok: false })),
+      fetchAvailability({ hubAccessToken }).catch(() => ({ ok: false })),
+      fetchLanguages({ hubAccessToken }).catch(() => ({ ok: false })),
+    ]);
+    const pricing = rate && rate.ok ? rate.pricing || {} : null;
+    // An unselected rate may keep an old amount: only a selected one counts as set.
+    const amountOf = (selected, price) => (selected === true && price && typeof price.amount === 'number' ? price.amount : null);
+    return {
+      pricing: pricing && { hourly: amountOf(pricing.partTimeSelected, pricing.partTimePrice), annual: amountOf(pricing.fullTimeSelected, pricing.fullTimePrice) },
+      availability: availability && availability.ok ? availability.availability || {} : null,
+      languageCount: languages && languages.ok ? languages.languageCount : null,
+    };
+  }
+
+  // Fill-empty only: what of the confirmed draft would land in an existing profile, plus the import that only adds.
   async function existingDiff() {
     const c = copy();
     const draft = state.draft || {};
-    const session = resolved.loadAuthSession();
-    const hubAccessToken = session && session.hubAccessToken;
-    const [rate, availability] = await Promise.all([
-      fetchPricingRate({ hubAccessToken }).catch(() => ({ ok: false })),
-      fetchAvailability({ hubAccessToken }).catch(() => ({ ok: false })),
-    ]);
+    const current = await currentProfile();
     const lines = [];
-    const pricing = rate && rate.ok ? rate.pricing : null;
-    const currentHourly = pricing && pricing.partTimePrice ? pricing.partTimePrice.amount : null;
-    const currentAnnual = pricing && pricing.fullTimePrice ? pricing.fullTimePrice.amount : null;
-    if (draft.hourlyRate !== undefined && Number(draft.hourlyRate) !== currentHourly) lines.push(c.existingRate(money(currentHourly, c.perHour), money(draft.hourlyRate, c.perHour)));
-    if (draft.annualRate !== undefined && Number(draft.annualRate) !== currentAnnual) lines.push(c.existingAnnual(money(currentAnnual, c.perYear), money(draft.annualRate, c.perYear)));
-    const currentHours = availability && availability.ok && availability.availability ? availability.availability.monthlyHours : null;
-    if (draft.monthlyHours !== undefined && String(draft.monthlyHours) !== String(currentHours)) {
-      lines.push(c.existingHours(currentHours ? c.hours(currentHours) : c.existingEmpty, c.hours(draft.monthlyHours)));
-    }
+    const has = (v) => v !== undefined && v !== null && v !== '';
+    if (current.pricing && current.pricing.hourly === null && has(draft.hourlyRate)) lines.push(c.existingRate(c.existingEmpty, money(draft.hourlyRate, c.perHour)));
+    if (current.pricing && current.pricing.annual === null && has(draft.annualRate)) lines.push(c.existingAnnual(c.existingEmpty, money(draft.annualRate, c.perYear)));
+    if (current.availability && !has(current.availability.monthlyHours) && has(draft.monthlyHours)) lines.push(c.existingHours(c.existingEmpty, c.hours(draft.monthlyHours)));
     lines.push(c.existingLists);
     return `${c.existingTitle}\n\n${lines.map((l) => `· ${l}`).join('\n')}`;
+  }
+
+  // The sections of save_profile_details an existing profile can take (only fields it leaves empty), and what it keeps instead.
+  async function fillEmpty(details) {
+    const current = await currentProfile();
+    const out = {};
+    const kept = {};
+    const has = (v) => v !== undefined && v !== null && v !== '';
+    const keep = (section, key, value, requested) => { kept[section] = { ...kept[section], [key]: { kept: value, requested } }; };
+    const p = details.pricing;
+    if (p && typeof p === 'object') {
+      const now = current.pricing || { hourly: undefined, annual: undefined };
+      for (const [key, field] of [['hourlyRate', 'hourly'], ['annualRate', 'annual']]) {
+        if (has(p[key]) && now[field] !== null) keep('pricing', key, now[field] ?? null, p[key]);
+      }
+      const fills = current.pricing && ((current.pricing.hourly === null && has(p.hourlyRate)) || (current.pricing.annual === null && has(p.annualRate)));
+      if (fills) out.pricing = { hourlyRate: current.pricing.hourly ?? p.hourlyRate, annualRate: current.pricing.annual ?? p.annualRate };
+    }
+    const a = details.availability;
+    if (a && typeof a === 'object') {
+      const now = current.availability;
+      const empty = (key) => !!now && (key === 'workModes' ? !(Array.isArray(now.workModes) && now.workModes.length) : !has(now[key]));
+      const given = Object.entries(a).filter(([, value]) => has(value));
+      given.filter(([key]) => !empty(key)).forEach(([key, value]) => keep('availability', key, now ? now[key] ?? null : null, value));
+      const filled = Object.fromEntries(given.filter(([key]) => empty(key)));
+      if (Object.keys(filled).length) out.availability = filled;
+    }
+    if (Array.isArray(details.languages) && details.languages.length) {
+      if (current.languageCount === 0) out.languages = details.languages;
+      else kept.languages = { kept: current.languageCount, requested: details.languages.length };
+    }
+    for (const section of ['workSituation', 'phone']) if (details[section] && typeof details[section] === 'object') kept[section] = { kept: null, requested: details[section] };
+    return { details: out, kept };
+  }
+
+  // What the existing profile kept, for the model per field and for the talent as one fixed line.
+  function keptReport(kept) {
+    const c = copy();
+    const fields = [];
+    const items = [];
+    const value = (v, shown) => (v === null || v === undefined ? null : shown(v));
+    if (kept.workSituation) { fields.push('workSituation: not changed (the profile keeps what it had)'); items.push(c.keptLabels.workSituation); }
+    for (const [key, label, unit] of [['hourlyRate', c.hourlyRateLabel, c.perHour], ['annualRate', c.annualRateLabel, c.perYear]]) {
+      const k = kept.pricing && kept.pricing[key];
+      if (!k) continue;
+      fields.push(k.kept === null ? `${key}: not changed (the profile keeps what it had, not ${k.requested})` : `${key}: kept existing value ${k.kept} (not changed, not ${k.requested})`);
+      items.push(k.kept === null ? label : `${label}: ${money(k.kept, unit)}`);
+    }
+    for (const [key, k] of Object.entries(kept.availability || {})) {
+      fields.push(k.kept === null ? `${key}: not changed (the profile keeps what it had)` : `${key}: kept existing value ${Array.isArray(k.kept) ? k.kept.join('/') : k.kept} (not changed, not ${Array.isArray(k.requested) ? k.requested.join('/') : k.requested})`);
+    }
+    const hours = kept.availability && kept.availability.monthlyHours;
+    if (hours) items.push(hours.kept === null ? c.keptLabels.availability : `${c.keptLabels.availability}: ${c.hours(hours.kept)}`);
+    if (kept.languages) { fields.push('languages: not changed (the profile already had languages)'); items.push(c.keptLabels.languages); }
+    if (kept.phone) { fields.push('phone: not changed (the profile keeps what it had)'); items.push(c.keptLabels.phone); }
+    return { fields, line: items.length ? c.existingUnchanged(items) : null };
   }
 
   // Existing account: after signing in, the talent sees what would change and decides whether to update.
@@ -663,15 +763,17 @@ function makeSignupTools(deps = {}) {
     const asked = await askAfterTexts(ctx, { tool: 'update_existing_profile', texts: [], question, options: [c.existingYes, c.existingNo], answer: args.answer });
     if (asked.reply) return asked.reply;
     if (asked.answer === c.existingNo) {
+      state.keepProfile = true;
       return { ok: true, updated: false, relayVerbatim: c.existingKept, message: `${VERBATIM} Do not save the draft. Carry on with ai_usage.` };
     }
+    state.keepProfile = false;
     const sources = state.sources || {};
     const imported = sources.linkedinUrl || sources.cvPath || sources.userQuery ? await importProfile(sources) : { ok: true };
     return {
       ok: true,
       updated: true,
       import: imported,
-      message: `${imported.ok ? '' : 'The import did not go through; carry on anyway. '}Now save_profile_details with the confirmed draft, without asking. Then ai_usage without consent.`,
+      message: `${imported.ok ? '' : 'The import did not go through; carry on anyway. '}Now save_profile_details with the confirmed draft, without asking: it only fills what the profile leaves empty. Then ai_usage without consent.`,
     };
   }
 
@@ -686,17 +788,23 @@ function makeSignupTools(deps = {}) {
     const shown = [];
     if (rates.hourlyRate != null && rates.hourlyRate !== '') shown.push(`${c.hourlyRateLabel}: ${money(rates.hourlyRate, c.perHour)}`);
     if (rates.annualRate != null && rates.annualRate !== '') shown.push(`${c.annualRateLabel}: ${money(rates.annualRate, c.perYear)}`);
-    return c.ratesSaved(shown);
+    return c.ratesSaved(shown, !(state.draft && state.draft.ratesFromTalent));
   }
 
   async function saveProfileDetails(args = {}) {
     const { saved } = copy();
+    const existing = state.account.state === 'existing';
+    if (existing && state.keepProfile) return { ok: true, kept: true, results: {}, confirmations: [], message: 'The talent chose to keep their profile as it is: nothing was saved.' };
+    // An existing profile only takes what it leaves empty; the work situation and the phone cannot be read, so they are never written there.
+    const { details, kept } = existing ? await fillEmpty(args) : { details: args, kept: {} };
+    const keptPricing = kept.pricing || {};
+    const shownPricing = details.pricing && Object.fromEntries(Object.entries(details.pricing).filter(([key]) => !keptPricing[key]));
     const sections = [
-      ['workSituation', args.workSituation, (v) => flow.saveWorkSituation(resolved, v), saved.workSituation],
-      ['pricing', args.pricing, savePricing, ratesSaved(args.pricing)],
-      ['availability', args.availability, (v) => flow.saveAvailability(resolved, v), saved.availability],
-      ['languages', Array.isArray(args.languages) && args.languages.length ? args.languages : null, (v) => flow.saveLanguages(resolved, v), saved.languages],
-      ['phone', args.phone, (v) => flow.savePhone(resolved, v), saved.phone],
+      ['workSituation', details.workSituation, (v) => flow.saveWorkSituation(resolved, v), saved.workSituation],
+      ['pricing', details.pricing, savePricing, ratesSaved(shownPricing)],
+      ['availability', details.availability, (v) => flow.saveAvailability(resolved, v), saved.availability],
+      ['languages', Array.isArray(details.languages) && details.languages.length ? details.languages : null, (v) => flow.saveLanguages(resolved, v), saved.languages],
+      ['phone', details.phone, (v) => flow.savePhone(resolved, v), saved.phone],
     ];
     const results = {};
     const confirmations = [];
@@ -705,9 +813,23 @@ function makeSignupTools(deps = {}) {
       const res = await save(value);
       if (res.ok) confirmations.push(saved);
       if (!res.ok && res.reason === 'no-session') return { ok: false, reason: 'no-session', message: 'The talent is not signed in yet.' };
-      results[name] = res.ok ? { ok: true } : { ok: false, reason: res.reason, ...(res.message ? { message: res.message } : {}) };
+      const help = res.message || SECTION_HELP[res.reason];
+      results[name] = res.ok ? { ok: true } : { ok: false, reason: res.reason, ...(help ? { message: help } : {}) };
     }
-    return { ok: Object.values(results).every((r) => r.ok), results, confirmations };
+    const ok = Object.values(results).every((r) => r.ok);
+    const report = keptReport(kept);
+    if (report.line) queueNotice(report.line);
+    const messages = [
+      ok ? '' : 'Some sections were not saved: fix each one as its message says and call save_profile_details again with only those sections. Never show the talent these reasons.',
+      report.fields.length ? `This account already existed, so these values were NOT saved: ${report.fields.join('; ')}. Never tell the talent they were saved; the fixed line saying so comes with the next question.` : '',
+    ].filter(Boolean);
+    return {
+      ok,
+      results,
+      confirmations,
+      ...(report.fields.length ? { kept } : {}),
+      ...(messages.length ? { message: messages.join(' ') } : {}),
+    };
   }
 
   async function openWeb(args = {}) {
@@ -723,12 +845,17 @@ function makeSignupTools(deps = {}) {
     if (!url) return { ok: false, reason: 'no-endpoint' };
     // The address reaches the AI only when the talent needs a link: the AI comments on hosts it sees.
     const opened = args.open !== false && openBrowser(url) !== false;
+    // The flow ends here, so a fixed line no question carried is printed now.
+    const unseen = takeNotices();
+    const relay = unseen.length ? { relayVerbatim: unseen.join('\n\n') } : {};
+    const relayFirst = unseen.length ? `${VERBATIM} ` : '';
     if (opened) {
       return {
         ok: true,
         opened: true,
         loggedIn,
-        message: (loggedIn ? 'Shakers opened in the talent\'s browser, signed in.' : 'Shakers opened in the talent\'s browser at the sign-in page; they sign in there.')
+        ...relay,
+        message: relayFirst + (loggedIn ? 'Shakers opened in the talent\'s browser, signed in.' : 'Shakers opened in the talent\'s browser at the sign-in page; they sign in there.')
           + ' If they say it did not open, call open_web with open:false and give them its link.',
       };
     }
@@ -737,7 +864,8 @@ function makeSignupTools(deps = {}) {
       opened: false,
       loggedIn,
       link: url,
-      message: 'Give the talent `link` to click, with no comment on the address.' + (loggedIn ? ' It works once, for 2 minutes.' : ''),
+      ...relay,
+      message: relayFirst + 'Give the talent `link` to click, with no comment on the address.' + (loggedIn ? ' It works once, for 2 minutes.' : ''),
     };
   }
 
@@ -754,7 +882,7 @@ function makeSignupTools(deps = {}) {
   return [
     {
       name: 'signup_start',
-      description: "FIRST call when the talent asks to sign up or register on Shakers, before you write anything: pass `language` = the language of their message. It returns the welcome to show word for word and its one question (may I look for your CV on this computer?). Then follow its message: CV, LinkedIn, signup_email, signup_draft, signup_create_account, signup_status. Every text it and the next sign-up tools return in relayVerbatim is shown word for word, in that language.",
+      description: "FIRST call when the talent asks to sign up or register on Shakers, before you write anything: pass `language` = the language of their message. It returns the welcome to show word for word and its one question (may I look for your CV on this computer?). Then follow its message: CV, LinkedIn, signup_email, signup_draft, signup_create_account, signup_status. Every text it and the next sign-up tools return in `say` or relayVerbatim is printed word for word, in that language.",
       inputSchema: WELCOME_SCHEMA,
       handler: signupStart,
     },
@@ -766,13 +894,13 @@ function makeSignupTools(deps = {}) {
     },
     {
       name: 'signup_draft',
-      description: 'Sign-up step before the account: shows the talent the profile draft you prepared from their CV, LinkedIn and what you know, with the data notice, and asks them to confirm it. The window to create the account opens only after they confirm.',
+      description: 'Sign-up step before the account: shows the talent the profile draft you prepared from their CV, LinkedIn and what you know, with the data notice and how the account window works, and asks them to confirm it. The window to create the account opens only after they confirm.',
       inputSchema: DRAFT_SCHEMA,
       handler: signupDraft,
     },
     {
       name: 'signup_create_account',
-      description: "After the talent confirmed the draft and you showed the window text word for word: starts the profile import on Shakers and, a few seconds later, opens a window in the talent's browser where they create the account with Google or a password, or sign in if they already have one. No password ever goes through the chat. Returns next: signup_status.",
+      description: "After the talent confirmed the draft: starts the profile import on Shakers and, a few seconds later, opens a window in the talent's browser where they create the account with Google or a password, or sign in if they already have one. No password ever goes through the chat. Returns next: signup_status.",
       inputSchema: CREATE_SCHEMA,
       handler: signupCreateAccount,
     },
@@ -784,7 +912,7 @@ function makeSignupTools(deps = {}) {
     },
     {
       name: 'update_existing_profile',
-      description: 'When signup_status says the talent already had an account: shows what the confirmed draft would change in their profile and asks whether to update it; on yes it imports their LinkedIn/CV filling only what is empty.',
+      description: 'When signup_status says the talent already had an account: shows what the confirmed draft would fill in the empty fields of their profile and asks whether to update it; on yes it imports their LinkedIn/CV filling only what is empty.',
       inputSchema: UPDATE_EXISTING_SCHEMA,
       handler: updateExistingProfile,
     },
@@ -796,7 +924,7 @@ function makeSignupTools(deps = {}) {
     },
     {
       name: 'save_profile_details',
-      description: "After the account exists, write the confirmed draft — work situation and motivation, hourly rate and annual target, availability and location, languages, phone — WITHOUT asking again: they can edit every field on the web. Each section is saved on its own; returns per-section results.",
+      description: "After the account exists, write the confirmed draft — work situation and motivation, hourly rate and annual target, availability and location, languages, phone — WITHOUT asking again: they can edit every field on the web. Each section is saved on its own; returns per-section results. On an account that already existed it only fills what the profile leaves empty, never overwrites a value the talent set.",
       inputSchema: buildDetailsSchema(deps.lang || 'en'),
       handler: saveProfileDetails,
     },

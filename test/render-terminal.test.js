@@ -346,7 +346,8 @@ test('renderTerminal: tier analysis section always present, with a summarized me
   const html = strip(renderTerminal(BASE_REPORT, MATURITY_NO_TIER, 'es'));
   assert.match(html, /An[aá]lisis de tier/);
   assert.match(html, /Criterios que cumples/);
-  assert.match(html, /totalDetected = 1/);
+  assert.match(html, /\(detectadas: 1\)/);
+  assert.doesNotMatch(html, /totalDetected/);
 });
 
 // ADR-016 (reordered 2026-07-17): the SCORE meter comes FIRST, then the WHY.

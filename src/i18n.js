@@ -203,26 +203,26 @@ const catalogs = {
       blockingLabel: 'Criterio exacto que te impide subir de tier:',
       maxTierNote: 'Cumples todos los criterios de la escalera T0-T7: no hay un criterio adicional bloqueando tu progreso.',
       criterion: {
-        t1Met: (n) => `Tienes al menos una herramienta de IA detectada y configurada en tu entorno (\`totalDetected = ${n}\`).`,
-        t2Met: (n) => `Dispones de al menos un fichero de contexto persistente — instrucciones, configuración o reglas — para alguna herramienta (\`context = ${n}\`).`,
-        t3Met: (n) => `Tienes al menos un servidor MCP conectado, dando a la IA acceso a datos o herramientas externas (\`mcpServers = ${n}\`).`,
-        t4Met: (n) => `Has creado activos propios — skills, comandos o reglas personalizadas — más allá de la configuración por defecto (\`custom = ${n}\`).`,
-        t5Met: (hasAgentic, mcp, custom) => `Operas con una CLI agéntica (Claude Code, Aider, Gemini CLI, Codex CLI o Amazon Q Developer) combinada con MCP y activos propios (\`hasAgentic = ${hasAgentic}\`, \`mcpServers = ${mcp}\`, \`custom = ${custom}\`).`,
-        t6Met: (n) => `Tienes un equipo de al menos 2 agentes especializados definidos (\`agentCounts.agents = ${n}\`).`,
-        t7Met: (n) => `Tienes automatización basada en hooks configurada (\`hooks = ${n}\`).`,
-        t1Blocking: (n) => `Para subir a T1 (Primera herramienta) necesitas al menos una herramienta de IA detectada — actualmente \`totalDetected = ${n}\`.`,
-        t2Blocking: (n) => `Para subir a T2 (Banco con notas) necesitas al menos un fichero de contexto persistente (instrucciones, configuración o reglas) — actualmente \`context = ${n}\`.`,
-        t3Blocking: (n) => `Para subir a T3 (Banco conectado) necesitas conectar al menos un servidor MCP — actualmente \`mcpServers = ${n}\`.`,
-        t4Blocking: (n) => `Para subir a T4 (Herramienta propia) necesitas crear al menos un activo propio — skill, comando o regla — más allá de la configuración por defecto — actualmente \`custom = ${n}\`.`,
+        t1Met: (n) => `Tienes al menos una herramienta de IA detectada y configurada en tu entorno (detectadas: ${n}).`,
+        t2Met: (n) => `Dispones de al menos un fichero de contexto persistente — instrucciones, configuración o reglas — para alguna herramienta (tienes ${n}).`,
+        t3Met: (n) => `Tienes al menos un servidor MCP conectado, dando a la IA acceso a datos o herramientas externas (tienes ${n}).`,
+        t4Met: (n) => `Has creado activos propios — skills, comandos o reglas personalizadas — más allá de la configuración por defecto (tienes ${n}).`,
+        t5Met: (hasAgentic, mcp, custom) => `Operas con una CLI agéntica (Claude Code, Aider, Gemini CLI, Codex CLI o Amazon Q Developer) combinada con MCP y activos propios (${mcp} servidores MCP y ${custom} activos propios).`,
+        t6Met: (n) => `Tienes un equipo de al menos 2 agentes especializados definidos (tienes ${n}).`,
+        t7Met: (n) => `Tienes automatización basada en hooks configurada (tienes ${n}).`,
+        t1Blocking: (n) => `Para subir a T1 (Primera herramienta) necesitas al menos una herramienta de IA detectada — ahora tienes ${n}.`,
+        t2Blocking: (n) => `Para subir a T2 (Banco con notas) necesitas al menos un fichero de contexto persistente (instrucciones, configuración o reglas) — ahora tienes ${n}.`,
+        t3Blocking: (n) => `Para subir a T3 (Banco conectado) necesitas conectar al menos un servidor MCP — ahora tienes ${n}.`,
+        t4Blocking: (n) => `Para subir a T4 (Herramienta propia) necesitas crear al menos un activo propio — skill, comando o regla — más allá de la configuración por defecto — ahora tienes ${n}.`,
         t5Blocking: (hasAgentic, mcp, custom) => {
           const missing = [];
           if (!hasAgentic) missing.push('una CLI agéntica (Claude Code, Aider, Gemini CLI, Codex CLI o Amazon Q Developer)');
           if (mcp < 1) missing.push('al menos 1 servidor MCP');
           if (custom < 1) missing.push('al menos 1 activo propio (skill, comando o regla)');
-          return `Para subir a T5 (Operador agéntico) te falta: ${missing.join('; ')} (\`hasAgentic = ${hasAgentic}\`, \`mcpServers = ${mcp}\`, \`custom = ${custom}\`).`;
+          return `Para subir a T5 (Operador agéntico) te falta: ${missing.join('; ')}.`;
         },
         t6Blocking: (n) => `Para subir a T6 (Multi-agente) necesitas al menos 2 agentes especializados definidos en \`.claude/agents/\` — actualmente tienes ${n}.`,
-        t7Blocking: (n) => `Para subir a T7 (Taller orquestado) necesitas al menos un hook de automatización configurado — actualmente \`hooks = ${n}\`.`,
+        t7Blocking: (n) => `Para subir a T7 (Taller orquestado) necesitas al menos un hook de automatización configurado — ahora tienes ${n}.`,
       },
     },
     ladder: {
@@ -714,6 +714,8 @@ const catalogs = {
       discoverFailed: (reason) => `No se pudieron obtener tus dimensiones (${reason}). Inténtalo de nuevo en un momento.`,
       unmatchedNote: (keys) => `Aviso: algunas dimensiones no tienen plantilla asociada y no se pueden ofrecer aquí (${keys}).`,
       noneOfferable: 'Ahora mismo no hay dimensiones certificables por aquí. Vuelve a intentarlo cuando tengas alguna disponible.',
+      onCooldownNote: (items) => `Aún no puedes repetir: ${items}.`,
+      onCooldownItem: (slug, day) => `${slug} (disponible el ${day})`,
       mainRole: (role) => `Tu rol principal: ${role}`,
       selectHeading: 'Elige la dimensión que quieres certificar:',
       selectHint: '↑/↓ para moverte, Enter para elegir, Esc para cancelar.',
@@ -722,10 +724,41 @@ const catalogs = {
       selectNoneChosen: 'No se eligió ninguna dimensión.',
       stateExpired: 'caducada',
       dimensionInvalid: 'Esa dimensión no está entre las certificables ahora mismo.',
+      dimensionOnCooldown: (slug, day) => `Aún no puedes repetir ${slug}: estará disponible el ${day}.`,
       dimensionUsing: (slug) => `Dimensión elegida: ${slug}`,
-      webHandoff: 'La entrevista de certificación se hace en la web.',
-      webHandoffLink: (url) => `Ábrela aquí para certificar esta dimensión:\n  ${url}`,
-      webHandoffNoLink: 'Entra en tu perfil de Shakers en la web y ve a Certificaciones para hacerla.',
+      creating: 'Creando la entrevista…',
+      createFailed: (reason) => `No se pudo crear la entrevista (${reason}).`,
+      onCooldown: (day) => (day
+        ? `Ya hiciste esta dimensión hace poco. Podrás repetirla a partir del ${day}.`
+        : 'Ya hiciste esta dimensión hace poco y todavía no se puede repetir.'),
+      needsWeb: 'Esta dimensión lleva un ejercicio que por ahora solo se hace en la web, no por terminal.',
+      interviewUnavailable: (reason) => `La entrevista no pudo completarse (${reason}).`,
+      reportPolling: 'Calculando tu veredicto…',
+      reportTimeout: 'El veredicto todavía se está calculando. Consúltalo en tu perfil en unos minutos.',
+      reportFailed: (reason) => `No se pudo obtener el veredicto (${reason}). Consúltalo en tu perfil.`,
+      verdictTitle: 'Veredicto',
+      verdictDimension: (dim) => `Dimensión: ${dim}`,
+      verdictBand: (band) => `Nivel: ${band}`,
+      verdictCertified: 'Resultado: certificada',
+      verdictNotCertified: 'Resultado: no certificada esta vez',
+      done: 'Certificación completada.',
+      // The same case copy the web preview shows (works `certifications.preview`).
+      caseTitle: 'El caso',
+      caseExpectationsTitle: 'Qué se espera',
+      caseExpectations: {
+        CASE_STUDY: {
+          reasoning: 'Se evalúa tu razonamiento y los supuestos que haces, no una respuesta perfecta.',
+          askForData: 'Puedes pedir datos que no están en el caso: di para qué los quieres.',
+          takeTime: 'Puedes pararte a pensar antes de responder.',
+        },
+        ROLE_PLAY: {
+          reasoning: 'Se evalúa cómo razonas en la conversación y los supuestos que haces, no una respuesta perfecta.',
+          askForData: 'Puedes pedir a la otra parte datos que no están en el caso.',
+          takeTime: 'Puedes pararte a pensar antes de responder.',
+        },
+      },
+      caseBeforeStart: 'Alma te va a hacer preguntas sobre este caso. Si te falta algún dato, pídeselo durante la entrevista.',
+      caseReadyPrompt: 'Pulsa Enter cuando lo hayas leído para empezar la entrevista.',
     },
     findProjects: {
       help:
@@ -1805,26 +1838,26 @@ const catalogs = {
       blockingLabel: 'Exact criterion blocking your next tier:',
       maxTierNote: "You meet every criterion in the T0-T7 ladder: there's no additional criterion blocking your progress.",
       criterion: {
-        t1Met: (n) => `You have at least one AI tool detected and configured in your environment (\`totalDetected = ${n}\`).`,
-        t2Met: (n) => `You have at least one persistent context file — instructions, config or rules — for some tool (\`context = ${n}\`).`,
-        t3Met: (n) => `You have at least one connected MCP server, giving the AI access to external data or tools (\`mcpServers = ${n}\`).`,
-        t4Met: (n) => `You've created your own assets — skills, commands or custom rules — beyond the default configuration (\`custom = ${n}\`).`,
-        t5Met: (hasAgentic, mcp, custom) => `You operate an agentic CLI (Claude Code, Aider, Gemini CLI, Codex CLI or Amazon Q Developer) combined with MCP and your own assets (\`hasAgentic = ${hasAgentic}\`, \`mcpServers = ${mcp}\`, \`custom = ${custom}\`).`,
-        t6Met: (n) => `You have a team of at least 2 specialized agents defined (\`agentCounts.agents = ${n}\`).`,
-        t7Met: (n) => `You have hook-based automation configured (\`hooks = ${n}\`).`,
-        t1Blocking: (n) => `To reach T1 (First tool) you need at least one detected AI tool — currently \`totalDetected = ${n}\`.`,
-        t2Blocking: (n) => `To reach T2 (Bench with notes) you need at least one persistent context file (instructions, config or rules) — currently \`context = ${n}\`.`,
-        t3Blocking: (n) => `To reach T3 (Connected bench) you need to connect at least one MCP server — currently \`mcpServers = ${n}\`.`,
-        t4Blocking: (n) => `To reach T4 (Own tooling) you need to create at least one asset of your own — skill, command or rule — currently \`custom = ${n}\`.`,
+        t1Met: (n) => `You have at least one AI tool detected and configured in your environment (detected: ${n}).`,
+        t2Met: (n) => `You have at least one persistent context file — instructions, config or rules — for some tool (you have ${n}).`,
+        t3Met: (n) => `You have at least one connected MCP server, giving the AI access to external data or tools (you have ${n}).`,
+        t4Met: (n) => `You've created your own assets — skills, commands or custom rules — beyond the default configuration (you have ${n}).`,
+        t5Met: (hasAgentic, mcp, custom) => `You operate an agentic CLI (Claude Code, Aider, Gemini CLI, Codex CLI or Amazon Q Developer) combined with MCP and your own assets (${mcp} MCP servers and ${custom} assets of your own).`,
+        t6Met: (n) => `You have a team of at least 2 specialized agents defined (you have ${n}).`,
+        t7Met: (n) => `You have hook-based automation configured (you have ${n}).`,
+        t1Blocking: (n) => `To reach T1 (First tool) you need at least one detected AI tool — you have ${n} now.`,
+        t2Blocking: (n) => `To reach T2 (Bench with notes) you need at least one persistent context file (instructions, config or rules) — you have ${n} now.`,
+        t3Blocking: (n) => `To reach T3 (Connected bench) you need to connect at least one MCP server — you have ${n} now.`,
+        t4Blocking: (n) => `To reach T4 (Own tooling) you need to create at least one asset of your own — skill, command or rule — you have ${n} now.`,
         t5Blocking: (hasAgentic, mcp, custom) => {
           const missing = [];
           if (!hasAgentic) missing.push('an agentic CLI (Claude Code, Aider, Gemini CLI, Codex CLI or Amazon Q Developer)');
           if (mcp < 1) missing.push('at least 1 MCP server');
           if (custom < 1) missing.push('at least 1 asset of your own (skill, command or rule)');
-          return `To reach T5 (Agentic operator) you're missing: ${missing.join('; ')} (\`hasAgentic = ${hasAgentic}\`, \`mcpServers = ${mcp}\`, \`custom = ${custom}\`).`;
+          return `To reach T5 (Agentic operator) you're missing: ${missing.join('; ')}.`;
         },
         t6Blocking: (n) => `To reach T6 (Multi-agent) you need at least 2 specialized agents defined under \`.claude/agents/\` — currently you have ${n}.`,
-        t7Blocking: (n) => `To reach T7 (Orchestrated workshop) you need at least one automation hook configured — currently \`hooks = ${n}\`.`,
+        t7Blocking: (n) => `To reach T7 (Orchestrated workshop) you need at least one automation hook configured — you have ${n} now.`,
       },
     },
     // Progression ladder (skill-code-certification, report req 1) — see the es block.
@@ -2309,6 +2342,8 @@ const catalogs = {
       discoverFailed: (reason) => `Could not fetch your dimensions (${reason}). Try again in a moment.`,
       unmatchedNote: (keys) => `Note: some dimensions have no matching template and can't be offered here (${keys}).`,
       noneOfferable: 'There are no dimensions you can certify here right now. Check back when one becomes available.',
+      onCooldownNote: (items) => `Not available to retake yet: ${items}.`,
+      onCooldownItem: (slug, day) => `${slug} (available on ${day})`,
       mainRole: (role) => `Your main role: ${role}`,
       selectHeading: 'Pick the dimension you want to certify:',
       selectHint: '↑/↓ to move, Enter to pick, Esc to cancel.',
@@ -2317,10 +2352,41 @@ const catalogs = {
       selectNoneChosen: 'No dimension chosen.',
       stateExpired: 'expired',
       dimensionInvalid: 'That dimension is not among the certifiable ones right now.',
+      dimensionOnCooldown: (slug, day) => `You can't retake ${slug} yet: it will be available on ${day}.`,
       dimensionUsing: (slug) => `Chosen dimension: ${slug}`,
-      webHandoff: 'The certification interview is done on the web.',
-      webHandoffLink: (url) => `Open it here to certify this dimension:\n  ${url}`,
-      webHandoffNoLink: 'Open your Shakers profile on the web and go to Certifications to take it.',
+      creating: 'Creating the interview…',
+      createFailed: (reason) => `Could not create the interview (${reason}).`,
+      onCooldown: (day) => (day
+        ? `You took this dimension recently. You can retake it from ${day}.`
+        : 'You took this dimension recently and cannot retake it yet.'),
+      needsWeb: 'This dimension has an exercise that for now is only taken on the web, not in the terminal.',
+      interviewUnavailable: (reason) => `The interview could not be completed (${reason}).`,
+      reportPolling: 'Computing your verdict…',
+      reportTimeout: 'The verdict is still being computed. Check your profile in a few minutes.',
+      reportFailed: (reason) => `Could not fetch the verdict (${reason}). Check your profile.`,
+      verdictTitle: 'Verdict',
+      verdictDimension: (dim) => `Dimension: ${dim}`,
+      verdictBand: (band) => `Level: ${band}`,
+      verdictCertified: 'Result: certified',
+      verdictNotCertified: 'Result: not certified this time',
+      done: 'Certification complete.',
+      // The same case copy the web preview shows (works `certifications.preview`).
+      caseTitle: 'The case',
+      caseExpectationsTitle: 'What is expected',
+      caseExpectations: {
+        CASE_STUDY: {
+          reasoning: 'We assess your reasoning and the assumptions you make, not a perfect answer.',
+          askForData: 'You can ask for data that is not in the case: say what you want it for.',
+          takeTime: 'You can stop to think before you answer.',
+        },
+        ROLE_PLAY: {
+          reasoning: 'We assess how you reason in the conversation and the assumptions you make, not a perfect answer.',
+          askForData: 'You can ask the other side for data that is not in the case.',
+          takeTime: 'You can stop to think before you answer.',
+        },
+      },
+      caseBeforeStart: 'Alma is going to ask you questions about this case. If you are missing any data, ask her for it during the interview.',
+      caseReadyPrompt: 'Press Enter once you have read it to start the interview.',
     },
     findProjects: {
       help:

@@ -41,3 +41,13 @@ test('certifyDimension section exists in both es and en (the new certify flow)',
   assert.ok(en.certifyDimension && en.certifyDimension.title);
   assert.notEqual(es.certifyDimension.title, en.certifyDimension.title);
 });
+
+test('certifyDimension: the case copy exists in es and en, with the same expectations per test type', () => {
+  for (const cd of [es.certifyDimension, en.certifyDimension]) {
+    for (const k of ['caseTitle', 'caseExpectationsTitle', 'caseBeforeStart', 'caseReadyPrompt']) {
+      assert.ok(typeof cd[k] === 'string' && cd[k].length > 0, `${k} missing`);
+    }
+  }
+  assert.deepEqual(Object.keys(es.certifyDimension.caseExpectations).sort(), ['CASE_STUDY', 'ROLE_PLAY']);
+  assert.deepEqual(Object.keys(en.certifyDimension.caseExpectations).sort(), ['CASE_STUDY', 'ROLE_PLAY']);
+});

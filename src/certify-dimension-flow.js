@@ -1,15 +1,24 @@
 'use strict';
 
-// `certify` dimension flow: discover -> pick -> hand off to the web interview.
+// `certify` dimension flow: discover -> pick -> create -> LiveKit interview -> poll verdict.
 
 const { runInteractiveMultiSelect } = require('./interactive-select');
 
 function makeCertifyDimensionDeps(overrides = {}) {
   const config = require('./config');
   const client = require('./certify-dimension-client');
+  const onboardingFlow = require('./onboarding-flow');
   return {
-    getTalentProfileUrl: config.getTalentProfileUrl,
+    getCertificationInterviewsEndpoint: config.getCertificationInterviewsEndpoint,
+    // `{certsBase}/interviews` — shared base for LiveKit start/complete + the report poll.
+    getInterviewsBase: config.getOnboardingInterviewsEndpoint,
     discoverOfferableDimensions: (opts) => client.discoverOfferableDimensions({}, opts),
+    requestCreateCertificationInterview: client.requestCreateCertificationInterview,
+    requestCertificationReport: client.requestCertificationReport,
+    requestDimensionCase: client.requestDimensionCase,
+    conductLivekitInterview: onboardingFlow.conductLivekitInterview,
+    onboardingDeps: onboardingFlow.makeDeps(),
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     ...overrides,
   };
 }
@@ -53,19 +62,51 @@ function resolveDimensionArg(arg, items) {
   return items.find((d) => d.dimensionKey === raw || d.slug === raw) || undefined;
 }
 
-// Deep link into the talent's Shakers web profile, filtered to the chosen dimension.
-// One dimension can publish more than one assessment, so the filtered catalog is the
-// robust target rather than a single templateId.
-function buildWebLink(profileUrl, dimension) {
-  if (!profileUrl || !dimension || !dimension.clusterId || !dimension.slug) return null;
-  let origin;
-  try {
-    origin = new URL(profileUrl).origin;
-  } catch {
-    return null;
+// The evaluation lands one to two minutes after the interview ends, four when the queue is busy.
+async function pollReport(deps, { interviewId, accessToken }, { base, attempts = 60, intervalMs = 5000 } = {}) {
+  for (let i = 0; i < attempts; i++) {
+    const res = await deps.requestCertificationReport({ interviewId, accessToken }, { base });
+    if (!res.ok) return { ok: false, reason: res.reason };
+    if (res.ready) return { ok: true, report: res.report };
+    if (i < attempts - 1) await deps.sleep(intervalMs);
   }
-  const key = `${encodeURIComponent(dimension.clusterId)}/${encodeURIComponent(dimension.slug)}`;
-  return `${origin}/certifications?dimension=${key}`;
+  return { ok: false, reason: 'timeout' };
+}
+
+function formatDay(iso, lang) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString(lang === 'en' ? 'en-GB' : 'es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function renderVerdict(report, cd) {
+  const lines = [];
+  const band = report.band || report.level || report.combinedLevel;
+  const dimension = report.dimensionName || report.dimension || report.dimensionKey;
+  if (dimension) lines.push(cd.verdictDimension(dimension));
+  if (band) lines.push(cd.verdictBand(band));
+  if (typeof report.certified === 'boolean') lines.push(report.certified ? cd.verdictCertified : cd.verdictNotCertified);
+  const summary = report.summary || report.rationale || report.feedback;
+  if (typeof summary === 'string' && summary.trim()) lines.push(summary.trim());
+  const areas = Array.isArray(report.areas) ? report.areas : null;
+  if (areas && areas.length) {
+    for (const a of areas) {
+      const name = a && (a.name || a.area || a.tag);
+      const note = a && (a.note || a.comment);
+      if (name) lines.push(`- ${name}${note ? `: ${note}` : ''}`);
+    }
+  }
+  return lines.join('\n  ');
+}
+
+// The statement is Markdown; the terminal shows it without the emphasis markers.
+function renderCase(dimensionCase, cd) {
+  const brief = dimensionCase.brief.replace(/(\*\*|__)(.+?)\1/g, '$2');
+  const expectations = cd.caseExpectations[dimensionCase.testType];
+  const lines = brief.split('\n');
+  if (expectations) lines.push('', cd.caseExpectationsTitle, ...Object.values(expectations).map((e) => `- ${e}`));
+  lines.push('', cd.caseBeforeStart);
+  return lines.join('\n  ');
 }
 
 async function runCertifyDimension({ io, ask, stdinIsTTY, session, lang, catalog, opts = {}, deps = makeCertifyDimensionDeps() }) {
@@ -116,11 +157,52 @@ async function runCertifyDimension({ io, ask, stdinIsTTY, session, lang, catalog
     }
   }
 
-  const webLink = buildWebLink(deps.getTalentProfileUrl(), chosen);
-  io.notify(cd.webHandoff);
-  if (webLink) io.success(cd.webHandoffLink(webLink));
-  else io.notify(cd.webHandoffNoLink);
-  return { ok: true, handoff: true, dimensionKey: chosen.dimensionKey, webLink };
+  const createEndpoint = deps.getCertificationInterviewsEndpoint();
+  const created = await io.withProgress(cd.creating, () =>
+    deps.requestCreateCertificationInterview(
+      { dimensionKey: chosen.dimensionKey, languageCode: lang, accessToken },
+      { endpoint: createEndpoint },
+    ));
+  if (!created.ok) {
+    io.error(created.reason === 'dimension-on-cooldown'
+      ? cd.onCooldown(formatDay(created.availableOn, lang))
+      : cd.createFailed(created.reason));
+    return { ok: false, reason: created.reason, step: 'create' };
+  }
+
+  // A failed read leaves the run as it was before the case existed, like the web preview does.
+  const caseRead = await deps.requestDimensionCase(
+    { dimensionKey: chosen.dimensionKey, accessToken },
+    { base: deps.getInterviewsBase() },
+  );
+  if (caseRead.ok && caseRead.case) {
+    io.section(cd.caseTitle);
+    io.notify(renderCase(caseRead.case, cd));
+    if (stdinIsTTY) await ask(`  ${cd.caseReadyPrompt}`);
+  }
+
+  const interview = await deps.conductLivekitInterview(io, deps.onboardingDeps, {
+    interviewId: created.interviewId,
+    language: lang,
+    plain: true,
+  });
+  if (!interview.ok) {
+    io.warn(interview.reason === 'needs-web' ? cd.needsWeb : cd.interviewUnavailable(interview.reason));
+    return { ok: false, reason: interview.reason, step: 'interview' };
+  }
+
+  const reportBase = deps.getInterviewsBase();
+  const polled = await io.withProgress(cd.reportPolling, () =>
+    pollReport(deps, { interviewId: created.interviewId, accessToken }, { base: reportBase }));
+  if (!polled.ok) {
+    io.warn(polled.reason === 'timeout' ? cd.reportTimeout : cd.reportFailed(polled.reason));
+    return { ok: true, completed: 'interview', verdict: null };
+  }
+
+  io.section(cd.verdictTitle);
+  io.notify(renderVerdict(polled.report, cd));
+  io.success(cd.done);
+  return { ok: true, completed: 'interview', verdict: polled.report };
 }
 
 module.exports = {
@@ -128,5 +210,7 @@ module.exports = {
   runCertifyDimension,
   chooseDimension,
   resolveDimensionArg,
-  buildWebLink,
+  pollReport,
+  renderVerdict,
+  renderCase,
 };

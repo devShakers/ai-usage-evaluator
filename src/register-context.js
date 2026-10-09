@@ -88,6 +88,8 @@ function isGenericCvName(fileName) {
 // PDF/Word files whose NAME looks like a CV or carries the person's full name:
 // name matches first, then generic names, then newest. Never opens a file.
 function findCvCandidates(home, personName) {
+  // Without a name there is nothing to match: null says unknown, never a mismatch.
+  const known = nameTokens(personName).length > 0;
   const found = [];
   const walk = (dir, depth) => {
     let entries;
@@ -106,7 +108,7 @@ function findCvCandidates(home, personName) {
         try {
           found.push({
             path: full,
-            nameMatch: matchesName(entry.name, personName),
+            nameMatch: known ? matchesName(entry.name, personName) : null,
             generic: isGenericCvName(entry.name),
             mtimeMs: fs.statSync(full).mtimeMs,
           });

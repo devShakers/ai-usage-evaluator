@@ -4,6 +4,7 @@
 
 const { postJsonWithTimeout } = require('./backend-request');
 const { reasonForError } = require('./onboarding-client');
+const { toUpperLang } = require('./lang-codes');
 
 const DEFAULT_TIMEOUT_MS = 20000;
 
@@ -153,9 +154,87 @@ async function discoverOfferableDimensions(deps = {}, { accessToken, hubAccessTo
   return { ok: true, mainRole: mine.mainRole, offerable, unmatched };
 }
 
+async function requestCreateCertificationInterview(
+  { dimensionKey, languageCode, accessToken } = {},
+  { endpoint, timeoutMs = DEFAULT_TIMEOUT_MS } = {},
+) {
+  if (!endpoint) return { ok: false, reason: 'no-endpoint' };
+  if (!dimensionKey) return { ok: false, reason: 'no-dimension' };
+  const body = { dimensionKey };
+  if (languageCode) body.languageCode = toUpperLang(languageCode);
+  let res;
+  try {
+    res = await postJsonWithTimeout(endpoint, body, timeoutMs, 'POST', null, bearerHeaders(accessToken));
+  } catch (e) {
+    return { ok: false, reason: (e && e.kind) || 'network-error' };
+  }
+  if (res.status < 200 || res.status >= 300) {
+    const reason = reasonForError(res.status, res.raw);
+    if (reason !== 'dimension-on-cooldown') return { ok: false, reason };
+    // certs puts the date in the message only: "... available on 2026-10-28T14:50:38.265Z".
+    const available = String(res.raw || '').match(/available on (\d{4}-\d{2}-\d{2}T[\d:.]+Z)/);
+    return { ok: false, reason, availableOn: available ? available[1] : null };
+  }
+  const data = payloadOf(res.raw);
+  const interviewId = pick(data || {}, ['interviewId', 'id']);
+  if (!interviewId) return { ok: false, reason: 'bad-response' };
+  return { ok: true, interviewId, language: pick(data || {}, ['language', 'languageCode']) || null };
+}
+
+// Poll the verdict; a 2xx/404/425/202 with no band yet resolves `ready:false` (retriable).
+async function requestCertificationReport(
+  { interviewId, accessToken } = {},
+  { base, timeoutMs = DEFAULT_TIMEOUT_MS } = {},
+) {
+  if (!base) return { ok: false, reason: 'no-endpoint' };
+  if (!interviewId) return { ok: false, reason: 'no-interview' };
+  const url = `${base.replace(/\/+$/, '')}/${encodeURIComponent(interviewId)}/report`;
+  let res;
+  try {
+    res = await postJsonWithTimeout(url, null, timeoutMs, 'GET', null, bearerHeaders(accessToken));
+  } catch (e) {
+    return { ok: false, reason: (e && e.kind) || 'network-error' };
+  }
+  if (res.status === 404 || res.status === 425 || res.status === 202) return { ok: true, ready: false, report: null };
+  if (res.status < 200 || res.status >= 300) return { ok: false, reason: reasonForError(res.status, res.raw) };
+  const data = payloadOf(res.raw);
+  if (data === undefined || data === null || typeof data !== 'object') return { ok: true, ready: false, report: null };
+  const band = pick(data, ['band', 'level', 'combinedLevel']);
+  // A report with too little evidence for a level has band null; it is still finished.
+  if (!band && !pick(data, ['evaluationId'])) return { ok: true, ready: false, report: null };
+  return { ok: true, ready: true, report: data };
+}
+
+// The case the web preview shows before starting (works `get-dimension-case`): the exercise statement, else the
+// version's brief. `case: null` for a template with neither.
+async function requestDimensionCase(
+  { dimensionKey, accessToken } = {},
+  { base, timeoutMs = DEFAULT_TIMEOUT_MS } = {},
+) {
+  if (!base) return { ok: false, reason: 'no-endpoint' };
+  if (!dimensionKey) return { ok: false, reason: 'no-dimension' };
+  const path = String(dimensionKey).split('/').map(encodeURIComponent).join('/');
+  const url = `${base.replace(/\/+$/, '')}/dimension/${path}/case`;
+  let res;
+  try {
+    res = await postJsonWithTimeout(url, null, timeoutMs, 'GET', null, bearerHeaders(accessToken));
+  } catch (e) {
+    return { ok: false, reason: (e && e.kind) || 'network-error' };
+  }
+  if (res.status < 200 || res.status >= 300) return { ok: false, reason: reasonForError(res.status, res.raw) };
+  const data = payloadOf(res.raw);
+  if (!data || typeof data !== 'object') return { ok: false, reason: 'bad-response' };
+  const text = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
+  const brief = text(data.statement) || text(data.candidateBrief);
+  return { ok: true, case: brief ? { brief, testType: text(data.testType) } : null };
+}
+
 module.exports = {
   requestMyCertifications,
   requestTemplatesByDimension,
+  requestCreateCertificationInterview,
+  requestCertificationReport,
+  requestDimensionCase,
   composeDimensionKey,
   composeOfferableDimensions,
   discoverOfferableDimensions,

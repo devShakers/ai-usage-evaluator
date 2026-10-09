@@ -318,6 +318,14 @@ function getTemplatesByDimensionEndpoint(env = process.env) {
   return base ? `${base}/templates/by-dimension` : null;
 }
 
+// The Talent's assessments with their retry availability (certs, talent Bearer).
+function getMyAssessmentsEndpoint(env = process.env) {
+  const explicit = readEnv(env, 'MY_ASSESSMENTS_ENDPOINT');
+  if (explicit && explicit.trim()) return explicit.trim();
+  const base = getCertsBase(env);
+  return base ? `${base}/users/me/assessments` : null;
+}
+
 // Find Positions list (hub `works/positions/find`, talent Bearer). Serves the
 // All/Recommended/Saved tabs via `criteria.savedByMe`; ordered by match desc.
 function getFindPositionsEndpoint(env = process.env) {
@@ -749,6 +757,7 @@ module.exports = {
   getSetMainRoleEndpoint,
   getAssignedClustersEndpoint,
   getTemplatesByDimensionEndpoint,
+  getMyAssessmentsEndpoint,
   // Find Positions list (`find-projects` command / `find_projects` MCP tool).
   getFindPositionsEndpoint,
   // Marketplace (show-project / save-project / unsave-project / invitations).

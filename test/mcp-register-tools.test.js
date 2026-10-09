@@ -75,12 +75,14 @@ test('the register module keeps the CV and interview tools, and no longer expose
   for (const gone of ['register', 'register_preview', 'register_status']) assert.equal(t[gone], undefined, `${gone} is removed`);
 });
 
-test('onboarding_interview_start: refuses without an acknowledged disclaimer', async () => {
-  const t = toolMap();
+test('onboarding_interview_start: never starts without an acknowledged disclaimer', async () => {
+  const t = toolMap({}, { checkOnboardingCompleted: async () => false });
   const r = await t.onboarding_interview_start.handler({ disclaimerAcknowledged: false });
   assert.equal(r.ok, false);
-  assert.equal(r.reason, 'disclaimers-not-acknowledged');
-  assert.equal(r.relayVerbatim.length, 2);
+  assert.equal(r.reason, 'where-required');
+  const here = await t.onboarding_interview_start.handler({ disclaimerAcknowledged: false, where: 'here', answerMode: 'own' });
+  assert.equal(here.reason, 'answer-mode-required');
+  assert.equal(here.interviewId, undefined);
 });
 
 test('onboarding_interview_start: with acknowledgement connects LiveKit and returns the agent greeting', async () => {
@@ -204,7 +206,7 @@ test('onboarding_interview_start: an interview begun elsewhere points to the web
 });
 
 test('onboarding_interview_turn: a dropped room persists the partial transcript, tears down, and asks to restart', async () => {
-  const client = fakeClient({ failOnSend: 'turn-timeout' });
+  const client = fakeClient({ failOnSend: 'connection-lost' });
   let completeArgs = null;
   const t = toolMap({
     makeInterviewClient: () => client,
@@ -213,7 +215,8 @@ test('onboarding_interview_turn: a dropped room persists the partial transcript,
   await t.onboarding_interview_start.handler({ disclaimerAcknowledged: true, answerMode: 'own' });
   const turn = await t.onboarding_interview_turn.handler({ interviewId: 'iv-1', message: 'my answer' });
   assert.equal(turn.ok, false);
-  assert.equal(turn.reason, 'turn-timeout');
+  assert.equal(turn.reason, 'connection-lost');
+  assert.match(turn.message, /Start again/);
   assert.equal(client.disconnected, true, 'the broken room is torn down');
   assert.ok(completeArgs, 'the partial transcript (greeting + the answer) was saved');
   assert.deepEqual(completeArgs.transcripts.map((x) => x.role), ['AGENT', 'USER']);

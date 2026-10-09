@@ -36,7 +36,7 @@ test('analyzeTier: T2 — T1 and T2 criteria met, blocking is T3 (mcp)', () => {
   assert.ok(a.metCriteria.some((c) => c.toTier === 1));
   assert.ok(a.metCriteria.some((c) => c.toTier === 2));
   assert.match(a.blockingCriterion, /T3/);
-  assert.match(a.blockingCriterion, /mcpServers = 0/);
+  assert.match(a.blockingCriterion, /servidor MCP — ahora tienes 0\./);
 });
 
 test('analyzeTier: every met-criterion text embeds the actual signal value backing it, never a made-up one', () => {
@@ -46,9 +46,9 @@ test('analyzeTier: every met-criterion text embeds the actual signal value backi
   const t = getCatalog('es');
   const a = analyzeTier(rep, t);
   const t3 = a.metCriteria.find((c) => c.toTier === 3);
-  assert.match(t3.text, /mcpServers = 2/);
+  assert.match(t3.text, /servidor MCP conectado.*\(tienes 2\)/);
   const t4 = a.metCriteria.find((c) => c.toTier === 4);
-  assert.match(t4.text, /custom = 1/);
+  assert.match(t4.text, /activos propios.*\(tienes 1\)/);
 });
 
 test('analyzeTier: T7 (max tier) — all criteria met, blockingCriterion is null', () => {

@@ -15,12 +15,13 @@ const { makeRoleTools } = require('../src/mcp-role-tools');
 const { normalizeRole } = require('../src/roles-client');
 const { signupCopy, legalCopy } = require('../src/signup-copy');
 const { resetSignupLanguage, fixSignupLanguage } = require('../src/signup-language');
+const { takeNotices } = require('../src/mcp-choice');
 
 const ES = signupCopy('es');
 const EN = signupCopy('en');
 const LEGAL_ES = legalCopy('es');
 
-test.beforeEach(() => resetSignupLanguage());
+test.beforeEach(() => { resetSignupLanguage(); takeNotices(); });
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const resultOf = (msg) => JSON.parse(msg.result.content[0].text);
 
@@ -43,16 +44,11 @@ function usageTool(phase = 'account') {
   return { tool, calls };
 }
 
-test('ai_usage step: no dialog before the disclaimers were shown; then the yes in the dialog starts the scan in the background at once', async () => {
+test('ai_usage step: the dialog carries both disclaimers before the question; the yes starts the scan in the background at once', async () => {
   const { tool, calls } = usageTool();
   const d = dialogs(pick(ES.aiUsageYes));
-  const first = await tool.handler({ lang: 'es' }, d.ctx);
-  assert.equal(first.reason, 'consent-required');
-  assert.deepEqual(first.relayVerbatim, [LEGAL_ES.usageInfoAccessed, LEGAL_ES.usageGoalDuration]);
-  assert.equal(d.asked.length, 0, 'the disclaimers come before any dialog');
-  assert.equal(calls.scans, 0);
-  const yes = await tool.handler({ lang: 'es', disclaimersShown: true }, d.ctx);
-  assert.equal(d.asked[0].message, ES.aiUsageQuestion);
+  const yes = await tool.handler({ lang: 'es' }, d.ctx);
+  assert.equal(d.asked[0].message, [LEGAL_ES.usageInfoAccessed, LEGAL_ES.usageGoalDuration, ES.aiUsageQuestion].join('\n\n'));
   assert.deepEqual(d.asked[0].requestedSchema.properties.choice.enum, ['Sí, analízalo', 'Saltar este paso']);
   assert.equal(yes.background, true);
   assert.equal(yes.scope.mode, 'all', 'the sign-up looks at the whole machine');
@@ -61,32 +57,30 @@ test('ai_usage step: no dialog before the disclaimers were shown; then the yes i
   assert.equal(calls.scans, 1);
 });
 
-test('ai_usage step: skipping in the dialog records the denial, relays the skip line, and a later granted:true cannot override it', async () => {
+test('ai_usage step: skipping in the dialog records the denial, queues the skip line for the next question, and a later granted:true cannot override it', async () => {
   const { tool, calls } = usageTool();
   const d = dialogs(pick(ES.aiUsageSkip));
-  const no = await tool.handler({ lang: 'es', disclaimersShown: true }, d.ctx);
+  const no = await tool.handler({ lang: 'es' }, d.ctx);
   assert.equal(no.reason, 'consent-declined');
-  assert.equal(no.relayVerbatim, ES.aiUsageSkipped);
+  assert.deepEqual(takeNotices(), [ES.aiUsageSkipped]);
   assert.deepEqual(calls.consent, ['denied']);
   const forced = await tool.handler({ lang: 'es', consent: { granted: true } }, d.ctx);
   assert.equal(forced.reason, 'consent-declined');
   assert.equal(calls.scans, 0);
 });
 
-test('ai_usage step: a closed dialog returns the question without repeating the disclaimers; a chat client gets both, in the talent\'s language', async () => {
+test('ai_usage step: a closed dialog and a chat client both get the disclaimers, the question and its options as one block, in the talent\'s language', async () => {
   const { tool, calls } = usageTool();
   for (const ctx of [dialogs({ action: 'cancel' }).ctx, dialogs({ action: 'decline' }).ctx]) {
-    const r = await tool.handler({ lang: 'es', disclaimersShown: true }, ctx);
+    const r = await tool.handler({ lang: 'es' }, ctx);
     assert.equal(r.reason, 'consent-required');
-    assert.equal(r.question, ES.aiUsageQuestion);
-    assert.equal(r.relayVerbatim, undefined);
+    assert.equal(r.say, [LEGAL_ES.usageInfoAccessed, LEGAL_ES.usageGoalDuration, ES.aiUsageQuestion, `1. ${ES.aiUsageYes}\n2. ${ES.aiUsageSkip}`].join('\n\n'));
   }
   fixSignupLanguage('en');
   const chat = await tool.handler({ lang: 'es' }, {});
-  assert.deepEqual(chat.relayVerbatim, [legalCopy('en').usageInfoAccessed, legalCopy('en').usageGoalDuration]);
-  assert.equal(chat.question, EN.aiUsageQuestion);
+  assert.ok(chat.say.startsWith([legalCopy('en').usageInfoAccessed, legalCopy('en').usageGoalDuration, EN.aiUsageQuestion].join('\n\n')));
   assert.deepEqual(chat.options, ['Yes, analyse it', 'Skip this step']);
-  assert.match(chat.message, /numbered list/);
+  assert.match(chat.message, /Print `say` word for word/);
   assert.deepEqual(calls.consent, [], 'closing the dialog is not a no');
   assert.equal(calls.scans, 0);
 });
@@ -105,17 +99,13 @@ function signupTools() {
   }).map((t) => [t.name, t]));
   return { tools, sent };
 }
-const DRAFT = { name: 'Ada Lovelace', role: 'Data Engineer', hourlyRate: 45 };
+const DRAFT = { name: 'Ada Lovelace', role: 'Data Engineer', hourlyRate: 45, annualRate: 60000 };
 
-test('welcome: a dialog client shows the welcome first, then the dialog asks the one question', async () => {
+test('welcome: the dialog carries the welcome and asks the one question in the same call', async () => {
   const { tools } = signupTools();
   const d = dialogs(pick(ES.cvSearch));
-  const first = await tools.signup_start.handler({ language: 'es' }, d.ctx);
-  assert.equal(first.reason, 'show-first');
-  assert.deepEqual(first.relayVerbatim, [ES.welcome(null)]);
-  assert.equal(d.asked.length, 0);
-  const answered = await tools.signup_start.handler({ shown: true }, d.ctx);
-  assert.equal(d.asked[0].message, ES.welcomeQuestion);
+  const answered = await tools.signup_start.handler({ language: 'es' }, d.ctx);
+  assert.equal(d.asked[0].message, [ES.welcome(null), ES.welcomeQuestion].join('\n\n'));
   assert.deepEqual(d.asked[0].requestedSchema.properties.choice.enum, ['Sí, búscalo', 'Te lo adjunto yo']);
   assert.equal(answered.step, 'cv-search');
 });
@@ -135,29 +125,26 @@ test('email: a known email is asked in a dialog with its two options; the open q
   assert.equal(none.asked.length, 0);
 });
 
-test('draft: the dialog asks for confirmation only after the draft and the notice were shown; nothing is sent before it', async () => {
+test('draft: the dialog carries the draft and the notice with the confirmation question; nothing is sent before it', async () => {
   const { tools, sent } = signupTools();
   await tools.signup_start.handler({ language: 'es' });
   const d = dialogs(pick(ES.draftOk));
-  const first = await tools.signup_draft.handler(DRAFT, d.ctx);
-  assert.equal(first.reason, 'show-first');
-  assert.equal(first.relayVerbatim[1], LEGAL_ES.signupNotice);
-  assert.equal(d.asked.length, 0);
-  const ok = await tools.signup_draft.handler({ ...DRAFT, shown: true }, d.ctx);
-  assert.equal(d.asked[0].message, ES.draftQuestion);
-  assert.equal(ok.relayVerbatim, ES.windowOpening);
+  const ok = await tools.signup_draft.handler(DRAFT, d.ctx);
+  assert.ok(d.asked[0].message.endsWith(`${LEGAL_ES.signupNotice}\n\n${ES.windowNotice}\n\n${ES.draftQuestion}`));
+  assert.equal(ok.next, 'signup_create_account');
   assert.equal(sent.length, 0);
-  await tools.signup_create_account.handler({ windowAnnounced: true, linkedinUrl: 'https://www.linkedin.com/in/ada' });
+  const created = await tools.signup_create_account.handler({ linkedinUrl: 'https://www.linkedin.com/in/ada' });
+  assert.equal(created.say, undefined, 'the window text came with the draft');
   assert.equal(sent.length, 1);
 });
 
-test('draft: a closed dialog falls back to the question in the chat, without the draft again', async () => {
+test('draft: a closed dialog falls back to the chat with the draft, the notice and the question in one block', async () => {
   const { tools } = signupTools();
   await tools.signup_start.handler({ language: 'es' });
-  const r = await tools.signup_draft.handler({ ...DRAFT, shown: true }, dialogs({ action: 'cancel' }).ctx);
+  const r = await tools.signup_draft.handler(DRAFT, dialogs({ action: 'cancel' }).ctx);
   assert.equal(r.reason, 'answer-required');
   assert.equal(r.dismissed, 'cancel');
-  assert.equal(r.relayVerbatim, undefined);
+  assert.ok(r.say.includes(LEGAL_ES.signupNotice));
   assert.deepEqual(r.options, [ES.draftOk, ES.draftChange]);
 });
 
@@ -175,7 +162,7 @@ function interviewTools() {
   return { start: tools.find((t) => t.name === 'onboarding_interview_start'), started };
 }
 
-test('interview: the dialog asks here or later first; later skips it, here hands over the disclaimers', async () => {
+test('interview: the dialog asks here or later first; later skips it, here asks how to answer with the disclaimers in that dialog', async () => {
   const { start } = interviewTools();
   const later = dialogs(pick(ES.interviewLater));
   const r = await start.handler({}, later.ctx);
@@ -183,20 +170,23 @@ test('interview: the dialog asks here or later first; later skips it, here hands
   assert.equal(r.relayVerbatim, undefined);
   assert.equal(later.asked[0].message, ES.interviewWhereQuestion);
   assert.deepEqual(later.asked[0].requestedSchema.properties.choice.enum, ['Aquí ahora', 'Luego en la web']);
-  const here = await start.handler({}, dialogs(pick(ES.interviewHere)).ctx);
-  assert.equal(here.reason, 'disclaimers-not-acknowledged');
-  assert.deepEqual(here.relayVerbatim, [LEGAL_ES.interviewInfoAccessed, LEGAL_ES.interviewGoalDuration]);
-  assert.equal(here.where, undefined);
+  const d = dialogs(pick(ES.interviewHere), { action: 'cancel' });
+  const here = await start.handler({}, d.ctx);
+  assert.equal(here.reason, 'answer-mode-required');
+  assert.equal(d.asked[1].message, [LEGAL_ES.interviewInfoAccessed, LEGAL_ES.interviewGoalDuration, ES.answerModeQuestion].join('\n\n'));
+  assert.ok(here.say.startsWith(`${LEGAL_ES.interviewInfoAccessed}\n\n${LEGAL_ES.interviewGoalDuration}`));
 });
 
-test('interview: without a dialog the disclaimers come with the where question and its options; where:"later" skips it', async () => {
+test('interview: without a dialog the where question comes alone; where:"later" skips it, where:"here" prints the disclaimers with the answer-mode question', async () => {
   const { start } = interviewTools();
   const r = await start.handler({}, {});
-  assert.equal(r.reason, 'disclaimers-not-acknowledged');
-  assert.deepEqual(r.where.options, [ES.interviewHere, ES.interviewLater]);
-  assert.match(r.message, /First ask `where.question`/);
+  assert.equal(r.reason, 'where-required');
+  assert.deepEqual(r.options, [ES.interviewHere, ES.interviewLater]);
+  assert.equal(r.say, `${ES.interviewWhereQuestion}\n\n1. ${ES.interviewHere}\n2. ${ES.interviewLater}`);
   assert.equal((await start.handler({ where: 'later' }, {})).reason, 'interview-later');
-  assert.equal((await start.handler({ where: 'here' }, dialogs().ctx)).where, undefined);
+  const here = await start.handler({ where: 'here', answerMode: 'own' }, {});
+  assert.equal(here.reason, 'answer-mode-required', 'an answer mode without the disclaimers is asked again with them');
+  assert.ok(here.say.includes(LEGAL_ES.interviewGoalDuration));
 });
 
 test('interview: the answer mode is asked with three options before the room opens, and comes back with the greeting', async () => {
@@ -244,17 +234,14 @@ test('main role: shows why each recommended role fits and its open projects, the
   const { set, calls } = roleTools();
   const d = dialogs(pick('Backend Developer'));
   const evidence = { backend: '8 años con Node', 'ai-eng': 'agentes en producción' };
-  const shown = await set.handler({ evidence }, d.ctx);
-  assert.equal(shown.reason, 'show-first');
-  assert.equal(shown.relayVerbatim[0], [
+  const r = await set.handler({ evidence }, d.ctx);
+  assert.equal(d.asked[0].message, [
     ES.rolesIntro,
     '**AI Engineer** (recomendado)\nPor lo que me contaste en la entrevista: agentes en producción',
     '**Backend Developer**\nPor tu CV y tu LinkedIn: 8 años con Node\nAhora mismo hay 12 proyectos abiertos que buscan este perfil.',
     ES.rolesOutro,
+    ES.mainRoleQuestion,
   ].join('\n\n'));
-  assert.equal(d.asked.length, 0);
-  const r = await set.handler({ evidence, shown: true }, d.ctx);
-  assert.equal(d.asked[0].message, ES.mainRoleQuestion);
   assert.deepEqual(d.asked[0].requestedSchema.properties.choice.enum, ['AI Engineer', 'Backend Developer', ES.mainRoleOther]);
   assert.deepEqual(r, { ok: true, clusterId: 'backend', name: 'Backend Developer' });
   assert.deepEqual(calls, { added: [], main: ['backend'] });
@@ -263,8 +250,8 @@ test('main role: shows why each recommended role fits and its open projects, the
 test('main role: the catalogue option asks again from the catalogue, then adds and sets the role; nothing recommended goes straight there', async () => {
   const other = roleTools();
   const d = dialogs(pick(ES.mainRoleOther), pick('QA Engineer'));
-  await other.set.handler({ shown: true }, d.ctx);
-  assert.deepEqual(d.asked[1].requestedSchema.properties.choice.enum, ['Product Manager', 'QA Engineer']);
+  await other.set.handler({}, d.ctx);
+  assert.deepEqual(d.asked[1].requestedSchema.properties.choice.enum, ['Product Manager', 'QA Engineer', ES.mainRoleNotListed]);
   assert.deepEqual(other.calls, { added: ['qa'], main: ['qa'] });
   const none = roleTools([]);
   const n = dialogs(pick('Product Manager'));
@@ -277,7 +264,8 @@ test('main role: without a dialog the roles text, the question and its options c
   const { set, calls } = roleTools();
   const r = await set.handler({}, {});
   assert.equal(r.reason, 'answer-required');
-  assert.match(r.relayVerbatim[0], /^Con todo lo que me has contado/);
+  assert.match(r.say, /^Con todo lo que me has contado/);
+  assert.match(r.say, /\n\n1\. AI Engineer\n2\. Backend Developer\n3\. /);
   assert.deepEqual(r.options, ['AI Engineer', 'Backend Developer', ES.mainRoleOther]);
   assert.deepEqual(r.roles, [{ clusterId: 'ai-eng', name: 'AI Engineer' }, { clusterId: 'backend', name: 'Backend Developer' }]);
   assert.deepEqual(calls.main, []);
@@ -297,15 +285,16 @@ test('main role: a failed open-projects count only leaves its line out', async (
     countOpenPositions: async () => { throw new Error('down'); },
   });
   const r = await tools.find((t) => t.name === 'set_main_role').handler({}, {});
-  assert.equal(r.relayVerbatim[0], [ES.rolesIntro, '**Backend Developer** (recomendado)\nPor tu CV y tu LinkedIn', ES.rolesOutro].join('\n\n'));
+  assert.ok(r.say.startsWith([ES.rolesIntro, '**Backend Developer** (recomendado)\nPor tu CV y tu LinkedIn', ES.rolesOutro].join('\n\n')));
 });
 
 test('instructions: a dialog client is told the tools ask the closed questions; a chat client gets the options to offer; both keep the flow order', () => {
   const { buildServerInstructions } = require('../bin/mcp');
   const dialog = buildServerInstructions({ elicitation: true });
-  assert.match(dialog, /asked by the tools in a dialog once you have shown their texts/);
+  assert.match(dialog, /asked by the tools in a dialog that carries their texts/);
   const chat = buildServerInstructions({});
-  assert.match(chat, /native choice buttons if you have them, otherwise as a short numbered list/);
+  assert.match(chat, /Closed questions come as `say` with their numbered options/);
+  assert.doesNotMatch(dialog + chat, /shown:true|windowAnnounced/);
   for (const text of [dialog, chat]) {
     const order = ['signup_start', 'signup_email', 'signup_draft', 'signup_create_account', 'update_existing_profile', 'ai_usage', 'onboarding_interview_start', 'set_main_role', 'open_web'].map((t) => text.indexOf(t));
     assert.ok(order.every((i, n) => i > 0 && (n === 0 || i > order[n - 1])), String(order));
@@ -367,10 +356,10 @@ test('stdio e2e: a client with elicitation answers the AI-usage question in a di
   const dialog = stdioClient({ elicitation: {} });
   const init = await dialog.next((m) => m.id === 0);
   assert.match(init.result.instructions, /asked by the tools in a dialog/);
-  dialog.send({ id: 1, method: 'tools/call', params: { name: 'ai_usage', arguments: { disclaimersShown: true, lang: 'es' } } });
+  dialog.send({ id: 1, method: 'tools/call', params: { name: 'ai_usage', arguments: { lang: 'es' } } });
   const req = await dialog.next((m) => m.method === 'elicitation/create');
-  const lang = req.params.message === ES.aiUsageQuestion ? ES : EN;
-  assert.equal(req.params.message, lang.aiUsageQuestion);
+  const lang = req.params.message.endsWith(ES.aiUsageQuestion) ? ES : EN;
+  assert.ok(req.params.message.endsWith(lang.aiUsageQuestion));
   assert.deepEqual(req.params.requestedSchema.properties.choice.enum, [lang.aiUsageYes, lang.aiUsageSkip]);
   dialog.send({ id: req.id, result: { action: 'accept', content: { choice: lang.aiUsageYes } } });
   assert.equal(resultOf(await dialog.next((m) => m.id === 1)).reason, 'consent-granted');
@@ -378,8 +367,8 @@ test('stdio e2e: a client with elicitation answers the AI-usage question in a di
 
   const chat = stdioClient({});
   const chatInit = await chat.next((m) => m.id === 0);
-  assert.match(chatInit.result.instructions, /native choice buttons/);
-  chat.send({ id: 1, method: 'tools/call', params: { name: 'ai_usage', arguments: { disclaimersShown: true, lang: 'es' } } });
+  assert.match(chatInit.result.instructions, /Closed questions come as `say`/);
+  chat.send({ id: 1, method: 'tools/call', params: { name: 'ai_usage', arguments: { lang: 'es' } } });
   const r = resultOf(await chat.next((m) => m.id === 1));
   assert.equal(r.reason, 'consent-required');
   assert.ok([ES, EN].some((c) => r.options.join() === [c.aiUsageYes, c.aiUsageSkip].join()));

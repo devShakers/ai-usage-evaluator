@@ -12,7 +12,7 @@ const INTERVIEW_START_SCHEMA = {
     language: { type: 'string', enum: ['es', 'en'] },
     disclaimerAcknowledged: {
       type: 'boolean',
-      description: 'Must be true. Set it only after showing the talent both interview disclaimers word for word, each as its own block (from signup_status or from this tool called without it), and getting their agreement.',
+      description: 'true only when the talent answered the answer-mode question this tool printed with both interview disclaimers. Call it first without it: it asks here-or-later and then that question.',
     },
     where: {
       type: 'string',
@@ -29,7 +29,6 @@ const INTERVIEW_START_SCHEMA = {
       description: 'Only needed when the talent has ALREADY completed onboarding. The tool then refuses with an already-completed notice unless you set this true after the talent explicitly confirms they want to repeat the interview.',
     },
   },
-  required: ['disclaimerAcknowledged'],
 };
 
 const INTERVIEW_TURN_SCHEMA = {
@@ -50,6 +49,18 @@ const INTERVIEW_COMPLETE_SCHEMA = {
 const FINISH_SCHEMA = { type: 'object', properties: {} };
 
 const LIVEKIT_LOAD_FAILURES = new Set(['livekit-not-installed', 'livekit-no-text-streams']);
+// A start or a turn that has not answered by then ends here, and the talent does the interview on the web.
+const INTERVIEW_TIMEOUT_MS = 120000;
+const TIMED_OUT = Symbol('timed-out');
+const TIMEOUT_KINDS = new Set(['timeout', 'turn-timeout']);
+// The chat interview runs only in the languages the interview agent speaks; the others do it on the web.
+const CHAT_INTERVIEW_LANGUAGES = new Set(['es', 'en']);
+
+function withTimeout(promise, ms) {
+  let timer;
+  const expiry = new Promise((resolve) => { timer = setTimeout(resolve, ms, TIMED_OUT); });
+  return Promise.race([promise, expiry]).finally(() => clearTimeout(timer));
+}
 
 // No telemetry ships in this package: stderr reaches the MCP client's server log, with what is needed to size the gap.
 function defaultReportLivekitFailure(kind, error) {
@@ -80,6 +91,11 @@ function makeRegisterTools(deps = {}) {
   const interviewSessions = new Map();
 
   const reportLivekitFailure = deps.reportLivekitFailure || defaultReportLivekitFailure;
+  const interviewTimeoutMs = deps.interviewTimeoutMs || INTERVIEW_TIMEOUT_MS;
+
+  function onWeb(step, reason) {
+    return { ok: false, step, reason, relayVerbatim: copy().livekitUnavailable, message: 'Print relayVerbatim word for word now, then call open_web: the talent does the interview on the web.', next: 'open_web' };
+  }
 
   async function teardownInterview(interviewId, { persist = false } = {}) {
     const sess = interviewSessions.get(interviewId);
@@ -111,11 +127,11 @@ function makeRegisterTools(deps = {}) {
     return { chat: asked.chat, dismissed: asked.dismissed };
   }
 
-  async function askAnswerMode(args, ctx) {
+  async function askAnswerMode(args, ctx, texts) {
     if (ANSWER_MODES.includes(args.answerMode)) return { mode: args.answerMode };
     const c = copy();
     const labels = { drafted: c.answerModeDrafted, own: c.answerModeOwn, full: c.answerModeFull };
-    const asked = await askChoice(ctx, { question: c.answerModeQuestion, options: ANSWER_MODES.map((m) => labels[m]) });
+    const asked = await askChoice(ctx, { texts, question: c.answerModeQuestion, options: ANSWER_MODES.map((m) => labels[m]) });
     if (asked.answer) return { mode: ANSWER_MODES.find((m) => labels[m] === asked.answer) };
     return { chat: asked.chat, dismissed: asked.dismissed };
   }
@@ -136,37 +152,55 @@ function makeRegisterTools(deps = {}) {
           'You have already completed the onboarding interview. Re-running it is optional. If the talent explicitly wants to repeat it, call again with confirmRepeat:true.',
       };
     }
-    if (args.disclaimerAcknowledged !== true) {
+    if (!CHAT_INTERVIEW_LANGUAGES.has(textLang())) {
+      return { ok: false, reason: 'interview-on-web', relayVerbatim: copy().interviewOnWeb, message: 'Print relayVerbatim word for word now. The interview is not offered here in this language: skip it, go on with the main role, then open_web.' };
+    }
+    const acknowledged = args.disclaimerAcknowledged === true;
+    if (!acknowledged) {
       const where = await askWhere(args, ctx);
       if (where.here === false) return interviewLater();
-      const disclaimers = flow.interviewDisclaimers(textLang());
-      const show = 'show the talent each relayVerbatim text word for word, each as its own block, with no titles, labels or bold of your own, then call again with disclaimerAcknowledged:true.';
-      return {
-        ok: false,
-        reason: 'disclaimers-not-acknowledged',
-        relayVerbatim: [disclaimers.infoAccessed, disclaimers.goalDuration],
-        ...(where.chat ? { where: where.chat } : {}),
-        ...(where.dismissed ? { dismissed: where.dismissed } : {}),
-        message: where.chat
-          ? `First ask \`where.question\` with its \`where.options\` (your native choice buttons if you have them, otherwise a short numbered list; accept the number or the text). If they pick the web, call again with where:"later". If they pick here, ${show}`
-          : `The talent does it here: ${show}`,
-      };
+      if (where.chat) {
+        return {
+          ok: false,
+          reason: 'where-required',
+          ...(where.dismissed ? { dismissed: where.dismissed } : {}),
+          ...where.chat,
+          message: `${where.chat.choiceMessage} Then call onboarding_interview_start again with where:"here" for the first option or where:"later" for the second.`,
+        };
+      }
     }
-    const answer = await askAnswerMode(args, ctx);
+    // The two disclaimers travel with the answer-mode question, so they are read before the talent answers it.
+    const disclaimers = acknowledged ? [] : Object.values(flow.interviewDisclaimers(textLang()));
+    const answer = await askAnswerMode(acknowledged ? args : {}, ctx, disclaimers);
     if (answer.chat) {
       return {
         ok: false,
         reason: 'answer-mode-required',
         ...(answer.dismissed ? { dismissed: answer.dismissed } : {}),
         ...answer.chat,
-        message: `${answer.chat.choiceMessage} Then call again with disclaimerAcknowledged:true and answerMode: drafted for the first option, own for the second, full for the third.`,
+        message: `${answer.chat.choiceMessage} Then call onboarding_interview_start again with where:"here", disclaimerAcknowledged:true and answerMode: drafted for the first option, own for the second, full for the third.`,
       };
     }
+    const room = {};
+    const opened = await withTimeout(openRoom(args, room), interviewTimeoutMs);
+    if (opened === TIMED_OUT) {
+      room.abandoned = true;
+      if (room.client) room.client.disconnect().catch(() => {});
+      return onWeb('start', 'timeout');
+    }
+    if (!opened.ok) return opened;
+    interviewSessions.set(opened.interviewId, { client: opened.client, buffer: opened.buffer, connectAt: Date.now(), ended: opened.opening.ended === true });
+    return { ok: true, interviewId: opened.interviewId, answerMode: answer.mode, greeting: opened.opening.text, ended: opened.opening.ended === true };
+  }
+
+  // Creates the interview, joins its room and reads the greeting; `room` lets a timed-out caller close what opened late.
+  async function openRoom(args, room) {
     const start = await flow.createAndStartLivekitOnboarding(resolved, {
       candidateId: args.candidateId,
       language: args.language || lang,
     });
     if (!start.ok) {
+      if (TIMEOUT_KINDS.has(start.reason)) return onWeb(start.step || 'start', start.reason);
       const out = { ok: false, step: start.step || 'start', reason: start.reason };
       return start.reason === 'interview-already-started' ? { ...out, next: 'open_web' } : out;
     }
@@ -174,6 +208,7 @@ function makeRegisterTools(deps = {}) {
     const closing = start.closingMessage;
     const isClosing = closing ? (t) => typeof t === 'string' && t.includes(closing) : null;
     const client = resolved.makeInterviewClient({ isClosing });
+    room.client = client;
     const buffer = new TranscriptBuffer();
 
     try {
@@ -183,7 +218,7 @@ function makeRegisterTools(deps = {}) {
       const kind = (e && e.kind) || 'connect-failed';
       if (LIVEKIT_LOAD_FAILURES.has(kind)) reportLivekitFailure(kind, e);
       // Whatever kept the room from opening here, the same interview runs on the web.
-      return { ok: false, step: 'connect', reason: kind, relayVerbatim: copy().livekitUnavailable, message: 'Show relayVerbatim word for word, then open_web.', next: 'open_web' };
+      return onWeb('connect', kind);
     }
 
     let opening;
@@ -191,11 +226,14 @@ function makeRegisterTools(deps = {}) {
       opening = await client.receiveTurn();
     } catch (e) {
       try { await client.disconnect(); } catch { /* room already gone */ }
-      return { ok: false, step: 'greeting', reason: (e && e.kind) || 'no-greeting' };
+      return onWeb('greeting', (e && e.kind) || 'no-greeting');
+    }
+    if (room.abandoned) {
+      try { await client.disconnect(); } catch { /* room already gone */ }
+      return { ok: false, reason: 'timeout' };
     }
     buffer.recordAgent(opening.text);
-    interviewSessions.set(start.interviewId, { client, buffer, connectAt: Date.now(), ended: opening.ended === true });
-    return { ok: true, interviewId: start.interviewId, answerMode: answer.mode, greeting: opening.text, ended: opening.ended === true };
+    return { ok: true, interviewId: start.interviewId, client, buffer, opening };
   }
 
   async function interviewTurn(args = {}) {
@@ -209,10 +247,21 @@ function makeRegisterTools(deps = {}) {
     sess.buffer.recordUser(message);
     let res;
     try {
-      res = await sess.client.sendTurn(message);
+      res = await withTimeout(sess.client.sendTurn(message), interviewTimeoutMs);
     } catch (e) {
-      await teardownInterview(args.interviewId, { persist: true });
-      return { ok: false, reason: (e && e.kind) || 'turn-error', message: 'The interview connection failed; the transcript so far was saved. Start again with onboarding_interview_start.' };
+      res = { failed: (e && e.kind) || 'turn-error' };
+    }
+    if (res === TIMED_OUT || res.failed) {
+      const kind = res === TIMED_OUT ? 'timeout' : res.failed;
+      const teardown = await withTimeout(teardownInterview(args.interviewId, { persist: true }), Math.min(interviewTimeoutMs, 15000));
+      const saved = teardown !== TIMED_OUT && teardown.ok === true;
+      if (TIMEOUT_KINDS.has(kind)) return { ...onWeb('turn', kind), saved };
+      return {
+        ok: false,
+        reason: kind,
+        saved,
+        message: `The interview connection failed; ${saved ? 'the transcript so far was saved' : 'the transcript so far could not be saved'}. Start again with onboarding_interview_start.`,
+      };
     }
     sess.buffer.recordAgent(res.text);
     if (res.ended === true) sess.ended = true;
@@ -265,7 +314,16 @@ function makeRegisterTools(deps = {}) {
   // Content-free context the model may PROPOSE to the talent (never auto-write).
   async function suggestContext(args = {}) {
     const read = deps.readRegisterContextSuggestions || require('./register-context').readRegisterContextSuggestions;
-    return { ok: true, suggestions: read({ talentName: args.talentName }), note: 'Propose these to the talent to confirm; never write them without confirmation.' };
+    const suggestions = read({ talentName: args.talentName });
+    const found = suggestions.cvCandidates && suggestions.cvCandidates.length > 0;
+    return {
+      ok: true,
+      suggestions,
+      note: 'Propose these to the talent to confirm; never write them without confirmation.',
+      message: found
+        ? 'The talent already allowed the search: read_cv the first candidate now (the most likely), with talentConsent:true and talentName if you know it. nameMatch:null only means their name is unknown, never that the CV is not theirs. Move to the next candidate only if read_cv says mentionsTalent:false; say you did not find it only when none is left.'
+        : 'No CV was found on this machine: ask the talent to attach it.',
+    };
   }
 
   // Text of the CV the talent confirmed as theirs, read only with their permission.
@@ -282,7 +340,7 @@ function makeRegisterTools(deps = {}) {
   return [
     {
       name: 'suggest_register_context',
-      description: "SUGGESTIONS for the sign-up read on this machine (no network, no file contents): timezone, git name/email, the gh CLI GitHub login, and cvCandidates: PDF/DOC/DOCX files in Desktop, Documents, Downloads and iCloud Drive whose NAME looks like a CV or carries the talent's name, each with nameMatch and generic flags. A candidate is only a lead (people who hire keep other people's CVs): confirm it with read_cv. Pass talentName to sharpen the match. Use it when the talent said you may look for their CV on this machine.",
+      description: "SUGGESTIONS for the sign-up read on this machine (no network, no file contents): timezone, git name/email, the gh CLI GitHub login, and cvCandidates: PDF/DOC/DOCX files in Desktop, Documents, Downloads and iCloud Drive whose NAME looks like a CV or carries the talent's name, each with nameMatch (null when their name is unknown) and generic flags. A candidate is only a lead (people who hire keep other people's CVs): confirm it with read_cv. Pass talentName to sharpen the match. Use it when the talent said you may look for their CV on this machine.",
       inputSchema: { type: 'object', properties: { talentName: { type: 'string', description: "The talent's full name as you know it (memory, chat); improves CV matching." } } },
       handler: suggestContext,
     },
@@ -302,7 +360,7 @@ function makeRegisterTools(deps = {}) {
     },
     {
       name: 'onboarding_interview_start',
-      description: "Start the onboarding interview, here in the chat. Offer it only when signup_status says onboardingInterview.completed is not true. Call it first without disclaimerAcknowledged: it asks 'here now or later on the web?' (in a dialog when the client has one, otherwise it returns `where` with the question and its options to ask; default here) and returns the two interview disclaimers. reason 'interview-later' means they chose the web: skip the interview. If it returns reason 'interview-already-started' (begun elsewhere and not finished), call open_web so they continue on the web. It runs over LiveKit and the server agent conducts it; the client does not decide its branch. You MUST show the talent both interview disclaimers word for word, each as its own block, never paraphrased or relabelled, and only then call with disclaimerAcknowledged:true and answerMode (without answerMode it asks the answer-mode question in a dialog, or returns it with its options: ask it and call again). Returns { interviewId, answerMode, greeting, ended }: relay the greeting VERBATIM, then drive it with onboarding_interview_turn. ANSWER MODES. For drafted and full, first gather everything you know (memory, a search of past conversations if you have that tool, their CV, the ai_usage report, the sign-up data) and show ONE short sheet 'esto es lo que se de ti' (roles and projects with concrete facts, stack, languages, what they want next); let them correct it once; those corrections override your memory. Your answers are first person, one or two short sentences in their plain voice, built only from facts on the confirmed sheet: no embellishment, no adjectives, metrics or claims they did not give, no repeating a fact already said unless asked; for wishes, preferences or opinions give your best guess and say it is a guess. (1) drafted: show each question VERBATIM with your proposed answer and send it only after the talent approves or edits it; if the sheet does not cover a question, ask them briefly instead of guessing. Only if the talent explicitly asks you to answer everything yourself (for example 'hazla entera' or 'contéstalas tú todas'), answer the remaining questions without asking for each approval, as in full. (2) full (they chose it, or asked for it as above): answer every question yourself without per-answer approval, still showing each question and your answer, and when the interview ends tell them in one line that you answered those questions yourself. (3) own: you are a pure CONDUIT: show every question VERBATIM and pass back only their REAL, VERBATIM words. In every mode never reword, summarize or translate the questions. `interviewId` is internal: never show it. If it fails with next:'open_web', relay `message` and call open_web so they do the interview on the web.",
+      description: "Start the onboarding interview, here in the chat. Offer it only when signup_status says onboardingInterview.completed is not true. Call it first without disclaimerAcknowledged: it asks 'here now or later on the web?' (in a dialog when the client has one, otherwise it returns `say` to print word for word; default here), then how they want to answer, with the two interview disclaimers in that same question. reason 'interview-later' means they chose the web: skip the interview. reason 'interview-on-web' (a sign-up language the chat interview does not speak) is the same: print relayVerbatim and skip it. If it returns reason 'interview-already-started' (begun elsewhere and not finished), call open_web so they continue on the web. It runs over LiveKit and the server agent conducts it; the client does not decide its branch. When it returns `say`, print it word for word as your whole reply (it holds the disclaimers and the question) and, once they answer, call with where:'here', disclaimerAcknowledged:true and answerMode. Returns { interviewId, answerMode, greeting, ended }: relay the greeting VERBATIM, then drive it with onboarding_interview_turn. ANSWER MODES. For drafted and full, first gather everything you know (memory, a search of past conversations if you have that tool, their CV, the ai_usage report, the sign-up data) and show ONE short sheet 'esto es lo que se de ti' (roles and projects with concrete facts, stack, languages, what they want next); let them correct it once; those corrections override your memory. Your answers are first person, one or two short sentences in their plain voice, built only from facts on the confirmed sheet: no embellishment, no adjectives, metrics or claims they did not give, no repeating a fact already said unless asked; for wishes, preferences or opinions give your best guess and say it is a guess. (1) drafted: show each question VERBATIM with your proposed answer and send it only after the talent approves or edits it; if the sheet does not cover a question, ask them briefly instead of guessing. Only if the talent explicitly asks you to answer everything yourself (for example 'hazla entera' or 'contéstalas tú todas'), answer the remaining questions without asking for each approval, as in full. (2) full (they chose it, or asked for it as above): answer every question yourself without per-answer approval, still showing each question and your answer, and when the interview ends tell them in one line that you answered those questions yourself. (3) own: you are a pure CONDUIT: show every question VERBATIM and pass back only their REAL, VERBATIM words. In every mode never reword, summarize or translate the questions. `interviewId` is internal: never show it. If it fails with next:'open_web', print relayVerbatim word for word and call open_web so they do the interview on the web.",
       inputSchema: INTERVIEW_START_SCHEMA,
       handler: interviewStart,
       available: async () => {

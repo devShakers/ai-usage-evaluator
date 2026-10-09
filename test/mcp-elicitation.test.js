@@ -160,6 +160,9 @@ test('askChoice: one enum field, the pick back; a decline, a cancel or an answer
   }
   const chat = await askChoice({}, { question: 'Which?', options: ['A', 'B'] });
   assert.deepEqual(Object.keys(chat), ['chat']);
-  assert.match(chat.chat.choiceMessage, /native choice buttons.*numbered list.*number or the text/);
+  assert.equal(chat.chat.say, 'Which?\n\n1. A\n2. B');
+  assert.match(chat.chat.choiceMessage, /Print `say` word for word.*call no tool until the talent answers/);
+  const withTexts = await askChoice(dialogs({ action: 'cancel' }).ctx, { texts: ['Notice.'], question: 'Which?', options: ['A', 'B'] });
+  assert.equal(withTexts.chat.say, 'Notice.\n\nWhich?\n\n1. A\n2. B', 'a closed dialog keeps the texts');
 });
 

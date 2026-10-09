@@ -238,7 +238,7 @@ test('ai_usage: a stale consent arg email is re-anchored to the active session e
   assert.equal(out.send.ok, true);
 });
 
-test('ai_usage: nothing is scanned without the talent\'s explicit yes; it returns the disclaimers, then the question and its options', async () => {
+test('ai_usage: nothing is scanned without the talent\'s explicit yes; it returns the disclaimers, the question and its options in one block', async () => {
   const { signupCopy, legalCopy } = require('../src/signup-copy');
   const ES = signupCopy('es');
   let scanned = 0;
@@ -250,13 +250,12 @@ test('ai_usage: nothing is scanned without the talent\'s explicit yes; it return
   }));
   const asked = await tool.handler({ repoScope: { mode: 'all' }, lang: 'es' });
   assert.equal(asked.reason, 'consent-required');
-  assert.deepEqual(asked.relayVerbatim, [legalCopy('es').usageInfoAccessed, legalCopy('es').usageGoalDuration]);
-  assert.equal(asked.question, ES.aiUsageQuestion);
+  assert.ok(asked.say.startsWith([legalCopy('es').usageInfoAccessed, legalCopy('es').usageGoalDuration, ES.aiUsageQuestion].join('\n\n')));
   assert.deepEqual(asked.options, [ES.aiUsageYes, ES.aiUsageSkip]);
   assert.match(asked.message, /word for word/);
   const declined = await tool.handler({ consent: { granted: false }, repoScope: { mode: 'all' }, lang: 'es' });
   assert.equal(declined.reason, 'consent-declined');
-  assert.equal(declined.relayVerbatim, ES.aiUsageSkipped);
+  assert.deepEqual(require('../src/mcp-choice').takeNotices(), [ES.aiUsageSkipped], 'in the sign-up the skip line rides on the next question');
   assert.equal(scanned, 0, 'neither a missing answer nor a no starts a scan');
   assert.deepEqual(recorded, ['denied']);
   assert.match(tool.description, /explicit yes/);

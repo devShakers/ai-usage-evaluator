@@ -3,7 +3,7 @@
 const fs = require('fs');
 const { execFileSync } = require('child_process');
 const { isRefusedWalkRoot } = require('./scan-exclusions');
-const { askChoice } = require('./mcp-choice');
+const { askChoice, chatChoice, queueNotice } = require('./mcp-choice');
 
 function isExistingDir(p) {
   try {
@@ -31,16 +31,12 @@ const AI_USAGE_INPUT_SCHEMA = {
     consent: {
       type: 'object',
       description:
-        "The talent's explicit answer to the AI-usage question, asked right after showing both disclaimers verbatim. Nothing is scanned without granted:true. A yes to anything else is not this answer.",
+        "The talent's explicit answer to the AI-usage question this tool asks together with both disclaimers. Nothing is scanned without granted:true. A yes to anything else is not this answer.",
       properties: {
         granted: { type: 'boolean', description: 'true ONLY after the talent explicitly said yes to the AI-usage question; false when they said no. Omit it to get the disclaimers and the question to ask.' },
         email: { type: 'string', description: 'The talent email the report is attributed to. Required when granted is true.' },
       },
       required: ['granted'],
-    },
-    disclaimersShown: {
-      type: 'boolean',
-      description: 'true only after you showed the talent both AI-usage disclaimers word for word, right before this call. Without consent, it then asks the AI-usage question in a dialog when the client has one.',
     },
     repoScope: {
       type: 'object',
@@ -152,35 +148,21 @@ function makeAiUsageTool(deps = {}) {
     }, () => ({ ok: false, skipped: true, reason: 'scan-failed' }));
     return current.uploading;
   }
-  function consentRequired(lang, ctx) {
-    const c = signupCopy(lang);
-    const disclaimers = Object.values(usageDisclaimers(lang));
-    if (ctx && ctx.elicitation) {
-      return {
-        ok: false,
-        reason: 'consent-required',
-        relayVerbatim: disclaimers,
-        message: 'Nothing was scanned. Show the talent each relayVerbatim text word for word, each as its own block, without labels or paraphrase; then call ai_usage again with disclaimersShown:true and no consent: it asks the question in a dialog.',
-      };
-    }
-    return {
-      ok: false,
-      reason: 'consent-required',
-      relayVerbatim: disclaimers,
-      question: c.aiUsageQuestion,
-      options: [c.aiUsageYes, c.aiUsageSkip],
-      message: 'Nothing was scanned. Show the talent each relayVerbatim text word for word, each as its own block, without labels or paraphrase, then `question` with its `options` (your native choice buttons if you have them, otherwise a short numbered list). Then call again with consent.granted:true only after they pick the first option, or consent.granted:false if they skip it.',
-    };
-  }
-
   function declined(lang) {
     recordConsent('denied');
-    return { ok: false, reason: 'consent-declined', relayVerbatim: signupCopy(lang).aiUsageSkipped, message: 'Nothing was scanned. Show relayVerbatim once, word for word, and carry on with the interview offer.' };
+    if (signupPhase() === 'account') {
+      queueNotice(signupCopy(lang).aiUsageSkipped);
+      return { ok: false, reason: 'consent-declined', message: 'Nothing was scanned. Say nothing about it: its fixed line for the talent comes with the next question. Carry on with the interview offer.' };
+    }
+    return { ok: false, reason: 'consent-declined', relayVerbatim: signupCopy(lang).aiUsageSkipped, message: 'Nothing was scanned. Show relayVerbatim once, word for word.' };
   }
 
   async function askConsent(lang, ctx) {
     const c = signupCopy(lang);
-    const asked = await askChoice(ctx, { question: c.aiUsageQuestion, options: [c.aiUsageYes, c.aiUsageSkip] });
+    const texts = Object.values(usageDisclaimers(lang));
+    const asked = ctx && ctx.elicitation
+      ? await askChoice(ctx, { texts, question: c.aiUsageQuestion, options: [c.aiUsageYes, c.aiUsageSkip] })
+      : { chat: chatChoice(c.aiUsageQuestion, [c.aiUsageYes, c.aiUsageSkip], texts) };
     if (asked.answer === c.aiUsageSkip) {
       dialogConsent = 'denied';
       return declined(lang);
@@ -194,7 +176,7 @@ function makeAiUsageTool(deps = {}) {
       reason: 'consent-required',
       ...(asked.dismissed ? { dismissed: asked.dismissed } : {}),
       ...asked.chat,
-      message: `Nothing was scanned. The disclaimers are already shown: do not repeat them. ${asked.chat.choiceMessage} Then call again with consent.granted:true only after an explicit yes, or consent.granted:false if they say no.`,
+      message: `Nothing was scanned. ${asked.chat.choiceMessage} Then call ai_usage again with consent.granted:true only after they pick the first option, or consent.granted:false if they skip it.`,
     };
   }
 
@@ -214,7 +196,6 @@ function makeAiUsageTool(deps = {}) {
       return { ok: false, reason: 'consent-declined', message: 'The talent skipped the AI-usage step in the dialog: nothing is scanned. Carry on without it. If they later ask for the scan themselves, call ai_usage without consent to ask them again.' };
     }
     if (consent.granted !== true) {
-      if (args.disclaimersShown !== true || !(ctx && ctx.elicitation)) return consentRequired(textLang, ctx);
       const answered = await askConsent(textLang, ctx);
       // In the sign-up a yes in the dialog runs the scan right away, in the background.
       if (!(answered.reason === 'consent-granted' && phase === 'account')) return answered;
@@ -405,7 +386,7 @@ function makeAiUsageTool(deps = {}) {
   return {
     name: 'ai_usage',
     description:
-      "Measure how a Shakers talent uses AI in their work: scans this machine and repository for AI-tool usage (subagents, MCP servers, sessions, git activity), scores their AI-maturity tier (T0-T7), and, with the talent's consent, submits the report to Shakers so their profile reflects it. Runs entirely on the talent's own machine. Before any scan, show the talent both AI-usage disclaimers word for word, each as its own block, right before the AI-usage question (call without consent to get those texts and the question); only an explicit yes allows consent.granted:true, and skipping is consent.granted:false. In the sign-up it is the step right after the account exists and before the interview: on yes it runs and uploads in the background, never wait for it. Submission also requires an active, email-verified Shakers session (via `shakers login` / registration OTP): without a verified session the report stays on this machine and nothing is sent — check the `send` field for the outcome. Always fast and deterministic: it runs no LLM on the machine. Agent descriptions and catalog classification are produced by Shakers server-side. This waits briefly (~30s) and, if classification finishes, returns the enriched agents inline; otherwise it returns enrichment:'pending' (normal progress, not an error) and you should call `ai_usage_result` to get them. The `text` field is a ready-to-show plain-text 'My work with AI' report (Markdown, no ANSI) mirroring the CLI terminal — render it verbatim to the talent; the matrix grid is inside a fenced code block, keep it fenced so it stays aligned. Use the `display` block for structured access: show the tier (with the tierLegend explaining T0-T7) and the agent list by NAME and category/role. IDs and codes (agent `code`, skillId, catalogId) are internal handles for the add_* tools only — never show raw IDs or codes to the talent.",
+      "Measure how a Shakers talent uses AI in their work: scans this machine and repository for AI-tool usage (subagents, MCP servers, sessions, git activity), scores their AI-maturity tier (T0-T7), and, with the talent's consent, submits the report to Shakers so their profile reflects it. Runs entirely on the talent's own machine. Before any scan, call it without consent: it asks the AI-usage question with both disclaimers in the same block (a dialog, or `say` to print word for word); only an explicit yes allows consent.granted:true, and skipping is consent.granted:false. In the sign-up it is the step right after the account exists and before the interview: on yes it runs and uploads in the background, never wait for it. Submission also requires an active, email-verified Shakers session (via `shakers login` / registration OTP): without a verified session the report stays on this machine and nothing is sent — check the `send` field for the outcome. Always fast and deterministic: it runs no LLM on the machine. Agent descriptions and catalog classification are produced by Shakers server-side. This waits briefly (~30s) and, if classification finishes, returns the enriched agents inline; otherwise it returns enrichment:'pending' (normal progress, not an error) and you should call `ai_usage_result` to get them. The `text` field is a ready-to-show plain-text 'My work with AI' report (Markdown, no ANSI) mirroring the CLI terminal — render it verbatim to the talent; the matrix grid is inside a fenced code block, keep it fenced so it stays aligned. Use the `display` block for structured access: show the tier (with the tierLegend explaining T0-T7) and the agent list by NAME and category/role. IDs and codes (agent `code`, skillId, catalogId) are internal handles for the add_* tools only — never show raw IDs or codes to the talent.",
     inputSchema: AI_USAGE_INPUT_SCHEMA,
     handler,
   };
