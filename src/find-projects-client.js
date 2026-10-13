@@ -1,6 +1,6 @@
 'use strict';
 
-// Find Positions list client (hub `works/positions/find`, talent Bearer). Each
+// Find Positions list client. Each
 // item carries the parent Project's id/name — a "project" here is the Position's
 // parent, not a separate list. Pagination (limit/offset) and filters map to the
 // endpoint's `criteria`; the server orders by match desc and returns the total.

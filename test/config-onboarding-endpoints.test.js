@@ -33,22 +33,22 @@ test('hub-routed endpoints derive from SHAKERS_CLI_HUB_BASE, not from the certs 
   assert.equal(getHubBase(env), HUB);
   // better-auth email register (owner decision, supersedes ADR-031 for email).
   assert.equal(getSignUpEndpoint(env), 'https://hub.example.com/api/v1/auth/sign-up/email');
-  assert.equal(getCompleteRegistrationEndpoint(env), 'https://hub.example.com/api/v1/works/auth/complete-registration');
+  assert.equal(getCompleteRegistrationEndpoint(env), 'https://hub.example.com/api/v1/works/talent/auth/complete-registration');
   assert.equal(getAuthTokenEndpoint(env), 'https://hub.example.com/api/v1/auth/token');
-  assert.equal(getImportProfileEndpoint(env), 'https://hub.example.com/api/v1/works/me/import-profile');
-  assert.equal(getProfessionalDetailsEndpoint(env), 'https://hub.example.com/api/v1/works/me/professional-details');
-  assert.equal(getPricingRateEndpoint(env), 'https://hub.example.com/api/v1/works/talents/me/work-details/pricing-rate');
+  assert.equal(getImportProfileEndpoint(env), 'https://hub.example.com/api/v1/works/talent/me/import-profile');
+  assert.equal(getProfessionalDetailsEndpoint(env), 'https://hub.example.com/api/v1/works/talent/me/professional-details');
+  assert.equal(getPricingRateEndpoint(env), 'https://hub.example.com/api/v1/works/talent/me/work-details/pricing-rate');
   assert.equal(getCompleteOnboardingEndpoint(env), 'https://hub.example.com/api/v1/works/talents/me/complete-onboarding');
 });
 
 test('getAgentPortfoliosEndpoint derives the DIRECT-to-hub relate route with the id in the path (ADR-041)', () => {
   const env = { AI_FOOTPRINT_INGEST_ENDPOINT: INGEST, SHAKERS_CLI_HUB_BASE: HUB, AI_FOOTPRINT_CONFIG_DIR: NOCFG };
-  assert.equal(getAgentPortfoliosEndpoint(99, env), 'https://hub.example.com/api/v1/works/me/agents/99/portfolios');
-  assert.equal(getAgentPortfoliosEndpoint('a b', env), 'https://hub.example.com/api/v1/works/me/agents/a%20b/portfolios');
+  assert.equal(getAgentPortfoliosEndpoint(99, env), 'https://hub.example.com/api/v1/works/talent/me/agents/99/portfolios');
+  assert.equal(getAgentPortfoliosEndpoint('a b', env), 'https://hub.example.com/api/v1/works/talent/me/agents/a%20b/portfolios');
   // No explicit hub base -> derives from the baked hub base (NOT the certs ingest).
   assert.equal(
     getAgentPortfoliosEndpoint(99, { AI_FOOTPRINT_INGEST_ENDPOINT: INGEST, AI_FOOTPRINT_CONFIG_DIR: NOCFG }),
-    `${DEV.hubBase}/works/me/agents/99/portfolios`,
+    `${DEV.hubBase}/works/talent/me/agents/99/portfolios`,
   );
 });
 
@@ -60,7 +60,7 @@ test('the interviews base stays on certs (ingest sibling)', () => {
 test('hub endpoints fall to the baked hub base (never the certs ingest) when no hub base is set', () => {
   const env = { AI_FOOTPRINT_INGEST_ENDPOINT: INGEST, AI_FOOTPRINT_CONFIG_DIR: '/nonexistent-config-dir-xyz' };
   assert.equal(getHubBase(env), DEV.hubBase);
-  assert.equal(getImportProfileEndpoint(env), `${DEV.hubBase}/works/me/import-profile`);
+  assert.equal(getImportProfileEndpoint(env), `${DEV.hubBase}/works/talent/me/import-profile`);
   assert.equal(getCompleteOnboardingEndpoint(env), `${DEV.hubBase}/works/talents/me/complete-onboarding`);
   // The interviews base still rides the explicit certs ingest, not the hub.
   assert.equal(getOnboardingInterviewsEndpoint(env), 'https://certs.example.com/api/v1/interviews');

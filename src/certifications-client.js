@@ -1,6 +1,6 @@
 'use strict';
 
-// My-certifications client (hub `works/certifications/me`, talent Bearer). The
+// My-certifications client. The
 // "By role" page: main-role cluster + its dimension rows (state/band) + ratios.
 
 const { postJsonWithTimeout } = require('./backend-request');

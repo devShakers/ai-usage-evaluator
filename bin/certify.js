@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-// `certify` — dimension certification interview over LiveKit (src/certify-dimension-flow.js).
+// `certify` — discover + pick a dimension, then hand over the web link (src/certify-dimension-flow.js).
 
 const { detectReportLang, getCatalog } = require('../src/i18n');
 const { loadAuthSession, sessionStatus } = require('../src/auth-session-store');

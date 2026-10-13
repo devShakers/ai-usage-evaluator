@@ -7,28 +7,28 @@ const SIGNUP_LANGUAGES = ['es', 'en', 'it', 'pt'];
 // Legal texts. PENDING legal/GDPR validation: not final copy. The CLI onboarding reads the es/en ones too.
 const LEGAL = {
   es: {
-    signupNotice: 'Antes de crear tu cuenta: guardamos los datos que me des (tu LinkedIn, tu CV y lo que sé de ti) y podemos contactarte. Te completo el perfil automáticamente y cualquier campo lo puedes cambiar después en la web. La entrevista de onboarding la puedes hacer luego aquí mismo en el chat o en la web.',
+    signupNotice: (sources) => `Antes de crear tu cuenta: guardamos los datos que me des (${listOf('es', [...named(sources, COPY.es.importSources), 'lo que sé de ti'])}) y podemos contactarte. Te completo el perfil automáticamente y cualquier campo lo puedes cambiar después en la web. La entrevista de onboarding la puedes hacer luego aquí mismo en el chat o en la web.`,
     usageInfoAccessed: 'Se accede a: la estructura de tus herramientas de IA y a extractos anonimizados de tu actividad en este equipo. Tu código y tus prompts en crudo NUNCA salen de tu máquina.',
     usageGoalDuration: 'Objetivo: medir cómo trabajas con IA para tu perfil. Duración: ~1-2 minutos.',
     interviewInfoAccessed: 'Se accede a: tus respuestas en esta entrevista y tu perfil importado. La conduce el servidor de Shakers.',
     interviewGoalDuration: 'Objetivo: conocer tu rol, tu dedicación y cómo usas la IA. Duración: ~5 minutos.',
   },
   en: {
-    signupNotice: 'Before we create your account: we store the data you give me (your LinkedIn, your CV and what I know about you) and may contact you. I fill in your profile automatically and you can change any field later on the web. You can do the onboarding interview afterwards right here in the chat or on the web.',
+    signupNotice: (sources) => `Before we create your account: we store the data you give me (${listOf('en', [...named(sources, COPY.en.importSources), 'what I know about you'])}) and may contact you. I fill in your profile automatically and you can change any field later on the web. You can do the onboarding interview afterwards right here in the chat or on the web.`,
     usageInfoAccessed: 'Accessed: the structure of your AI tools and redacted excerpts of your activity on this machine. Your raw code and prompts NEVER leave your machine.',
     usageGoalDuration: 'Goal: measure how you work with AI for your profile. Duration: ~1-2 minutes.',
     interviewInfoAccessed: 'Accessed: your answers in this interview and your imported profile. It is conducted by the Shakers server.',
     interviewGoalDuration: 'Goal: learn your role, your dedication and how you use AI. Duration: ~5 minutes.',
   },
   it: {
-    signupNotice: 'Prima di creare il tuo account: conserviamo i dati che mi dai (il tuo LinkedIn, il tuo CV e quello che so di te) e possiamo contattarti. Completo il tuo profilo in automatico e puoi cambiare qualsiasi campo in seguito sul sito. Il colloquio di onboarding puoi farlo dopo sul sito.',
+    signupNotice: (sources) => `Prima di creare il tuo account: conserviamo i dati che mi dai (${listOf('it', [...named(sources, COPY.it.importSources), 'quello che so di te'])}) e possiamo contattarti. Completo il tuo profilo in automatico e puoi cambiare qualsiasi campo in seguito sul sito. Il colloquio di onboarding puoi farlo dopo sul sito.`,
     usageInfoAccessed: 'Accesso a: la struttura dei tuoi strumenti di IA ed estratti anonimizzati della tua attività su questo computer. Il tuo codice e i tuoi prompt originali NON escono MAI dalla tua macchina.',
     usageGoalDuration: "Obiettivo: misurare come lavori con l'IA per il tuo profilo. Durata: ~1-2 minuti.",
     interviewInfoAccessed: 'Accesso a: le tue risposte in questo colloquio e il tuo profilo importato. Lo conduce il server di Shakers.',
     interviewGoalDuration: "Obiettivo: conoscere il tuo ruolo, la tua disponibilità e come usi l'IA. Durata: ~5 minuti.",
   },
   pt: {
-    signupNotice: 'Antes de criar a sua conta: guardamos os dados que me der (o seu LinkedIn, o seu CV e o que sei sobre si) e podemos contactá-lo. Preencho o seu perfil automaticamente e pode alterar qualquer campo depois na web. A entrevista de onboarding pode fazê-la depois na web.',
+    signupNotice: (sources) => `Antes de criar a sua conta: guardamos os dados que me der (${listOf('pt', [...named(sources, COPY.pt.importSources), 'o que sei sobre si'])}) e podemos contactá-lo. Preencho o seu perfil automaticamente e pode alterar qualquer campo depois na web. A entrevista de onboarding pode fazê-la depois na web.`,
     usageInfoAccessed: 'Acede-se a: a estrutura das suas ferramentas de IA e excertos anonimizados da sua atividade neste computador. O seu código e os seus prompts em bruto NUNCA saem da sua máquina.',
     usageGoalDuration: 'Objetivo: medir como trabalha com IA para o seu perfil. Duração: ~1-2 minutos.',
     interviewInfoAccessed: 'Acede-se a: as suas respostas nesta entrevista e o seu perfil importado. É conduzida pelo servidor da Shakers.',
@@ -37,6 +37,16 @@ const LEGAL = {
 };
 
 const LOCALES = { es: 'es-ES', en: 'en-GB', it: 'it-IT', pt: 'pt-PT' };
+
+// "a, b and c" in the talent's language.
+function listOf(lang, items) {
+  return new Intl.ListFormat(LOCALES[lang], { type: 'conjunction' }).format(items);
+}
+
+// The names of only the sources the talent actually gave (cv, linkedin), from a per-language table.
+function named(sources, names) {
+  return (sources || []).map((s) => names[s]).filter(Boolean);
+}
 
 function joinParts(parts) {
   return parts.filter((p) => p !== null && p !== undefined && String(p).trim() !== '').join(' · ');
@@ -69,14 +79,17 @@ const COPY = {
     draftQuestion: '¿Está bien o cambio algo?',
     draftOk: 'Todo correcto',
     draftChange: 'Quiero cambiar algo',
-    windowNotice: 'Cuando confirmes, te abro una ventana en el navegador para crear tu cuenta y guardar todo esto. Allí eliges cómo entrar:\n· Con Google\n· Con email y contraseña\n\nLa contraseña la escribes allí directamente, nunca pasa por este chat. En esa misma pantalla aceptas los términos y la política de privacidad. Cuando termines, vuelve aquí y seguimos.',
+    windowNotice: 'Cuando me confirmes, solo faltará crear tu cuenta para guardar todo esto y que puedas entrar en Shakers cuando quieras.\n\nTe abro una ventana en el navegador, elige cómo entrar:\n· Con Google\n· Con email y contraseña\n\nLa contraseña la escribes allí directamente, nunca pasa por este chat. En esa misma pantalla aceptas los términos y la política de privacidad.\n\n👉 Mira tu navegador. Cuando termines, vuelve aquí y seguimos.',
+    windowNoticeSignIn: 'Cuando me confirmes, solo faltará entrar en la cuenta que ya tienes en Shakers con este email para guardar todo esto.\n\nTe abro una ventana en el navegador, elige cómo entrar:\n· Con Google\n· Con email y contraseña\n\nLa contraseña la escribes allí directamente, nunca pasa por este chat.\n\n👉 Mira tu navegador. Cuando termines, vuelve aquí y seguimos.',
     windowLink: (link) => `Si no se te ha abierto la ventana, entra desde aquí: ${link}`,
     existingTitle: 'He visto que ya tienes cuenta. ¿Actualizo tu perfil con esto?',
     existingRate: (from, to) => `Tarifa por hora: ${from} → ${to}`,
     existingAnnual: (from, to) => `Tarifa anual: ${from} → ${to}`,
     existingHours: (from, to) => `Disponibilidad: ${from} → ${to}`,
     existingEmpty: 'sin indicar',
-    existingLists: 'Añado lo nuevo de tu CV y tu LinkedIn (experiencias, proyectos, formación) y relleno lo que tengas vacío, sin borrar nada.',
+    existingStays: (label, kept, requested) => (kept ? `${label}: se queda en ${kept}, no ${requested}` : `${label}: sin cambios`),
+    existingStaysNote: 'Lo que ya tenías relleno no lo cambio desde aquí: si quieres otros valores, cámbialos en la web.',
+    existingLists: (sources) => `Añado lo nuevo de ${listOf('es', named(sources, COPY.es.importSources))} (experiencias, proyectos, formación) y relleno lo que tengas vacío, sin borrar nada.`,
     existingYes: 'Sí, actualízalo',
     existingNo: 'No, déjalo como está',
     existingKept: 'Perfecto, dejo tu perfil como está.',
@@ -139,14 +152,17 @@ const COPY = {
     draftQuestion: 'Does it look right, or shall I change something?',
     draftOk: 'All correct',
     draftChange: 'I want to change something',
-    windowNotice: "When you confirm, I'll open a window in your browser to create your account and save all this. There you choose how to sign in:\n· With Google\n· With email and password\n\nYou type the password there directly; it never goes through this chat. On that same screen you accept the terms and the privacy policy. When you're done, come back here and we'll carry on.",
+    windowNotice: "Once you confirm, all that's left is to create your account to save all this and so you can get into Shakers whenever you like.\n\nI'll open a window in your browser; choose how to sign in:\n· With Google\n· With email and password\n\nYou type the password there directly; it never goes through this chat. On that same screen you accept the terms and the privacy policy.\n\n👉 Check your browser. When you're done, come back here and we'll carry on.",
+    windowNoticeSignIn: "Once you confirm, all that's left is to sign in to the account you already have on Shakers with this email to save all this.\n\nI'll open a window in your browser; choose how to sign in:\n· With Google\n· With email and password\n\nYou type the password there directly; it never goes through this chat.\n\n👉 Check your browser. When you're done, come back here and we'll carry on.",
     windowLink: (link) => `If the window did not open, use this link: ${link}`,
     existingTitle: 'I see you already have an account. Shall I update your profile with this?',
     existingRate: (from, to) => `Hourly rate: ${from} → ${to}`,
     existingAnnual: (from, to) => `Annual rate: ${from} → ${to}`,
     existingHours: (from, to) => `Availability: ${from} → ${to}`,
     existingEmpty: 'not set',
-    existingLists: 'I add what is new from your CV and LinkedIn (experience, projects, education) and fill in what is empty, without deleting anything.',
+    existingStays: (label, kept, requested) => (kept ? `${label}: stays at ${kept}, not ${requested}` : `${label}: no change`),
+    existingStaysNote: 'I do not change from here what you had already filled in: if you want other values, change them on the web.',
+    existingLists: (sources) => `I add what is new from ${listOf('en', named(sources, COPY.en.importSources))} (experience, projects, education) and fill in what is empty, without deleting anything.`,
     existingYes: 'Yes, update it',
     existingNo: 'No, leave it as it is',
     existingKept: 'Sure, I am leaving your profile as it is.',
@@ -209,14 +225,17 @@ const COPY = {
     draftQuestion: 'Va bene o cambio qualcosa?',
     draftOk: 'Tutto corretto',
     draftChange: 'Voglio cambiare qualcosa',
-    windowNotice: "Quando confermi, ti apro una finestra nel browser per creare il tuo account e salvare tutto questo. Lì scegli come entrare:\n· Con Google\n· Con email e password\n\nLa password la scrivi direttamente lì, non passa mai da questa chat. Nella stessa schermata accetti i termini e l'informativa sulla privacy. Quando hai finito, torna qui e continuiamo.",
+    windowNotice: "Quando mi confermi, mancherà solo creare il tuo account per salvare tutto questo e poter entrare in Shakers quando vuoi.\n\nTi apro una finestra nel browser, scegli come entrare:\n· Con Google\n· Con email e password\n\nLa password la scrivi direttamente lì, non passa mai da questa chat. Nella stessa schermata accetti i termini e l'informativa sulla privacy.\n\n👉 Guarda il tuo browser. Quando hai finito, torna qui e continuiamo.",
+    windowNoticeSignIn: "Quando mi confermi, mancherà solo entrare nell'account che hai già su Shakers con questa email per salvare tutto questo.\n\nTi apro una finestra nel browser, scegli come entrare:\n· Con Google\n· Con email e password\n\nLa password la scrivi direttamente lì, non passa mai da questa chat.\n\n👉 Guarda il tuo browser. Quando hai finito, torna qui e continuiamo.",
     windowLink: (link) => `Se la finestra non si è aperta, entra da qui: ${link}`,
     existingTitle: 'Ho visto che hai già un account. Aggiorno il tuo profilo con questi dati?',
     existingRate: (from, to) => `Tariffa oraria: ${from} → ${to}`,
     existingAnnual: (from, to) => `Tariffa annuale: ${from} → ${to}`,
     existingHours: (from, to) => `Disponibilità: ${from} → ${to}`,
     existingEmpty: 'non indicata',
-    existingLists: 'Aggiungo le novità del tuo CV e di LinkedIn (esperienze, progetti, formazione) e compilo quello che hai vuoto, senza cancellare nulla.',
+    existingStays: (label, kept, requested) => (kept ? `${label}: resta ${kept}, non ${requested}` : `${label}: nessuna modifica`),
+    existingStaysNote: 'Quello che avevi già compilato non lo cambio da qui: se vuoi altri valori, cambiali sul sito.',
+    existingLists: (sources) => `Aggiungo le novità ${listOf('it', named(sources, { cv: 'del tuo CV', linkedin: 'del tuo LinkedIn' }))} (esperienze, progetti, formazione) e compilo quello che hai vuoto, senza cancellare nulla.`,
     existingYes: 'Sì, aggiornalo',
     existingNo: 'No, lascialo così',
     existingKept: 'Perfetto, lascio il tuo profilo così com’è.',
@@ -279,14 +298,17 @@ const COPY = {
     draftQuestion: 'Está bem ou mudo alguma coisa?',
     draftOk: 'Está tudo certo',
     draftChange: 'Quero mudar algo',
-    windowNotice: 'Quando confirmar, abro uma janela no seu navegador para criar a sua conta e guardar tudo isto. Lá escolhe como entrar:\n· Com Google\n· Com email e palavra-passe\n\nEscreve a palavra-passe diretamente lá; nunca passa por este chat. Nesse mesmo ecrã aceita os termos e a política de privacidade. Quando terminar, volte aqui e continuamos.',
+    windowNotice: 'Quando me confirmar, só faltará criar a sua conta para guardar tudo isto e poder entrar na Shakers quando quiser.\n\nAbro-lhe uma janela no navegador, escolha como entrar:\n· Com Google\n· Com email e palavra-passe\n\nEscreve a palavra-passe diretamente lá; nunca passa por este chat. Nesse mesmo ecrã aceita os termos e a política de privacidade.\n\n👉 Veja o seu navegador. Quando terminar, volte aqui e continuamos.',
+    windowNoticeSignIn: 'Quando me confirmar, só faltará entrar na conta que já tem na Shakers com este email para guardar tudo isto.\n\nAbro-lhe uma janela no navegador, escolha como entrar:\n· Com Google\n· Com email e palavra-passe\n\nEscreve a palavra-passe diretamente lá; nunca passa por este chat.\n\n👉 Veja o seu navegador. Quando terminar, volte aqui e continuamos.',
     windowLink: (link) => `Se a janela não abriu, entre por aqui: ${link}`,
     existingTitle: 'Vi que já tem conta. Atualizo o seu perfil com isto?',
     existingRate: (from, to) => `Tarifa por hora: ${from} → ${to}`,
     existingAnnual: (from, to) => `Tarifa anual: ${from} → ${to}`,
     existingHours: (from, to) => `Disponibilidade: ${from} → ${to}`,
     existingEmpty: 'sem indicar',
-    existingLists: 'Acrescento o que há de novo no seu CV e no LinkedIn (experiências, projetos, formação) e preencho o que tiver vazio, sem apagar nada.',
+    existingStays: (label, kept, requested) => (kept ? `${label}: fica em ${kept}, não ${requested}` : `${label}: sem alterações`),
+    existingStaysNote: 'O que já tinha preenchido não o altero daqui: se quiser outros valores, altere-os na web.',
+    existingLists: (sources) => `Acrescento o que há de novo ${listOf('pt', named(sources, { cv: 'no seu CV', linkedin: 'no seu LinkedIn' }))} (experiências, projetos, formação) e preencho o que tiver vazio, sem apagar nada.`,
     existingYes: 'Sim, atualize',
     existingNo: 'Não, deixe como está',
     existingKept: 'Perfeito, deixo o seu perfil como está.',

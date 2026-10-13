@@ -59,28 +59,6 @@ function withEnv(overrides, fn) {
     });
 }
 
-// better-auth email stub: POST /auth/sign-in/email captures the credentials and sets the session cookie; GET /auth/token mints the given JWT from it.
-function startEmailStub({ token = 'jwt-email' } = {}) {
-  const seen = [];
-  const server = http.createServer((req, res) => {
-    let raw = '';
-    req.on('data', (chunk) => (raw += chunk));
-    req.on('end', () => {
-      if (req.method === 'GET' && req.url.includes('/auth/token')) {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ token }));
-        return;
-      }
-      try { seen.push(JSON.parse(raw || '{}')); } catch { seen.push(null); }
-      res.writeHead(200, { 'Content-Type': 'application/json', 'set-cookie': 'better-auth.session_token=c; Max-Age=604800; Path=/; HttpOnly' });
-      res.end(JSON.stringify({ user: { id: 'u1' } }));
-    });
-  });
-  return new Promise((resolve) => {
-    server.listen(0, '127.0.0.1', () => resolve({ server, seen }));
-  });
-}
-
 const instantSleep = () => Promise.resolve();
 
 // Device-flow broker (RFC 8628): authorize (/device/code), token poll (returns
@@ -182,26 +160,34 @@ test('chooseLoginMethod: non-TTY -> "email" immediately, no prompt, ask never ca
 
 // --- run(): bare login wiring, TTY override + injected shared ask ----------
 
-test('run(): bare login on a TTY shows the picker and routes EMAIL to the email flow', async () => {
-  const { server, seen } = await startEmailStub({ token: 'jwt-picker-email' });
+test('run(): bare login on a TTY shows the picker and routes EMAIL to the web device flow', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shakers-login-picker-'));
+  const broker = await startDeviceBroker();
   try {
-    await withEnv({ SHAKERS_CLI_CONFIG_DIR: dir, SHAKERS_CLI_HUB_BASE: `http://127.0.0.1:${server.address().port}` }, async () => {
-      process.exitCode = 0;
-      const input = new FakeInput();
-      // The shared ask answers email + password AFTER the raw picker resolves.
-      const ask = makeSharedAsk(['talent@example.com', 'hunter2']);
-      const runPromise = run(['--lang', 'es'], { ask, stdinIsTTY: true, input, output: nullOutput });
-      // Give the picker a tick to attach before sending the key.
-      await new Promise((r) => setImmediate(r));
-      keys(input, ['\r']); // cursor is on "Email y contraseña" (index 0)
-      await runPromise;
-      assert.deepEqual(seen[0], { email: 'talent@example.com', password: 'hunter2' });
-      assert.equal(loadAuthSession({ SHAKERS_CLI_CONFIG_DIR: dir }).accessToken, 'jwt-picker-email');
-      assert.notEqual(process.exitCode, 1);
-    });
+    await withEnv(
+      {
+        SHAKERS_CLI_CONFIG_DIR: dir,
+        SHAKERS_CLI_DEVICE_AUTHORIZE_ENDPOINT: broker.authorizeEndpoint,
+        SHAKERS_CLI_DEVICE_TOKEN_ENDPOINT: broker.tokenEndpoint,
+        SHAKERS_CLI_AUTH_TOKEN_ENDPOINT: broker.authTokenEndpoint,
+      },
+      async () => {
+        process.exitCode = 0;
+        const input = new FakeInput();
+        const ask = makeSharedAsk();
+        let opened = null;
+        const runPromise = run(['--lang', 'es'], { ask, stdinIsTTY: true, input, output: nullOutput, openBrowser: (u) => { opened = u; }, sleep: instantSleep });
+        // Give the picker a tick to attach before sending the key.
+        await new Promise((r) => setImmediate(r));
+        keys(input, ['\r']); // cursor is on "Email" (index 0)
+        await runPromise;
+        assert.match(opened, /provider=email/, 'email routes through the device flow, not a password form');
+        assert.equal(loadAuthSession({ SHAKERS_CLI_CONFIG_DIR: dir }).accessToken, 'JWT-via-picker');
+        assert.notEqual(process.exitCode, 1);
+      },
+    );
   } finally {
-    server.close();
+    broker.server.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -275,13 +261,8 @@ test('run(): an ACTIVE session short-circuits BEFORE the picker ever shows', asy
       ask.suspend = () => { throw new Error('picker must not run when already logged in'); };
       ask.resume = () => {};
       const chunks = [];
-      const origWrite = process.stdout.write.bind(process.stdout);
-      process.stdout.write = (s) => { chunks.push(String(s)); return true; };
-      try {
-        await run(['--lang', 'es'], { ask, stdinIsTTY: true, input, output: nullOutput });
-      } finally {
-        process.stdout.write = origWrite;
-      }
+      const output = { write: (s) => { chunks.push(String(s)); return true; } };
+      await run(['--lang', 'es'], { ask, stdinIsTTY: true, input, output });
       assert.ok(chunks.join('').includes(needle(c.alreadyLoggedIn)));
       assert.equal(loadAuthSession({ SHAKERS_CLI_CONFIG_DIR: dir }).accessToken, 'existing');
     });
@@ -293,38 +274,47 @@ test('run(): an ACTIVE session short-circuits BEFORE the picker ever shows', asy
 // --- run(): flags skip the picker, even on a TTY ----------------------------
 
 test('run(): --email skips the picker even with stdinIsTTY:true (picker would throw if reached)', async () => {
-  const { server, seen } = await startEmailStub({ token: 'jwt-flag-email' });
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shakers-login-flag-email-'));
+  const broker = await startDeviceBroker();
   try {
-    await withEnv({ SHAKERS_CLI_CONFIG_DIR: dir, SHAKERS_CLI_HUB_BASE: `http://127.0.0.1:${server.address().port}` }, async () => {
-      process.exitCode = 0;
-      const ask = makeSharedAsk(['hunter2']); // only the password: --email supplies the address
-      ask.suspend = () => { throw new Error('picker must not run when --email is given'); };
-      await run(['--email', 'flagged@example.com', '--lang', 'es'], { ask, stdinIsTTY: true });
-      assert.equal(seen[0].email, 'flagged@example.com');
-      assert.equal(seen[0].password, 'hunter2');
-      assert.notEqual(process.exitCode, 1);
-    });
+    await withEnv(
+      { SHAKERS_CLI_CONFIG_DIR: dir, SHAKERS_CLI_DEVICE_AUTHORIZE_ENDPOINT: broker.authorizeEndpoint, SHAKERS_CLI_DEVICE_TOKEN_ENDPOINT: broker.tokenEndpoint, SHAKERS_CLI_AUTH_TOKEN_ENDPOINT: broker.authTokenEndpoint },
+      async () => {
+        process.exitCode = 0;
+        const ask = makeSharedAsk();
+        ask.suspend = () => { throw new Error('picker must not run when --email is given'); };
+        let opened = null;
+        await run(['--email', 'flagged@example.com', '--lang', 'es'], { ask, stdinIsTTY: true, openBrowser: (u) => { opened = u; }, sleep: instantSleep });
+        assert.match(opened, /provider=email/);
+        assert.equal(loadAuthSession({ SHAKERS_CLI_CONFIG_DIR: dir }).accessToken, 'JWT-via-picker');
+        assert.notEqual(process.exitCode, 1);
+      },
+    );
   } finally {
-    server.close();
+    broker.server.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('run(): --provider email skips the picker and prompts for both email and password', async () => {
-  const { server, seen } = await startEmailStub({ token: 'jwt-provider-email' });
+test('run(): --provider email skips the picker and goes straight to the web device flow', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shakers-login-provider-email-'));
+  const broker = await startDeviceBroker();
   try {
-    await withEnv({ SHAKERS_CLI_CONFIG_DIR: dir, SHAKERS_CLI_HUB_BASE: `http://127.0.0.1:${server.address().port}` }, async () => {
-      process.exitCode = 0;
-      const ask = makeSharedAsk(['talent@example.com', 'hunter2']);
-      ask.suspend = () => { throw new Error('picker must not run when --provider email is given'); };
-      await run(['--provider', 'email', '--lang', 'es'], { ask, stdinIsTTY: true });
-      assert.deepEqual(seen[0], { email: 'talent@example.com', password: 'hunter2' });
-      assert.notEqual(process.exitCode, 1);
-    });
+    await withEnv(
+      { SHAKERS_CLI_CONFIG_DIR: dir, SHAKERS_CLI_DEVICE_AUTHORIZE_ENDPOINT: broker.authorizeEndpoint, SHAKERS_CLI_DEVICE_TOKEN_ENDPOINT: broker.tokenEndpoint, SHAKERS_CLI_AUTH_TOKEN_ENDPOINT: broker.authTokenEndpoint },
+      async () => {
+        process.exitCode = 0;
+        const ask = makeSharedAsk();
+        ask.suspend = () => { throw new Error('picker must not run when --provider email is given'); };
+        let opened = null;
+        await run(['--provider', 'email', '--lang', 'es'], { ask, stdinIsTTY: true, openBrowser: (u) => { opened = u; }, sleep: instantSleep });
+        assert.match(opened, /provider=email/);
+        assert.equal(loadAuthSession({ SHAKERS_CLI_CONFIG_DIR: dir }).accessToken, 'JWT-via-picker');
+        assert.notEqual(process.exitCode, 1);
+      },
+    );
   } finally {
-    server.close();
+    broker.server.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -351,20 +341,25 @@ test('run(): --google skips the picker regardless of stdinIsTTY (goes straight t
   }
 });
 
-test('run(): non-TTY caller with no flags never sees the picker and goes straight to the email flow', async () => {
-  const { server, seen } = await startEmailStub({ token: 'jwt-non-tty' });
+test('run(): non-TTY caller with no flags never sees the picker and defaults to the email device flow', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shakers-login-non-tty-'));
+  const broker = await startDeviceBroker();
   try {
-    await withEnv({ SHAKERS_CLI_CONFIG_DIR: dir, SHAKERS_CLI_HUB_BASE: `http://127.0.0.1:${server.address().port}` }, async () => {
-      process.exitCode = 0;
-      const ask = makeSharedAsk(['talent@example.com', 'hunter2']);
-      ask.suspend = () => { throw new Error('picker must not run on a non-TTY caller'); };
-      await run(['--lang', 'es'], { ask, stdinIsTTY: false });
-      assert.deepEqual(seen[0], { email: 'talent@example.com', password: 'hunter2' });
-      assert.notEqual(process.exitCode, 1);
-    });
+    await withEnv(
+      { SHAKERS_CLI_CONFIG_DIR: dir, SHAKERS_CLI_DEVICE_AUTHORIZE_ENDPOINT: broker.authorizeEndpoint, SHAKERS_CLI_DEVICE_TOKEN_ENDPOINT: broker.tokenEndpoint, SHAKERS_CLI_AUTH_TOKEN_ENDPOINT: broker.authTokenEndpoint },
+      async () => {
+        process.exitCode = 0;
+        const ask = makeSharedAsk();
+        ask.suspend = () => { throw new Error('picker must not run on a non-TTY caller'); };
+        let opened = null;
+        await run(['--lang', 'es'], { ask, stdinIsTTY: false, openBrowser: (u) => { opened = u; }, sleep: instantSleep });
+        assert.match(opened, /provider=email/);
+        assert.equal(loadAuthSession({ SHAKERS_CLI_CONFIG_DIR: dir }).accessToken, 'JWT-via-picker');
+        assert.notEqual(process.exitCode, 1);
+      },
+    );
   } finally {
-    server.close();
+    broker.server.close();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

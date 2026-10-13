@@ -1,6 +1,6 @@
 'use strict';
 
-// My-applications client (hub `works/candidatures/me`, talent Bearer). Lists the
+// My-applications client. Lists the
 // positions the talent applied to, with the candidature status.
 
 const { postJsonWithTimeout } = require('./backend-request');

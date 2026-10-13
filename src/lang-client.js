@@ -1,6 +1,6 @@
 'use strict';
 
-// Languages client. VIEW = GET `works/talents/me/work-details/languages`; the
+// Languages client. The
 // catalog (id<->name) = GET `static-data/languages` (@Public); SET = PATCH the
 // same work-details endpoint (REPLACE-ALL: send the full list of {id, level}).
 

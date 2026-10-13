@@ -333,7 +333,7 @@ test('ADR-041: after declare, relate to an experience (portfolioId only, one rep
     process.env.SHAKERS_CLI_AGENTS_DECLARE_ENDPOINT = urlOf(declareServer, '/agents/declare');
     process.env.SHAKERS_CLI_AGENTS_DRAFT_FIELDS_ENDPOINT = urlOf(draftServer, '/agents/draft-fields');
     process.env.SHAKERS_CLI_PORTFOLIOS_LIST_ENDPOINT = urlOf(portfoliosServer, '/portfolios');
-    // getAgentPortfoliosEndpoint derives `{hubBase}/works/me/agents/:id/portfolios`.
+    // getAgentPortfoliosEndpoint derives `{hubBase}/works/talent/me/agents/:id/portfolios`.
     process.env.SHAKERS_CLI_HUB_BASE = `http://127.0.0.1:${relateServer.address().port}/api/v1`;
 
     // pick "1", keep name, consent 's', keep both drafts,
@@ -344,7 +344,7 @@ test('ADR-041: after declare, relate to an experience (portfolioId only, one rep
     );
 
     assert.ok(relateBody, 'relate PATCH was sent');
-    assert.match(relateUrl, /\/works\/me\/agents\/99\/portfolios$/);
+    assert.match(relateUrl, /\/works\/talent\/me\/agents\/99\/portfolios$/);
     assert.equal(relateHeaders.authorization, 'Bearer hub.tok', 'DIRECT to hub with the talent hub token');
     assert.equal(relateHeaders['x-hub-token'], undefined);
     assert.deepEqual(relateBody.items, [{ portfolioId: 'pf-1' }]);
@@ -381,7 +381,7 @@ test('ADR-041 idempotent: an already-added agent skips declare and goes straight
 
     assert.equal(declareHit, false, 'an existing agent is never re-declared (no 409)');
     assert.ok(relateBody, 'relate PATCH was sent for the existing agent');
-    assert.match(relateUrl, /\/works\/me\/agents\/99\/portfolios$/);
+    assert.match(relateUrl, /\/works\/talent\/me\/agents\/99\/portfolios$/);
     assert.deepEqual(relateBody.items, [{ portfolioId: 'pf-1' }]);
   } finally {
     inventoryServer.close(); listServer.close(); draftServer.close();

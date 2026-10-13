@@ -5,7 +5,7 @@
 const START_SCHEMA = {
   type: 'object',
   properties: {
-    provider: { type: 'string', enum: ['google', 'linkedin'], description: "Optional social provider. Defaults to 'google'. Same device flow either way; it selects which social button the sign-in page opens." },
+    provider: { type: 'string', enum: ['google', 'linkedin', 'email'], description: "Optional provider. Defaults to 'google'. Same device flow either way; it selects which option the Shakers sign-in page opens — 'email' opens the email sign-in (the talent reuses their open web session or signs in there, never a password in the chat)." },
     mode: { type: 'string', enum: ['login', 'register'], description: "Optional. 'login' signs an existing talent in; 'register' creates the account if new (the profile steps come from the register/onboarding tools afterwards). Defaults to 'login'." },
     freelanceType: { type: 'string', description: 'Optional, register only: FREELANCE | EMPLOYEE | AGENCY | POTENTIAL_FREELANCE. Used to complete a new account.' },
     preferredLanguage: { type: 'string', description: 'Optional, register only: es | en | it | pt | fr.' },
@@ -33,7 +33,7 @@ function makeDeviceLoginTools(deps = {}) {
 
   async function start(args = {}) {
     const mode = args.mode === 'register' ? 'register' : 'login';
-    const provider = args.provider === 'linkedin' ? 'linkedin' : 'google';
+    const provider = args.provider === 'linkedin' ? 'linkedin' : args.provider === 'email' ? 'email' : 'google';
     const authorizeEndpoint = getDeviceAuthorizeEndpoint();
     const tokenEndpoint = getDeviceTokenEndpoint();
     const authTokenEndpoint = getAuthTokenEndpoint();
@@ -157,7 +157,7 @@ function makeDeviceLoginTools(deps = {}) {
   return [
     {
       name: 'social_signin_start',
-      description: "Begin social sign-in (or registration) via the device flow — provider 'google' (default) or 'linkedin'. Returns a verificationUrl and a userCode: show BOTH to the talent verbatim — they open the URL and enter the code in their own browser (they never type anything in the chat, and you never invent or fill the code). Pass mode 'register' to create the account if it is new. After showing them, call social_signin_poll. Returns { ok, status, provider, verificationUrl, userCode, pollIntervalSeconds, ... }.",
+      description: "Begin sign-in (or registration) via the device flow — provider 'google' (default), 'linkedin' or 'email'. Email goes through the SAME web flow: the talent reuses their open Shakers session or signs in with their email on the page, never a password in the chat. Returns a verificationUrl and a userCode: show BOTH to the talent verbatim — they open the URL and enter the code in their own browser (they never type anything in the chat, and you never invent or fill the code). Pass mode 'register' to create the account if it is new. After showing them, call social_signin_poll. Returns { ok, status, provider, verificationUrl, userCode, pollIntervalSeconds, ... }.",
       inputSchema: START_SCHEMA,
       handler: start,
     },

@@ -1,7 +1,7 @@
 'use strict';
 
 // Availability client. VIEW = GET `works/me/availability`; SET = PUT
-// `works/talents/me/work-details/availability` (the same endpoint register uses).
+// (the same endpoint register uses).
 
 const { postJsonWithTimeout } = require('./backend-request');
 const { reasonForError } = require('./onboarding-client');

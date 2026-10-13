@@ -264,7 +264,7 @@ function getAuthTokenEndpoint(env = process.env) {
 function getCompleteRegistrationEndpoint(env = process.env) {
   const explicit = readEnv(env, 'COMPLETE_REGISTRATION_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromHub(env, 'works/auth/complete-registration');
+  return deriveFromHub(env, 'works/talent/auth/complete-registration');
 }
 
 // Google via device flow (RFC 8628): the Hub broker owns all Google config; the CLI holds no client_id.
@@ -287,7 +287,7 @@ function getDeviceTokenEndpoint(env = process.env) {
 function getMyCertificationsEndpoint(env = process.env) {
   const explicit = readEnv(env, 'MY_CERTIFICATIONS_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromHub(env, 'works/certifications/me');
+  return deriveFromHub(env, 'works/talent/certifications/me');
 }
 
 // Role/cluster endpoints (hub, talent Bearer). available-roles = the catalog the
@@ -296,19 +296,19 @@ function getMyCertificationsEndpoint(env = process.env) {
 function getAvailableRolesEndpoint(env = process.env) {
   const explicit = readEnv(env, 'AVAILABLE_ROLES_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromHub(env, 'works/certifications/me/available-roles');
+  return deriveFromHub(env, 'works/talent/certifications/me/available-roles');
 }
 
 function getSetMainRoleEndpoint(env = process.env) {
   const explicit = readEnv(env, 'SET_MAIN_ROLE_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromHub(env, 'works/certifications/me/main-role');
+  return deriveFromHub(env, 'works/talent/certifications/me/main-role');
 }
 
 function getAssignedClustersEndpoint(env = process.env) {
   const explicit = readEnv(env, 'ASSIGNED_CLUSTERS_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromHub(env, 'works/talents/me/work-details/assigned-clusters');
+  return deriveFromHub(env, 'works/talent/me/work-details/assigned-clusters');
 }
 
 function getTemplatesByDimensionEndpoint(env = process.env) {
@@ -326,12 +326,20 @@ function getMyAssessmentsEndpoint(env = process.env) {
   return base ? `${base}/users/me/assessments` : null;
 }
 
+// `certify` creates its dimension interview here (certs, talent Bearer).
+function getCertificationInterviewsEndpoint(env = process.env) {
+  const explicit = readEnv(env, 'CERTIFICATION_INTERVIEWS_ENDPOINT');
+  if (explicit && explicit.trim()) return explicit.trim();
+  const base = getCertsBase(env);
+  return base ? `${base}/users/me/certification-interviews` : null;
+}
+
 // Find Positions list (hub `works/positions/find`, talent Bearer). Serves the
 // All/Recommended/Saved tabs via `criteria.savedByMe`; ordered by match desc.
 function getFindPositionsEndpoint(env = process.env) {
   const explicit = readEnv(env, 'FIND_POSITIONS_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromHub(env, 'works/positions/find');
+  return deriveFromHub(env, 'works/talent/positions/find');
 }
 
 // Marketplace read/write (hub, talent Bearer). The id-taking getters return null
@@ -340,20 +348,20 @@ function getPositionDetailEndpoint(positionId, env = process.env) {
   const explicit = readEnv(env, 'POSITION_DETAIL_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
   if (positionId == null || typeof positionId === 'object') return null;
-  return deriveFromHub(env, `works/positions/${encodeURIComponent(positionId)}/detail`);
+  return deriveFromHub(env, `works/talent/positions/${encodeURIComponent(positionId)}/detail`);
 }
 
 function getSavePositionEndpoint(env = process.env) {
   const explicit = readEnv(env, 'SAVE_POSITION_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromHub(env, 'works/saved-positions');
+  return deriveFromHub(env, 'works/talent/saved-positions');
 }
 
 function getUnsavePositionEndpoint(positionId, env = process.env) {
   const explicit = readEnv(env, 'UNSAVE_POSITION_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
   if (positionId == null || typeof positionId === 'object') return null;
-  return deriveFromHub(env, `works/saved-positions/${encodeURIComponent(positionId)}`);
+  return deriveFromHub(env, `works/talent/saved-positions/${encodeURIComponent(positionId)}`);
 }
 
 function getReceivedInvitationsEndpoint(env = process.env) {
@@ -365,7 +373,7 @@ function getReceivedInvitationsEndpoint(env = process.env) {
 function getMyCandidaturesEndpoint(env = process.env) {
   const explicit = readEnv(env, 'MY_CANDIDATURES_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromHub(env, 'works/candidatures/me');
+  return deriveFromHub(env, 'works/talent/candidatures/me');
 }
 
 function getMeAvailabilityEndpoint(env = process.env) {
@@ -377,13 +385,13 @@ function getMeAvailabilityEndpoint(env = process.env) {
 function getMeProfileEndpoint(env = process.env) {
   const explicit = readEnv(env, 'ME_PROFILE_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromHub(env, 'works/me/profile');
+  return deriveFromHub(env, 'works/talent/me/profile-summary');
 }
 
 function getTalentMeProfileEndpoint(env = process.env) {
   const explicit = readEnv(env, 'TALENT_ME_PROFILE_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromHub(env, 'works/talents/me/profile');
+  return deriveFromHub(env, 'works/talent/me/profile');
 }
 
 // Alma (the AI assistant) is a SEPARATE service — NOT derived from hubBase.
@@ -444,7 +452,7 @@ function getUsageReportEndpoint(env = process.env) {
 function getAiProfileEndpoint(env = process.env) {
   const explicit = readEnv(env, 'AI_PROFILE_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromHub(env, 'works/me/ai-profile');
+  return deriveFromHub(env, 'works/talent/me/ai-profile');
 }
 
 // Evidence emission endpoint for the `cli_scan` instrument (talents-ai-score Phase 2).
@@ -476,7 +484,7 @@ function getPortfolioDraftDescriptionEndpoint(env = process.env) {
 function getPortfolioUpdateEndpoint(env = process.env) {
   const explicit = readEnv(env, 'PORTFOLIO_UPDATE_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromHub(env, 'works/portfolios');
+  return deriveFromHub(env, 'works/talent/portfolios');
 }
 
 function getAgentsDeclareEndpoint(env = process.env) {
@@ -502,7 +510,7 @@ function getAgentPortfoliosEndpoint(agentId, env = process.env) {
   // Null on missing/non-scalar id: no bogus URL, and keeps config.test.js's `fn(env)`
   // getter sweep honest when the env object lands in `agentId`.
   if (agentId == null || typeof agentId === 'object') return null;
-  return deriveFromHub(env, `works/me/agents/${encodeURIComponent(agentId)}/portfolios`);
+  return deriveFromHub(env, `works/talent/me/agents/${encodeURIComponent(agentId)}/portfolios`);
 }
 
 // Onboarding endpoints (evaluation-mcp, ADR-011..015/024 — the register flow).
@@ -533,7 +541,7 @@ function getSignUpEndpoint(env = process.env) {
 function getImportProfileEndpoint(env = process.env) {
   const explicit = readEnv(env, 'IMPORT_PROFILE_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromHub(env, 'works/me/import-profile');
+  return deriveFromHub(env, 'works/talent/me/import-profile');
 }
 
 // MCP sign-up (ticket 39540): public UNREGISTERED + claim code, its import status, and the one-time web login.
@@ -542,7 +550,7 @@ function getMcpSignupEndpoint(env = process.env) {
 }
 
 function getMyImportStatusEndpoint(env = process.env) {
-  return deriveFromHub(env, 'works/me/import-profile/status');
+  return deriveFromHub(env, 'works/talent/me/import-profile/status');
 }
 
 function getOneTimeTokenEndpoint(env = process.env) {
@@ -564,25 +572,25 @@ function getOneTimeLoginUrl(token, env = process.env) {
 function getProfessionalDetailsEndpoint(env = process.env) {
   const explicit = readEnv(env, 'PROFESSIONAL_DETAILS_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromHub(env, 'works/me/professional-details');
+  return deriveFromHub(env, 'works/talent/me/professional-details');
 }
 
 function getPricingRateEndpoint(env = process.env) {
   const explicit = readEnv(env, 'PRICING_RATE_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromHub(env, 'works/talents/me/work-details/pricing-rate');
+  return deriveFromHub(env, 'works/talent/me/work-details/pricing-rate');
 }
 
 function getSetAvailabilityEndpoint(env = process.env) {
   const explicit = readEnv(env, 'AVAILABILITY_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromHub(env, 'works/talents/me/work-details/availability');
+  return deriveFromHub(env, 'works/talent/me/work-details/availability');
 }
 
 function getLanguagesEndpoint(env = process.env) {
   const explicit = readEnv(env, 'LANGUAGES_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromHub(env, 'works/talents/me/work-details/languages');
+  return deriveFromHub(env, 'works/talent/me/work-details/languages');
 }
 
 function getLanguagesCatalogEndpoint(env = process.env) {
@@ -616,7 +624,7 @@ function getTranslationsEndpoint(env = process.env) {
 function getTalentMeEndpoint(env = process.env) {
   const explicit = readEnv(env, 'TALENT_ME_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromHub(env, 'works/me');
+  return deriveFromHub(env, 'works/users/me');
 }
 
 function getOnboardingInterviewsEndpoint(env = process.env) {
@@ -758,6 +766,7 @@ module.exports = {
   getAssignedClustersEndpoint,
   getTemplatesByDimensionEndpoint,
   getMyAssessmentsEndpoint,
+  getCertificationInterviewsEndpoint,
   // Find Positions list (`find-projects` command / `find_projects` MCP tool).
   getFindPositionsEndpoint,
   // Marketplace (show-project / save-project / unsave-project / invitations).

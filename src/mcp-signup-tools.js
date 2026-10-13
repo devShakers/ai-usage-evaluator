@@ -8,7 +8,7 @@ const { signupCopy, legalCopy, renderDraft, amount } = require('./signup-copy');
 const { fixSignupLanguage, signupLanguage } = require('./signup-language');
 const { readLocalCv } = require('./cv-file');
 const { emailFromHubToken } = require('./auth-session-store');
-const { askAfterTexts, queueNotice, takeNotices } = require('./mcp-choice');
+const { askAfterTexts, optionFor, queueNotice, takeNotices } = require('./mcp-choice');
 
 // MCP sign-up (ticket 39540): hub imports into an UNREGISTERED profile that the local window claims with a code kept only in memory.
 
@@ -35,6 +35,13 @@ const SECTION_HELP = {
   'bad-participation': 'workSituation.participation (FULL_TIME or PART_TIME) is required when situation is EMPLOYED.',
   'bad-opinion': 'workSituation.opinion is required unless situation is FREELANCE: pick your best match from its enum.',
   'bad-motivation': 'workSituation.changeMotivators is required when situation is FREELANCE or opinion is WAS_FREELANCE_BEFORE or OPEN_TO_FREELANCE: pick your best match from its enum.',
+};
+// What the closing words may say about the profile import, by the state read at that moment.
+const IMPORT_CLOSING = {
+  done: 'The profile import finished: if you mention it, say it is done, never that it is pending.',
+  running: 'The profile import is still running: if you mention it, say it finishes on its own in a few minutes.',
+  failed: 'Say nothing more about the profile import than the fixed lines already shown.',
+  none: 'Say nothing about the state of the profile import.',
 };
 const VERBATIM = 'Print relayVerbatim word for word now, as its own block, before any other tool call, with nothing of your own added to it.';
 
@@ -134,7 +141,7 @@ const WELCOME_SCHEMA = {
     language: { type: 'string', description: "ISO code of the language the talent wrote their first message in (es, en, it, pt...). It fixes the language of every sign-up text from here on." },
     firstName: { type: 'string', description: 'Only if you already know it: the welcome greets them by name.' },
     answer: { type: 'string', description: 'The option the talent picked when you asked the question in the chat.' },
-    cvPath: { type: 'string', description: 'When the talent\'s answer (either option) already gives their CV as a path on this machine: that exact file is read, with no search and no request for the file.' },
+    cvPath: { type: 'string', description: 'When the talent\'s first message or answer already gives their CV as a path on this machine: that exact file is read, with no CV question, no search and no request for the file.' },
   },
   required: ['language'],
 };
@@ -147,6 +154,9 @@ const EMAIL_SCHEMA = {
     answer: { type: 'string', description: 'The option the talent picked when you asked the question in the chat.' },
   },
 };
+
+// In the order the data notice names them.
+const DRAFT_SOURCES = ['linkedin', 'cv'];
 
 const DRAFT_SCHEMA = {
   type: 'object',
@@ -163,9 +173,10 @@ const DRAFT_SCHEMA = {
     hourlyRate: { type: 'number', description: `Euros per hour (part-time projects), at most ${MAX_HOURLY_RATE}: the talent's figure, else your estimate from role, seniority, stack and location.` },
     annualRate: { type: 'number', description: `Euros per year (full-time projects), at least ${MIN_ANNUAL_RATE}: the talent's figure, else your estimate.` },
     ratesFromTalent: { type: 'boolean', description: 'true only when the talent gave you both rates; omit it when you estimated them (they are shown as your estimate).' },
+    sources: { type: 'array', items: { type: 'string', enum: DRAFT_SOURCES }, description: "What the draft comes from: 'cv' when you read their CV, 'linkedin' only when you have their LinkedIn URL. The data notice names exactly these." },
     answer: { type: 'string', description: 'The option the talent picked when you asked the question in the chat.' },
   },
-  required: ['name', 'role', 'hourlyRate', 'annualRate'],
+  required: ['name', 'role', 'hourlyRate', 'annualRate', 'sources'],
 };
 
 const CREATE_SCHEMA = {
@@ -275,6 +286,8 @@ function makeSignupTools(deps = {}) {
     draft: null,
     draftConfirmed: false,
     keepProfile: false,
+    // Fields the update question already told the talent they keep.
+    toldKept: new Set(),
     sources: null,
     account: { state: 'not-started' },
     reported: { account: null, import: null },
@@ -393,11 +406,26 @@ function makeSignupTools(deps = {}) {
       state.draftConfirmed = false;
       state.email = null;
       state.failedSources.clear();
+      state.toldKept = new Set();
       state.cvPath = null;
       takeNotices();
     }
     if (nonEmpty(args.cvPath)) state.cvPath = nonEmpty(args.cvPath);
     const c = copy();
+    const linkedin = `LinkedIn: use the URL in the CV (read_cv returns links.linkedin). Only if it has none, ask \`linkedinAsk\` word for word; only if they say they do not know where to find it, say \`linkedinOpening\` and call open_linkedin_profile. Then call signup_email.`;
+    // A CV path in the first message already answers the CV question: welcome only, then that CV.
+    if (!nonEmpty(args.answer) && state.cvPath) {
+      return {
+        ok: true,
+        step: 'cv-given',
+        cvPath: state.cvPath,
+        relayVerbatim: c.welcome(nonEmpty(args.firstName)),
+        linkedinAsk: c.linkedinAsk,
+        linkedinOpening: c.linkedinOpening,
+        language: lang(),
+        message: `${VERBATIM} Then read_cv cvPath with talentConsent:true, asking nothing about the CV. ${linkedin}`,
+      };
+    }
     const asked = await askAfterTexts(ctx, {
       tool: 'signup_start',
       texts: [c.welcome(nonEmpty(args.firstName))],
@@ -406,7 +434,6 @@ function makeSignupTools(deps = {}) {
       answer: args.answer,
     });
     if (asked.reply) return { ...asked.reply, language: lang() };
-    const linkedin = `LinkedIn: use the URL in the CV (read_cv returns links.linkedin). Only if it has none, ask \`linkedinAsk\` word for word; only if they say they do not know where to find it, say \`linkedinOpening\` and call open_linkedin_profile. Then call signup_email.`;
     // A CV path the talent gave wins over both answers: searching could read another candidate.
     const cvPath = state.cvPath;
     if (cvPath) {
@@ -461,6 +488,13 @@ function makeSignupTools(deps = {}) {
     return { ok: false, reason: 'email-required', relayVerbatim: c.emailUnknown, message: `${VERBATIM} Then call signup_email with email set to what they write and typed:true.` };
   }
 
+  // A session this machine kept for the same email means the account exists, so the window will ask to sign in.
+  function knownAccount() {
+    const stored = resolved.loadAuthSession();
+    const email = stored && typeof stored.email === 'string' ? stored.email.toLowerCase() : null;
+    return !!email && !!state.email && email === state.email.toLowerCase();
+  }
+
   // Step 3: the draft, the data notice and how the window works; confirming it is what opens the window.
   async function signupDraft(args = {}, ctx = {}) {
     const c = copy();
@@ -475,9 +509,14 @@ function makeSignupTools(deps = {}) {
       return { ok: false, reason: 'draft-rates-required', message: 'The draft needs both rates: if the talent gave them, send them with ratesFromTalent:true; otherwise estimate hourlyRate (€/h) and annualRate (€/year) from role, seniority, stack and location, and send them without it. Then call signup_draft again.' };
     }
     if (args.ratesFromTalent === true) draft.ratesFromTalent = true;
+    const sources = Array.isArray(args.sources) ? DRAFT_SOURCES.filter((s) => args.sources.includes(s)) : [];
+    // A confirmation of the printed block stands even if the model drops sources on the answer call.
+    if (!sources.length && !optionFor(args.answer, [c.draftOk, c.draftChange])) {
+      return { ok: false, reason: 'draft-sources-required', message: "The draft needs sources: 'cv' if you read their CV, 'linkedin' only if you have their LinkedIn URL. Then call signup_draft again." };
+    }
     const asked = await askAfterTexts(ctx, {
       tool: 'signup_draft',
-      texts: [renderDraft(lang(), draft), legalCopy(lang()).signupNotice, c.windowNotice],
+      texts: [renderDraft(lang(), draft), legalCopy(lang()).signupNotice(sources), knownAccount() ? c.windowNoticeSignIn : c.windowNotice],
       question: c.draftQuestion,
       options: [c.draftOk, c.draftChange],
       answer: args.answer,
@@ -684,17 +723,31 @@ function makeSignupTools(deps = {}) {
     };
   }
 
-  // Fill-empty only: what of the confirmed draft would land in an existing profile, plus the import that only adds.
+  // Fill-empty only: per draft field, what it fills or the value the profile keeps, plus the import that only adds.
   async function existingDiff() {
     const c = copy();
     const draft = state.draft || {};
     const current = await currentProfile();
     const lines = [];
+    const kept = new Set();
     const has = (v) => v !== undefined && v !== null && v !== '';
-    if (current.pricing && current.pricing.hourly === null && has(draft.hourlyRate)) lines.push(c.existingRate(c.existingEmpty, money(draft.hourlyRate, c.perHour)));
-    if (current.pricing && current.pricing.annual === null && has(draft.annualRate)) lines.push(c.existingAnnual(c.existingEmpty, money(draft.annualRate, c.perYear)));
-    if (current.availability && !has(current.availability.monthlyHours) && has(draft.monthlyHours)) lines.push(c.existingHours(c.existingEmpty, c.hours(draft.monthlyHours)));
-    lines.push(c.existingLists);
+    // An unreadable section (undefined) counts as set, as fillEmpty never writes it.
+    const field = (key, now, filled, label, shown) => {
+      if (!has(draft[key])) return;
+      if (now === null) { lines.push(filled); return; }
+      kept.add(key);
+      lines.push(c.existingStays(label, now === undefined ? null : shown(now), shown(draft[key])));
+    };
+    const pricing = current.pricing || { hourly: undefined, annual: undefined };
+    const hours = current.availability ? (has(current.availability.monthlyHours) ? current.availability.monthlyHours : null) : undefined;
+    field('hourlyRate', pricing.hourly, c.existingRate(c.existingEmpty, money(draft.hourlyRate, c.perHour)), c.hourlyRateLabel, (v) => money(v, c.perHour));
+    field('annualRate', pricing.annual, c.existingAnnual(c.existingEmpty, money(draft.annualRate, c.perYear)), c.annualRateLabel, (v) => money(v, c.perYear));
+    field('monthlyHours', hours, c.existingHours(c.existingEmpty, c.hours(draft.monthlyHours)), c.keptLabels.availability, (v) => c.hours(v));
+    if (has(draft.languages) && current.languageCount !== 0) { kept.add('languages'); lines.push(c.existingStays(c.keptLabels.languages)); }
+    if (kept.size) lines.push(c.existingStaysNote);
+    state.toldKept = kept;
+    const given = state.sources ? [state.sources.linkedinUrl && 'linkedin', state.sources.cvPath && 'cv'].filter(Boolean) : [];
+    if (given.length) lines.push(c.existingLists(given));
     return `${c.existingTitle}\n\n${lines.map((l) => `· ${l}`).join('\n')}`;
   }
 
@@ -731,25 +784,25 @@ function makeSignupTools(deps = {}) {
     return { details: out, kept };
   }
 
-  // What the existing profile kept, for the model per field and for the talent as one fixed line.
+  // What the existing profile kept, for the model per field and for the talent as one fixed line without what the update question already told.
   function keptReport(kept) {
     const c = copy();
     const fields = [];
     const items = [];
-    const value = (v, shown) => (v === null || v === undefined ? null : shown(v));
+    const told = (key) => state.toldKept.has(key);
     if (kept.workSituation) { fields.push('workSituation: not changed (the profile keeps what it had)'); items.push(c.keptLabels.workSituation); }
     for (const [key, label, unit] of [['hourlyRate', c.hourlyRateLabel, c.perHour], ['annualRate', c.annualRateLabel, c.perYear]]) {
       const k = kept.pricing && kept.pricing[key];
       if (!k) continue;
       fields.push(k.kept === null ? `${key}: not changed (the profile keeps what it had, not ${k.requested})` : `${key}: kept existing value ${k.kept} (not changed, not ${k.requested})`);
-      items.push(k.kept === null ? label : `${label}: ${money(k.kept, unit)}`);
+      if (!told(key)) items.push(k.kept === null ? label : `${label}: ${money(k.kept, unit)}`);
     }
     for (const [key, k] of Object.entries(kept.availability || {})) {
       fields.push(k.kept === null ? `${key}: not changed (the profile keeps what it had)` : `${key}: kept existing value ${Array.isArray(k.kept) ? k.kept.join('/') : k.kept} (not changed, not ${Array.isArray(k.requested) ? k.requested.join('/') : k.requested})`);
     }
     const hours = kept.availability && kept.availability.monthlyHours;
-    if (hours) items.push(hours.kept === null ? c.keptLabels.availability : `${c.keptLabels.availability}: ${c.hours(hours.kept)}`);
-    if (kept.languages) { fields.push('languages: not changed (the profile already had languages)'); items.push(c.keptLabels.languages); }
+    if (hours && !told('monthlyHours')) items.push(hours.kept === null ? c.keptLabels.availability : `${c.keptLabels.availability}: ${c.hours(hours.kept)}`);
+    if (kept.languages) { fields.push('languages: not changed (the profile already had languages)'); if (!told('languages')) items.push(c.keptLabels.languages); }
     if (kept.phone) { fields.push('phone: not changed (the profile keeps what it had)'); items.push(c.keptLabels.phone); }
     return { fields, line: items.length ? c.existingUnchanged(items) : null };
   }
@@ -849,14 +902,18 @@ function makeSignupTools(deps = {}) {
     const unseen = takeNotices();
     const relay = unseen.length ? { relayVerbatim: unseen.join('\n\n') } : {};
     const relayFirst = unseen.length ? `${VERBATIM} ` : '';
+    // Read right before the closing words, so they never state an import state that is already stale.
+    const imp = await readImport();
+    const importLine = IMPORT_CLOSING[imp.state] || IMPORT_CLOSING.none;
     if (opened) {
       return {
         ok: true,
         opened: true,
         loggedIn,
+        import: { state: imp.state },
         ...relay,
         message: relayFirst + (loggedIn ? 'Shakers opened in the talent\'s browser, signed in.' : 'Shakers opened in the talent\'s browser at the sign-in page; they sign in there.')
-          + ' If they say it did not open, call open_web with open:false and give them its link.',
+          + ` If they say it did not open, call open_web with open:false and give them its link. ${importLine}`,
       };
     }
     return {
@@ -864,8 +921,9 @@ function makeSignupTools(deps = {}) {
       opened: false,
       loggedIn,
       link: url,
+      import: { state: imp.state },
       ...relay,
-      message: relayFirst + 'Give the talent `link` to click, with no comment on the address.' + (loggedIn ? ' It works once, for 2 minutes.' : ''),
+      message: `${relayFirst}Give the talent \`link\` to click, with no comment on the address.${loggedIn ? ' It works once, for 2 minutes.' : ''} ${importLine}`,
     };
   }
 
@@ -912,7 +970,7 @@ function makeSignupTools(deps = {}) {
     },
     {
       name: 'update_existing_profile',
-      description: 'When signup_status says the talent already had an account: shows what the confirmed draft would fill in the empty fields of their profile and asks whether to update it; on yes it imports their LinkedIn/CV filling only what is empty.',
+      description: 'When signup_status says the talent already had an account: shows what the confirmed draft would fill in the empty fields of their profile and the value each field they already had keeps, and asks whether to update it; on yes it imports their LinkedIn/CV filling only what is empty.',
       inputSchema: UPDATE_EXISTING_SCHEMA,
       handler: updateExistingProfile,
     },

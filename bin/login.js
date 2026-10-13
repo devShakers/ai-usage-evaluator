@@ -4,8 +4,7 @@
 // `login` / `logout` — a registered Talent identifies themselves to the CLI (talents-ai-score, issue 122 / ADR-044).
 
 const { detectReportLang, getCatalog } = require('../src/i18n');
-const { getLoginEndpoint, getAuthTokenEndpoint, getDeviceAuthorizeEndpoint, getDeviceTokenEndpoint, getCompleteRegistrationEndpoint } = require('../src/config');
-const { requestLogin } = require('../src/auth-client');
+const { getAuthTokenEndpoint, getDeviceAuthorizeEndpoint, getDeviceTokenEndpoint, getCompleteRegistrationEndpoint } = require('../src/config');
 const { runDeviceLogin, appendProviderParam } = require('../src/device-login');
 const { buildRegistrationContext } = require('../src/signup-client');
 const { openPath } = require('../src/open-file');
@@ -15,7 +14,7 @@ const {
   loadAuthSession,
   sessionStatus,
 } = require('../src/auth-session-store');
-const { isValidEmail, normalizeEmail, loadConsentState, clearConsentState } = require('../src/share');
+const { normalizeEmail, loadConsentState, clearConsentState } = require('../src/share');
 const { createStdinAsk } = require('../src/stdin-ask');
 const { chooseAuthMethod } = require('../src/auth-method-picker');
 
@@ -50,23 +49,6 @@ async function chooseLoginMethod({ ask, stdinIsTTY, c, input, output }) {
   return chooseAuthMethod({ flow: 'login', ask, stdinIsTTY, catalog: c, input, output });
 }
 
-// The SECRET prompt (issue 102) — falls back to the ordinary line read on a pipe, which `ask()` still services.
-async function promptSecret(ask, label) {
-  const read = typeof ask.secret === 'function' ? ask.secret.bind(ask) : ask;
-  return String(await read(label)).trim();
-}
-
-async function resolveEmail(opts, c, ask) {
-  if (opts.email) return String(opts.email).trim();
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const raw = String(await ask(c.emailPrompt)).trim();
-    if (raw === '') return null; // EOF / empty line / cancel
-    if (isValidEmail(raw)) return raw;
-    process.stdout.write(`  ${c.emailInvalid}\n`);
-  }
-  return null;
-}
-
 async function run(
   argv = process.argv.slice(2),
   { ask: injectedAsk = null, openBrowser = undefined, stdinIsTTY: ttyOverride = undefined, input = undefined, output = undefined, sleep = undefined } = {},
@@ -75,75 +57,42 @@ async function run(
   const lang = opts.lang || detectReportLang();
   const c = getCatalog(lang).login;
 
-  if (opts.google) return runSocial('google', c, { openBrowser, sleep, lang });
-  if (opts.linkedin) return runSocial('linkedin', c, { openBrowser, sleep, lang });
+  // Every method signs in through the real web device flow (RFC 8628): the
+  // Talent reuses an existing web session or signs in on the `/cli-login` page,
+  // so no password is ever read in the terminal. Email now travels the same
+  // path Google/LinkedIn already use; only the `provider` query differs.
+  let method = null;
+  if (opts.google) method = 'google';
+  else if (opts.linkedin) method = 'linkedin';
+  else if (opts.provider === 'email' || !!opts.email) method = 'email';
 
-  // No method flag: offer the picker (ADR-041/046 — Email, Google and LinkedIn; LinkedIn pending Hub OAuth provisioning).
-  if (!hasMethodFlag(opts)) {
+  if (!method) {
     const stdinIsTTY = ttyOverride !== undefined ? ttyOverride : !!process.stdin.isTTY;
+    // ADR-044: an ACTIVE session is not silently overwritten, and the picker never shows.
+    if (sessionStatus(loadAuthSession()) === 'active') {
+      (output || process.stdout).write(`\n  ${c.alreadyLoggedIn}\n\n`);
+      return;
+    }
     if (stdinIsTTY) {
-      if (sessionStatus(loadAuthSession()) === 'active') {
-        process.stdout.write(`\n  ${c.alreadyLoggedIn}\n\n`);
-        return;
-      }
+      // ADR-041/046 — the picker offers Email, Google and LinkedIn.
       const pickerAsk = injectedAsk || createStdinAsk();
-      let method;
       try {
         method = await chooseLoginMethod({ ask: pickerAsk, stdinIsTTY, c, input, output });
       } finally {
         if (!injectedAsk) pickerAsk.close();
       }
       if (method === null) return; // esc/ctrl-c: cancelled, nothing sent
-      if (method === 'google' || method === 'linkedin') return runSocial(method, c, { openBrowser, sleep, lang });
-      // method === 'email' falls through to the unchanged flow below.
+    } else {
+      method = 'email'; // non-interactive default (matches the picker's own non-TTY default)
     }
   }
 
-  const endpoint = getLoginEndpoint();
-  if (!endpoint) {
-    process.stderr.write(`\n  ${c.errorNoEndpoint}\n\n`);
-    process.exitCode = 1;
-    return;
-  }
-
-  // ADR-044: an ACTIVE session is not silently overwritten — the Talent is told, and pointed at `logout` to switch accounts.
-  const status = sessionStatus(loadAuthSession());
-  if (status === 'active') {
-    process.stdout.write(`\n  ${c.alreadyLoggedIn}\n\n`);
-    return;
-  }
-  process.stdout.write(`\n  ${status === 'expired' ? c.sessionExpiredIntro : c.intro}\n`);
-
-  const ask = injectedAsk || createStdinAsk();
-  try {
-    const email = await resolveEmail(opts, c, ask);
-    if (!email || !isValidEmail(email)) {
-      process.stderr.write(`\n  ${c.needInput}\n\n`);
-      process.exitCode = 1;
-      return;
-    }
-    const password = await promptSecret(ask, c.passwordPrompt);
-    if (!password) {
-      process.stderr.write(`\n  ${c.needInput}\n\n`);
-      process.exitCode = 1;
-      return;
-    }
-
-    const normalizedEmail = normalizeEmail(email);
-    // better-auth email login: sign-in captures the session cookie, then a hub
-    // JWT is minted from it (auth-client.js). `endpoint` is the sign-in URL.
-    const result = await requestLogin(
-      { email: normalizedEmail, password },
-      { signInEndpoint: endpoint, tokenEndpoint: getAuthTokenEndpoint() },
-    );
-    handleResult(result, c, normalizedEmail);
-  } finally {
-    if (!injectedAsk) ask.close();
-  }
+  return runDeviceFlow(method, c, { openBrowser, sleep, lang, output });
 }
 
 // Shared success path: persist the session (atomic 0600 store) and report.
-function persistAndReport(result, c, email = null) {
+// `output` lets a caller (and tests) redirect the human-facing lines; errors stay on stderr.
+function persistAndReport(result, c, email = null, output = process.stdout) {
   if (email) {
     const prior = loadConsentState();
     if (prior && prior.email && normalizeEmail(prior.email) !== normalizeEmail(email)) {
@@ -167,37 +116,16 @@ function persistAndReport(result, c, email = null) {
     process.exitCode = 1;
     return false;
   }
-  process.stdout.write(`\n  ${c.success}\n`);
-  if (result.expiresAt) process.stdout.write(`  ${c.expiresAt(result.expiresAt)}\n`);
-  process.stdout.write('\n');
+  output.write(`\n  ${c.success}\n`);
+  if (result.expiresAt) output.write(`  ${c.expiresAt(result.expiresAt)}\n`);
+  output.write('\n');
   return true;
 }
 
-// `typedEmail` is what the CALLER typed/passed as `--email` for THIS attempt.
-function handleResult(result, c, typedEmail = null) {
-  if (result.ok) return void persistAndReport(result, c, result.email || typedEmail);
-
-  // One message per contract reason (ADR-044) — each names the cause (issue 109).
-  const messageFor = {
-    'invalid-credentials': c.errorInvalidCredentials,
-    'no-email-password': c.errorNoEmailPassword,
-    upstream: c.errorUpstream,
-    // Creds were good but the hub JWT could not be minted from the cookie.
-    'token-fetch-failed': c.errorUpstream,
-    timeout: c.errorUnreachable,
-    'network-error': c.errorUnreachable,
-    'invalid-url': c.errorConfig,
-    'no-endpoint': c.errorNoEndpoint,
-    'bad-response': c.errorGeneric,
-    'http-error': c.errorGeneric,
-    'local-error': c.errorGeneric,
-  };
-  process.stderr.write(`\n  ${messageFor[result.reason] || c.errorGeneric}\n\n`);
-  process.exitCode = 1;
-}
-
-// `login --google` / `--linkedin` — one device flow (RFC 8628); only the `provider` query on the URL differs.
-async function runSocial(provider, c, { openBrowser = openPath, sleep = undefined, lang = 'en' } = {}) {
+// `login` for one method — one device flow (RFC 8628); only the `provider` query
+// on the `/cli-login` URL differs (google | linkedin | email). Email reuses an
+// existing web session or signs in on the page, with no password in the terminal.
+async function runDeviceFlow(provider, c, { openBrowser = openPath, sleep = undefined, lang = 'en', output = process.stdout } = {}) {
   const authorizeEndpoint = getDeviceAuthorizeEndpoint();
   const tokenEndpoint = getDeviceTokenEndpoint();
   const authTokenEndpoint = getAuthTokenEndpoint();
@@ -206,18 +134,21 @@ async function runSocial(provider, c, { openBrowser = openPath, sleep = undefine
     process.exitCode = 1;
     return;
   }
-  // A new social account also needs complete-registration before the JWT (freelanceType is a transient default).
+  // A new account also needs complete-registration before the JWT (freelanceType is a transient default).
   const completeRegistrationEndpoint = getCompleteRegistrationEndpoint();
   const registrationContext = buildRegistrationContext({ preferredLanguage: lang, newsletterConsent: false, freelanceType: 'POTENTIAL_FREELANCE' });
-  const providerName = provider === 'linkedin' ? c.methodLinkedin : c.methodGoogle;
+  const providerName = provider === 'linkedin' ? c.methodLinkedin : provider === 'email' ? c.methodEmail : c.methodGoogle;
 
-  // Same as email: an ACTIVE session is not silently overwritten.
+  // An ACTIVE session is not silently overwritten.
   const status = sessionStatus(loadAuthSession());
   if (status === 'active') {
-    process.stdout.write(`\n  ${c.alreadyLoggedIn}\n\n`);
+    output.write(`\n  ${c.alreadyLoggedIn}\n\n`);
     return;
   }
-  process.stdout.write(`\n  ${status === 'expired' ? c.sessionExpiredIntro : c.deviceIntro(providerName)}\n`);
+  const intro = status === 'expired'
+    ? c.sessionExpiredIntro
+    : (provider === 'email' ? c.emailDeviceIntro : c.deviceIntro(providerName));
+  output.write(`\n  ${intro}\n`);
 
   const result = await runDeviceLogin(
     { authorizeEndpoint, tokenEndpoint, authTokenEndpoint, completeRegistrationEndpoint, registrationContext },
@@ -225,21 +156,23 @@ async function runSocial(provider, c, { openBrowser = openPath, sleep = undefine
       ...(sleep ? { sleep } : {}),
       onPrompt: ({ verificationUriComplete, userCode }) => {
         const url = appendProviderParam(verificationUriComplete, provider);
-        process.stdout.write(`\n  ${c.deviceVisit}\n  ${url}\n\n  ${c.deviceCodeLabel(userCode)}\n\n  ${c.deviceWaiting}\n`);
+        output.write(`\n  ${c.deviceVisit}\n  ${url}\n\n  ${c.deviceCodeLabel(userCode)}\n\n  ${c.deviceWaiting}\n`);
+        if (provider === 'email') output.write(`  ${c.deviceApproveHint}\n`);
         try { openBrowser(url); } catch { /* the printed URL covers it */ }
       },
     },
   );
-  handleSocialResult(result, c);
+  handleDeviceResult(result, c, output);
 }
 
-function handleSocialResult(result, c) {
+function handleDeviceResult(result, c, output = process.stdout) {
   if (result.ok) {
     // Map the device-flow JWT to the shared persist shape (no cookie).
     return void persistAndReport(
       { accessToken: result.token, hubAccessToken: result.token, email: result.email || null },
       c,
       result.email || null,
+      output,
     );
   }
 
@@ -264,14 +197,14 @@ function handleSocialResult(result, c) {
 }
 
 // `logout` — local only (no endpoint, no network): forget the stored session.
-async function runLogout(argv = process.argv.slice(2)) {
+async function runLogout(argv = process.argv.slice(2), { output = process.stdout } = {}) {
   const opts = parseArgs(argv);
   const lang = opts.lang || detectReportLang();
   const c = getCatalog(lang).login;
   const had = loadAuthSession() !== null;
   clearAuthSession();
   clearConsentState();
-  process.stdout.write(`\n  ${had ? c.loggedOut : c.notLoggedIn}\n\n`);
+  output.write(`\n  ${had ? c.loggedOut : c.notLoggedIn}\n\n`);
 }
 
 module.exports = { run, runLogout, chooseLoginMethod, parseArgs, hasMethodFlag };

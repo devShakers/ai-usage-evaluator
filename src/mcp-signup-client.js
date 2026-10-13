@@ -65,7 +65,7 @@ async function requestMcpSignup(
   return { ok: true, claimCode: data.claimCode, claimCodeExpiresAt: data.claimCodeExpiresAt || null };
 }
 
-// hub works/me/import-profile/status → { state: running | done | failed, sources: { linkedin?, cv? } }, the shape signup_status reports.
+// { state: running | done | failed, sources: { linkedin?, cv? } }, the shape signup_status reports.
 function importStateOf(data) {
   const status = data.profileImportStatus;
   const reported = Array.isArray(data.sources) ? data.sources : [];

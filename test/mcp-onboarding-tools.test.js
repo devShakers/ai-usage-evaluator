@@ -75,20 +75,14 @@ function mcpClient(env) {
   return { request, call, close };
 }
 
-test('onboarding tools (injected deps): login persists, add_* gate on session', async () => {
+test('onboarding tools (injected deps): login points to the device flow; add_* gate on session', async () => {
   let saved = null;
   let current = null;
   const base = {
-    getLoginEndpoint: () => 'http://svc/auth/login/email',
     getUsageDiscoveredInventoryEndpoint: () => 'http://svc/usage/discovered-inventory',
     getSkillsDeclareEndpoint: () => 'http://svc/works/talents/me/skills/declare',
     getAgentsDeclareEndpoint: () => 'http://svc/works/talents/me/agents/declare',
     getPortfoliosDeclareEndpoint: () => 'http://svc/works/talents/me/portfolios/declare',
-    runLoopbackAuth: async () => {
-      if (base._loginShouldFail) return { ok: false, reason: 'invalid-credentials' };
-      base.saveAuthSession({ accessToken: 'A', hubAccessToken: 'H', email: 'talent@shakers.com', expiresAt: new Date(Date.now() + 3600e3).toISOString() });
-      return { ok: true, email: 'talent@shakers.com' };
-    },
     saveAuthSession: (s) => { saved = s; current = { accessToken: s.accessToken, hubAccessToken: s.hubAccessToken, expiresAt: s.expiresAt }; },
     loadAuthSession: () => current,
     sessionStatus: (s) => (s && s.accessToken ? 'active' : 'none'),
@@ -110,14 +104,16 @@ test('onboarding tools (injected deps): login persists, add_* gate on session', 
   await assert.rejects(byName.add_skill.handler({ skillId: 7 }), /call the login tool/);
   await assert.rejects(byName.list_addable.handler({}), /call the login tool/);
 
-  base._loginShouldFail = true;
-  const bad = await byName.login.handler({});
-  assert.deepEqual(bad, { ok: false, reason: 'invalid-credentials' });
-  assert.equal(current, null, 'a failed login persists nothing');
+  // login no longer signs in here: it points to the device flow and persists nothing.
+  const ptr = await byName.login.handler({});
+  assert.equal(ptr.ok, false);
+  assert.equal(ptr.reason, 'use-device-flow');
+  assert.equal(ptr.next, 'social_signin_start');
+  assert.equal(ptr.provider, 'email');
+  assert.equal(current, null, 'the login tool persists nothing — social_signin_poll does');
 
-  base._loginShouldFail = false;
-  const ok = await byName.login.handler({});
-  assert.deepEqual(ok, { ok: true, method: 'email', email: 'talent@shakers.com' });
+  // social_signin_poll is what persists the session; simulate its result to exercise the add_* gate.
+  base.saveAuthSession({ accessToken: 'A', hubAccessToken: 'H', email: 'talent@shakers.com' });
   assert.equal(saved.hubAccessToken, 'H');
 
   const inv = await byName.list_addable.handler({});
@@ -314,11 +310,8 @@ test('login method:google points to the device-flow tools (does not sign in here
   assert.match(out.message, /social_signin_start/);
 });
 
-test('login (no method): picking Google in the form (viaGoogle) points to the device-flow tools', async () => {
+test('login (no method): defaults to the email provider of the device flow', async () => {
   const tools = makeOnboardingTools({
-    // No explicit method -> the loopback form is opened; here it reports the
-    // talent chose Google on the method-choice screen.
-    runLoopbackAuth: async () => ({ ok: true, viaSocial: true, provider: 'google' }),
     saveAuthSession: () => { throw new Error('must not persist — hand off to the device flow'); },
     loadAuthSession: () => null,
     sessionStatus: () => 'none',
@@ -326,23 +319,24 @@ test('login (no method): picking Google in the form (viaGoogle) points to the de
   const login = tools.find((t) => t.name === 'login');
   const out = await login.handler({});
   assert.equal(out.ok, false);
+  assert.equal(out.reason, 'use-device-flow');
   assert.equal(out.next, 'social_signin_start');
   assert.equal(out.mode, 'login');
+  assert.equal(out.provider, 'email', 'no method defaults to email; the /cli-login page still offers Google/LinkedIn');
 });
 
-test('login method:email skips the choice screen and forces the email form', async () => {
-  const calls = [];
+test('login method:email points to the device flow with provider email (no password form)', async () => {
   const tools = makeOnboardingTools({
-    getLoginEndpoint: () => 'http://svc/auth/login/email',
-    runLoopbackAuth: async (opts) => { calls.push(opts); return { ok: true, email: 't@shakers.com' }; },
-    saveAuthSession: () => {},
+    saveAuthSession: () => { throw new Error('must not persist — hand off to the device flow'); },
     loadAuthSession: () => null,
     sessionStatus: () => 'none',
   });
   const login = tools.find((t) => t.name === 'login');
   const out = await login.handler({ method: 'email' });
-  assert.deepEqual(out, { ok: true, method: 'email', email: 't@shakers.com' });
-  assert.equal(calls[0].method, 'email', 'the email form is forced (choice screen skipped)');
+  assert.equal(out.ok, false);
+  assert.equal(out.reason, 'use-device-flow');
+  assert.equal(out.next, 'social_signin_start');
+  assert.equal(out.provider, 'email');
 });
 
 test('logout clears the session and is idempotent (injected deps)', async () => {

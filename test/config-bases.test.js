@@ -12,6 +12,7 @@ const {
   getImportProfileEndpoint,
   getIngestEndpoint,
   getOnboardingInterviewsEndpoint,
+  getCertificationInterviewsEndpoint,
   getTalentProfileUrl,
   sanitizeStaleBakedEndpoints,
   loadConfigFile,
@@ -67,6 +68,18 @@ test('interviews resolve from the certs base', () => {
   assert.equal(getOnboardingInterviewsEndpoint(envIn(dir)), 'http://localhost:3004/api/v1/interviews');
 });
 
+// `certify` creates its dimension interview here; removing it broke every run (0.11.0).
+test('certification interviews resolve from the certs base, with an explicit override', () => {
+  const dir = freshDir();
+  assert.equal(getCertificationInterviewsEndpoint(envIn(dir)), `${DEV.certsBase}/users/me/certification-interviews`);
+  writeConfig(dir, { certsBase: 'http://localhost:3004/api/v1' });
+  assert.equal(getCertificationInterviewsEndpoint(envIn(dir)), 'http://localhost:3004/api/v1/users/me/certification-interviews');
+  assert.equal(
+    getCertificationInterviewsEndpoint(envIn(dir, { SHAKERS_CLI_CERTIFICATION_INTERVIEWS_ENDPOINT: ' https://x/ci ' })),
+    'https://x/ci',
+  );
+});
+
 test('getHubBase and getTalentProfileUrl fall back to the baked profile when unset', () => {
   const dir = freshDir();
   // (a) nothing set -> baked flavor (dev in this checkout).
@@ -88,7 +101,7 @@ test('(c) env wins over config.json and the baked profile', () => {
 
 test('derived endpoints follow the baked hub base with zero config', () => {
   const dir = freshDir();
-  assert.equal(getImportProfileEndpoint(envIn(dir)), `${DEV.hubBase}/works/me/import-profile`);
+  assert.equal(getImportProfileEndpoint(envIn(dir)), `${DEV.hubBase}/works/talent/me/import-profile`);
   assert.equal(getOnboardingInterviewsEndpoint(envIn(dir)), `${DEV.certsBase}/interviews`);
 });
 

@@ -18,7 +18,7 @@ const SIGNUP_TOOLS = ['signup_start', 'signup_email', 'signup_draft', 'signup_cr
   'list_my_roles', 'list_available_roles', 'add_role', 'set_main_role', 'ai_usage', 'login', 'social_signin_start', 'social_signin_poll'];
 // Words that pull the AI out of character: where the account lives, or whether it is real.
 const OUT_OF_CHARACTER = /\b(local(ly|host)?|localmente|environments?|entornos?|staging|production|producción|development|desarrollo|tests?|testing|pruebas?|sandbox|e2e|demo|127\.0\.0\.1|alias(es)?)\b/i;
-const DRAFT = { name: 'Ada Lovelace', role: 'Data Engineer', city: 'Madrid', yearsOfExperience: 8, stack: 'Spark, dbt', languages: 'Español nativo, inglés C1', workMode: 'Remoto', monthlyHours: '120-160', hourlyRate: 45, annualRate: 60000 };
+const DRAFT = { name: 'Ada Lovelace', role: 'Data Engineer', city: 'Madrid', yearsOfExperience: 8, stack: 'Spark, dbt', languages: 'Español nativo, inglés C1', workMode: 'Remoto', monthlyHours: '120-160', hourlyRate: 45, annualRate: 60000, sources: ['linkedin', 'cv'] };
 
 test.beforeEach(() => resetSignupLanguage());
 
@@ -94,7 +94,6 @@ test('Adrián\'s copy (es), word for word: email, draft, window, AI usage, exist
   assert.equal(renderDraft('es', DRAFT), 'Esto es lo que he preparado para tu perfil:\nAda Lovelace · Data Engineer · Madrid\n8 años de experiencia · Spark, dbt\nEspañol nativo, inglés C1 · Remoto · 120-160 h/mes\nTarifa estimada: 45 €/h · 60.000 €/año (estimación mía, ajústala)');
   assert.equal(ES.draftQuestion, '¿Está bien o cambio algo?');
   assert.deepEqual([ES.draftOk, ES.draftChange], ['Todo correcto', 'Quiero cambiar algo']);
-  assert.equal(ES.windowNotice, 'Cuando confirmes, te abro una ventana en el navegador para crear tu cuenta y guardar todo esto. Allí eliges cómo entrar:\n· Con Google\n· Con email y contraseña\n\nLa contraseña la escribes allí directamente, nunca pasa por este chat. En esa misma pantalla aceptas los términos y la política de privacidad. Cuando termines, vuelve aquí y seguimos.');
   assert.doesNotMatch(ES.windowNotice, /LinkedIn/);
   assert.equal(ES.aiUsageQuestion, '¿Quieres que analice cómo trabajas con IA? Es opcional y tarda 1-2 min. Solo veo qué herramientas usas, tu código y tus prompts no salen de tu máquina. Te ayuda a destacar en proyectos de IA.');
   assert.deepEqual([ES.aiUsageYes, ES.aiUsageSkip], ['Sí, analízalo', 'Saltar este paso']);
@@ -107,6 +106,32 @@ test('Adrián\'s copy (es), word for word: email, draft, window, AI usage, exist
   );
   assert.equal(renderRole('es', { name: 'ML Engineer', source: 'ONBOARDING_INTERVIEW', openProjects: 0 }), '**ML Engineer**\nPor lo que me contaste en la entrevista');
   assert.equal(renderRole('es', { name: 'X', source: 'IMPORT', openProjects: 1 }).split('\n')[2], 'Ahora mismo hay 1 proyecto abierto que busca este perfil.');
+});
+
+test('Adrián\'s window warning, word for word in every sign-up language, with its sign-in variant for an account that already exists', () => {
+  const expected = {
+    es: [
+      'Cuando me confirmes, solo faltará crear tu cuenta para guardar todo esto y que puedas entrar en Shakers cuando quieras.\n\nTe abro una ventana en el navegador, elige cómo entrar:\n· Con Google\n· Con email y contraseña\n\nLa contraseña la escribes allí directamente, nunca pasa por este chat. En esa misma pantalla aceptas los términos y la política de privacidad.\n\n👉 Mira tu navegador. Cuando termines, vuelve aquí y seguimos.',
+      'Cuando me confirmes, solo faltará entrar en la cuenta que ya tienes en Shakers con este email para guardar todo esto.\n\nTe abro una ventana en el navegador, elige cómo entrar:\n· Con Google\n· Con email y contraseña\n\nLa contraseña la escribes allí directamente, nunca pasa por este chat.\n\n👉 Mira tu navegador. Cuando termines, vuelve aquí y seguimos.',
+    ],
+    en: [
+      "Once you confirm, all that's left is to create your account to save all this and so you can get into Shakers whenever you like.\n\nI'll open a window in your browser; choose how to sign in:\n· With Google\n· With email and password\n\nYou type the password there directly; it never goes through this chat. On that same screen you accept the terms and the privacy policy.\n\n👉 Check your browser. When you're done, come back here and we'll carry on.",
+      "Once you confirm, all that's left is to sign in to the account you already have on Shakers with this email to save all this.\n\nI'll open a window in your browser; choose how to sign in:\n· With Google\n· With email and password\n\nYou type the password there directly; it never goes through this chat.\n\n👉 Check your browser. When you're done, come back here and we'll carry on.",
+    ],
+    it: [
+      "Quando mi confermi, mancherà solo creare il tuo account per salvare tutto questo e poter entrare in Shakers quando vuoi.\n\nTi apro una finestra nel browser, scegli come entrare:\n· Con Google\n· Con email e password\n\nLa password la scrivi direttamente lì, non passa mai da questa chat. Nella stessa schermata accetti i termini e l'informativa sulla privacy.\n\n👉 Guarda il tuo browser. Quando hai finito, torna qui e continuiamo.",
+      "Quando mi confermi, mancherà solo entrare nell'account che hai già su Shakers con questa email per salvare tutto questo.\n\nTi apro una finestra nel browser, scegli come entrare:\n· Con Google\n· Con email e password\n\nLa password la scrivi direttamente lì, non passa mai da questa chat.\n\n👉 Guarda il tuo browser. Quando hai finito, torna qui e continuiamo.",
+    ],
+    pt: [
+      'Quando me confirmar, só faltará criar a sua conta para guardar tudo isto e poder entrar na Shakers quando quiser.\n\nAbro-lhe uma janela no navegador, escolha como entrar:\n· Com Google\n· Com email e palavra-passe\n\nEscreve a palavra-passe diretamente lá; nunca passa por este chat. Nesse mesmo ecrã aceita os termos e a política de privacidade.\n\n👉 Veja o seu navegador. Quando terminar, volte aqui e continuamos.',
+      'Quando me confirmar, só faltará entrar na conta que já tem na Shakers com este email para guardar tudo isto.\n\nAbro-lhe uma janela no navegador, escolha como entrar:\n· Com Google\n· Com email e palavra-passe\n\nEscreve a palavra-passe diretamente lá; nunca passa por este chat.\n\n👉 Veja o seu navegador. Quando terminar, volte aqui e continuamos.',
+    ],
+  };
+  for (const lang of SIGNUP_LANGUAGES) {
+    assert.equal(signupCopy(lang).windowNotice, expected[lang][0], lang);
+    assert.equal(signupCopy(lang).windowNoticeSignIn, expected[lang][1], lang);
+    assert.doesNotMatch(signupCopy(lang).windowNotice, /LinkedIn/, lang);
+  }
 });
 
 test('every sign-up language carries every text, the legal ones too, and nothing is left in another language by mistake', () => {
@@ -129,7 +154,7 @@ test('legal texts: "redacted" is "anonimizados" in Spanish, and the es texts kee
   const es = legalCopy('es');
   assert.match(es.usageInfoAccessed, /extractos anonimizados/);
   assert.doesNotMatch(es.usageInfoAccessed, /redactad/);
-  for (const copy of Object.values(es)) assert.doesNotMatch(copy, /\b(codigo|maquina|como trabajas|Duracion|dedicacion)\b/, copy);
+  for (const copy of Object.values(es).map((t) => (typeof t === 'function' ? t(['linkedin', 'cv']) : t))) assert.doesNotMatch(copy, /\b(codigo|maquina|como trabajas|Duracion|dedicacion)\b/, copy);
   const { getCatalog } = require('../src/i18n');
   assert.equal(getCatalog('es').onboarding.usageInfoAccessed, es.usageInfoAccessed, 'the CLI shows the same legal text');
 });
@@ -188,7 +213,7 @@ test('legal texts: the draft step carries the data notice verbatim, before its q
   const { tools } = signupHarness();
   await tools.signup_start.handler({ language: 'es' });
   const r = await tools.signup_draft.handler(DRAFT);
-  const notice = needle(legalCopy('es').signupNotice);
+  const notice = needle(legalCopy('es').signupNotice(DRAFT.sources));
   assert.ok(r.say.includes(notice));
   assert.ok(r.say.indexOf(notice) < r.say.indexOf(ES.draftQuestion));
   assert.match(r.message, /Print `say` word for word/);

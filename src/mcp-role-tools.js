@@ -22,7 +22,12 @@ const fold = (text) => String(text || '').normalize('NFD').replace(/[\u0300-\u03
 
 const wordsOf = (text) => fold(text).split(/[^a-z0-9+#.]+/).filter((w) => w.length >= 2);
 
-// Catalogue roles by relevance: the exact name first, then shared role words, then stack words; a word many roles share (engineer) counts less.
+// Words that name no specialty: a role sharing only these with the talent does not match.
+const GENERIC_ROLE_WORDS = new Set(['developer', 'developers', 'dev', 'engineer', 'engineering', 'software', 'programmer', 'specialist', 'expert', 'consultant', 'senior', 'junior', 'lead', 'freelance',
+  'desarrollador', 'desarrolladora', 'programador', 'programadora', 'ingeniero', 'ingeniera', 'especialista', 'experto', 'experta', 'consultor', 'consultora',
+  'sviluppatore', 'sviluppatrice', 'programmatore', 'ingegnere', 'esperto', 'consulente', 'desenvolvedor', 'desenvolvedora', 'engenheiro', 'engenheira']);
+
+// Catalogue roles by relevance: the exact name first, then shared role words, then stack words; a word many roles share (engineer) counts less, and only a specific word qualifies a role.
 function rankRoles(roles, said, skills) {
   const names = roles.map((r) => wordsOf(r.name));
   const df = new Map();
@@ -31,13 +36,16 @@ function rankRoles(roles, said, skills) {
   const asked = new Set(wordsOf(said));
   const stack = new Set(wordsOf(skills));
   const exact = fold(said).trim();
-  const shown = (role, words) => words.map((w) => role.name.split(/[^A-Za-z0-9+#.]+/).find((t) => fold(t) === w) || w);
+  const specific = (words) => words.filter((w) => !GENERIC_ROLE_WORDS.has(w));
+  const shown = (role, words) => specific(words).map((w) => role.name.split(/[^A-Za-z0-9+#.]+/).find((t) => fold(t) === w) || w);
   return roles
     .map((role, i) => {
       const byRole = names[i].filter((w) => asked.has(w));
       const byStack = names[i].filter((w) => stack.has(w) && !asked.has(w));
-      const score = (exact && fold(role.name) === exact ? 100 : 0) + weight(byRole) + weight(byStack) / 2;
-      return { role, score, byRole: shown(role, byRole), byStack: shown(role, byStack) };
+      const isExact = !!exact && fold(role.name) === exact;
+      const score = (isExact ? 100 : 0) + weight(byRole) + weight(byStack) / 2;
+      const matches = isExact || specific([...byRole, ...byStack]).length > 0;
+      return { role, score, matches, byRole: shown(role, byRole), byStack: shown(role, byStack) };
     })
     .sort((a, b) => b.score - a.score);
 }
@@ -269,7 +277,7 @@ function makeRoleTools(deps = {}) {
     const roles = byName(available.roles);
     if (!roles.length) return { reply: { ok: false, reason: 'no-roles' } };
     const ranked = rankRoles(roles, said, args.skills);
-    const shown = roles.length <= MAX_ROLE_OPTIONS ? ranked : ranked.filter((m) => m.score > 0).slice(0, MAX_ROLE_OPTIONS);
+    const shown = roles.length <= MAX_ROLE_OPTIONS ? ranked : ranked.filter((m) => m.matches).slice(0, MAX_ROLE_OPTIONS);
     if (!shown.length) return askOwnRole();
     // This call's own list: another call may replace `offered` while the dialog is open.
     const options = shown.map((m) => m.role);

@@ -10,11 +10,10 @@ const {
   composeOfferableDimensions,
   discoverOfferableDimensions,
   composeDimensionKey,
-  requestCertificationReport,
-  requestCreateCertificationInterview,
-  requestDimensionCase,
 } = require('../src/certify-dimension-client');
-const { runCertifyDimension, renderVerdict } = require('../src/certify-dimension-flow');
+const fs = require('fs');
+const path = require('path');
+const { runCertifyDimension, buildWebLink, makeCertifyDimensionDeps } = require('../src/certify-dimension-flow');
 const { getCatalog } = require('../src/i18n');
 
 function startServer(handler) {
@@ -133,43 +132,6 @@ test('composeOfferableDimensions: a spoken case runs by text, so the terminal of
   assert.deepEqual(offerable.map((d) => d.slug), ['case', 'code']);
 });
 
-test('requestCertificationReport: a finished report without a level (band null) is ready, not polled until timeout', async () => {
-  const { server, base } = await startServer((req, res) => okItems(res, { evaluationId: 'ev-1', band: null, certified: false, dimensionName: 'Estrategia' }));
-  try {
-    const r = await requestCertificationReport({ interviewId: 'i-1', accessToken: 't' }, { base });
-    assert.equal(r.ready, true);
-    assert.equal(r.report.evaluationId, 'ev-1');
-  } finally {
-    server.close();
-  }
-});
-
-test('certify: prints the main role by name, as the hub sends it ({ clusterId, name }), not "[object Object]"', async () => {
-  let printed = '';
-  const io = { notify: (s) => { printed += `${s}\n`; }, error: (s) => { printed += `${s}\n`; }, warn: () => {}, section: () => {}, success: () => {}, withProgress: (_l, fn) => fn() };
-  await runCertifyDimension({
-    io,
-    ask: async () => '',
-    stdinIsTTY: false,
-    session: { accessToken: 'a', hubAccessToken: 'h' },
-    lang: 'es',
-    catalog: getCatalog('es'),
-    opts: { dimension: 'case' },
-    deps: {
-      discoverOfferableDimensions: async () => ({
-        ok: true,
-        mainRole: { clusterId: 'full-stack-developer', name: 'Full-stack Developer' },
-        offerable: [{ slug: 'case', clusterId: 'full-stack-developer', dimensionKey: 'full-stack-developer/case', state: 'UNCERTIFIED' }],
-        unmatched: [],
-      }),
-      getCertificationInterviewsEndpoint: () => 'http://127.0.0.1:1/unused',
-      requestCreateCertificationInterview: async () => ({ ok: false, reason: 'stop-here' }),
-    },
-  });
-  assert.match(printed, /Full-stack Developer/);
-  assert.doesNotMatch(printed, /object Object/);
-});
-
 test('composeDimensionKey: <clusterRef>/<slug>, null when either missing', () => {
   assert.equal(composeDimensionKey('product-manager', 'terminal-test'), 'product-manager/terminal-test');
   assert.equal(composeDimensionKey(null, 'x'), null);
@@ -214,24 +176,31 @@ test('discoverOfferableDimensions: all CERTIFIED -> no templates call, empty off
   assert.equal(templatesCalled, false);
 });
 
-test('renderVerdict: says whether the dimension was certified, also when the report carries no level', () => {
-  const cd = getCatalog('en').certifyDimension;
-  assert.match(renderVerdict({ dimensionName: 'Discovery', band: null, certified: false }, cd), /Discovery[\s\S]*not certified this time/);
-  assert.match(renderVerdict({ dimensionName: 'Discovery', band: 'PROFICIENT', certified: true }, cd), /PROFICIENT[\s\S]*Result: certified/);
+/* -------- buildWebLink: the deep link the web certifications route validates -------- */
+
+test('buildWebLink: origin + /certifications?dimension=<cluster>/<slug>, decoded value is exactly clusterId/slug', () => {
+  const link = buildWebLink('https://works.test/login', { clusterId: 'product-manager', slug: 'role-play' });
+  assert.equal(link, 'https://works.test/certifications?dimension=product-manager/role-play');
+  const value = new URL(link).searchParams.get('dimension');
+  assert.equal(value, 'product-manager/role-play');
+  // The web route validates the decoded param against `^[^/]+\/[^/]+$`.
+  assert.match(value, /^[^/]+\/[^/]+$/);
 });
 
-test('requestCreateCertificationInterview: a dimension on cooldown comes back as such, with the day it opens again', async () => {
-  const { server, base } = await startServer((req, res) => {
-    res.writeHead(409, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ status: 'KO', code: 'certification.dimension_on_cooldown', message: 'Dimension a/b cannot be sat again yet: 30 day(s) to go, available on 2026-10-28T14:50:38.265Z' }));
-  });
-  try {
-    const r = await requestCreateCertificationInterview({ dimensionKey: 'a/b', accessToken: 't' }, { endpoint: `${base}/x` });
-    assert.deepEqual(r, { ok: false, reason: 'dimension-on-cooldown', availableOn: '2026-10-28T14:50:38.265Z' });
-  } finally {
-    server.close();
-  }
+test('buildWebLink: each segment is url-encoded while the separator slash stays literal', () => {
+  const link = buildWebLink('https://p.prod/talent/profile', { clusterId: 'a b', slug: 'c/d' });
+  assert.equal(link, 'https://p.prod/certifications?dimension=a%20b/c%2Fd');
+  assert.equal(new URL(link).searchParams.get('dimension'), 'a b/c/d');
 });
+
+test('buildWebLink: no profile url, missing parts, or an unparseable url all give null (the no-link path)', () => {
+  assert.equal(buildWebLink(null, { clusterId: 'c', slug: 's' }), null);
+  assert.equal(buildWebLink('https://x/y', { clusterId: '', slug: 's' }), null);
+  assert.equal(buildWebLink('https://x/y', { clusterId: 'c' }), null);
+  assert.equal(buildWebLink('not a url', { clusterId: 'c', slug: 's' }), null);
+});
+
+/* -------- the web hand-off flow: pick a dimension, print the link, never launch LiveKit -------- */
 
 function certifyIo() {
   const lines = [];
@@ -241,38 +210,68 @@ function certifyIo() {
   };
 }
 
+// No conductLivekitInterview is wired: if the flow tried to run an interview it would throw.
 function certifyDeps(extra) {
   return {
-    discoverOfferableDimensions: async () => ({ ok: true, mainRole: { name: 'PM' }, offerable: [{ slug: 'case', clusterId: 'pm', dimensionKey: 'pm/case', state: 'UNCERTIFIED' }], unmatched: [] }),
-    getCertificationInterviewsEndpoint: () => 'http://127.0.0.1:1/unused',
-    requestCreateCertificationInterview: async () => ({ ok: true, interviewId: 'i-1' }),
-    getInterviewsBase: () => 'http://127.0.0.1:1/interviews',
-    requestDimensionCase: async () => ({ ok: true, case: null }),
+    discoverOfferableDimensions: async () => ({ ok: true, mainRole: { name: 'PM' }, offerable: [{ slug: 'role-play', clusterId: 'pm', dimensionKey: 'pm/role-play', state: 'UNCERTIFIED' }], unmatched: [] }),
+    getTalentProfileUrl: () => 'https://works.test/login',
+    buildWebLink,
     ...extra,
   };
 }
 
-const runCertify = (io, deps) => runCertifyDimension({ io, ask: async () => '', stdinIsTTY: false, session: { accessToken: 'a' }, lang: 'es', catalog: getCatalog('es'), opts: { dimension: 'case' }, deps });
+const runCertify = (io, deps, { lang = 'es', dimension = 'role-play' } = {}) =>
+  runCertifyDimension({ io, ask: async () => '', stdinIsTTY: false, session: { accessToken: 'a', hubAccessToken: 'h' }, lang, catalog: getCatalog(lang), opts: { dimension }, deps });
 
-test('certify: a dimension on cooldown says when it can be retaken instead of "http-409"', async () => {
+test('certify: prints the web hand-off and the deep link for the chosen dimension, and never starts an interview', async () => {
   const { io, lines } = certifyIo();
-  await runCertify(io, certifyDeps({ requestCreateCertificationInterview: async () => ({ ok: false, reason: 'dimension-on-cooldown', availableOn: '2026-10-28T14:50:38.265Z' }) }));
-  assert.match(lines.join('\n'), /Podrás repetirla a partir del 28 de octubre de 2026/);
-  assert.doesNotMatch(lines.join('\n'), /409/);
+  const r = await runCertify(io, certifyDeps());
+  const out = lines.join('\n');
+  assert.match(out, /se hace en la web/);
+  assert.match(out, /https:\/\/works\.test\/certifications\?dimension=pm\/role-play/);
+  assert.equal(r.handoff, 'https://works.test/certifications?dimension=pm/role-play');
+  assert.equal(r.ok, true);
 });
 
-test('certify: an exercise the text interview cannot run points to the web instead of "http-400"', async () => {
+test('certify: prints the main role by name, as the hub sends it ({ clusterId, name }), not "[object Object]"', async () => {
   const { io, lines } = certifyIo();
-  await runCertify(io, certifyDeps({ conductLivekitInterview: async () => ({ ok: false, reason: 'needs-web' }) }));
-  assert.match(lines.join('\n'), /solo se hace en la web/);
+  await runCertify(io, certifyDeps({
+    discoverOfferableDimensions: async () => ({
+      ok: true,
+      mainRole: { clusterId: 'full-stack-developer', name: 'Full-stack Developer' },
+      offerable: [{ slug: 'case', clusterId: 'full-stack-developer', dimensionKey: 'full-stack-developer/case', state: 'UNCERTIFIED' }],
+      unmatched: [],
+    }),
+  }), { dimension: 'case' });
+  const out = lines.join('\n');
+  assert.match(out, /Full-stack Developer/);
+  assert.doesNotMatch(out, /object Object/);
 });
 
-test('certify: asks the interview loop for plain rendering (no "Pregunta N", no "Gracias. Sigamos:")', async () => {
-  let seen;
-  const { io } = certifyIo();
-  await runCertify(io, certifyDeps({ conductLivekitInterview: async (_io, _deps, opts) => { seen = opts; return { ok: false, reason: 'stop' }; } }));
-  assert.equal(seen.plain, true);
+test('certify: when no web link can be built, points the talent to their profile instead of a broken link', async () => {
+  const { io, lines } = certifyIo();
+  const r = await runCertify(io, certifyDeps({ getTalentProfileUrl: () => null }));
+  assert.equal(r.handoff, null);
+  assert.match(lines.join('\n'), /No se pudo generar el enlace/);
+  assert.doesNotMatch(lines.join('\n'), /certifications\?dimension/);
 });
+
+test('certify: a --dimension that is not among the offerable ones is rejected', async () => {
+  const { io, lines } = certifyIo();
+  const r = await runCertify(io, certifyDeps(), { dimension: 'not-there' });
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'bad-dimension');
+  assert.match(lines.join('\n'), /no está entre las certificables/);
+});
+
+test('certify: nothing offerable exits cleanly with the none message, no link', async () => {
+  const { io, lines } = certifyIo();
+  const r = await runCertify(io, certifyDeps({ discoverOfferableDimensions: async () => ({ ok: true, mainRole: null, offerable: [], unmatched: [] }) }));
+  assert.deepEqual(r, { ok: true, none: true });
+  assert.match(lines.join('\n'), /no hay dimensiones certificables/);
+});
+
+/* -------- the interview loop still renders plainly for onboarding (shared machinery, untouched) -------- */
 
 test('interview loop: plain rendering prints Alma\'s messages only; onboarding keeps its headings', async () => {
   const { makeIo } = require('../bin/register');
@@ -293,94 +292,24 @@ test('interview loop: plain rendering prints Alma\'s messages only; onboarding k
   assert.match(await render(false), /Pregunta 2[\s\S]*|Gracias\. Sigamos/);
 });
 
-/* -------- the case, shown before the interview (QA 07/10: the terminal never showed it) -------- */
+/* -------- the real deps wire everything the flow reads -------- */
 
-test('requestDimensionCase: reads the case the web preview shows, statement first, from the certs case route', async () => {
-  let seen;
-  const { server, base } = await startServer((req, res) => {
-    seen = { url: req.url, auth: req.headers.authorization };
-    okItems(res, { candidateBrief: 'Brief.', statement: '  **La empresa.** Una marca.  ', testType: 'ROLE_PLAY', attentionCheck: null });
-  });
-  try {
-    const r = await requestDimensionCase({ dimensionKey: 'product-manager/role-play', accessToken: 't' }, { base: `${base}/interviews` });
-    assert.deepEqual(r, { ok: true, case: { brief: '**La empresa.** Una marca.', testType: 'ROLE_PLAY' } });
-    assert.equal(seen.url, '/interviews/dimension/product-manager/role-play/case');
-    assert.equal(seen.auth, 'Bearer t');
-  } finally {
-    server.close();
-  }
+test('makeCertifyDimensionDeps wires every dep the certify flow reads', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'certify-dimension-flow.js'), 'utf8');
+  const used = [...new Set([...src.matchAll(/\bdeps\.(\w+)/g)].map((m) => m[1]))];
+  const deps = makeCertifyDimensionDeps();
+  assert.ok(used.includes('buildWebLink'));
+  assert.ok(used.includes('getTalentProfileUrl'));
+  assert.ok(used.includes('discoverOfferableDimensions'));
+  for (const name of used) assert.notEqual(deps[name], undefined, `deps.${name} is not wired`);
 });
 
-test('requestDimensionCase: an old template with no statement falls back to its brief, and one with neither has no case', async () => {
-  const bodies = [{ candidateBrief: 'Solo el brief.', statement: null, testType: null }, { candidateBrief: '  ', statement: null }];
-  const { server, base } = await startServer((req, res) => okItems(res, bodies.shift()));
-  try {
-    const briefOnly = await requestDimensionCase({ dimensionKey: 'a/b', accessToken: 't' }, { base });
-    assert.deepEqual(briefOnly, { ok: true, case: { brief: 'Solo el brief.', testType: null } });
-    const none = await requestDimensionCase({ dimensionKey: 'a/b', accessToken: 't' }, { base });
-    assert.deepEqual(none, { ok: true, case: null });
-  } finally {
-    server.close();
-  }
-});
-
-test('requestDimensionCase: a failed read is a reason, not a throw', async () => {
-  const { server, base } = await startServer((req, res) => { res.writeHead(404); res.end(''); });
-  try {
-    const r = await requestDimensionCase({ dimensionKey: 'a/b', accessToken: 't' }, { base });
-    assert.equal(r.ok, false);
-  } finally {
-    server.close();
-  }
-});
-
-test('certify: prints the case and what is expected before connecting to the interview', async () => {
+test('certify with the real deps builds the /certifications link from the talent profile origin', async () => {
   const { io, lines } = certifyIo();
-  let printedBeforeInterview;
-  let caseAsked;
-  await runCertify(io, certifyDeps({
-    requestDimensionCase: async (args, opts) => {
-      caseAsked = { args, opts };
-      return { ok: true, case: { brief: '**La empresa.** Una marca de moda.\n\n**El problema.** Bajan las ventas.', testType: 'ROLE_PLAY' } };
-    },
-    conductLivekitInterview: async () => { printedBeforeInterview = lines.join('\n'); return { ok: false, reason: 'stop' }; },
+  const r = await runCertify(io, makeCertifyDimensionDeps({
+    discoverOfferableDimensions: certifyDeps().discoverOfferableDimensions,
+    getTalentProfileUrl: () => 'https://p.prod/login',
   }));
-  assert.deepEqual(caseAsked, { args: { dimensionKey: 'pm/case', accessToken: 'a' }, opts: { base: 'http://127.0.0.1:1/interviews' } });
-  assert.match(printedBeforeInterview, /La empresa\. Una marca de moda\.[\s\S]*El problema\. Bajan las ventas\./);
-  assert.doesNotMatch(printedBeforeInterview, /\*\*/);
-  assert.match(printedBeforeInterview, /Qué se espera[\s\S]*Puedes pedir a la otra parte datos que no están en el caso/);
-  assert.match(printedBeforeInterview, /Alma te va a hacer preguntas sobre este caso/);
-});
-
-test('certify: waits for Enter after the case only when a person is at the terminal', async () => {
-  const asked = [];
-  const { io } = certifyIo();
-  await runCertifyDimension({
-    io,
-    ask: async (q) => { asked.push(q); return ''; },
-    stdinIsTTY: true,
-    session: { accessToken: 'a' },
-    lang: 'en',
-    catalog: getCatalog('en'),
-    opts: { dimension: 'case' },
-    deps: certifyDeps({
-      requestDimensionCase: async () => ({ ok: true, case: { brief: 'The company.', testType: 'CASE_STUDY' } }),
-      conductLivekitInterview: async () => ({ ok: false, reason: 'stop' }),
-    }),
-  });
-  assert.equal(asked.length, 1);
-  assert.match(asked[0], /Press Enter/);
-});
-
-test('certify: no case (old template) or a failed read prints nothing and still starts the interview', async () => {
-  for (const read of [{ ok: true, case: null }, { ok: false, reason: 'http-404' }]) {
-    const { io, lines } = certifyIo();
-    let started = false;
-    await runCertify(io, certifyDeps({
-      requestDimensionCase: async () => read,
-      conductLivekitInterview: async () => { started = true; return { ok: false, reason: 'stop' }; },
-    }));
-    assert.equal(started, true);
-    assert.doesNotMatch(lines.join('\n'), /Qué se espera|preguntas sobre este caso|http-404/);
-  }
+  assert.equal(r.handoff, 'https://p.prod/certifications?dimension=pm/role-play');
+  assert.match(lines.join('\n'), /https:\/\/p\.prod\/certifications\?dimension=pm\/role-play/);
 });

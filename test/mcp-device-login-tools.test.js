@@ -60,6 +60,14 @@ test('start (linkedin): appends provider=linkedin and persists it for poll', asy
   assert.equal(h.getPending().provider, 'linkedin');
 });
 
+test('start (email): appends provider=email and persists it for poll', async () => {
+  const h = harness();
+  const out = await h.byName.social_signin_start.handler({ provider: 'email' });
+  assert.equal(out.provider, 'email');
+  assert.match(out.verificationUrl, /provider=email/);
+  assert.equal(h.getPending().provider, 'email');
+});
+
 test('start (register): stores the register context for complete-registration', async () => {
   const h = harness();
   await h.byName.social_signin_start.handler({ mode: 'register', freelanceType: 'FREELANCE', preferredLanguage: 'es' });

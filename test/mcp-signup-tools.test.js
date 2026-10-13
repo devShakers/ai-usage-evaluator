@@ -14,7 +14,7 @@ const { needle } = require('../test-fixtures/copy-needle');
 
 const ES = signupCopy('es');
 const SESSION = { accessToken: 'jwt', hubAccessToken: 'jwt', email: 'ada@example.com', expiresAt: '2999-01-01T00:00:00.000Z' };
-const DRAFT = { name: 'Ada Lovelace', role: 'Data Engineer', city: 'Madrid', yearsOfExperience: 8, stack: 'Spark, dbt', languages: 'Español nativo, inglés C1', workMode: 'Remoto', monthlyHours: '120-160', hourlyRate: 45, annualRate: 60000 };
+const DRAFT = { name: 'Ada Lovelace', role: 'Data Engineer', city: 'Madrid', yearsOfExperience: 8, stack: 'Spark, dbt', languages: 'Español nativo, inglés C1', workMode: 'Remoto', monthlyHours: '120-160', hourlyRate: 45, annualRate: 60000, sources: ['linkedin', 'cv'] };
 const CREATE = {
   linkedinUrl: 'https://www.linkedin.com/in/ada',
   firstName: 'Ada',
@@ -135,7 +135,7 @@ test('signup_start: the language of the first message is kept by every later sig
   await pt.tools.signup_start.handler({ language: 'pt-PT' });
   const draft = await pt.tools.signup_draft.handler(DRAFT);
   assert.ok(draft.say.startsWith(needle(signupCopy('pt').draftTitle)));
-  assert.ok(draft.say.includes(needle(legalCopy('pt').signupNotice)));
+  assert.ok(draft.say.includes(needle(legalCopy('pt').signupNotice(DRAFT.sources))));
 });
 
 test('signup_email: a known personal email is asked with its two options; a company domain adds the work-email hint', async () => {
@@ -181,7 +181,7 @@ test('signup_draft: shows the draft with hourly and annual rates and the data no
     'Español nativo, inglés C1 · Remoto · 120-160 h/mes',
     'Tarifa estimada: 45 €/h · 60.000 €/año (estimación mía, ajústala)',
   ].join('\n');
-  assert.equal(r.say, [draft, needle(legalCopy('es').signupNotice), needle(ES.windowNotice), needle(ES.draftQuestion), `1. ${ES.draftOk}\n2. ${ES.draftChange}`].join('\n\n'));
+  assert.equal(r.say, [draft, needle(legalCopy('es').signupNotice(DRAFT.sources)), needle(ES.windowNotice), needle(ES.draftQuestion), `1. ${ES.draftOk}\n2. ${ES.draftChange}`].join('\n\n'));
   assert.deepEqual(r.options, [ES.draftOk, ES.draftChange]);
   assert.doesNotMatch(draft, /proyecto/);
 });
@@ -370,8 +370,12 @@ test('update_existing_profile: shows only what the draft would fill in empty fie
   assert.equal(ask.say.split('\n\n1. ')[0], [
     needle(ES.existingTitle),
     '',
+    `· ${needle(ES.existingStays(ES.hourlyRateLabel, '40 €/h', '45 €/h'))}`,
     '· Tarifa anual: sin indicar → 60.000 €/año',
-    `· ${needle(ES.existingLists)}`,
+    `· ${ES.existingStays(ES.keptLabels.availability, ES.hours('80-120'), ES.hours('120-160'))}`,
+    `· ${ES.existingStays(ES.keptLabels.languages)}`,
+    `· ${needle(ES.existingStaysNote)}`,
+    `· ${needle(ES.existingLists(['linkedin', 'cv']))}`,
   ].join('\n'));
   assert.deepEqual(ask.options, [ES.existingYes, ES.existingNo]);
   const yes = await h.tools.update_existing_profile.handler({ answer: ES.existingYes });

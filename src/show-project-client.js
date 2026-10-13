@@ -1,6 +1,6 @@
 'use strict';
 
-// Position detail client (hub `works/positions/:id/detail`, talent Bearer).
+// Position detail client.
 // A "project" here is the Position + its parent project's fields.
 
 const { postJsonWithTimeout } = require('./backend-request');

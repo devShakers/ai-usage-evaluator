@@ -1,7 +1,6 @@
 'use strict';
 
-// Pricing-rate client (hub `works/talents/me/work-details/pricing-rate`, talent
-// Bearer). READ-ONLY here: setting the rate is a financial PUT, left to register.
+// Pricing-rate client. READ-ONLY here: setting the rate is a financial PUT, left to register.
 
 const { postJsonWithTimeout } = require('./backend-request');
 const { reasonForError } = require('./onboarding-client');

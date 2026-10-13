@@ -5,7 +5,7 @@ const path = require('path');
 const LOGIN_SCHEMA = {
   type: 'object',
   properties: {
-    method: { type: 'string', enum: ['email', 'google', 'linkedin'], description: "Optional auth method. 'email' opens an email-and-password window in the talent's browser (they type the password there, never in the chat). 'google'/'linkedin' do not sign in here — they point you to social_signin_start/social_signin_poll (the device flow) with that provider. Omit it to open that window." },
+    method: { type: 'string', enum: ['email', 'google', 'linkedin'], description: "Optional auth method. None of them sign in here: this tool points you to social_signin_start/social_signin_poll (the device flow) with that provider. 'email' reuses the talent's open Shakers web session or signs them in on the page (never a password in the chat); 'google'/'linkedin' open that social sign-in. Omit it to default to email (the page still offers Google and LinkedIn)." },
   },
 };
 
@@ -92,7 +92,6 @@ function makeOnboardingTools(deps = {}) {
     normalizeDomain = require('./start-add-portfolio').normalizeDomain,
     isValidEmail = require('./share').isValidEmail,
     normalizeEmail = require('./share').normalizeEmail,
-    runLoopbackAuth = require('./mcp-auth-form').runLoopbackAuth,
   } = deps;
 
   const requireSession = () => {
@@ -118,8 +117,10 @@ function makeOnboardingTools(deps = {}) {
     return endpoint;
   };
 
-  // Google/LinkedIn run through the device flow (start/poll tools); a blocking form can't surface the code.
-  const socialSigninPointer = (mode, provider = 'google') => ({
+  // Every method runs through the device flow (start/poll tools); a blocking form
+  // can't surface the code, and email now reuses the web session there instead of
+  // prompting for a password. The start/poll pair persists the session.
+  const socialSigninPointer = (mode, provider = 'email') => ({
     ok: false,
     reason: 'use-device-flow',
     next: 'social_signin_start',
@@ -128,18 +129,11 @@ function makeOnboardingTools(deps = {}) {
     message: `For ${provider}, call social_signin_start (provider "${provider}", mode "${mode}") to get a URL and code to show the talent, then social_signin_poll.`,
   });
 
-  // No explicit `method`: the loopback form opens on its email/social choice screen.
-  async function loginViaForm({ method = null } = {}) {
-    const result = await runLoopbackAuth(method ? { mode: 'login', method } : { mode: 'login' });
-    if (result.viaSocial) return socialSigninPointer('login', result.provider || 'google');
-    if (!result.ok) return { ok: false, reason: result.reason || 'login-failed' };
-    return { ok: true, method: 'email', email: result.email || null };
-  }
-
+  // Email, Google and LinkedIn all hand off to social_signin_start/poll. Email
+  // defaults when no method is given; the /cli-login page still offers the others.
   async function login(args = {}) {
-    if (args.method === 'google' || args.method === 'linkedin') return socialSigninPointer('login', args.method);
-    if (args.method === 'email') return loginViaForm({ method: 'email' });
-    return loginViaForm();
+    const provider = args.method === 'google' || args.method === 'linkedin' ? args.method : 'email';
+    return socialSigninPointer('login', provider);
   }
 
   async function logout() {
@@ -340,7 +334,7 @@ function makeOnboardingTools(deps = {}) {
   return [
     {
       name: 'login',
-      description: "Sign the talent in to Shakers with email and password and persist the session so the add_* and certify tools can run. The talent types their password into a window in their own browser, never in the chat. For Google or LinkedIn, use social_signin_start + social_signin_poll instead (this tool with method 'google'/'linkedin' just points you there). Returns { ok, method, email } or a structured error.",
+      description: "Start signing the talent in to Shakers so the add_* and certify tools can run. This tool does not sign in itself: it points you to social_signin_start + social_signin_poll (the device flow), which open the Shakers web page and persist the session. Email (the default) reuses the talent's open web session or signs them in on the page — never a password in the chat; 'google'/'linkedin' open that social sign-in. Returns a { ok: false, reason: 'use-device-flow', next, provider } pointer; call social_signin_start next.",
       inputSchema: LOGIN_SCHEMA,
       handler: login,
     },

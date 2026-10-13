@@ -1,6 +1,6 @@
 'use strict';
 
-// Saved-positions client (hub `works/saved-positions`, talent Bearer). Both
+// Saved-positions client. Both
 // operations are idempotent server-side, so no read-before-write is needed.
 
 const { postJsonWithTimeout } = require('./backend-request');

@@ -1,6 +1,6 @@
 'use strict';
 
-// GET hub `works/me/ai-profile` — the same read model the "My work with AI" front
+// The same read model the "My work with AI" front
 // paints: { setup, usage, cell, isAiNative, traction, vision, howIWork }.
 
 const { postJsonWithTimeout } = require('./backend-request');

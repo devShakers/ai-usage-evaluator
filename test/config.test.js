@@ -361,7 +361,6 @@ test('agent- and skill-certification interview endpoints are retired, not just u
     'getAgentCertificationVerdictEndpointFallback',
     'getSkillCertificationSessionsEndpoint',
     'getCertifyEndpoint',
-    'getCertificationInterviewsEndpoint',
   ]) {
     assert.equal(name in config, false, `${name} must be retired`);
   }

@@ -22,7 +22,7 @@ const { needle } = require('../test-fixtures/copy-needle');
 const ES = signupCopy('es');
 const LEGAL_ES = legalCopy('es');
 const SESSION = { accessToken: 'jwt', hubAccessToken: 'jwt', email: 'ada@example.com', expiresAt: '2999-01-01T00:00:00.000Z' };
-const DRAFT = { name: 'Ada Lovelace', role: 'Data Engineer', city: 'Madrid', monthlyHours: '120', hourlyRate: 50, annualRate: 55000 };
+const DRAFT = { name: 'Ada Lovelace', role: 'Data Engineer', city: 'Madrid', monthlyHours: '120', hourlyRate: 50, annualRate: 55000, sources: ['linkedin', 'cv'] };
 
 test.beforeEach(() => { resetSignupLanguage(); takeNotices(); });
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -51,7 +51,7 @@ function signupHarness(overrides = {}) {
   const wakes = [];
   const flowDeps = {
     loadAuthSession: () => session,
-    sessionStatus: (s) => (s ? 'active' : 'none'),
+    sessionStatus: overrides.sessionStatus || ((s) => (s ? 'active' : 'none')),
     saveAuthSession: () => {},
     getTalentProfileUrl: () => 'https://works.test/login',
     getImportProfileEndpoint: () => 'https://hub.test/import',
@@ -122,9 +122,9 @@ test('draft: a closed dialog still prints the draft and the data notice with the
   const r = await tools.signup_draft.handler({ ...DRAFT, shown: true }, d.ctx);
   const block = printed(r);
   assert.ok(block.startsWith(renderDraft('es', DRAFT)));
-  assert.ok(block.includes(LEGAL_ES.signupNotice));
-  assert.ok(block.indexOf(LEGAL_ES.signupNotice) < block.indexOf(ES.draftQuestion));
-  assert.ok(d.asked[0].message.includes(LEGAL_ES.signupNotice), 'the dialog carries the notice too');
+  assert.ok(block.includes(LEGAL_ES.signupNotice(DRAFT.sources)));
+  assert.ok(block.indexOf(LEGAL_ES.signupNotice(DRAFT.sources)) < block.indexOf(ES.draftQuestion));
+  assert.ok(d.asked[0].message.includes(LEGAL_ES.signupNotice(DRAFT.sources)), 'the dialog carries the notice too');
 });
 
 test('window: the warning comes inside the draft block the talent confirms; the account step only opens the window', async () => {
@@ -133,7 +133,7 @@ test('window: the warning comes inside the draft block the talent confirms; the 
   await h.tools.signup_email.handler({ email: 'ada@gmail.com', typed: true });
   const block = printed(await h.tools.signup_draft.handler(DRAFT, cancelling().ctx));
   assert.ok(block.includes(needle(ES.windowNotice)), block);
-  assert.ok(block.indexOf(LEGAL_ES.signupNotice) < block.indexOf(ES.windowNotice));
+  assert.ok(block.indexOf(LEGAL_ES.signupNotice(DRAFT.sources)) < block.indexOf(ES.windowNotice));
   assert.ok(block.indexOf(ES.windowNotice) < block.indexOf(ES.draftQuestion));
   assert.ok(block.endsWith(`1. ${ES.draftOk}\n2. ${ES.draftChange}`));
   for (const lang of ['en', 'it', 'pt']) assert.equal(typeof signupCopy(lang).windowNotice, 'string');
@@ -317,10 +317,10 @@ test('interview: in Italian or Portuguese the chat interview is not offered; the
   }
 });
 
-async function existingAccount(h) {
+async function existingAccount(h, draft = DRAFT) {
   await h.tools.signup_start.handler({ language: 'es' });
   await h.tools.signup_email.handler({ email: 'ada@gmail.com', typed: true });
-  await h.tools.signup_draft.handler({ ...DRAFT, answer: ES.draftOk });
+  await h.tools.signup_draft.handler({ ...draft, answer: ES.draftOk });
   await h.tools.signup_create_account.handler({ linkedinUrl: 'https://www.linkedin.com/in/ada', firstName: 'Ada' });
   h.finish({ ok: true, email: 'ada@gmail.com', accountExists: true });
   await tick();
@@ -332,7 +332,8 @@ test('existing account: the change list and the update only fill empty fields, n
   await existingAccount(h);
   const ask = await h.tools.update_existing_profile.handler({}, {});
   const block = printed(ask);
-  assert.doesNotMatch(block, /45 €\/h/, 'the rate they set is not offered for change');
+  assert.ok(block.includes(needle(ES.existingStays(ES.hourlyRateLabel, '45 €/h', '50 €/h'))), block);
+  assert.doesNotMatch(block, /→ 50 €\/h/, 'the rate they set is not offered for change');
   assert.ok(block.includes(ES.existingAnnual(ES.existingEmpty, '55.000 €/año')), block);
   assert.doesNotMatch(block, /Disponibilidad: 80/, 'the hours they set are kept');
   await h.tools.update_existing_profile.handler({ answer: ES.existingYes }, {});
@@ -383,7 +384,7 @@ test('ai_usage report: no criterion line shows an internal signal name', () => {
 
 // Simulation v8 (real model, 5 runs): what the tools still let through.
 
-test('existing account: a value the profile already had is reported as kept, per field, and the talent gets a fixed line saying so', async () => {
+test('existing account: a value the profile already had is reported as kept, per field, and the talent gets a fixed line with what the update question did not already tell', async () => {
   const h = signupHarness();
   await existingAccount(h);
   await h.tools.update_existing_profile.handler({ answer: ES.existingYes }, {});
@@ -400,7 +401,7 @@ test('existing account: a value the profile already had is reported as kept, per
   assert.match(saved.message, /monthlyHours: kept existing value 80 \(not changed, not 120\)/);
   assert.doesNotMatch(saved.confirmations.join(' '), /45/, 'a kept rate is not confirmed as saved');
   const next = printed(await usageTool().tool.handler({ lang: 'es' }, {}));
-  const line = needle(ES.existingUnchanged([ES.keptLabels.workSituation, `${ES.hourlyRateLabel}: 45 €/h`, `${ES.keptLabels.availability}: ${ES.hours('80')}`, ES.keptLabels.languages, ES.keptLabels.phone]));
+  const line = needle(ES.existingUnchanged([ES.keptLabels.workSituation, ES.keptLabels.languages, ES.keptLabels.phone]));
   assert.ok(next.startsWith(line), next);
 });
 
@@ -495,7 +496,7 @@ test('LinkedIn import failure: its fixed notice rides on the next question block
 
 test('it/pt: no text promises the onboarding interview in the chat, since those languages do it on the web', () => {
   for (const lang of ['it', 'pt']) {
-    assert.doesNotMatch(legalCopy(lang).signupNotice, /chat/i, lang);
+    assert.doesNotMatch(legalCopy(lang).signupNotice(['cv']), /chat/i, lang);
     assert.doesNotMatch(signupCopy(lang).welcome(null), /ora o più tardi|agora ou mais tarde/, lang);
   }
   assert.match(signupCopy('it').welcome(null), /sul sito/);
@@ -586,4 +587,113 @@ test('CV path: one given with the first message is kept for the answer call, eve
   assert.equal(r.cvPath, '~/Desktop/mi-cv.pdf');
   await tools.signup_start.handler({ language: 'es' });
   assert.equal((await tools.signup_start.handler({ answer: ES.cvSearch })).step, 'cv-search', 'a new sign-up forgets it');
+});
+
+// Simulation v9 (real model, 4 runs on develop after !67).
+
+test('window: Adrián\'s warning is the one in the draft block, between the data notice and the confirmation question', async () => {
+  const h = signupHarness();
+  await h.tools.signup_start.handler({ language: 'es' });
+  await h.tools.signup_email.handler({ email: 'ada@gmail.com', typed: true });
+  const block = printed(await h.tools.signup_draft.handler(DRAFT, cancelling().ctx));
+  const notice = LEGAL_ES.signupNotice(DRAFT.sources);
+  assert.equal(block, [renderDraft('es', DRAFT), notice, needle(ES.windowNotice), ES.draftQuestion, `1. ${ES.draftOk}\n2. ${ES.draftChange}`].join('\n\n'));
+  assert.match(block, /👉 Mira tu navegador\. Cuando termines, vuelve aquí y seguimos\.\n\n¿Está bien o cambio algo\?/);
+});
+
+test('window: when this machine already holds an expired session for the same email, the warning says to sign in instead', async () => {
+  const h = signupHarness({ session: { cookie: 'old', email: 'Ada@Gmail.com', expiresAt: '2000-01-01T00:00:00.000Z' }, sessionStatus: (s) => (s && s.expiresAt > '2026' ? 'active' : s ? 'expired' : 'none') });
+  await h.tools.signup_start.handler({ language: 'es' });
+  await h.tools.signup_email.handler({ email: 'ada@gmail.com', typed: true });
+  const block = printed(await h.tools.signup_draft.handler(DRAFT));
+  assert.ok(block.includes(needle(ES.windowNoticeSignIn)), block);
+  assert.doesNotMatch(block, /faltará crear tu cuenta/);
+  await h.tools.signup_email.handler({ email: 'otra@gmail.com', typed: true });
+  assert.ok(printed(await h.tools.signup_draft.handler(DRAFT)).includes(needle(ES.windowNotice)), 'another email is a new account');
+});
+
+test('CV path in the first message: the welcome is printed without the CV-search question and that CV is read', async () => {
+  const { tools } = signupHarness();
+  const d = cancelling();
+  const r = await tools.signup_start.handler({ language: 'es', cvPath: '~/Documents/CV_Lorena_Gimeno.pdf', firstName: 'Lorena' }, d.ctx);
+  assert.equal(r.ok, true);
+  assert.equal(r.step, 'cv-given');
+  assert.equal(r.cvPath, '~/Documents/CV_Lorena_Gimeno.pdf');
+  assert.equal(r.relayVerbatim, needle(ES.welcome('Lorena')));
+  assert.equal(r.say, undefined, 'no question block');
+  assert.equal(d.asked.length, 0, 'no dialog either');
+  assert.doesNotMatch(JSON.stringify(r), /Empezamos/);
+  assert.match(r.message, /read_cv/);
+  assert.ok(r.message.indexOf('relayVerbatim') < r.message.indexOf('read_cv'), 'the welcome is printed before reading the CV');
+});
+
+test('existing account: before the talent answers, each field they already had shows the value it keeps and that it is changed on the web', async () => {
+  const h = signupHarness();
+  await existingAccount(h, { ...DRAFT, hourlyRate: 60, annualRate: 70000, monthlyHours: '120', languages: 'Español nativo' });
+  const block = printed(await h.tools.update_existing_profile.handler({}, {}));
+  for (const line of [
+    ES.existingStays(ES.hourlyRateLabel, '45 €/h', '60 €/h'),
+    ES.existingAnnual(ES.existingEmpty, '70.000 €/año'),
+    ES.existingStays(ES.keptLabels.availability, ES.hours('80'), ES.hours('120')),
+    ES.existingStays(ES.keptLabels.languages),
+    ES.existingStaysNote,
+  ]) assert.ok(block.includes(`· ${needle(line)}`), `${line}\n---\n${block}`);
+  assert.ok(block.indexOf(ES.existingStaysNote) < block.indexOf(`1. ${ES.existingYes}`));
+  assert.equal(ES.existingStays(ES.hourlyRateLabel, '45 €/h', '60 €/h'), 'Tarifa por hora: se queda en 45 €/h, no 60 €/h');
+  await h.tools.update_existing_profile.handler({ answer: ES.existingYes }, {});
+  await h.tools.save_profile_details.handler({ pricing: { hourlyRate: 60, annualRate: 70000 }, availability: { monthlyHours: '120' }, languages: [{ language: 'es', level: 'NATIVE' }] });
+  const next = printed(await usageTool().tool.handler({ lang: 'es' }, {}));
+  assert.doesNotMatch(next, /45 €\/h|80 h\/mes|Idiomas/, 'what the talent was already told is not repeated');
+});
+
+test('sources: the data notice and the update offer name only the sources used, never a LinkedIn the talent does not have', async () => {
+  const h = signupHarness();
+  await h.tools.signup_start.handler({ language: 'es' });
+  await h.tools.signup_email.handler({ email: 'ada@gmail.com', typed: true });
+  const missing = await h.tools.signup_draft.handler({ ...DRAFT, sources: undefined });
+  assert.equal(missing.reason, 'draft-sources-required');
+  const block = printed(await h.tools.signup_draft.handler({ ...DRAFT, sources: ['cv'] }));
+  assert.equal(LEGAL_ES.signupNotice(['cv']), 'Antes de crear tu cuenta: guardamos los datos que me des (tu CV y lo que sé de ti) y podemos contactarte. Te completo el perfil automáticamente y cualquier campo lo puedes cambiar después en la web. La entrevista de onboarding la puedes hacer luego aquí mismo en el chat o en la web.');
+  assert.equal(LEGAL_ES.signupNotice(['linkedin', 'cv']), 'Antes de crear tu cuenta: guardamos los datos que me des (tu LinkedIn, tu CV y lo que sé de ti) y podemos contactarte. Te completo el perfil automáticamente y cualquier campo lo puedes cambiar después en la web. La entrevista de onboarding la puedes hacer luego aquí mismo en el chat o en la web.');
+  assert.ok(block.includes(needle(LEGAL_ES.signupNotice(['cv']))));
+  assert.doesNotMatch(block, /LinkedIn/);
+  assert.equal((await h.tools.signup_draft.handler({ ...DRAFT, sources: undefined, answer: ES.draftOk })).next, 'signup_create_account', 'the talent\'s confirmation is never dropped for a missing field');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cv-'));
+  const cv = path.join(dir, 'cv.pdf');
+  fs.writeFileSync(cv, '%PDF-1.4 cv');
+  await h.tools.signup_draft.handler({ ...DRAFT, sources: ['cv'], answer: ES.draftOk });
+  await h.tools.signup_create_account.handler({ cvPath: cv, firstName: 'Ada' });
+  h.finish({ ok: true, email: 'ada@gmail.com', accountExists: true });
+  await tick();
+  h.setSession(SESSION);
+  const offer = printed(await h.tools.update_existing_profile.handler({}, {}));
+  assert.ok(offer.includes(needle(ES.existingLists(['cv']))), offer);
+  assert.doesNotMatch(offer, /LinkedIn/);
+});
+
+const DEV_CATALOGUE = ['Frontend Developer', 'React Developer', 'React Native Developer', '.NET / C# Developer', 'AEM Developer', 'Java Developer', 'Backend Engineer', 'Software Engineer']
+  .map((name) => ({ clusterId: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name, category: 'tech' }));
+
+test('main role: a generic word alone (developer, engineer) never puts a role on the shortlist; with nothing specific the role is asked', async () => {
+  const r = await roleTools([], DEV_CATALOGUE).set.handler({ catalogue: true, answer: 'Frontend Developer', skills: 'React, Next.js, TypeScript, Tailwind CSS, Storybook' }, {});
+  assert.deepEqual(r.options, ['Frontend Developer', 'React Developer', 'React Native Developer', needle(ES.mainRoleNotListed)]);
+  assert.doesNotMatch(printed(r), /Encaja con tu rol \(Developer\)/);
+  const generic = await roleTools([], DEV_CATALOGUE).set.handler({ catalogue: true, answer: 'Developer' }, {});
+  assert.equal(printed(generic), needle(ES.mainRoleAsk));
+});
+
+test('closing: open_web reads the import right before the end, so a finished import is never reported as pending', async () => {
+  const done = signupHarness({ importStatus: async () => ({ ok: true, state: 'done', sources: {} }) });
+  await done.tools.signup_start.handler({ language: 'es' });
+  done.setSession(SESSION);
+  const end = await done.tools.open_web.handler({});
+  assert.equal(end.import.state, 'done');
+  assert.match(end.message, /import finished/);
+  assert.doesNotMatch(end.message, /still running/);
+  const running = signupHarness();
+  await running.tools.signup_start.handler({ language: 'es' });
+  running.setSession(SESSION);
+  const later = await running.tools.open_web.handler({});
+  assert.equal(later.import.state, 'running');
+  assert.match(later.message, /still running/);
 });

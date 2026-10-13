@@ -1,6 +1,6 @@
 'use strict';
 
-// AI-profile client (hub `works/me/ai-profile`, talent Bearer). The "My work
+// AI-profile client. The "My work
 // with AI" read model: setup/usage tier+level, 3x3 cell, vision, howIWork.
 
 const { postJsonWithTimeout } = require('./backend-request');
@@ -87,14 +87,12 @@ async function getMapped(endpoint, hubAccessToken, timeoutMs, map) {
   return { ok: true, ...map(data) };
 }
 
-// `works/me/profile` -> headline (basic profile text).
 async function fetchMeProfile(deps = {}, { hubAccessToken, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   const getEndpoint = deps.getMeProfileEndpoint || require('./config').getMeProfileEndpoint;
   const req = deps.getMapped || getMapped;
   return req(getEndpoint(), hubAccessToken, timeoutMs, (d) => ({ headline: str(d && d.headline) }));
 }
 
-// `works/talents/me/profile` -> completion %, freelance type, onboarding status.
 async function fetchTalentMeProfile(deps = {}, { hubAccessToken, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   const getEndpoint = deps.getTalentMeProfileEndpoint || require('./config').getTalentMeProfileEndpoint;
   const req = deps.getMapped || getMapped;
@@ -105,7 +103,6 @@ async function fetchTalentMeProfile(deps = {}, { hubAccessToken, timeoutMs = DEF
   }));
 }
 
-// `works/talents/me/work-details/languages` -> count + codes.
 async function fetchLanguages(deps = {}, { hubAccessToken, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   const getEndpoint = deps.getLanguagesEndpoint || require('./config').getLanguagesEndpoint;
   const req = deps.getMapped || getMapped;

@@ -6,248 +6,271 @@ const http = require('http');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawn } = require('child_process');
 
+const { run, runLogout } = require('../bin/login');
 const { loadAuthSession, saveAuthSession } = require('../src/auth-session-store');
 
-// Runs the REAL `login`/`logout` binary as a child process against a tiny stub, asserting the status -> message + exit-code + local-session-persistence mapping.
+// EMAIL login now travels the SAME web device flow (RFC 8628) as Google/LinkedIn
+// (only the `provider` query differs): the Talent reuses their open web session
+// or signs in on the /cli-login page, so no password is ever read in the
+// terminal. These tests drive the real `run()` against a mock Hub broker.
+//
+// Every test routes the CLI's own stdout through `capture` so its human-facing
+// lines never interleave with node:test's TAP stream.
 
-const BIN = path.join(__dirname, '..', 'bin', 'login.js');
-const COOKIE = 'better-auth.session_token=sess-xyz';
-
-function baseUrl(server) { return `http://127.0.0.1:${server.address().port}/api/v1`; }
-function signInUrl(server) { return `${baseUrl(server)}/auth/sign-in/email`; }
-function tokenUrl(server) { return `${baseUrl(server)}/auth/token`; }
-
-// A successful sign-in: sets the session cookie and (optionally) echoes the
-// authenticated user's email.
-const signInOk = (email) => (body, res) => {
-  res.writeHead(200, { 'Content-Type': 'application/json', 'set-cookie': `${COOKIE}; Max-Age=604800; Path=/; HttpOnly` });
-  res.end(JSON.stringify({ redirect: false, user: { id: 'u1', email: email || null } }));
-};
-const tokenReturning = (jwt) => (res) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ token: jwt })); };
-
-// Routes GET /auth/token to `onToken` (default: a canned JWT) and every other
-// request (the sign-in POST) to `onSignIn`, recording the sign-in body.
-function startStub({ onSignIn, onToken } = {}) {
-  const seen = [];
-  return new Promise((resolve) => {
-    const server = http.createServer((req, res) => {
-      let raw = '';
-      req.on('data', (c) => (raw += c));
-      req.on('end', () => {
-        if (req.method === 'GET' && req.url.includes('/auth/token')) {
-          (onToken || tokenReturning('jwt-live'))(res, req);
-        } else {
-          let body = {};
-          try { body = JSON.parse(raw || '{}'); } catch { body = {}; }
-          seen.push(body);
-          onSignIn(body, res, req);
+// Mock Hub broker: device authorize (/device/code), token poll (returns the
+// SESSION access_token), and GET /auth/token exchanging it for the API JWT.
+function startBroker({ pendingPolls = 0, loginEmail = null, isNewUser = false } = {}) {
+  let polls = 0;
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      if (req.method === 'GET' && req.url.endsWith('/auth/token')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ token: 'API-JWT' }));
+        return;
+      }
+      if (req.method === 'POST' && req.url.endsWith('/device/code')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          device_code: 'DEV-SECRET',
+          user_code: 'ABCD-1234',
+          verification_uri: 'https://hub.test/cli-login',
+          verification_uri_complete: 'https://hub.test/cli-login?user_code=ABCD-1234',
+          expires_in: 600,
+          interval: 5,
+        }));
+        return;
+      }
+      if (req.method === 'POST' && req.url.endsWith('/device/token')) {
+        if (polls < pendingPolls) {
+          polls += 1;
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'authorization_pending' }));
+          return;
         }
-      });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ access_token: 'SESS', token_type: 'Bearer', isNewUser, ...(loginEmail ? { email: loginEmail } : {}) }));
+        return;
+      }
+      res.writeHead(404).end();
     });
-    server.listen(0, '127.0.0.1', () => { server._seen = seen; resolve(server); });
+  });
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => {
+      const base = `http://127.0.0.1:${server.address().port}`;
+      resolve({ server, authorizeEndpoint: `${base}/device/code`, tokenEndpoint: `${base}/device/token`, authTokenEndpoint: `${base}/auth/token` });
+    });
   });
 }
 
-function runCli(server, args, { configDir, stdin = '', extraEnv = {} } = {}) {
-  return new Promise((resolve, reject) => {
-    const dir = configDir || fs.mkdtempSync(path.join(os.tmpdir(), 'aifp-login-cli-'));
-    const env = {
-      ...process.env,
-      AI_FOOTPRINT_CONFIG_DIR: dir,
-      SHAKERS_CLI_LOGIN_ENDPOINT: server ? signInUrl(server) : '',
-      SHAKERS_CLI_AUTH_TOKEN_ENDPOINT: server ? tokenUrl(server) : '',
-      SHAKERS_CLI_HUB_BASE: '',
-      AI_FOOTPRINT_HUB_BASE: '',
-      SHAKERS_CLI_INGEST_ENDPOINT: '',
-      AI_FOOTPRINT_INGEST_ENDPOINT: '',
-      SHAKERS_CLI_LANG: 'es', // force Spanish UI deterministically (OS display language no longer inferred from LANG)
-      LC_ALL: 'es_ES.UTF-8',
-      LANG: 'es_ES.UTF-8',
-      LANGUAGE: 'es',
-      ...extraEnv,
-    };
-    const child = spawn(process.execPath, [BIN, ...args], { env });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (c) => (stdout += c));
-    child.stderr.on('data', (c) => (stderr += c));
-    child.on('error', reject);
-    child.on('close', (code) => resolve({ code, stdout, stderr, configDir: dir }));
-    child.stdin.end(stdin);
-  });
+function withEnv(overrides, fn) {
+  const keys = ['SHAKERS_CLI_CONFIG_DIR', 'AI_FOOTPRINT_CONFIG_DIR', 'SHAKERS_CLI_DEVICE_AUTHORIZE_ENDPOINT', 'SHAKERS_CLI_DEVICE_TOKEN_ENDPOINT', 'SHAKERS_CLI_AUTH_TOKEN_ENDPOINT', 'SHAKERS_CLI_HUB_BASE', 'SHAKERS_CLI_INGEST_ENDPOINT', 'AI_FOOTPRINT_INGEST_ENDPOINT'];
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  for (const k of keys) delete process.env[k];
+  Object.assign(process.env, overrides);
+  const prevExit = process.exitCode;
+  return Promise.resolve()
+    .then(fn)
+    .finally(() => {
+      for (const k of keys) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+      process.exitCode = prevExit;
+    });
 }
 
-test('login happy path: sends {email,password}, persists the session (JWT + cookie), tells the Talent what changed', async () => {
-  const server = await startStub({ onSignIn: signInOk('talent@example.com'), onToken: tokenReturning('jwt-live') });
-  try {
-    const r = await runCli(server, [], { stdin: 'talent@example.com\nhunter2\n' });
-    assert.equal(r.code, 0);
-    assert.deepEqual(server._seen[0], { email: 'talent@example.com', password: 'hunter2' });
-    const session = loadAuthSession({ AI_FOOTPRINT_CONFIG_DIR: r.configDir });
-    assert.equal(session.accessToken, 'jwt-live');
-    assert.equal(session.cookie, COOKIE);
-    assert.match(r.stdout, /certificarte/);
-    assert.equal(/hunter2/.test(r.stdout + r.stderr), false);
-  } finally {
-    server.close();
-  }
-});
+const instantSleep = () => Promise.resolve();
 
-test('login prefers the RESPONSE email over the typed one when the server sends it', async () => {
-  const server = await startStub({ onSignIn: signInOk('canonical@example.com'), onToken: tokenReturning('jwt-live') });
-  try {
-    const r = await runCli(server, [], { stdin: 'typed@example.com\nhunter2\n' });
-    assert.equal(r.code, 0);
-    const session = loadAuthSession({ AI_FOOTPRINT_CONFIG_DIR: r.configDir });
-    assert.equal(session.email, 'canonical@example.com');
-  } finally {
-    server.close();
-  }
-});
+// An injected stdout sink: `run()` writes its human-facing lines here instead of
+// the process stdout, so the CLI's output never interleaves with node:test's TAP.
+function sink() {
+  const chunks = [];
+  return { write: (s) => { chunks.push(String(s)); return true; }, text: () => chunks.join('') };
+}
 
-test('login persists the typed (normalized) email when the server omits it', async () => {
-  const server = await startStub({ onSignIn: signInOk(null), onToken: tokenReturning('jwt-live') });
-  try {
-    const r = await runCli(server, [], { stdin: 'Talent@Example.com\nhunter2\n' });
-    assert.equal(r.code, 0);
-    const session = loadAuthSession({ AI_FOOTPRINT_CONFIG_DIR: r.configDir });
-    assert.equal(session.email, 'talent@example.com');
-  } finally {
-    server.close();
-  }
-});
-
-test('login --email persists that (normalized) address too', async () => {
-  const server = await startStub({ onSignIn: signInOk(null), onToken: tokenReturning('jwt-x') });
-  try {
-    const r = await runCli(server, ['--email', 'Flagged@Example.com'], { stdin: 'pw\n' });
-    assert.equal(r.code, 0);
-    const session = loadAuthSession({ AI_FOOTPRINT_CONFIG_DIR: r.configDir });
-    assert.equal(session.email, 'flagged@example.com');
-  } finally {
-    server.close();
-  }
-});
-
-test('a failed login persists NOTHING — no stray email left behind either', async () => {
-  const server = await startStub({ onSignIn: (_b, res) => { res.writeHead(401); res.end('{}'); } });
-  try {
-    const r = await runCli(server, [], { stdin: 'a@b.com\nbad\n' });
-    assert.equal(loadAuthSession({ AI_FOOTPRINT_CONFIG_DIR: r.configDir }), null);
-  } finally {
-    server.close();
-  }
-});
-
-test('login --email skips the email prompt and only reads the password', async () => {
-  const server = await startStub({ onSignIn: signInOk(null), onToken: tokenReturning('jwt-x') });
-  try {
-    const r = await runCli(server, ['--email', 'flagged@example.com'], { stdin: 'pw\n' });
-    assert.equal(r.code, 0);
-    assert.equal(server._seen[0].email, 'flagged@example.com');
-    assert.equal(server._seen[0].password, 'pw');
-  } finally {
-    server.close();
-  }
-});
-
-test('401 -> invalid-credentials message, non-zero exit, NOTHING persisted', async () => {
-  const server = await startStub({ onSignIn: (_b, res) => { res.writeHead(401); res.end('{}'); } });
-  try {
-    const r = await runCli(server, [], { stdin: 'a@b.com\nbad\n' });
-    assert.equal(r.code, 1);
-    assert.match(r.stderr, /Credenciales/);
-    assert.equal(loadAuthSession({ AI_FOOTPRINT_CONFIG_DIR: r.configDir }), null);
-  } finally {
-    server.close();
-  }
-});
-
-test('409 -> the Google/LinkedIn account gets an ACTIONABLE message, not a mute 401', async () => {
-  const server = await startStub({ onSignIn: (_b, res) => { res.writeHead(409); res.end('{}'); } });
-  try {
-    const r = await runCli(server, [], { stdin: 'g@b.com\npw\n' });
-    assert.equal(r.code, 1);
-    assert.match(r.stderr, /Google|LinkedIn/);
-    assert.match(r.stderr, /web/);
-  } finally {
-    server.close();
-  }
-});
-
-test('503 -> upstream message, distinct from bad credentials', async () => {
-  const server = await startStub({ onSignIn: (_b, res) => { res.writeHead(503); res.end('{}'); } });
-  try {
-    const r = await runCli(server, [], { stdin: 'a@b.com\npw\n' });
-    assert.equal(r.code, 1);
-    assert.match(r.stderr, /servidor de identidad/);
-  } finally {
-    server.close();
-  }
-});
-
-test('an unreachable endpoint -> actionable error, never a silent no-op', async () => {
-  // The login endpoint now ALWAYS resolves (the baked flavor profile is the
-  // default — ADR-065 revised), so there is no longer a "no endpoint" path. Point
-  // it at a refused loopback port to prove that when the endpoint cannot be
-  // reached the CLI still fails loudly (exit 1), never a silent success. Offline:
-  // 127.0.0.1:1 refuses the connection immediately.
-  const r = await runCli(null, [], {
-    stdin: 'a@b.com\npw\n',
-    extraEnv: {
-      SHAKERS_CLI_LOGIN_ENDPOINT: 'http://127.0.0.1:1/api/v1/auth/sign-in/email',
-      SHAKERS_CLI_AUTH_TOKEN_ENDPOINT: 'http://127.0.0.1:1/api/v1/auth/token',
-    },
+// Run the CLI in-process with an injected output sink, recording the URL it would open.
+async function runCli(args, { throwOnOpen = false } = {}) {
+  const out = sink();
+  let opened = null;
+  await run(args, {
+    output: out,
+    openBrowser: throwOnOpen ? () => { throw new Error('browser must not open'); } : (u) => { opened = u; },
+    sleep: instantSleep,
   });
-  assert.equal(r.code, 1);
-  assert.notEqual(r.stderr.trim(), '', 'the failure is reported, not silent');
+  return { out: out.text(), opened };
+}
+
+async function runLogoutCli(args) {
+  const out = sink();
+  await runLogout(args, { output: out });
+  return out.text();
+}
+
+const deviceEnv = (dir, broker) => ({
+  SHAKERS_CLI_CONFIG_DIR: dir,
+  SHAKERS_CLI_DEVICE_AUTHORIZE_ENDPOINT: broker.authorizeEndpoint,
+  SHAKERS_CLI_DEVICE_TOKEN_ENDPOINT: broker.tokenEndpoint,
+  SHAKERS_CLI_AUTH_TOKEN_ENDPOINT: broker.authTokenEndpoint,
 });
 
-test('an ACTIVE session is not silently overwritten: login says so and points at logout', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aifp-login-cli-'));
-  saveAuthSession({ accessToken: 'existing', expiresAt: new Date(Date.now() + 60_000).toISOString() }, { AI_FOOTPRINT_CONFIG_DIR: dir });
-  const server = await startStub({ onSignIn: signInOk(null), onToken: tokenReturning('new') });
+test('login --provider email: runs the device flow, opens the /cli-login URL with provider=email, persists the session', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shakers-elogin-'));
+  const broker = await startBroker({ pendingPolls: 2 });
   try {
-    const r = await runCli(server, [], { stdin: 'a@b.com\npw\n', configDir: dir });
-    assert.match(r.stdout, /Ya has iniciado/);
-    assert.equal(loadAuthSession({ AI_FOOTPRINT_CONFIG_DIR: dir }).accessToken, 'existing');
+    await withEnv(deviceEnv(dir, broker), async () => {
+      process.exitCode = 0;
+      const { opened } = await runCli(['--provider', 'email', '--lang', 'en']);
+      const sessionFile = path.join(dir, 'auth-session.json');
+      assert.ok(fs.existsSync(sessionFile), 'a session file must be written');
+      const session = JSON.parse(fs.readFileSync(sessionFile, 'utf8'));
+      assert.equal(session.accessToken, 'API-JWT');
+      assert.equal(session.cookie ?? null, null, 'the device flow carries no cookie (no password sign-in)');
+      assert.equal(fs.statSync(sessionFile).mode & 0o777, 0o600);
+      assert.match(opened, /^https:\/\/hub\.test\/cli-login\?/, 'the complete verification URL is opened');
+      assert.match(opened, /provider=email/, 'the web /cli-login page is told to offer email sign-in');
+      assert.notEqual(process.exitCode, 1);
+    });
   } finally {
-    server.close();
+    broker.server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('an EXPIRED session is told before prompting, then a fresh login replaces it', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aifp-login-cli-'));
-  saveAuthSession({ accessToken: 'stale', expiresAt: new Date(Date.now() - 1000).toISOString() }, { AI_FOOTPRINT_CONFIG_DIR: dir });
-  const server = await startStub({ onSignIn: signInOk(null), onToken: tokenReturning('fresh') });
+test('login --email <addr>: also routes to the device flow (the address is not used to authenticate)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shakers-elogin-'));
+  const broker = await startBroker();
   try {
-    const r = await runCli(server, [], { stdin: 'a@b.com\npw\n', configDir: dir });
-    assert.match(r.stdout, /caducó/);
-    assert.equal(loadAuthSession({ AI_FOOTPRINT_CONFIG_DIR: dir }).accessToken, 'fresh');
+    await withEnv(deviceEnv(dir, broker), async () => {
+      process.exitCode = 0;
+      // No stdin is provided: a password prompt would hang here. It does not, because
+      // the email method opens the web device flow instead of reading a password.
+      const { opened } = await runCli(['--email', 'typed@example.com', '--lang', 'en']);
+      assert.match(opened, /provider=email/, 'the address is ignored; the web /cli-login page handles identity');
+      assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'auth-session.json'), 'utf8')).accessToken, 'API-JWT');
+      assert.notEqual(process.exitCode, 1);
+    });
   } finally {
-    server.close();
+    broker.server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('login email: the prompt states no password is needed and shows the code', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shakers-elogin-'));
+  const broker = await startBroker();
+  try {
+    await withEnv(deviceEnv(dir, broker), async () => {
+      process.exitCode = 0;
+      const { out } = await runCli(['--provider', 'email', '--lang', 'en']);
+      assert.match(out, /no password needed/i, 'the Talent is told no password is needed');
+      assert.match(out, /ABCD-1234/, 'the user code is shown');
+    });
+  } finally {
+    broker.server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('login email: persists the RESPONSE email when the broker sends one', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shakers-elogin-'));
+  const broker = await startBroker({ loginEmail: 'talent@example.com' });
+  try {
+    await withEnv(deviceEnv(dir, broker), async () => {
+      process.exitCode = 0;
+      await runCli(['--provider', 'email', '--lang', 'en']);
+      const session = JSON.parse(fs.readFileSync(path.join(dir, 'auth-session.json'), 'utf8'));
+      assert.equal(session.accessToken, 'API-JWT');
+      assert.equal(session.email, 'talent@example.com');
+      assert.notEqual(process.exitCode, 1);
+    });
+  } finally {
+    broker.server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('login email: an unreachable device endpoint -> exit 1, no session, browser never opened', async () => {
+  // The device endpoints ALWAYS resolve (the baked flavor profile is the default —
+  // ADR-065), so there is no "no endpoint" path. Point them at a refused loopback
+  // port to prove the CLI fails loudly (exit 1) and never opens a browser or
+  // persists a session when the authorize call cannot be reached.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shakers-elogin-'));
+  try {
+    await withEnv(
+      {
+        SHAKERS_CLI_CONFIG_DIR: dir,
+        SHAKERS_CLI_DEVICE_AUTHORIZE_ENDPOINT: 'http://127.0.0.1:1/auth/device/code',
+        SHAKERS_CLI_DEVICE_TOKEN_ENDPOINT: 'http://127.0.0.1:1/works/auth/device/token',
+        SHAKERS_CLI_AUTH_TOKEN_ENDPOINT: 'http://127.0.0.1:1/auth/token',
+      },
+      async () => {
+        process.exitCode = 0;
+        await runCli(['--provider', 'email', '--lang', 'en'], { throwOnOpen: true });
+        assert.equal(process.exitCode, 1);
+        assert.equal(fs.existsSync(path.join(dir, 'auth-session.json')), false);
+      },
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an ACTIVE session is not silently overwritten: email login says so and leaves it intact', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shakers-elogin-'));
+  saveAuthSession({ accessToken: 'existing', expiresAt: new Date(Date.now() + 60_000).toISOString() }, { SHAKERS_CLI_CONFIG_DIR: dir });
+  const broker = await startBroker();
+  try {
+    await withEnv(deviceEnv(dir, broker), async () => {
+      const { out } = await runCli(['--provider', 'email', '--lang', 'es'], { throwOnOpen: true });
+      assert.match(out, /Ya has iniciado/);
+      assert.equal(loadAuthSession({ SHAKERS_CLI_CONFIG_DIR: dir }).accessToken, 'existing');
+    });
+  } finally {
+    broker.server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an EXPIRED session is told before the flow, then a fresh email login replaces it', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shakers-elogin-'));
+  saveAuthSession({ accessToken: 'stale', expiresAt: new Date(Date.now() - 1000).toISOString() }, { SHAKERS_CLI_CONFIG_DIR: dir });
+  const broker = await startBroker();
+  try {
+    await withEnv(deviceEnv(dir, broker), async () => {
+      process.exitCode = 0;
+      const { out } = await runCli(['--provider', 'email', '--lang', 'es']);
+      assert.match(out, /caducó/);
+      assert.equal(loadAuthSession({ SHAKERS_CLI_CONFIG_DIR: dir }).accessToken, 'API-JWT');
+    });
+  } finally {
+    broker.server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
 test('logout clears the session, and logout with no session says there was nothing', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aifp-login-cli-'));
-  saveAuthSession({ accessToken: 'x', expiresAt: null }, { AI_FOOTPRINT_CONFIG_DIR: dir });
-  const r1 = await runCli(null, ['logout'], { configDir: dir });
-  assert.match(r1.stdout, /cerrada/);
-  assert.equal(loadAuthSession({ AI_FOOTPRINT_CONFIG_DIR: dir }), null);
-  const r2 = await runCli(null, ['logout'], { configDir: dir });
-  assert.match(r2.stdout, /ninguna sesión/);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shakers-elogin-'));
+  saveAuthSession({ accessToken: 'x', expiresAt: null }, { SHAKERS_CLI_CONFIG_DIR: dir });
+  await withEnv({ SHAKERS_CLI_CONFIG_DIR: dir }, async () => {
+    const out1 = await runLogoutCli(['--lang', 'es']);
+    assert.match(out1, /cerrada/);
+    assert.equal(loadAuthSession({ SHAKERS_CLI_CONFIG_DIR: dir }), null);
+    const out2 = await runLogoutCli(['--lang', 'es']);
+    assert.match(out2, /ninguna sesión/);
+  });
 });
 
 test('logout also wipes consent.json so the next account cannot inherit the previous identity', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aifp-login-cli-'));
-  saveAuthSession({ accessToken: 'token-of-A', expiresAt: null }, { AI_FOOTPRINT_CONFIG_DIR: dir });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shakers-elogin-'));
+  saveAuthSession({ accessToken: 'token-of-A', expiresAt: null }, { SHAKERS_CLI_CONFIG_DIR: dir });
   const consentFile = path.join(dir, 'consent.json');
   fs.writeFileSync(consentFile, JSON.stringify({ email: 'a@account.com', emailVerified: true, consent: 'granted', lastSentAt: null }));
-  const r = await runCli(null, ['logout'], { configDir: dir });
-  assert.match(r.stdout, /cerrada/);
-  assert.equal(loadAuthSession({ AI_FOOTPRINT_CONFIG_DIR: dir }), null);
-  assert.equal(fs.existsSync(consentFile), false);
+  await withEnv({ SHAKERS_CLI_CONFIG_DIR: dir }, async () => {
+    const out = await runLogoutCli(['--lang', 'es']);
+    assert.match(out, /cerrada/);
+    assert.equal(loadAuthSession({ SHAKERS_CLI_CONFIG_DIR: dir }), null);
+    assert.equal(fs.existsSync(consentFile), false);
+  });
 });

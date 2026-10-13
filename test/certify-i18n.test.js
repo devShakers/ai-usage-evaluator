@@ -42,12 +42,13 @@ test('certifyDimension section exists in both es and en (the new certify flow)',
   assert.notEqual(es.certifyDimension.title, en.certifyDimension.title);
 });
 
-test('certifyDimension: the case copy exists in es and en, with the same expectations per test type', () => {
+test('certifyDimension: the web hand-off copy exists in es and en, and the in-terminal interview copy is gone', () => {
   for (const cd of [es.certifyDimension, en.certifyDimension]) {
-    for (const k of ['caseTitle', 'caseExpectationsTitle', 'caseBeforeStart', 'caseReadyPrompt']) {
-      assert.ok(typeof cd[k] === 'string' && cd[k].length > 0, `${k} missing`);
+    assert.ok(typeof cd.webHandoff === 'string' && cd.webHandoff.length > 0, 'webHandoff missing');
+    assert.ok(typeof cd.webHandoffNoLink === 'string' && cd.webHandoffNoLink.length > 0, 'webHandoffNoLink missing');
+    assert.equal(cd.webHandoffLink('https://x/y'), '  https://x/y');
+    for (const gone of ['creating', 'reportPolling', 'verdictTitle', 'caseTitle', 'caseExpectations']) {
+      assert.equal(gone in cd, false, `retired key still present: ${gone}`);
     }
   }
-  assert.deepEqual(Object.keys(es.certifyDimension.caseExpectations).sort(), ['CASE_STUDY', 'ROLE_PLAY']);
-  assert.deepEqual(Object.keys(en.certifyDimension.caseExpectations).sort(), ['CASE_STUDY', 'ROLE_PLAY']);
 });

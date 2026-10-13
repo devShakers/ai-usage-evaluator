@@ -99,7 +99,7 @@ function signupTools() {
   }).map((t) => [t.name, t]));
   return { tools, sent };
 }
-const DRAFT = { name: 'Ada Lovelace', role: 'Data Engineer', hourlyRate: 45, annualRate: 60000 };
+const DRAFT = { name: 'Ada Lovelace', role: 'Data Engineer', hourlyRate: 45, annualRate: 60000, sources: ['linkedin', 'cv'] };
 
 test('welcome: the dialog carries the welcome and asks the one question in the same call', async () => {
   const { tools } = signupTools();
@@ -130,7 +130,7 @@ test('draft: the dialog carries the draft and the notice with the confirmation q
   await tools.signup_start.handler({ language: 'es' });
   const d = dialogs(pick(ES.draftOk));
   const ok = await tools.signup_draft.handler(DRAFT, d.ctx);
-  assert.ok(d.asked[0].message.endsWith(`${LEGAL_ES.signupNotice}\n\n${ES.windowNotice}\n\n${ES.draftQuestion}`));
+  assert.ok(d.asked[0].message.endsWith(`${LEGAL_ES.signupNotice(DRAFT.sources)}\n\n${ES.windowNotice}\n\n${ES.draftQuestion}`));
   assert.equal(ok.next, 'signup_create_account');
   assert.equal(sent.length, 0);
   const created = await tools.signup_create_account.handler({ linkedinUrl: 'https://www.linkedin.com/in/ada' });
@@ -144,7 +144,7 @@ test('draft: a closed dialog falls back to the chat with the draft, the notice a
   const r = await tools.signup_draft.handler(DRAFT, dialogs({ action: 'cancel' }).ctx);
   assert.equal(r.reason, 'answer-required');
   assert.equal(r.dismissed, 'cancel');
-  assert.ok(r.say.includes(LEGAL_ES.signupNotice));
+  assert.ok(r.say.includes(LEGAL_ES.signupNotice(DRAFT.sources)));
   assert.deepEqual(r.options, [ES.draftOk, ES.draftChange]);
 });
 

@@ -759,39 +759,9 @@ const catalogs = {
       dimensionInvalid: 'Esa dimensión no está entre las certificables ahora mismo.',
       dimensionOnCooldown: (slug, day) => `Aún no puedes repetir ${slug}: estará disponible el ${day}.`,
       dimensionUsing: (slug) => `Dimensión elegida: ${slug}`,
-      creating: 'Creando la entrevista…',
-      createFailed: (reason) => `No se pudo crear la entrevista (${reason}).`,
-      onCooldown: (day) => (day
-        ? `Ya hiciste esta dimensión hace poco. Podrás repetirla a partir del ${day}.`
-        : 'Ya hiciste esta dimensión hace poco y todavía no se puede repetir.'),
-      needsWeb: 'Esta dimensión lleva un ejercicio que por ahora solo se hace en la web, no por terminal.',
-      interviewUnavailable: (reason) => `La entrevista no pudo completarse (${reason}).`,
-      reportPolling: 'Calculando tu veredicto…',
-      reportTimeout: 'El veredicto todavía se está calculando. Consúltalo en tu perfil en unos minutos.',
-      reportFailed: (reason) => `No se pudo obtener el veredicto (${reason}). Consúltalo en tu perfil.`,
-      verdictTitle: 'Veredicto',
-      verdictDimension: (dim) => `Dimensión: ${dim}`,
-      verdictBand: (band) => `Nivel: ${band}`,
-      verdictCertified: 'Resultado: certificada',
-      verdictNotCertified: 'Resultado: no certificada esta vez',
-      done: 'Certificación completada.',
-      // The same case copy the web preview shows (works `certifications.preview`).
-      caseTitle: 'El caso',
-      caseExpectationsTitle: 'Qué se espera',
-      caseExpectations: {
-        CASE_STUDY: {
-          reasoning: 'Se evalúa tu razonamiento y los supuestos que haces, no una respuesta perfecta.',
-          askForData: 'Puedes pedir datos que no están en el caso: di para qué los quieres.',
-          takeTime: 'Puedes pararte a pensar antes de responder.',
-        },
-        ROLE_PLAY: {
-          reasoning: 'Se evalúa cómo razonas en la conversación y los supuestos que haces, no una respuesta perfecta.',
-          askForData: 'Puedes pedir a la otra parte datos que no están en el caso.',
-          takeTime: 'Puedes pararte a pensar antes de responder.',
-        },
-      },
-      caseBeforeStart: 'Alma te va a hacer preguntas sobre este caso. Si te falta algún dato, pídeselo durante la entrevista.',
-      caseReadyPrompt: 'Pulsa Enter cuando lo hayas leído para empezar la entrevista.',
+      webHandoff: 'Esta certificación se hace en la web. Abre este enlace para empezar la entrevista:',
+      webHandoffLink: (url) => `  ${url}`,
+      webHandoffNoLink: 'No se pudo generar el enlace. Entra en tu perfil de Shakers y abre la sección de certificaciones.',
     },
     findProjects: {
       help:
@@ -1244,7 +1214,7 @@ const catalogs = {
     // Branded mini-shell chrome (skill-code-certification / ADR-014).
     login: {
       intro: 'Inicia sesión con tu email y contraseña de Shakers.',
-      sessionExpiredIntro: 'Tu sesión anterior caducó. Vuelve a iniciar sesión con tu email y contraseña.',
+      sessionExpiredIntro: 'Tu sesión anterior caducó. Vuelve a iniciar sesión.',
       alreadyLoggedIn: 'Ya has iniciado sesión. Usa `logout` si quieres cambiar de cuenta.',
       emailPrompt: 'Email:',
       passwordPrompt: 'Contraseña:',
@@ -1274,16 +1244,19 @@ const catalogs = {
       googleErrorState: 'La respuesta del navegador no coincidió con lo esperado (posible interferencia). Por seguridad no se inició sesión; inténtalo de nuevo.',
       googleErrorDenied: 'Cancelaste el acceso en Google (o no se concedió). No se inició sesión.',
       googleErrorGeneric: 'No se pudo iniciar sesión con Google. Inténtalo de nuevo.',
-      // Google por device flow (RFC 8628): la config de Google la tiene el Hub; abres una URL y escribes un código.
+      // Device flow (RFC 8628) para TODO método (Google, LinkedIn, email): el Hub tiene la config; abres una URL y, si hace falta, escribes un código.
       deviceIntro: (name) => `Inicia sesión con ${name}. Abre el enlace de abajo e introduce el código para autorizar; luego vuelve aquí.`,
+      // Email por device flow: se abre la web de Shakers; reutiliza tu sesión abierta o entra con tu email ahí. Nunca pide contraseña en la terminal.
+      emailDeviceIntro: 'Inicia sesión con tu email. Abrimos la web de Shakers: entra con tu email o aprueba si ya tienes la sesión abierta. No hace falta contraseña aquí.',
       deviceVisit: 'Abre esta página en tu navegador:',
       deviceCodeLabel: (code) => `e introduce este código: ${code}`,
       deviceWaiting: 'Esperando a que autorices en el navegador…',
-      deviceErrorExpired: 'La solicitud de acceso con Google caducó antes de autorizarse. Vuelve a ejecutar `login --google` cuando estés listo.',
-      deviceErrorDenied: 'Se canceló el acceso con Google (o no se concedió). No se inició sesión.',
-      deviceErrorGeneric: 'No se pudo iniciar sesión con Google. Inténtalo de nuevo.',
+      deviceApproveHint: 'Abrimos tu navegador: apruébalo ahí para terminar (o entra con tu email si aún no has iniciado sesión). No hace falta contraseña.',
+      deviceErrorExpired: 'La solicitud de acceso caducó antes de autorizarse. Vuelve a ejecutar `login` cuando estés listo.',
+      deviceErrorDenied: 'Se canceló el acceso (o no se concedió). No se inició sesión.',
+      deviceErrorGeneric: 'No se pudo iniciar sesión. Inténtalo de nuevo.',
       chooseMethodHeading: '¿Cómo quieres iniciar sesión?',
-      methodEmail: 'Email y contraseña',
+      methodEmail: 'Email',
       methodGoogle: 'Google',
       methodLinkedin: 'LinkedIn',
       selectHint: 'Flechas ↑/↓ para moverte · enter para elegir · esc para cancelar',
@@ -2421,39 +2394,9 @@ const catalogs = {
       dimensionInvalid: 'That dimension is not among the certifiable ones right now.',
       dimensionOnCooldown: (slug, day) => `You can't retake ${slug} yet: it will be available on ${day}.`,
       dimensionUsing: (slug) => `Chosen dimension: ${slug}`,
-      creating: 'Creating the interview…',
-      createFailed: (reason) => `Could not create the interview (${reason}).`,
-      onCooldown: (day) => (day
-        ? `You took this dimension recently. You can retake it from ${day}.`
-        : 'You took this dimension recently and cannot retake it yet.'),
-      needsWeb: 'This dimension has an exercise that for now is only taken on the web, not in the terminal.',
-      interviewUnavailable: (reason) => `The interview could not be completed (${reason}).`,
-      reportPolling: 'Computing your verdict…',
-      reportTimeout: 'The verdict is still being computed. Check your profile in a few minutes.',
-      reportFailed: (reason) => `Could not fetch the verdict (${reason}). Check your profile.`,
-      verdictTitle: 'Verdict',
-      verdictDimension: (dim) => `Dimension: ${dim}`,
-      verdictBand: (band) => `Level: ${band}`,
-      verdictCertified: 'Result: certified',
-      verdictNotCertified: 'Result: not certified this time',
-      done: 'Certification complete.',
-      // The same case copy the web preview shows (works `certifications.preview`).
-      caseTitle: 'The case',
-      caseExpectationsTitle: 'What is expected',
-      caseExpectations: {
-        CASE_STUDY: {
-          reasoning: 'We assess your reasoning and the assumptions you make, not a perfect answer.',
-          askForData: 'You can ask for data that is not in the case: say what you want it for.',
-          takeTime: 'You can stop to think before you answer.',
-        },
-        ROLE_PLAY: {
-          reasoning: 'We assess how you reason in the conversation and the assumptions you make, not a perfect answer.',
-          askForData: 'You can ask the other side for data that is not in the case.',
-          takeTime: 'You can stop to think before you answer.',
-        },
-      },
-      caseBeforeStart: 'Alma is going to ask you questions about this case. If you are missing any data, ask her for it during the interview.',
-      caseReadyPrompt: 'Press Enter once you have read it to start the interview.',
+      webHandoff: 'This certification is done on the web. Open this link to start the interview:',
+      webHandoffLink: (url) => `  ${url}`,
+      webHandoffNoLink: 'Could not build the link. Go to your Shakers profile and open the certifications section.',
     },
     findProjects: {
       help:
@@ -2902,7 +2845,7 @@ const catalogs = {
     // Branded mini-shell chrome (skill-code-certification / ADR-014).
     login: {
       intro: 'Log in with your Shakers email and password.',
-      sessionExpiredIntro: 'Your previous session expired. Log in again with your email and password.',
+      sessionExpiredIntro: 'Your previous session expired. Log in again.',
       alreadyLoggedIn: 'You are already logged in. Use `logout` if you want to switch accounts.',
       emailPrompt: 'Email:',
       passwordPrompt: 'Password:',
@@ -2932,17 +2875,20 @@ const catalogs = {
       googleErrorState: 'The browser response did not match what was expected (possible interference). For safety no session was started; try again.',
       googleErrorDenied: 'You cancelled access in Google (or it was not granted). No session was started.',
       googleErrorGeneric: 'Could not log in with Google. Try again.',
-      // Google via device flow (RFC 8628): the Hub owns Google config; you open a URL and type a code.
+      // Device flow (RFC 8628) for EVERY method (Google, LinkedIn, email): the Hub owns the config; you open a URL and, if needed, type a code.
       deviceIntro: (name) => `Sign in with ${name}. Open the link below and enter the code to authorize; then come back here.`,
+      // Email via device flow: the Shakers web opens; reuse your open session or sign in with your email there. It never asks for a password in the terminal.
+      emailDeviceIntro: 'Sign in with your email. We open the Shakers web: sign in with your email, or approve if you are already signed in. No password is needed here.',
       deviceVisit: 'Open this page in your browser:',
       deviceCodeLabel: (code) => `and enter this code: ${code}`,
       deviceWaiting: 'Waiting for you to authorize in the browser…',
-      deviceErrorExpired: 'The Google sign-in request expired before it was authorized. Run `login --google` again when you are ready.',
-      deviceErrorDenied: 'The Google sign-in was cancelled or not granted. No session was started.',
-      deviceErrorGeneric: 'Could not sign in with Google. Try again.',
+      deviceApproveHint: 'We opened your browser: approve there to finish (or sign in with your email if you are not signed in yet). No password needed.',
+      deviceErrorExpired: 'The sign-in request expired before it was authorized. Run `login` again when you are ready.',
+      deviceErrorDenied: 'The sign-in was cancelled or not granted. No session was started.',
+      deviceErrorGeneric: 'Could not sign in. Try again.',
       // Interactive method picker (`login` with no --email/--google/--provider): reuses the SAME single-select picker `certify agents` uses to choose an agent (src/interactive-select.js).
       chooseMethodHeading: 'How do you want to log in?',
-      methodEmail: 'Email and password',
+      methodEmail: 'Email',
       methodGoogle: 'Google',
       methodLinkedin: 'LinkedIn',
       selectHint: 'Arrows ↑/↓ to move · enter to pick · esc to cancel',

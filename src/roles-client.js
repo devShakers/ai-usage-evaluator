@@ -43,7 +43,6 @@ function normalizeRole(r) {
   };
 }
 
-// GET works/certifications/me/available-roles -> { roles:[{clusterId,name,category,proposalKind}] }.
 async function requestAvailableRoles({ hubAccessToken } = {}, { endpoint, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   if (!endpoint) return { ok: false, reason: 'no-endpoint' };
   if (!hubAccessToken) return { ok: false, reason: 'no-hub-token' };
@@ -60,7 +59,6 @@ async function requestAvailableRoles({ hubAccessToken } = {}, { endpoint, timeou
   return { ok: true, roles: rows.map(normalizeRole).filter(Boolean) };
 }
 
-// GET works/talents/me/work-details/assigned-clusters -> the talent's GROWTH/RECOMMENDED roles.
 async function requestAssignedClusters({ hubAccessToken } = {}, { endpoint, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   if (!endpoint) return { ok: false, reason: 'no-endpoint' };
   if (!hubAccessToken) return { ok: false, reason: 'no-hub-token' };
@@ -77,7 +75,6 @@ async function requestAssignedClusters({ hubAccessToken } = {}, { endpoint, time
   return { ok: true, clusters: rows.map(normalizeRole).filter(Boolean) };
 }
 
-// POST works/talents/me/work-details/assigned-clusters { clusterId } -> adds a GROWTH role.
 async function requestAddGrowthRole({ clusterId, hubAccessToken } = {}, { endpoint, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   if (!endpoint) return { ok: false, reason: 'no-endpoint' };
   if (!hubAccessToken) return { ok: false, reason: 'no-hub-token' };
@@ -92,7 +89,6 @@ async function requestAddGrowthRole({ clusterId, hubAccessToken } = {}, { endpoi
   return { ok: true, clusterId };
 }
 
-// PATCH works/certifications/me/main-role { clusterId } -> sets the preferred main role.
 async function requestSetMainRole({ clusterId, hubAccessToken } = {}, { endpoint, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   if (!endpoint) return { ok: false, reason: 'no-endpoint' };
   if (!hubAccessToken) return { ok: false, reason: 'no-hub-token' };

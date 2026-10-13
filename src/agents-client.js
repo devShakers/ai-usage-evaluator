@@ -95,7 +95,7 @@ async function requestDeclareAgent(
   return { ok: true, agentId };
 }
 
-// `PATCH {hub}/works/me/agents/:id/portfolios` — DIRECT to Hub (ADR-041), replace-set.
+// DIRECT to Hub (ADR-041), replace-set.
 async function requestRelateAgentPortfolios(
   { agentId, items, hubAccessToken } = {},
   { endpoint, timeoutMs = DEFAULT_TIMEOUT_MS } = {},
