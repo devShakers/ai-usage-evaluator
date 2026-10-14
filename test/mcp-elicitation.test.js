@@ -93,6 +93,19 @@ test('server: without the capability, or with URL-only elicitation, nothing is s
   }
 });
 
+test('server: elicitation advertised as a bare presence flag ({} or true) fires the dialog', async () => {
+  for (const elicitation of [{}, true]) {
+    const c = wire({ tools: [askTool()] });
+    c.send({ id: 1, method: 'initialize', params: { capabilities: { elicitation } } });
+    await c.next((m) => m.id === 1);
+    await callAsk(c);
+    const req = await c.next((m) => m.method === 'elicitation/create');
+    c.send({ id: req.id, result: { action: 'accept', content: { choice: 'A' } } });
+    assert.equal(resultOf(await c.next((m) => m.id === 2)).elicitation, true);
+    c.close();
+  }
+});
+
 test('server: a client error, a timeout or a closed connection give the tool null, and a late answer is ignored', async () => {
   const c = wire({ tools: [askTool()], elicitationTimeoutMs: 50 });
   c.send({ id: 1, method: 'initialize', params: { capabilities: { elicitation: {} } } });
@@ -160,9 +173,10 @@ test('askChoice: one enum field, the pick back; a decline, a cancel or an answer
   }
   const chat = await askChoice({}, { question: 'Which?', options: ['A', 'B'] });
   assert.deepEqual(Object.keys(chat), ['chat']);
-  assert.equal(chat.chat.say, 'Which?\n\n1. A\n2. B');
+  assert.equal(chat.chat.say, 'Which?\n\n- A\n- B');
+  assert.doesNotMatch(chat.chat.say, /^\d+\.\s/m, 'options are labelled, never numbered');
   assert.match(chat.chat.choiceMessage, /Print `say` word for word.*call no tool until the talent answers/);
   const withTexts = await askChoice(dialogs({ action: 'cancel' }).ctx, { texts: ['Notice.'], question: 'Which?', options: ['A', 'B'] });
-  assert.equal(withTexts.chat.say, 'Notice.\n\nWhich?\n\n1. A\n2. B', 'a closed dialog keeps the texts');
+  assert.equal(withTexts.chat.say, 'Notice.\n\nWhich?\n\n- A\n- B', 'a closed dialog keeps the texts');
 });
 

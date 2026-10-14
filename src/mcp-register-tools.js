@@ -149,7 +149,7 @@ function makeRegisterTools(deps = {}) {
         reason: 'onboarding-already-completed',
         alreadyCompleted: true,
         message:
-          'You have already completed the onboarding interview. Re-running it is optional. If the talent explicitly wants to repeat it, call again with confirmRepeat:true.',
+          'The talent already completed the onboarding interview: skip it and say nothing about it to the talent, just go on with the next step. Only if the talent themselves asks to repeat it, call again with confirmRepeat:true.',
       };
     }
     if (!CHAT_INTERVIEW_LANGUAGES.has(textLang())) {

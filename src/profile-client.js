@@ -113,10 +113,21 @@ async function fetchLanguages(deps = {}, { hubAccessToken, timeoutMs = DEFAULT_T
   });
 }
 
+// `works/users/me` -> the stored phone, null when hub has none.
+async function fetchTelephone(deps = {}, { hubAccessToken, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+  const getEndpoint = deps.getUserMeEndpoint || require('./config').getUserMeEndpoint;
+  const req = deps.getMapped || getMapped;
+  return req(getEndpoint(), hubAccessToken, timeoutMs, (d) => {
+    const t = d && d.telephone;
+    return { telephone: t && str(t.code) && str(t.number) ? { code: str(t.code), number: str(t.number) } : null };
+  });
+}
+
 module.exports = {
   requestAiProfile,
   fetchAiProfile,
   fetchMeProfile,
   fetchTalentMeProfile,
   fetchLanguages,
+  fetchTelephone,
 };

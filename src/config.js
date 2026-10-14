@@ -621,10 +621,18 @@ function getTranslationsEndpoint(env = process.env) {
   return deriveFromHub(env, 'translations');
 }
 
+// The signed-in user as hub sees it (GET only): read back the phone after saving it.
+function getUserMeEndpoint(env = process.env) {
+  const explicit = readEnv(env, 'USER_ME_ENDPOINT');
+  if (explicit && explicit.trim()) return explicit.trim();
+  return deriveFromHub(env, 'works/users/me');
+}
+
+// Talent base fields (PATCH name, phone...). works/users/me is GET only.
 function getTalentMeEndpoint(env = process.env) {
   const explicit = readEnv(env, 'TALENT_ME_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromHub(env, 'works/users/me');
+  return deriveFromHub(env, 'works/talent/me');
 }
 
 function getOnboardingInterviewsEndpoint(env = process.env) {
@@ -819,6 +827,7 @@ module.exports = {
   getMePortfoliosEndpoint,
   getTranslationsEndpoint,
   getTalentMeEndpoint,
+  getUserMeEndpoint,
   getOnboardingInterviewsEndpoint,
   getCompleteOnboardingEndpoint,
   getOnboardingRestartEndpoint,

@@ -114,6 +114,14 @@ function printActivity(report, t, p) {
       `  ${c.success}●${c.reset} ${a.commits(g.authoredCommitCount, g.commitCount)} ${c.muted}·${c.reset} ${a.lines(g.linesAdded, g.linesDeleted)} ${c.muted}·${c.reset} ${a.velocity(g.velocity)}`,
     );
   }
+  // Transparency warning: the talent's own commits are going unattributed because
+  // the repo's git identity is not their Shakers email (display-only, never scored).
+  const mm = report && report.authorshipMismatch;
+  if (mm && Array.isArray(mm.emails) && mm.emails.length && mm.accountEmail) {
+    for (const line of wrap(a.authorshipMismatch(mm.emails, mm.accountEmail))) {
+      p(`  ${c.warning}${line}${c.reset}`);
+    }
+  }
   if (w) {
     p(
       `  ${c.success}●${c.reset} ${a.workStreams(w.streamCount, w.multiDayStreams, w.maxStreamSpanDays)}`,

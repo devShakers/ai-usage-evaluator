@@ -1,6 +1,7 @@
 'use strict';
 
 const http = require('http');
+const crypto = require('crypto');
 const { openPath } = require('./open-file');
 const flow = require('./onboarding-flow');
 const { methodIdsForFlow } = require('./auth-methods');
@@ -184,7 +185,7 @@ function loginFormHtml(lang, { error } = {}) {
   const c = copy(lang);
   return page(`Shakers · ${c.signin}`, {
     inner: `<h1>${c.signin}</h1>${errorBanner(errorText(c, error))}`
-      + `<form method="post" action="/submit">`
+      + `<form method="post" action="submit">`
       + `<label>${c.email}</label><input name="email" type="email" required autofocus>`
       + `<label>${c.password}</label><input name="password" type="password" required>`
       + `<button type="submit">${c.signin}</button>`
@@ -205,7 +206,7 @@ function registerFormHtml(lang, { error, missing } = {}) {
   return page(`Shakers · ${c.create}`, {
     banner: panel(c.welcome),
     inner: `<h1>${c.create}</h1>${errorBanner(errorText(c, error))}`
-      + `<form method="post" action="/submit">`
+      + `<form method="post" action="submit">`
       + missingIdentityInputs(c, missing).replace('required', 'required autofocus')
       + `<label>${c.password}</label><input name="password" type="password" required minlength="8"${missing && (missing.email || missing.name || missing.lastName) ? '' : ' autofocus'}>`
       + `<label>${c.repeat}</label><input name="passwordConfirm" type="password" required minlength="8">`
@@ -250,9 +251,9 @@ function methodChoiceHtml(mode, lang, methods) {
   const emailLabel = mode === 'register' ? c.continueEmailRegister : c.continueEmail;
   const register = mode === 'register';
   const buttons = WINDOW_METHODS[mode].filter((id) => methods.includes(id)).map((id) => {
-    if (id === 'google') return `<a class="mbtn primary" href="/google${register ? '?legal=1' : ''}">${GOOGLE_G}${c.continueGoogle}</a>`;
-    if (id === 'linkedin') return `<a class="mbtn secondary" href="/linkedin">${LINKEDIN_IN}${c.continueLinkedin}</a>`;
-    return `<a class="mbtn secondary" href="/email">${emailLabel}</a>`;
+    if (id === 'google') return `<a class="mbtn primary" href="google${register ? '?legal=1' : ''}">${GOOGLE_G}${c.continueGoogle}</a>`;
+    if (id === 'linkedin') return `<a class="mbtn secondary" href="linkedin">${LINKEDIN_IN}${c.continueLinkedin}</a>`;
+    return `<a class="mbtn secondary" href="email">${emailLabel}</a>`;
   }).join('');
   return page(`Shakers · ${title}`, {
     inner: `<h1>${title}</h1><div class="actions">${buttons}</div><p class="hint">${c.hint}</p>${register ? legalHtml(lang) : ''}`,
@@ -264,12 +265,12 @@ function existingAccountHtml(lang, { email, error } = {}) {
   const c = copy(lang);
   return page(`Shakers · ${c.signin}`, {
     inner: `<h1>${c.signin}</h1>${errorBanner(error ? errorText(c, error) : c.existing)}`
-      + `<form method="post" action="/submit"><input type="hidden" name="intent" value="login">`
+      + `<form method="post" action="submit"><input type="hidden" name="intent" value="login">`
       + `<label>${c.email}</label><input name="email" type="email" required value="${esc(email || '')}">`
       + `<label>${c.password}</label><input name="password" type="password" required autofocus>`
       + `<button type="submit">${c.signin}</button>`
       + `</form>`
-      + `<div class="actions"><a class="mbtn secondary" href="/google?legal=1">${GOOGLE_G}${c.continueGoogle}</a></div>`
+      + `<div class="actions"><a class="mbtn secondary" href="google?legal=1">${GOOGLE_G}${c.continueGoogle}</a></div>`
       + `<p class="hint">${c.hint}</p>`,
   });
 }
@@ -371,7 +372,25 @@ function runLoopbackAuth(
       resolve(result);
     };
 
+    // Any page in the talent's browser can reach a loopback port, and a rebound DNS name can read it: only this
+    // window's own host, its own origin and its unguessable path get an answer. Every link in the pages is relative.
+    const secretPath = `/${crypto.randomBytes(32).toString('base64url')}`;
+    let port = null;
+    const ownHosts = () => [`127.0.0.1:${port}`, `localhost:${port}`];
+    const forbidden = (req) => {
+      if (!ownHosts().includes(String(req.headers.host || '').toLowerCase())) return true;
+      if (req.method === 'GET') return false;
+      const origin = req.headers.origin;
+      if (origin !== undefined && !ownHosts().map((h) => `http://${h}`).includes(origin)) return true;
+      const site = req.headers['sec-fetch-site'];
+      return site !== undefined && site !== 'same-origin';
+    };
+
     const server = http.createServer(async (req, res) => {
+      if (forbidden(req)) {
+        res.writeHead(403).end();
+        return;
+      }
       let url;
       try {
         url = new URL(req.url, 'http://127.0.0.1');
@@ -379,7 +398,17 @@ function runLoopbackAuth(
         res.writeHead(400).end();
         return;
       }
-      if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '')) {
+      if (url.pathname === secretPath) {
+        res.writeHead(302, { Location: `${secretPath}/${url.search}` });
+        res.end();
+        return;
+      }
+      if (!url.pathname.startsWith(`${secretPath}/`)) {
+        res.writeHead(404).end();
+        return;
+      }
+      url.pathname = url.pathname.slice(secretPath.length);
+      if (req.method === 'GET' && url.pathname === '/') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(showMethodScreen ? methodChoiceHtml(mode, lang, methods) : formHtml(mode, lang, formOpts));
         return;
@@ -440,8 +469,8 @@ function runLoopbackAuth(
     if (timer.unref) timer.unref();
     server.on('error', () => finish({ ok: false, reason: 'local-error' }));
     server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address();
-      const formUrl = `http://127.0.0.1:${port}/`;
+      ({ port } = server.address());
+      const formUrl = `http://127.0.0.1:${port}${secretPath}/`;
       if (typeof onUrl === 'function') onUrl(formUrl);
       try { openBrowser(formUrl); } catch { /* headless: the onUrl fallback covers it */ }
     });

@@ -74,7 +74,7 @@ test('ai_usage step: a closed dialog and a chat client both get the disclaimers,
   for (const ctx of [dialogs({ action: 'cancel' }).ctx, dialogs({ action: 'decline' }).ctx]) {
     const r = await tool.handler({ lang: 'es' }, ctx);
     assert.equal(r.reason, 'consent-required');
-    assert.equal(r.say, [LEGAL_ES.usageInfoAccessed, LEGAL_ES.usageGoalDuration, ES.aiUsageQuestion, `1. ${ES.aiUsageYes}\n2. ${ES.aiUsageSkip}`].join('\n\n'));
+    assert.equal(r.say, [LEGAL_ES.usageInfoAccessed, LEGAL_ES.usageGoalDuration, ES.aiUsageQuestion, `- ${ES.aiUsageYes}\n- ${ES.aiUsageSkip}`].join('\n\n'));
   }
   fixSignupLanguage('en');
   const chat = await tool.handler({ lang: 'es' }, {});
@@ -106,7 +106,7 @@ test('welcome: the dialog carries the welcome and asks the one question in the s
   const d = dialogs(pick(ES.cvSearch));
   const answered = await tools.signup_start.handler({ language: 'es' }, d.ctx);
   assert.equal(d.asked[0].message, [ES.welcome(null), ES.welcomeQuestion].join('\n\n'));
-  assert.deepEqual(d.asked[0].requestedSchema.properties.choice.enum, ['Sí, búscalo', 'Te lo adjunto yo']);
+  assert.deepEqual(d.asked[0].requestedSchema.properties.choice.enum, ['Te lo paso', 'Búscalo en mi equipo']);
   assert.equal(answered.step, 'cv-search');
 });
 
@@ -182,7 +182,7 @@ test('interview: without a dialog the where question comes alone; where:"later" 
   const r = await start.handler({}, {});
   assert.equal(r.reason, 'where-required');
   assert.deepEqual(r.options, [ES.interviewHere, ES.interviewLater]);
-  assert.equal(r.say, `${ES.interviewWhereQuestion}\n\n1. ${ES.interviewHere}\n2. ${ES.interviewLater}`);
+  assert.equal(r.say, `${ES.interviewWhereQuestion}\n\n- ${ES.interviewHere}\n- ${ES.interviewLater}`);
   assert.equal((await start.handler({ where: 'later' }, {})).reason, 'interview-later');
   const here = await start.handler({ where: 'here', answerMode: 'own' }, {});
   assert.equal(here.reason, 'answer-mode-required', 'an answer mode without the disclaimers is asked again with them');
@@ -265,7 +265,7 @@ test('main role: without a dialog the roles text, the question and its options c
   const r = await set.handler({}, {});
   assert.equal(r.reason, 'answer-required');
   assert.match(r.say, /^Con todo lo que me has contado/);
-  assert.match(r.say, /\n\n1\. AI Engineer\n2\. Backend Developer\n3\. /);
+  assert.match(r.say, /\n\n- AI Engineer\n- Backend Developer\n- /);
   assert.deepEqual(r.options, ['AI Engineer', 'Backend Developer', ES.mainRoleOther]);
   assert.deepEqual(r.roles, [{ clusterId: 'ai-eng', name: 'AI Engineer' }, { clusterId: 'backend', name: 'Backend Developer' }]);
   assert.deepEqual(calls.main, []);
@@ -293,7 +293,8 @@ test('instructions: a dialog client is told the tools ask the closed questions; 
   const dialog = buildServerInstructions({ elicitation: true });
   assert.match(dialog, /asked by the tools in a dialog that carries their texts/);
   const chat = buildServerInstructions({});
-  assert.match(chat, /Closed questions come as `say` with their numbered options/);
+  assert.match(chat, /Closed questions come as `say`: the fixed texts, the question and its options as a list/);
+  assert.doesNotMatch(dialog + chat, /numbered|the number/i);
   assert.doesNotMatch(dialog + chat, /shown:true|windowAnnounced/);
   for (const text of [dialog, chat]) {
     const order = ['signup_start', 'signup_email', 'signup_draft', 'signup_create_account', 'update_existing_profile', 'ai_usage', 'onboarding_interview_start', 'set_main_role', 'open_web'].map((t) => text.indexOf(t));

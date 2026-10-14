@@ -86,10 +86,14 @@ function createMcpServer({ tools = [], prompts = [], serverInfo = {}, protocolVe
     }
   }
 
-  // An `elicitation` capability without `form` but with `url` only opens links, so it cannot ask a closed question.
+  // The spec (2025-06-18) advertises elicitation support as a presence flag: `capabilities.elicitation: {}`.
+  // So any advertised elicitation can ask a closed question — except an explicit url-only object
+  // (`{ url }` without `{ form }`), which only opens links and falls back to the chat.
   function canElicitForm() {
     const e = clientCapabilities.elicitation;
-    return !!e && typeof e === 'object' && (e.form !== undefined || e.url === undefined);
+    if (!e) return false;
+    if (typeof e === 'object' && e.url !== undefined && e.form === undefined) return false;
+    return true;
   }
 
   // MCP elicitation/create: the client's { action, content }, or null when it has no dialog or the exchange failed.
@@ -201,6 +205,9 @@ function createMcpServer({ tools = [], prompts = [], serverInfo = {}, protocolVe
         case 'initialize': {
           const requested = msg.params && msg.params.protocolVersion;
           clientCapabilities = (msg.params && msg.params.capabilities) || {};
+          // One line per connection on stderr (never stdout: it carries JSON-RPC), so the host's
+          // declared elicitation shape and the resulting decision are visible in the MCP log.
+          process.stderr.write(`  [mcp] initialize elicitation=${JSON.stringify(clientCapabilities.elicitation)} -> elicit=${canElicitForm()}\n`);
           const text = typeof instructions === 'function' ? instructions({ elicitation: canElicitForm() }) : instructions;
           return resultResponse(id, {
             protocolVersion: requested || advertisedVersion,

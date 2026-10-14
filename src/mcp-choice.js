@@ -2,7 +2,7 @@
 
 // Closed questions of the MCP sign-up: a dialog when the client can elicit, otherwise one block the model prints, question last.
 
-const SAY_MESSAGE = 'Print `say` word for word as your whole reply: it already holds the texts, the question and its numbered options. Add nothing of your own and call no tool until the talent answers.';
+const SAY_MESSAGE = 'Print `say` word for word as your whole reply: it already holds the texts, the question and its options as a list. Present them as a choice and pass back the exact label the talent picks, never a number; add nothing of your own and call no tool until the talent answers.';
 
 // Fixed texts that are not a question ride on the next question block: a model skips a standalone relay.
 const notices = [];
@@ -17,14 +17,14 @@ function takeNotices() {
 
 // Fixed texts travel with their question, so a model that skips "show this first" still shows them.
 function sayBlock(texts, question, options) {
-  return [...texts, question, options.map((o, i) => `${i + 1}. ${o}`).join('\n')].join('\n\n');
+  return [...texts, question, options.map((o) => `- ${o}`).join('\n')].join('\n\n');
 }
 
 function chatChoice(question, options, texts = []) {
   return { say: sayBlock([...takeNotices(), ...texts], question, options), options, choiceMessage: SAY_MESSAGE };
 }
 
-// The option an answer names, by its text or by its number in the printed list.
+// The option an answer names: by its label, or by a position number if the talent still types one.
 function optionFor(answer, options) {
   if (typeof answer !== 'string') return null;
   const text = answer.trim();

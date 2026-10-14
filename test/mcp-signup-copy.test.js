@@ -81,8 +81,12 @@ async function toWindow(tools) {
 
 test('Adrián\'s copy (es), word for word: welcome, question and options', () => {
   assert.equal(ES.welcome(null), '¡Hola! Gracias por querer unirte a Shakers 🙌\n\nSomos una comunidad de profesionales tech freelance. Nuestro objetivo es tener siempre tu versión más actual como profesional (lo que sabes hacer hoy, cómo trabajas con IA y qué buscas) para conectarte con proyectos que de verdad encajen contigo.\n\nEl alta son tres pasos y la mayor parte la hago yo por ti:\n1. Tu perfil (2 min). Lo relleno a partir de tu CV y LinkedIn, tú solo revisas y confirmas.\n2. Cómo trabajas con IA (1-2 min, opcional). Analizo qué herramientas usas en este equipo. Tu código y tus prompts nunca salen de tu máquina.\n3. Una breve entrevista (opcional). Para afinar tu rol y lo que buscas. Puedes hacerla ahora o más tarde.\n\nTodo lo puedes editar después desde la web.');
-  assert.equal(ES.welcomeQuestion, '¿Empezamos? Si me das permiso, busco tu CV en este equipo y te preparo un borrador para que solo tengas que confirmarlo.');
-  assert.deepEqual([ES.cvSearch, ES.cvAttach], ['Sí, búscalo', 'Te lo adjunto yo']);
+  assert.equal(ES.welcomeQuestion, '¿Empezamos? Pásame tu CV, o si lo tienes en este equipo, te lo busco yo. Con él te preparo un borrador para que solo tengas que confirmarlo.');
+  assert.deepEqual([ES.cvAttach, ES.cvSearch], ['Te lo paso', 'Búscalo en mi equipo']);
+  for (const lang of ['es', 'en', 'it', 'pt']) {
+    const c = signupCopy(lang);
+    assert.doesNotMatch([c.welcomeQuestion, c.cvSearch, c.cvAttachAsk].join(' '), /\b(Mac|macOS|Windows|Linux|ordenador|portátil)\b/i, `${lang}: no OS or device name`);
+  }
   assert.equal(ES.linkedinAsk, '¿Me pasas tu perfil de LinkedIn?');
 });
 
@@ -95,7 +99,7 @@ test('Adrián\'s copy (es), word for word: email, draft, window, AI usage, exist
   assert.equal(ES.draftQuestion, '¿Está bien o cambio algo?');
   assert.deepEqual([ES.draftOk, ES.draftChange], ['Todo correcto', 'Quiero cambiar algo']);
   assert.doesNotMatch(ES.windowNotice, /LinkedIn/);
-  assert.equal(ES.aiUsageQuestion, '¿Quieres que analice cómo trabajas con IA? Es opcional y tarda 1-2 min. Solo veo qué herramientas usas, tu código y tus prompts no salen de tu máquina. Te ayuda a destacar en proyectos de IA.');
+  assert.equal(ES.aiUsageQuestion, '¿Quieres que analice cómo trabajas con IA? Es opcional y tarda 1-2 min. Solo veo qué herramientas usas, tu código y tus prompts no salen de tu máquina. Miro el uso de IA de todo este equipo, que doy por tuyo. Te ayuda a destacar en proyectos de IA.');
   assert.deepEqual([ES.aiUsageYes, ES.aiUsageSkip], ['Sí, analízalo', 'Saltar este paso']);
   assert.equal(ES.existingTitle, 'He visto que ya tienes cuenta. ¿Actualizo tu perfil con esto?');
   assert.equal(ES.rolesIntro, 'Con todo lo que me has contado, encajas en estos perfiles:');
@@ -226,7 +230,7 @@ test('legal texts: the two AI-usage disclaimers come right before the AI-usage q
   fixSignupLanguage('es');
   const usage = makeAiUsageTool({ signupPhase: () => 'account', recordConsent: () => {} });
   const chat = await usage.handler({});
-  assert.equal(chat.say, [legalCopy('es').usageInfoAccessed, legalCopy('es').usageGoalDuration, needle(ES.aiUsageQuestion), `1. ${ES.aiUsageYes}\n2. ${ES.aiUsageSkip}`].join('\n\n'));
+  assert.equal(chat.say, [legalCopy('es').usageInfoAccessed, legalCopy('es').usageGoalDuration, needle(ES.aiUsageQuestion), `- ${ES.aiUsageYes}\n- ${ES.aiUsageSkip}`].join('\n\n'));
   assert.deepEqual(chat.options, [ES.aiUsageYes, ES.aiUsageSkip]);
   const dialog = await usage.handler({}, { elicitation: true, elicit: async () => null });
   assert.equal(dialog.say, chat.say, 'a dialog that cannot open prints the disclaimers with the question too');
@@ -253,8 +257,9 @@ test('window warning: signup_create_account answers at once and the browser open
 
 test('the LinkedIn opener waits the same few seconds and is not part of the default path', async () => {
   const { tools, calls, release } = signupHarness();
-  const start = await tools.signup_start.handler({ language: 'es', answer: ES.cvSearch });
-  assert.match(start.message, /only if they say they do not know where to find it/);
+  await tools.signup_start.handler({ language: 'es', answer: ES.cvSearch });
+  const ask = await tools.signup_start.handler({ language: 'es', linkedinMissing: true });
+  assert.match(ask.message, /only if they say they do not know where to find it/i);
   const r = tools.open_linkedin_profile.handler({});
   assert.equal(r.ok, true);
   assert.deepEqual(calls.opened, []);

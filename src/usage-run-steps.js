@@ -30,6 +30,7 @@ const {
   collectScopedWorkStreams,
   collectScopedDetectionEvidence,
 } = require('./scope-signals');
+const { detectAuthorshipMismatch } = require('./authorship-mismatch');
 const { MODEL_CALL, REASON, skipped, attachModelCall } = require('./model-call-record');
 const {
   getSynthesisEndpoint,
@@ -164,6 +165,8 @@ async function resolveAiConsent({ opts, catalog, gate, injectedAsk }) {
 function runAggregation({ report, scope, consentEmail, agentRoots, root, catalog }) {
   withStaticStatus(catalog.cli.aggregatingLabel, () => {
     report.gitActivity = collectScopedGitActivity(scope.toplevels, consentEmail);
+    // Display-only transparency warning (never feeds scoring, see authorship-mismatch.js).
+    report.authorshipMismatch = detectAuthorshipMismatch(scope.toplevels, consentEmail, report.gitActivity);
     const sessionSignals = collectSessionSignals(process.env, scope.selectedCwds);
     report.sessions = sessionSignals.sessions;
     report.workStreams = collectScopedWorkStreams(scope.toplevels);

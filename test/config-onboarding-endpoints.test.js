@@ -18,6 +18,8 @@ const {
   getDeviceAuthorizeEndpoint,
   getDeviceTokenEndpoint,
   getAgentPortfoliosEndpoint,
+  getTalentMeEndpoint,
+  getUserMeEndpoint,
   ENV_PROFILES,
 } = require('../src/config');
 
@@ -39,6 +41,14 @@ test('hub-routed endpoints derive from SHAKERS_CLI_HUB_BASE, not from the certs 
   assert.equal(getProfessionalDetailsEndpoint(env), 'https://hub.example.com/api/v1/works/talent/me/professional-details');
   assert.equal(getPricingRateEndpoint(env), 'https://hub.example.com/api/v1/works/talent/me/work-details/pricing-rate');
   assert.equal(getCompleteOnboardingEndpoint(env), 'https://hub.example.com/api/v1/works/talents/me/complete-onboarding');
+});
+
+// The phone save PATCHes it; on hub new-works works/users/me is GET only, so a PATCH there is a 404.
+test('the talent base-fields PATCH (phone) goes to works/talent/me, never to the GET-only works/users/me', () => {
+  const env = { AI_FOOTPRINT_INGEST_ENDPOINT: INGEST, SHAKERS_CLI_HUB_BASE: HUB, AI_FOOTPRINT_CONFIG_DIR: NOCFG };
+  assert.equal(getTalentMeEndpoint(env), 'https://hub.example.com/api/v1/works/talent/me');
+  assert.equal(getTalentMeEndpoint({ ...env, SHAKERS_CLI_TALENT_ME_ENDPOINT: 'https://x.test/me' }), 'https://x.test/me');
+  assert.equal(getUserMeEndpoint(env), 'https://hub.example.com/api/v1/works/users/me', 'the phone is read back from the GET');
 });
 
 test('getAgentPortfoliosEndpoint derives the DIRECT-to-hub relate route with the id in the path (ADR-041)', () => {

@@ -101,8 +101,8 @@ test('signup_start: the welcome and its one question, word for word in the langu
   const { tools, calls, win } = harness();
   const r = await tools.signup_start.handler({ language: 'es' });
   assert.equal(r.reason, 'answer-required');
-  assert.equal(r.say, [needle(ES.welcome(null)), needle(ES.welcomeQuestion), `1. ${ES.cvSearch}\n2. ${ES.cvAttach}`].join('\n\n'));
-  assert.deepEqual(r.options, [ES.cvSearch, ES.cvAttach]);
+  assert.equal(r.say, [needle(ES.welcome(null)), needle(ES.welcomeQuestion), `- ${ES.cvAttach}\n- ${ES.cvSearch}`].join('\n\n'));
+  assert.deepEqual(r.options, [ES.cvAttach, ES.cvSearch]);
   assert.equal(r.language, 'es');
   assert.equal(r.say.split('?').length - 1, 1, 'one question only, at the end');
   assert.equal(calls.signup.length, 0);
@@ -116,7 +116,8 @@ test('signup_start: greets by name when the AI knows it, and the answer leads to
   const search = await tools.signup_start.handler({ answer: ES.cvSearch });
   assert.equal(search.step, 'cv-search');
   assert.equal(search.cvNotFound, needle(ES.cvNotFound));
-  assert.equal(search.linkedinAsk, needle(ES.linkedinAsk));
+  assert.equal(search.linkedinAsk, undefined, 'the AI never words the LinkedIn question itself');
+  assert.match(search.message, /linkedinMissing:true/);
   assert.match(search.message, /read_cv/);
   assert.match(search.message, /signup_email/);
   const attach = await tools.signup_start.handler({ answer: ES.cvAttach });
@@ -128,7 +129,7 @@ test('signup_start: the language of the first message is kept by every later sig
   await tools.signup_start.handler({ language: 'it' });
   const later = await tools.signup_start.handler({ answer: 'nope' });
   assert.ok(later.say.includes(needle(signupCopy('it').welcomeQuestion)));
-  assert.equal((await tools.signup_start.handler({ answer: '2' })).step, 'cv-attach', 'the number of an option is that option');
+  assert.equal((await tools.signup_start.handler({ answer: '1' })).step, 'cv-attach', 'the number of an option is that option');
   const email = await tools.signup_email.handler({});
   assert.equal(email.relayVerbatim, needle(signupCopy('it').emailUnknown));
   const pt = harness();
@@ -142,7 +143,7 @@ test('signup_email: a known personal email is asked with its two options; a comp
   const { tools } = harness();
   await tools.signup_start.handler({ language: 'es' });
   const personal = await tools.signup_email.handler({ email: 'ada@gmail.com' });
-  assert.equal(personal.say, `${needle(ES.emailKnown('ada@gmail.com'))}\n\n1. ${ES.emailYes}\n2. ${ES.emailOther}`);
+  assert.equal(personal.say, `${needle(ES.emailKnown('ada@gmail.com'))}\n\n- ${ES.emailYes}\n- ${ES.emailOther}`);
   assert.deepEqual(personal.options, [ES.emailYes, ES.emailOther]);
   const work = await tools.signup_email.handler({ email: 'ada@acme-corp.com' });
   assert.ok(work.say.startsWith(`${ES.emailKnown('ada@acme-corp.com')} ${needle(ES.emailWorkHint)}\n\n`));
@@ -181,7 +182,7 @@ test('signup_draft: shows the draft with hourly and annual rates and the data no
     'Español nativo, inglés C1 · Remoto · 120-160 h/mes',
     'Tarifa estimada: 45 €/h · 60.000 €/año (estimación mía, ajústala)',
   ].join('\n');
-  assert.equal(r.say, [draft, needle(legalCopy('es').signupNotice(DRAFT.sources)), needle(ES.windowNotice), needle(ES.draftQuestion), `1. ${ES.draftOk}\n2. ${ES.draftChange}`].join('\n\n'));
+  assert.equal(r.say, [draft, needle(legalCopy('es').signupNotice(DRAFT.sources)), needle(ES.windowNotice), needle(ES.draftQuestion), `- ${ES.draftOk}\n- ${ES.draftChange}`].join('\n\n'));
   assert.deepEqual(r.options, [ES.draftOk, ES.draftChange]);
   assert.doesNotMatch(draft, /proyecto/);
 });
@@ -367,7 +368,7 @@ test('update_existing_profile: shows only what the draft would fill in empty fie
   h.win.finish({ ok: true, email: 'ada@gmail.com', accountExists: true });
   h.setSession(SESSION);
   const ask = await h.tools.update_existing_profile.handler({});
-  assert.equal(ask.say.split('\n\n1. ')[0], [
+  assert.equal(ask.say.split('\n\n- ')[0], [
     needle(ES.existingTitle),
     '',
     `· ${needle(ES.existingStays(ES.hourlyRateLabel, '40 €/h', '45 €/h'))}`,
@@ -523,5 +524,57 @@ test('mcpb manifest: lists only tools the server registers, the new sign-up step
   for (const t of manifest.tools) assert.ok(names.has(t.name), t.name);
   for (const name of ['signup_start', 'signup_email', 'signup_draft', 'signup_create_account', 'update_existing_profile']) {
     assert.ok(manifest.tools.some((t) => t.name === name), name);
+  }
+});
+
+test('save_profile_details: the phone is saved before every other section, read back at the end and, if hub lost it, saved once more', async () => {
+  const order = [];
+  let writes = 0;
+  const reads = [];
+  const flowDeps = {
+    getTalentMeEndpoint: () => 'https://hub.test/works/talent/me',
+    requestSetTalentPhone: async (p) => { order.push('phone'); writes += 1; assert.deepEqual([p.telephoneCode, p.telephoneNumber], ['+34', '612345678']); return { ok: true }; },
+    requestSetProfessionalDetails: async () => { order.push('workSituation'); return { ok: true }; },
+    requestSetPricingRate: async () => { order.push('pricing'); return { ok: true }; },
+    requestSetAvailability: async () => { order.push('availability'); return { ok: true }; },
+  };
+  const lost = harness({ session: SESSION, flowDeps, deps: { fetchTelephone: async () => { reads.push(order.length); return { ok: true, telephone: writes < 2 ? null : { code: '+34', number: '612345678' } }; } } });
+  await lost.tools.signup_start.handler({ language: 'es' });
+  const details = {
+    workSituation: { situation: 'FREELANCE', changeMotivators: 'FLEXIBILITY' },
+    pricing: { hourlyRate: 45, annualRate: 60000 },
+    availability: { available: true, monthlyHours: '> 160', workModes: ['REMOTE'], country: 'ES', timezone: 'Europe/Madrid' },
+    phone: { telephoneCode: '+34', telephoneNumber: '612345678' },
+  };
+  const r = await lost.tools.save_profile_details.handler(details);
+  assert.deepEqual(order, ['phone', 'workSituation', 'pricing', 'availability', 'phone']);
+  assert.deepEqual(reads[0], 4, 'read back after every other section');
+  assert.deepEqual(r.results.phone, { ok: true });
+  assert.equal(r.confirmations.at(-1), ES.saved.phone, 'the talent still reads the confirmations in their usual order');
+  assert.equal(r.confirmations[0], ES.saved.workSituation);
+
+  order.length = 0;
+  writes = 0;
+  const kept = harness({ session: SESSION, flowDeps, deps: { fetchTelephone: async () => ({ ok: true, telephone: { code: '+34', number: '612345678' } }) } });
+  await kept.tools.save_profile_details.handler(details);
+  assert.equal(writes, 1, 'a phone hub kept is not written twice');
+  order.length = 0;
+  writes = 0;
+  const unreadable = harness({ session: SESSION, flowDeps, deps: { fetchTelephone: async () => ({ ok: false, reason: 'network-error' }) } });
+  assert.equal((await unreadable.tools.save_profile_details.handler(details)).results.phone.ok, true);
+  assert.equal(writes, 1, 'an unreadable profile is not a lost phone');
+});
+
+test('signup_start: the welcome asks for the CV first; only the second option searches this computer', async () => {
+  for (const lang of ['es', 'en', 'it', 'pt']) {
+    const c = signupCopy(lang);
+    const { tools } = harness();
+    const r = await tools.signup_start.handler({ language: lang });
+    assert.deepEqual(r.options, [c.cvAttach, c.cvSearch], lang);
+    const give = await tools.signup_start.handler({ answer: '1' });
+    assert.equal(give.step, 'cv-attach');
+    assert.equal(give.relayVerbatim, needle(c.cvAttachAsk));
+    assert.doesNotMatch(give.message, /suggest_register_context/, `${lang}: no search without the second option`);
+    assert.match((await tools.signup_start.handler({ answer: '2' })).message, /suggest_register_context/);
   }
 });

@@ -282,10 +282,18 @@ function makeRoleTools(deps = {}) {
     // This call's own list: another call may replace `offered` while the dialog is open.
     const options = shown.map((m) => m.role);
     offered = options;
-    const reasons = shown
-      .filter((m) => m.byRole.length || m.byStack.length)
-      .map((m) => [c.roleName(m.role.name), m.byRole.length ? c.catalogueReason.role(m.byRole.join(', ')) : null, m.byStack.length ? c.catalogueReason.stack(m.byStack.join(', ')) : null].filter(Boolean).join('\n'));
-    const asked = await askChoice(ctx, { texts: reasons.length ? [reasons.join('\n\n')] : [], question: c.mainRoleQuestion, options: [...options.map((r) => r.name), c.mainRoleNotListed] });
+    // Same block as the recommended roles: intro, the best match marked, its reason, its open projects, then what the main profile is.
+    const fits = shown.filter((m) => m.byRole.length || m.byStack.length);
+    const session = loadAuthSession();
+    const counts = fits.length ? await openCounts(session && session.hubAccessToken, fits.map((m) => m.role)) : [];
+    const blocks = fits.map((m, i) => [
+      i === 0 ? c.roleRecommended(m.role.name) : c.roleName(m.role.name),
+      m.byRole.length ? c.catalogueReason.role(m.byRole.join(', ')) : null,
+      m.byStack.length ? c.catalogueReason.stack(m.byStack.join(', ')) : null,
+      typeof counts[i] === 'number' && counts[i] > 0 ? c.openProjects(counts[i]) : null,
+    ].filter(Boolean).join('\n'));
+    const texts = [[...(blocks.length ? [c.rolesIntro, ...blocks] : []), c.rolesOutro].join('\n\n')];
+    const asked = await askChoice(ctx, { texts, question: c.mainRoleQuestion, options: [...options.map((r) => r.name), c.mainRoleNotListed] });
     if (asked.answer === c.mainRoleNotListed) return askOwnRole();
     const role = asked.answer && options.find((r) => r.name === asked.answer);
     if (role) {
@@ -293,7 +301,7 @@ function makeRoleTools(deps = {}) {
       return { role, add: true };
     }
     offered = options;
-    return { reply: roleChoice(asked.chat ? asked : { chat: chatChoice(c.mainRoleQuestion, [...options.map((r) => r.name), c.mainRoleNotListed]) }, options, `Pass catalogue:true too: it adds the role first. If they pick the last option, call set_main_role with catalogue:true and answer = that option.`) };
+    return { reply: roleChoice(asked.chat ? asked : { chat: chatChoice(c.mainRoleQuestion, [...options.map((r) => r.name), c.mainRoleNotListed], texts) }, options, `Pass catalogue:true too: it adds the role first. If they pick the last option, call set_main_role with catalogue:true and answer = that option.`) };
   }
 
   async function setMainRole(args = {}, ctx = {}) {

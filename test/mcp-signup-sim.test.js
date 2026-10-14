@@ -13,7 +13,7 @@ const { makeRoleTools } = require('../src/mcp-role-tools');
 const { makeAiUsageTool } = require('../src/mcp-ai-usage-tool');
 const { normalizeRole } = require('../src/roles-client');
 const { findCvCandidates } = require('../src/register-context');
-const { signupCopy, legalCopy, renderDraft } = require('../src/signup-copy');
+const { signupCopy, legalCopy, renderDraft, SIGNUP_LANGUAGES } = require('../src/signup-copy');
 const { resetSignupLanguage, fixSignupLanguage } = require('../src/signup-language');
 const { getCatalog } = require('../src/i18n');
 const { takeNotices } = require('../src/mcp-choice');
@@ -101,7 +101,7 @@ test('welcome: the model calls again with shown:true without printing anything; 
   const block = printed(again);
   assert.ok(block.startsWith(ES.welcome(null)), block);
   assert.ok(block.includes(ES.welcomeQuestion));
-  assert.ok(block.includes(`1. ${ES.cvSearch}`) && block.includes(`2. ${ES.cvAttach}`));
+  assert.ok(block.includes(`- ${ES.cvAttach}`) && block.includes(`- ${ES.cvSearch}`));
 });
 
 test('welcome: a dialog carries the welcome with its question, and a chat client prints both as one block ending with the question', async () => {
@@ -111,7 +111,7 @@ test('welcome: a dialog carries the welcome with its question, and a chat client
   assert.equal(r.step, 'cv-search');
   assert.equal(d.asked[0].message, [ES.welcome(null), ES.welcomeQuestion].join('\n\n'));
   const chat = await signupHarness().tools.signup_start.handler({ language: 'es' }, {});
-  assert.equal(printed(chat), [ES.welcome(null), ES.welcomeQuestion, `1. ${ES.cvSearch}\n2. ${ES.cvAttach}`].join('\n\n'));
+  assert.equal(printed(chat), [ES.welcome(null), ES.welcomeQuestion, `- ${ES.cvAttach}\n- ${ES.cvSearch}`].join('\n\n'));
   assert.doesNotMatch(chat.message, /shown:true/);
 });
 
@@ -135,7 +135,7 @@ test('window: the warning comes inside the draft block the talent confirms; the 
   assert.ok(block.includes(needle(ES.windowNotice)), block);
   assert.ok(block.indexOf(LEGAL_ES.signupNotice(DRAFT.sources)) < block.indexOf(ES.windowNotice));
   assert.ok(block.indexOf(ES.windowNotice) < block.indexOf(ES.draftQuestion));
-  assert.ok(block.endsWith(`1. ${ES.draftOk}\n2. ${ES.draftChange}`));
+  assert.ok(block.endsWith(`- ${ES.draftOk}\n- ${ES.draftChange}`));
   for (const lang of ['en', 'it', 'pt']) assert.equal(typeof signupCopy(lang).windowNotice, 'string');
   const ok = await h.tools.signup_draft.handler({ ...DRAFT, answer: ES.draftOk });
   assert.equal(ok.next, 'signup_create_account');
@@ -597,7 +597,7 @@ test('window: Adrián\'s warning is the one in the draft block, between the data
   await h.tools.signup_email.handler({ email: 'ada@gmail.com', typed: true });
   const block = printed(await h.tools.signup_draft.handler(DRAFT, cancelling().ctx));
   const notice = LEGAL_ES.signupNotice(DRAFT.sources);
-  assert.equal(block, [renderDraft('es', DRAFT), notice, needle(ES.windowNotice), ES.draftQuestion, `1. ${ES.draftOk}\n2. ${ES.draftChange}`].join('\n\n'));
+  assert.equal(block, [renderDraft('es', DRAFT), notice, needle(ES.windowNotice), ES.draftQuestion, `- ${ES.draftOk}\n- ${ES.draftChange}`].join('\n\n'));
   assert.match(block, /👉 Mira tu navegador\. Cuando termines, vuelve aquí y seguimos\.\n\n¿Está bien o cambio algo\?/);
 });
 
@@ -612,19 +612,17 @@ test('window: when this machine already holds an expired session for the same em
   assert.ok(printed(await h.tools.signup_draft.handler(DRAFT)).includes(needle(ES.windowNotice)), 'another email is a new account');
 });
 
-test('CV path in the first message: the welcome is printed without the CV-search question and that CV is read', async () => {
+test('CV path in the first message: no CV-search question, and that CV is read', async () => {
   const { tools } = signupHarness();
   const d = cancelling();
   const r = await tools.signup_start.handler({ language: 'es', cvPath: '~/Documents/CV_Lorena_Gimeno.pdf', firstName: 'Lorena' }, d.ctx);
   assert.equal(r.ok, true);
   assert.equal(r.step, 'cv-given');
   assert.equal(r.cvPath, '~/Documents/CV_Lorena_Gimeno.pdf');
-  assert.equal(r.relayVerbatim, needle(ES.welcome('Lorena')));
   assert.equal(r.say, undefined, 'no question block');
   assert.equal(d.asked.length, 0, 'no dialog either');
   assert.doesNotMatch(JSON.stringify(r), /Empezamos/);
   assert.match(r.message, /read_cv/);
-  assert.ok(r.message.indexOf('relayVerbatim') < r.message.indexOf('read_cv'), 'the welcome is printed before reading the CV');
 });
 
 test('existing account: before the talent answers, each field they already had shows the value it keeps and that it is changed on the web', async () => {
@@ -638,7 +636,7 @@ test('existing account: before the talent answers, each field they already had s
     ES.existingStays(ES.keptLabels.languages),
     ES.existingStaysNote,
   ]) assert.ok(block.includes(`· ${needle(line)}`), `${line}\n---\n${block}`);
-  assert.ok(block.indexOf(ES.existingStaysNote) < block.indexOf(`1. ${ES.existingYes}`));
+  assert.ok(block.indexOf(ES.existingStaysNote) < block.indexOf(`- ${ES.existingYes}`));
   assert.equal(ES.existingStays(ES.hourlyRateLabel, '45 €/h', '60 €/h'), 'Tarifa por hora: se queda en 45 €/h, no 60 €/h');
   await h.tools.update_existing_profile.handler({ answer: ES.existingYes }, {});
   await h.tools.save_profile_details.handler({ pricing: { hourlyRate: 60, annualRate: 70000 }, availability: { monthlyHours: '120' }, languages: [{ language: 'es', level: 'NATIVE' }] });
@@ -696,4 +694,209 @@ test('closing: open_web reads the import right before the end, so a finished imp
   const later = await running.tools.open_web.handler({});
   assert.equal(later.import.state, 'running');
   assert.match(later.message, /still running/);
+});
+
+// QA v10 (real model, develop bf8e952 against hub feat-env/new-works).
+
+test('closing: a LinkedIn import that fails after the last signup_status gets its fixed line at open_web, and the closing never says it was imported', async () => {
+  const IT = signupCopy('it');
+  const h = signupHarness({ importStatus: async () => ({ ok: true, state: 'done', sources: { linkedin: { state: 'failed', code: 'source.provider_unavailable' }, cv: { state: 'done' } } }) });
+  await h.tools.signup_start.handler({ language: 'it' });
+  h.setSession(SESSION);
+  const end = await h.tools.open_web.handler({});
+  assert.equal(end.relayVerbatim, needle(IT.importFailed([IT.importSources.linkedin])));
+  assert.match(end.message, /relayVerbatim/);
+  assert.doesNotMatch(end.message, /import finished/, 'the done closing lets the AI say every source was imported');
+  assert.match(end.message, /linkedin/);
+  assert.match(end.message, /never say or imply/i);
+  assert.doesNotMatch(JSON.stringify(end), /provider_unavailable/);
+  const again = await h.tools.open_web.handler({});
+  assert.equal(again.relayVerbatim, undefined, 'once per sign-up');
+  assert.match(again.message, /never say or imply/i, 'the closing still never claims it');
+});
+
+test('closing: a LinkedIn failure signup_status already announced is not repeated at open_web', async () => {
+  const h = signupHarness({ importStatus: async () => ({ ok: true, state: 'done', sources: { linkedin: { state: 'failed' } } }) });
+  await h.tools.signup_start.handler({ language: 'es' });
+  await h.tools.signup_email.handler({ email: 'ada@gmail.com', typed: true });
+  await h.tools.signup_draft.handler({ ...DRAFT, answer: ES.draftOk });
+  await h.tools.signup_create_account.handler({ linkedinUrl: 'https://www.linkedin.com/in/ada', firstName: 'Ada' });
+  h.finish({ ok: true, email: 'ada@gmail.com', accountExists: false, claimed: true });
+  await tick();
+  h.setSession(SESSION);
+  await h.tools.signup_status.handler({});
+  assert.deepEqual(takeNotices(), [ES.importFailed([ES.importSources.linkedin])], 'shown with a question in between');
+  const end = await h.tools.open_web.handler({});
+  assert.equal(end.relayVerbatim, undefined);
+  assert.match(end.message, /never say or imply/i);
+});
+
+test('existing account: a kept value equal to the requested one is said once, never "45 €/h, not 45 €/h", in every language', async () => {
+  for (const lang of SIGNUP_LANGUAGES) {
+    const c = signupCopy(lang);
+    const line = c.existingStays(c.hourlyRateLabel, '45 €/h', '45 €/h');
+    assert.equal(line.split('45 €/h').length - 1, 1, `${lang}: ${line}`);
+    assert.ok(line.startsWith(c.hourlyRateLabel), line);
+    const differs = c.existingStays(c.hourlyRateLabel, '45 €/h', '60 €/h');
+    assert.ok(differs.includes('60 €/h'), `${lang}: a different request is still named`);
+  }
+  const h = signupHarness();
+  await existingAccount(h, { ...DRAFT, hourlyRate: 45 });
+  const block = printed(await h.tools.update_existing_profile.handler({}, {}));
+  assert.ok(block.includes(`· ${needle(ES.existingStays(ES.hourlyRateLabel, '45 €/h', '45 €/h'))}`), block);
+  assert.doesNotMatch(block, /45 €\/h, no 45/);
+});
+
+test('existing account: "you already have an account" is said once, by the draft warning, when this machine knew the account', async () => {
+  const h = signupHarness({ session: { cookie: 'old', email: 'ada@gmail.com', expiresAt: '2000-01-01T00:00:00.000Z' }, sessionStatus: (s) => (s && s.expiresAt > '2026' ? 'active' : s ? 'expired' : 'none') });
+  await h.tools.signup_start.handler({ language: 'es' });
+  await h.tools.signup_email.handler({ email: 'ada@gmail.com', typed: true });
+  const draft = printed(await h.tools.signup_draft.handler(DRAFT));
+  assert.ok(draft.includes(needle(ES.windowNoticeSignIn)));
+  await h.tools.signup_draft.handler({ ...DRAFT, answer: ES.draftOk });
+  await h.tools.signup_create_account.handler({ linkedinUrl: 'https://www.linkedin.com/in/ada', firstName: 'Ada' });
+  h.finish({ ok: true, email: 'ada@gmail.com', accountExists: true });
+  await tick();
+  h.setSession(SESSION);
+  const status = await h.tools.signup_status.handler({});
+  assert.match(status.message, /update_existing_profile/);
+  assert.match(status.message, /say nothing about it yourself/i, 'the AI does not announce the account on top of the tool text');
+  const offer = printed(await h.tools.update_existing_profile.handler({}, {}));
+  assert.doesNotMatch(offer, /ya tienes cuenta/, offer);
+  assert.ok(offer.startsWith(needle(ES.existingUpdateQuestion)), offer);
+  const fresh = signupHarness();
+  await existingAccount(fresh);
+  assert.ok(printed(await fresh.tools.update_existing_profile.handler({}, {})).startsWith(needle(ES.existingTitle)), 'told nothing before: the offer says it');
+});
+
+test('CV path in the first message: the welcome rides on the next question block, so a model that skips relays still shows it, once', async () => {
+  const { tools } = signupHarness();
+  const r = await tools.signup_start.handler({ language: 'es', cvPath: '~/Documents/CV_Lorena_Gimeno.pdf', firstName: 'Lorena' });
+  assert.equal(r.step, 'cv-given');
+  assert.equal(r.relayVerbatim, undefined, 'a relay before the next tool call is what the model skipped');
+  assert.match(r.message, /read_cv/);
+  assert.match(r.message, /welcome/i);
+  const email = printed(await tools.signup_email.handler({ email: 'lorena@gmail.com' }));
+  assert.ok(email.startsWith(needle(ES.welcome('Lorena'))), email);
+  assert.ok(email.includes(ES.emailKnown('lorena@gmail.com')));
+  assert.ok(!printed(await tools.signup_email.handler({ email: 'lorena@gmail.com' })).includes(ES.welcome('Lorena')), 'shown once');
+  const d = cancelling();
+  await tools.signup_start.handler({ language: 'pt', cvPath: '~/cv.pdf' });
+  await tools.signup_email.handler({ email: 'ana@gmail.com' }, d.ctx);
+  assert.ok(d.asked[0].message.startsWith(needle(signupCopy('pt').welcome(null))), 'a dialog carries it too');
+});
+
+test('narration: no tool text reads as a line to the talent about internal steps, and the instructions forbid narrating them', async () => {
+  const start = makeRegisterTools({ lang: 'en', checkOnboardingCompleted: async () => true }).find((t) => t.name === 'onboarding_interview_start');
+  const done = await start.handler({});
+  assert.equal(done.reason, 'onboarding-already-completed');
+  assert.doesNotMatch(done.message, /^You have/, 'second person reads as a line to repeat');
+  assert.match(done.message, /say nothing about it/i);
+  const { buildServerInstructions, buildServer } = require('../bin/mcp');
+  for (const text of [buildServerInstructions({}), buildServerInstructions({ elicitation: true })]) {
+    assert.match(text, /never narrate internal steps or tool state/i);
+    assert.match(text, /only in the talent's language/i);
+  }
+  const prompt = await buildServer().handleMessage({ jsonrpc: '2.0', id: 1, method: 'prompts/get', params: { name: 'onboarding' } });
+  assert.match(prompt.result.messages[0].content.text, /never narrate internal steps or tool state/i);
+  const h = signupHarness({ });
+  await h.tools.signup_start.handler({ language: 'es' });
+  await h.tools.signup_email.handler({ email: 'ada@gmail.com', typed: true });
+  await h.tools.signup_draft.handler({ ...DRAFT, answer: ES.draftOk });
+  await h.tools.signup_create_account.handler({ linkedinUrl: 'https://www.linkedin.com/in/ada', firstName: 'Ada' });
+  h.finish({ ok: true, email: 'ada@gmail.com', accountExists: false, claimed: true });
+  await tick();
+  h.setSession(SESSION);
+  const status = await h.tools.signup_status.handler({});
+  assert.match(status.message, /onboardingInterview\.completed is true, skip it without mentioning it/);
+});
+
+// QA v11 (real model on this branch, local hub).
+
+test('CV path in the first message and a CV without LinkedIn: the first block the talent reads is the welcome, then the LinkedIn question, both from a tool', async () => {
+  const { tools } = signupHarness();
+  const r = await tools.signup_start.handler({ language: 'es', cvPath: '~/Documents/CV_Lorena_Gimeno.pdf', firstName: 'Lorena' });
+  assert.equal(r.linkedinAsk, undefined, 'the AI never words the LinkedIn question itself');
+  assert.match(r.message, /linkedinMissing:true/);
+  assert.doesNotMatch(r.message, /Write nothing/, 'an order to stay silent is what the model narrated around');
+  assert.match(r.message, /never explain/i);
+  const ask = await tools.signup_start.handler({ language: 'es', linkedinMissing: true });
+  assert.equal(printed(ask), [needle(ES.welcome('Lorena')), ES.linkedinAsk].join('\n\n'));
+  assert.match(ask.message, /whole reply/);
+  assert.equal(ask.linkedinOpening, needle(ES.linkedinOpening));
+  const email = printed(await tools.signup_email.handler({ email: 'lorena@gmail.com' }));
+  assert.ok(!email.includes(ES.welcome('Lorena')), 'the welcome is not shown twice');
+  const fresh = await tools.signup_start.handler({ answer: ES.cvSearch });
+  assert.equal(fresh.step, 'cv-given', 'asking LinkedIn does not reset the sign-up');
+});
+
+test('LinkedIn question after a CV the talent allowed us to find: the block holds only the question, the welcome was shown with the CV question', async () => {
+  const { tools } = signupHarness();
+  await tools.signup_start.handler({ language: 'pt' });
+  await tools.signup_start.handler({ answer: signupCopy('pt').cvSearch });
+  const ask = await tools.signup_start.handler({ language: 'pt', linkedinMissing: true });
+  assert.equal(printed(ask), needle(signupCopy('pt').linkedinAsk));
+});
+
+test('closing with a failed source: the talent reads the fixed failure line AND the closing sentence, never one of them alone', async () => {
+  const h = signupHarness({ importStatus: async () => ({ ok: true, state: 'done', sources: { linkedin: { state: 'failed' } } }) });
+  await h.tools.signup_start.handler({ language: 'it' });
+  h.setSession(SESSION);
+  const end = await h.tools.open_web.handler({});
+  assert.ok(end.relayVerbatim);
+  assert.doesNotMatch(end.message, /nothing of your own added/, 'that order made the model drop the closing');
+  assert.match(end.message, /both/i);
+  assert.ok(end.message.indexOf('relayVerbatim') < end.message.indexOf('closing sentence'), end.message);
+  const plain = signupHarness();
+  await plain.tools.signup_start.handler({ language: 'it' });
+  plain.setSession(SESSION);
+  assert.match((await plain.tools.open_web.handler({})).message, /closing sentence/);
+});
+
+// Adrián's UX review (39574), seen in the v11 runs.
+
+test('email: the work-email hint only for a company domain, never for a personal provider in any country or a reserved test domain, in every language', async () => {
+  const { looksLikeWorkEmail } = require('../src/mcp-signup-tools');
+  for (const email of ['ana@hotmail.co.uk', 'ana@outlook.it', 'ana@live.it', 'ana@yahoo.com.br', 'ana@icloud.com', 'ana@me.com', 'ana@proton.me', 'ana@gmx.net', 'ana@libero.it', 'e2e-1760@example.com', 'qa@shakers.test']) {
+    assert.equal(looksLikeWorkEmail(email), false, email);
+  }
+  for (const email of ['ana@acme-corp.com', 'ana@shakersworks.com', 'ana@bancosantander.es']) assert.equal(looksLikeWorkEmail(email), true, email);
+  for (const lang of SIGNUP_LANGUAGES) {
+    const c = signupCopy(lang);
+    const h = signupHarness();
+    await h.tools.signup_start.handler({ language: lang });
+    takeNotices();
+    for (const email of ['e2e-1760@example.com', 'ana@outlook.it']) {
+      assert.ok(!printed(await h.tools.signup_email.handler({ email })).includes(c.emailWorkHint), `${lang} ${email}`);
+    }
+    assert.ok(printed(await h.tools.signup_email.handler({ email: 'ana@acme-corp.com' })).includes(needle(c.emailWorkHint)), lang);
+  }
+});
+
+test('main role from the catalogue: intro, the best match marked recommended, one reason line, the open projects when hub counts them, and the closing line before the question', async () => {
+  const { set } = roleTools([], DEV_CATALOGUE);
+  const r = await set.handler({ catalogue: true, answer: 'Frontend Developer', skills: 'React, Next.js, TypeScript' }, {});
+  const block = printed(r);
+  assert.ok(block.startsWith(needle(ES.rolesIntro)), block);
+  assert.ok(block.includes(`${needle(ES.roleRecommended('Frontend Developer'))}\n${ES.catalogueReason.role('Frontend')}`), block);
+  assert.ok(block.includes(`${ES.roleName('React Developer')}\n${ES.catalogueReason.stack('React')}\n${ES.openProjects(3)}`), block);
+  assert.equal(block.split('(recomendado)').length - 1, 1, 'only one is recommended');
+  assert.ok(block.indexOf(needle(ES.rolesOutro)) > block.indexOf('React Developer'));
+  assert.ok(block.indexOf(ES.rolesOutro) < block.indexOf(ES.mainRoleQuestion));
+  for (const lang of SIGNUP_LANGUAGES) assert.ok(needle(signupCopy(lang).rolesOutro) && needle(signupCopy(lang).roleRecommended('X')).includes('X'));
+});
+
+test('main role: no open-projects line when hub returns no count', async () => {
+  const tools = makeRoleTools({
+    lang: 'es',
+    loadAuthSession: () => ({ accessToken: 'c', hubAccessToken: 'h' }),
+    sessionStatus: () => 'active',
+    getAvailableRolesEndpoint: () => 'https://hub/available',
+    requestAvailableRoles: async () => ({ ok: true, roles: DEV_CATALOGUE }),
+    countOpenPositions: async () => ({ ok: false, reason: 'http-500' }),
+  });
+  const set = tools.find((t) => t.name === 'set_main_role');
+  const block = printed(await set.handler({ catalogue: true, answer: 'Frontend Developer' }, {}));
+  assert.doesNotMatch(block, /proyectos? abiertos?/);
+  assert.ok(block.includes(needle(ES.rolesOutro)));
 });

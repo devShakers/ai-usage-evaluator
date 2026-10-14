@@ -90,6 +90,23 @@ test('requestSetProfessionalDetails: PATCH with currentEmploymentStatus + freela
   assert.equal(r.ok, true);
 });
 
+// Hub new-works PATCH works/talent/me takes UpdateWorksTalentRequestDto: telephoneCode + telephoneNumber, flat.
+test('requestSetTalentPhone: PATCH with the flat telephoneCode/telephoneNumber body hub validates, Bearer hub JWT', async () => {
+  const seen = {};
+  const { server, base } = await startServer((req, res, raw) => {
+    seen.method = req.method;
+    seen.auth = req.headers.authorization;
+    seen.body = JSON.parse(raw);
+    ok(res, { id: 'u-1', telephone: { code: '+34', number: '612345678' } });
+  });
+  const r = await client.requestSetTalentPhone({ telephoneCode: '+34', telephoneNumber: '612345678', hubAccessToken: 'hubjwt' }, { endpoint: `${base}/works/talent/me` });
+  server.close();
+  assert.equal(seen.method, 'PATCH');
+  assert.equal(seen.auth, 'Bearer hubjwt');
+  assert.deepEqual(seen.body, { telephoneCode: '+34', telephoneNumber: '612345678' });
+  assert.deepEqual(r, { ok: true });
+});
+
 test('requestSetPricingRate: PUT sends the fat upsert body verbatim', async () => {
   const seen = {};
   const { server, base } = await startServer((req, res, raw) => { seen.method = req.method; seen.body = JSON.parse(raw); ok(res, {}); });
@@ -232,4 +249,17 @@ test('requestImportProfile: a missing or unsupported CV fails locally, before an
   assert.equal(missing.reason, 'cv-not-found');
   assert.equal(badFormat.reason, 'cv-bad-format');
   assert.equal(hits, 0);
+});
+
+test('fetchTelephone: reads the stored phone from GET works/users/me, null when hub has none', async () => {
+  const { fetchTelephone } = require('../src/profile-client');
+  let phone = { code: '+34', number: '612345678' };
+  const seen = [];
+  const { server, base } = await startServer((req, res) => { seen.push([req.method, req.headers.authorization]); ok(res, { id: 'u-1', telephone: phone }); });
+  const deps = { getUserMeEndpoint: () => `${base}/works/users/me` };
+  assert.deepEqual(await fetchTelephone(deps, { hubAccessToken: 'hubjwt' }), { ok: true, telephone: { code: '+34', number: '612345678' } });
+  phone = null;
+  assert.deepEqual(await fetchTelephone(deps, { hubAccessToken: 'hubjwt' }), { ok: true, telephone: null });
+  server.close();
+  assert.deepEqual(seen[0], ['GET', 'Bearer hubjwt']);
 });

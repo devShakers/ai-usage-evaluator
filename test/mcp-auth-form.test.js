@@ -16,7 +16,7 @@ function httpGet(url) {
 function httpPost(url, body) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
-    const req = http.request({ hostname: u.hostname, port: u.port, path: '/submit', method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) } }, (r) => { let d = ''; r.on('data', (c) => { d += c; }); r.on('end', () => resolve({ status: r.statusCode, body: d })); });
+    const req = http.request({ hostname: u.hostname, port: u.port, path: `${u.pathname}submit`, method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) } }, (r) => { let d = ''; r.on('data', (c) => { d += c; }); r.on('end', () => resolve({ status: r.statusCode, body: d })); });
     req.on('error', reject); req.write(body); req.end();
   });
 }
@@ -50,10 +50,10 @@ test('login loopback: first screen is the method choice; /email reaches the form
 
   // GET / is the branded method-choice screen (email + Google + LinkedIn), NOT the email form.
   const choose = await httpGet(formUrl);
-  assert.match(choose.body, /href="\/google"/, 'Continue-with-Google option present');
-  assert.match(choose.body, /href="\/linkedin"/, 'Continue-with-LinkedIn option present');
+  assert.match(choose.body, /href="google"/, 'Continue-with-Google option present');
+  assert.match(choose.body, /href="linkedin"/, 'Continue-with-LinkedIn option present');
   assert.match(choose.body, /Continue with LinkedIn/, 'LinkedIn has its own button, not a second email button');
-  assert.match(choose.body, /href="\/email"/, 'Email option present');
+  assert.match(choose.body, /href="email"/, 'Email option present');
   assert.match(choose.body, /Email and password/, 'login still offers email+password (its form collects both)');
   assert.match(choose.body, /#05342c/, 'brand teal present');
   assert.doesNotMatch(choose.body, /name="password"/, 'no password field on the choice screen');
@@ -80,7 +80,7 @@ test('login loopback: method:email skips the choice screen and serves the email 
   const form = await httpGet(formUrl);
   assert.match(form.body, /name="email"/, 'straight to the email form, no choice screen');
   assert.match(form.body, /name="password"/);
-  assert.doesNotMatch(form.body, /href="\/google"/);
+  assert.doesNotMatch(form.body, /href="google"/);
   await httpPost(formUrl, 'email=t%40t.com&password=TalentSeed123');
   await p;
 });
@@ -115,8 +115,8 @@ test('register loopback: / is the method-choice screen (email + Google); /email 
   const p = runLoopbackAuth({ mode: 'register', deps, lang: 'en', registerFields: REGISTER_FIELDS }, { openBrowser: () => {}, onUrl: (u) => { formUrl = u; } });
   await tick();
   const choose = await httpGet(formUrl);
-  assert.match(choose.body, /href="\/google\?legal=1"/, 'Google is now a register method');
-  assert.match(choose.body, /href="\/email"/, 'Email option present');
+  assert.match(choose.body, /href="google\?legal=1"/, 'Google is now a register method');
+  assert.match(choose.body, /href="email"/, 'Email option present');
   assert.match(choose.body, /Continue with email/, 'register email method does not imply typing email in the form');
   assert.doesNotMatch(choose.body, /Email and password/, 'register no longer claims the form collects email+password');
   assert.doesNotMatch(choose.body, /name="passwordConfirm"/, 'the sign-up form is not the first screen');
@@ -249,7 +249,7 @@ test('MCP sign-up window: the web sign-up\'s legal text and links sit under ever
       assert.ok(page.body.includes(text), `${lang}: legal text`);
       assert.ok(page.body.includes(`href="${terms}"`) && page.body.includes(`href="${privacy}"`), `${lang}: both links`);
     }
-    assert.match((await httpGet(formUrl)).body, /href="\/google\?legal=1"/);
+    assert.match((await httpGet(formUrl)).body, /href="google\?legal=1"/);
     await httpPost(formUrl, 'password=password123&passwordConfirm=password123&legal=1');
     await p;
   }
@@ -333,11 +333,89 @@ test('MCP sign-up window: an email that already has an account asks the talent t
   assert.match(exists.body, /Ya tienes una cuenta en Shakers con este email. Entra con tu contraseña o con Google./);
   assert.match(exists.body, /name="intent" value="login"/);
   assert.match(exists.body, /value="ada@gmail.com"/);
-  assert.match(exists.body, /href="\/google\?legal=1"/);
+  assert.match(exists.body, /href="google\?legal=1"/);
   const wrong = await httpPost(formUrl, 'intent=login&email=ada%40gmail.com&password=nope');
   assert.match(wrong.body, /Email o contraseña incorrectos/);
   await httpPost(formUrl, 'intent=login&email=ada%40gmail.com&password=right-pass');
   assert.deepEqual(await p, { ok: true, email: 'ada@gmail.com', accountExists: true });
   assert.equal(signedUp, 1, 'no second account attempt');
   assert.deepEqual(logins, ['password123', 'nope', 'right-pass']);
+});
+
+// Security: a web page in the talent's browser, or a DNS-rebound host, must not drive the window.
+function rawRequest(port, { method = 'GET', path = '/', headers = {}, body = null } = {}) {
+  return new Promise((resolve, reject) => {
+    const h = { ...headers };
+    if (body !== null) { h['Content-Type'] = 'application/x-www-form-urlencoded'; h['Content-Length'] = Buffer.byteLength(body); }
+    const req = http.request({ hostname: '127.0.0.1', port, path, method, headers: h }, (r) => { let d = ''; r.on('data', (c) => { d += c; }); r.on('end', () => resolve({ status: r.statusCode, body: d, headers: r.headers })); });
+    req.on('error', reject);
+    if (body !== null) req.write(body);
+    req.end();
+  });
+}
+
+async function openRegisterWindow() {
+  const calls = [];
+  let formUrl = null;
+  const deps = loginDeps({ requestSignUp: async (f) => { calls.push(f); return { ok: true, accountExists: false }; } });
+  const done = runLoopbackAuth({ mode: 'register', deps, lang: 'en', registerFields: REGISTER_FIELDS }, { openBrowser: () => {}, onUrl: (u) => { formUrl = u; }, timeoutMs: 5000 });
+  await tick();
+  const u = new URL(formUrl);
+  return { calls, done, formUrl, port: Number(u.port), base: u.pathname, own: `http://127.0.0.1:${u.port}` };
+}
+
+const SIGNUP_BODY = 'password=attacker123&passwordConfirm=attacker123&legal=1';
+
+test('security: the window URL carries an unguessable per-window path, and nothing answers outside it', async () => {
+  const w = await openRegisterWindow();
+  const secret = w.base.split('/').filter(Boolean)[0] || '';
+  assert.ok(secret.length >= 22, `at least 128 bits in the path: ${w.formUrl}`);
+  const other = await openRegisterWindow();
+  assert.notEqual(other.base, w.base, 'a new window, a new secret');
+  for (const path of ['/', '/email', '/google?legal=1', '/linkedin']) {
+    assert.equal((await rawRequest(w.port, { path, headers: { Host: `127.0.0.1:${w.port}` } })).status, 404, path);
+  }
+  const blind = await rawRequest(w.port, { method: 'POST', path: '/submit', headers: { Host: `127.0.0.1:${w.port}` }, body: SIGNUP_BODY });
+  assert.equal(blind.status, 404);
+  assert.equal(w.calls.length, 0, 'no account created without the secret');
+  for (const x of [w, other]) await rawRequest(x.port, { method: 'POST', path: `${x.base}submit`, headers: { Host: `127.0.0.1:${x.port}`, Origin: x.own }, body: 'password=password123&passwordConfirm=password123&legal=1' });
+  await Promise.all([w.done, other.done]);
+});
+
+test('security: a request with a foreign Host (DNS rebinding) is refused with 403, GET and POST', async () => {
+  const w = await openRegisterWindow();
+  const get = await rawRequest(w.port, { path: w.base, headers: { Host: 'evil.example' } });
+  assert.equal(get.status, 403);
+  assert.doesNotMatch(get.body, /passwordConfirm|Continue with/);
+  const post = await rawRequest(w.port, { method: 'POST', path: `${w.base}submit`, headers: { Host: `evil.example:${w.port}`, Origin: 'https://evil.example' }, body: SIGNUP_BODY });
+  assert.equal(post.status, 403);
+  assert.equal(w.calls.length, 0);
+  assert.equal((await rawRequest(w.port, { path: w.base, headers: { Host: `localhost:${w.port}` } })).status, 200, 'localhost:<port> is the same window');
+  await rawRequest(w.port, { method: 'POST', path: `${w.base}submit`, headers: { Host: `127.0.0.1:${w.port}`, Origin: w.own }, body: SIGNUP_BODY });
+  await w.done;
+});
+
+test('security: a POST from another origin or another site is refused with 403 and reaches no sign-up', async () => {
+  const w = await openRegisterWindow();
+  const host = { Host: `127.0.0.1:${w.port}` };
+  for (const headers of [{ Origin: 'https://evil.example' }, { Origin: 'null' }, { Origin: `http://127.0.0.1:${w.port + 1}` }, { 'Sec-Fetch-Site': 'cross-site' }, { 'Sec-Fetch-Site': 'same-site' }, { Origin: w.own, 'Sec-Fetch-Site': 'none' }]) {
+    const r = await rawRequest(w.port, { method: 'POST', path: `${w.base}submit`, headers: { ...host, ...headers }, body: SIGNUP_BODY });
+    assert.equal(r.status, 403, JSON.stringify(headers));
+  }
+  assert.equal(w.calls.length, 0);
+  const ok = await rawRequest(w.port, { method: 'POST', path: `${w.base}submit`, headers: { ...host, Origin: w.own, 'Sec-Fetch-Site': 'same-origin' }, body: 'password=password123&passwordConfirm=password123&legal=1' });
+  assert.equal(ok.status, 200);
+  assert.equal(w.calls.length, 1, 'the window\'s own form still signs up');
+  assert.equal((await w.done).ok, true);
+});
+
+test('security: every page links inside the window path, so the real browser flow keeps working', async () => {
+  const w = await openRegisterWindow();
+  const choose = await rawRequest(w.port, { path: w.base, headers: { Host: `127.0.0.1:${w.port}` } });
+  assert.doesNotMatch(choose.body, /href="\/|action="\//, 'no absolute link leaves the secret path');
+  const form = await rawRequest(w.port, { path: `${w.base}email`, headers: { Host: `127.0.0.1:${w.port}` } });
+  assert.equal(form.status, 200);
+  assert.match(form.body, /action="submit"/);
+  await rawRequest(w.port, { method: 'POST', path: `${w.base}submit`, headers: { Host: `127.0.0.1:${w.port}`, Origin: w.own }, body: 'password=password123&passwordConfirm=password123&legal=1' });
+  await w.done;
 });

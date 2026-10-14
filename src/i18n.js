@@ -355,8 +355,10 @@ const catalogs = {
         subagents: (n) => `${n} ${n === 1 ? 'run' : 'runs'} de subagente`,
         hours: (h) => `${h} h activas (gap idle > 25 min = pausa)`,
         commits: (authored, total) => `${authored}/${total} commits tuyos`,
-        lines: (added, deleted) => `+${added}/-${deleted} líneas`,
-        velocity: (v) => `${v} commits/día`,
+        lines: (added, deleted) => `+${added}/-${deleted} líneas (del repo)`,
+        velocity: (v) => `${v} commits/día (del repo)`,
+        authorshipMismatch: (emails, account) =>
+          `Tus commits en ${emails.length === 1 ? 'este repo' : 'estos repos'} están a nombre de ${emails.join(', ')}, que no es tu email de Shakers (${account}). Puede que tu trabajo no se te atribuya: configura git con tu email de Shakers (git config user.email "${account}") para que cuente.`,
         workStreams: (streams, multiDay, maxSpan) =>
           `${streams} ${streams === 1 ? 'workstream' : 'workstreams'} (${multiDay} multi-día, máx ${maxSpan}d)`,
         tractionLabel: 'Actividad reciente',
@@ -531,7 +533,7 @@ const catalogs = {
         error: 'No se pudo generar el informe.',
       },
       frameworkIntroUsage:
-        'Esto mide tu fluidez con IA en dos ejes: Setup (madurez de tu tooling, T0–T7, determinista) y Usage (cómo lo usas, evaluado en entrevista + código). Te sitúa en el mapa 3×3 (Explorer → AI Native). Completarlo posiciona tu perfil agéntico para los proyectos que valoran cómo trabajas con IA.',
+        'Esto mide tu fluidez con IA en dos ejes: Setup (madurez de tu tooling, T0–T7, determinista) y Usage (cómo lo usas, evaluado en entrevista + código). Te sitúa en el mapa 3×3 (Explorer → AI Native). Completarlo posiciona tu perfil agéntico para los proyectos que valoran cómo trabajas con IA. Por defecto leo el uso de IA de todo este equipo y asumo que es tuyo (un equipo = tú).',
       // Terminal progress feedback (talents-ai-score): stderr-only status
       // during the two slow phases (see src/terminal-progress.js).
       scanningLabel: 'Escaneando entorno y detectores…',
@@ -2001,8 +2003,10 @@ const catalogs = {
         subagents: (n) => `${n} subagent ${n === 1 ? 'run' : 'runs'}`,
         hours: (h) => `${h} active h (idle gap > 25 min = pause)`,
         commits: (authored, total) => `${authored}/${total} commits by you`,
-        lines: (added, deleted) => `+${added}/-${deleted} lines`,
-        velocity: (v) => `${v} commits/day`,
+        lines: (added, deleted) => `+${added}/-${deleted} lines (repo-wide)`,
+        velocity: (v) => `${v} commits/day (repo-wide)`,
+        authorshipMismatch: (emails, account) =>
+          `Your commits in ${emails.length === 1 ? 'this repo' : 'these repos'} are under ${emails.join(', ')}, which is not your Shakers email (${account}). Your work may not be attributed to you: set git to your Shakers email (git config user.email "${account}") so it counts.`,
         workStreams: (streams, multiDay, maxSpan) =>
           `${streams} ${streams === 1 ? 'workstream' : 'workstreams'} (${multiDay} multi-day, max ${maxSpan}d)`,
         tractionLabel: 'Traction',
@@ -2173,7 +2177,7 @@ const catalogs = {
         error: 'Could not generate the report.',
       },
       frameworkIntroUsage:
-        'This measures your AI fluency across two axes: Setup (your tooling\'s maturity, T0–T7, deterministic) and Usage (how you use it, assessed via interview + code). It places you on the 3×3 map (Explorer → AI Native). Completing it positions your agentic profile for projects that value how you work with AI.',
+        'This measures your AI fluency across two axes: Setup (your tooling\'s maturity, T0–T7, deterministic) and Usage (how you use it, assessed via interview + code). It places you on the 3×3 map (Explorer → AI Native). Completing it positions your agentic profile for projects that value how you work with AI. By default it reads the AI usage across this whole machine and assumes it is yours (one machine = you).',
       scanningLabel: 'Scanning environment and detectors…',
       // Loader for the per-selected-repo aggregation phase (git + sessions + steering/decisions + evidence + agent org chart).
       aggregatingLabel: 'Aggregating signals across the selected repos…',
