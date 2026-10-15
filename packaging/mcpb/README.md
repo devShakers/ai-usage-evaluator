@@ -45,6 +45,12 @@ also work with this computer:
 - Add this project to your portfolio: reads the name, web address and dates of the project folder
   open here, asks you first naming all of them, and sends them to Shakers only if you say yes.
 
+Claude Desktop asks you to approve each tool the first time it runs, so during sign-up you may see
+several of these prompts. If you would rather it not ask every time, choose **"Always allow"** when a
+prompt appears (you can also manage this later in Settings → Extensions/Connectors). Note: the "Auto"
+permission mode does **not** currently skip these prompts for read-only tools, so "Always allow" is the
+reliable way to stop them.
+
 ## Install
 - **Claude Desktop:** open the `.mcpb` → Settings → Extensions → install (one click; Claude
   Desktop supplies the Node runtime).

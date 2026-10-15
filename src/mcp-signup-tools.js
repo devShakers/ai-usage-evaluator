@@ -18,7 +18,11 @@ const { NOOP_FUNNEL, weeklyHours, rateTypes, workSituationValue } = require('./o
 const SIGNUP_WINDOW_TIMEOUT_MS = 15 * 60 * 1000;
 // The browser opens this long after the tool answers, so the AI's reply is on screen first.
 const BROWSER_OPEN_DELAY_MS = 4000;
-const MAX_WAIT_SECONDS = 25;
+// Each signup_status call holds up to this long waiting for a change, so a higher value means fewer calls
+// (and fewer per-call approval prompts in the client) cover the same wait. Kept under the ~60 s hard cap
+// Claude Desktop puts on a tool call (progress notifications do not extend it there), with margin for the
+// round-trip.
+const MAX_WAIT_SECONDS = 45;
 const IMPORT_POLL_MS = 3000;
 // Languages the profile importer writes in.
 const IMPORT_LANGUAGES = new Set(['es', 'en', 'it', 'pt', 'fr']);
@@ -667,7 +671,7 @@ function makeSignupTools(deps = {}) {
       ...(cvNote ? { cvNote } : {}),
       next: 'signup_status',
       message: (reused ? 'The sign-up window was already open; it now uses the new data. ' : 'The window opens in the talent\'s browser in a few seconds; they read how it works in the draft they confirmed. ')
-        + 'Say nothing about the window. Only if they say it did not open, call signup_status with windowLink:true. Now call signup_status (waitSeconds 20) until the account exists.',
+        + 'Say nothing about the window. Only if they say it did not open, call signup_status with windowLink:true. Now call signup_status (waitSeconds 45) until the account exists.',
     };
   }
 
@@ -703,7 +707,7 @@ function makeSignupTools(deps = {}) {
   }
 
   function nextSteps(account) {
-    const interview = 'Then the onboarding interview: if onboardingInterview.completed is true, skip it without mentioning it; otherwise call onboarding_interview_start without disclaimerAcknowledged (it asks here now or later on the web). Then, also if they skip it, the main role: list_my_roles (waitSeconds 20), then set_main_role without clusterId only when its next says so. Finally open_web.';
+    const interview = 'Then the onboarding interview: if onboardingInterview.completed is true, skip it without mentioning it; otherwise call onboarding_interview_start without disclaimerAcknowledged (it asks here now or later on the web). Then, also if they skip it, the main role: list_my_roles (waitSeconds 45), then set_main_role without clusterId only when its next says so. Finally open_web.';
     const aiUsage = 'Then ai_usage without consent: it returns the two AI-usage disclaimers and the question (show them right before asking; no scan happens before a yes).';
     if (account.state === 'existing') {
       return `This talent already had an account and signed in. Call update_existing_profile: it shows what would change and asks whether to update, and its text tells the talent about the account, so say nothing about it yourself. ${aiUsage} ${interview}`;
@@ -1121,8 +1125,9 @@ function makeSignupTools(deps = {}) {
       name: 'signup_status',
       title: 'Sign-up progress',
       description: 'Shows whether your account is ready and how the import of your profile is going.',
-      guidance: "State of the sign-up: account (waiting | created | existing | failed) and, once it exists, the profile import per source (linkedin, cv: running | done | failed). Pass waitSeconds (up to 25) to wait for a change. Follow `message`: it gives the remaining steps. Never show internal codes to the talent.",
+      guidance: "State of the sign-up: account (waiting | created | existing | failed) and, once it exists, the profile import per source (linkedin, cv: running | done | failed). Pass waitSeconds (up to 45) to wait for a change; a high value means fewer calls cover the wait. Follow `message`: it gives the remaining steps. Never show internal codes to the talent.",
       inputSchema: STATUS_SCHEMA,
+      annotations: { readOnlyHint: true },
       handler: signupStatus,
     },
     {

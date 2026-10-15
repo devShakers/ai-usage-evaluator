@@ -37,6 +37,7 @@ function makeProfileTools(deps = {}) {
       description: 'Shows your main role, your rate and your "My work with AI" summary on Shakers.',
       guidance: "Get the talent's summary: main role, per-project rate, and the 'My work with AI' read model (setup/usage tier+level, 3x3 cell, vision, how-I-work). Requires an active session. Present it in human terms; any internal ids/codes in the result are handles for tools only — never show or mention them to the talent.",
       inputSchema: GET_PROFILE_SCHEMA,
+      annotations: { readOnlyHint: true },
       handler: getProfile,
     },
   ];

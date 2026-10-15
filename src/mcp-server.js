@@ -107,7 +107,7 @@ function createMcpServer({ tools = [], prompts = [], serverInfo = {}, protocolVe
     }
   }
 
-  // `description` and `title` are what the talent reads in the client; `guidance` is how the model must use the tool, so it rides in the schema.
+  // `description` and `title` are what the talent reads in the client; `guidance` is how the model must use the tool, so it rides in the schema. `annotations` (e.g. readOnlyHint) is a standard MCP hint that passes straight through for clients that act on it.
   function shapeTool(t) {
     const schema = t.inputSchema || { type: 'object' };
     return {
@@ -115,6 +115,7 @@ function createMcpServer({ tools = [], prompts = [], serverInfo = {}, protocolVe
       ...(t.title ? { title: t.title } : {}),
       description: t.description || '',
       inputSchema: t.guidance ? { ...schema, description: [t.guidance, schema.description].filter(Boolean).join(' ') } : schema,
+      ...(t.annotations ? { annotations: t.annotations } : {}),
     };
   }
 

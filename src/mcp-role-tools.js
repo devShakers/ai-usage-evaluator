@@ -11,7 +11,9 @@ const EMPTY_SCHEMA = { type: 'object', properties: {} };
 // Same bounds as the web's growth-direction step: certs finalizes an interview within ~90 s, polled every 2 s.
 const FINALIZATION_WAIT_LIMIT_MS = 90000;
 const POLL_MS = 2000;
-const MAX_WAIT_SECONDS = 25;
+// Cap on the waitSeconds the model may pass; kept under Claude Desktop's ~60 s tool-call cap, higher than
+// the old 25 so fewer polls (and fewer approval prompts) cover the ~90 s finalization.
+const MAX_WAIT_SECONDS = 45;
 const PENDING_FINALIZATION = new Set(['COLLECTING', 'PROCESSING']);
 // Alma's signal from the interview first, then the CV import, as the web stacks them.
 const SOURCE_ORDER = { ONBOARDING_INTERVIEW: 0, IMPORT: 1 };

@@ -58,6 +58,7 @@ function makeFindProjectsTools(deps = {}) {
       description: 'Shows the open Shakers projects that match you best.',
       guidance: "List the Positions/Projects available to the talent right now (Shakers Find Positions), paginated and ordered by match desc. Each item carries its parent Project id/name, title, company, budget, work mode and match. Supports server-side pagination (page/limit) and filters (tab all|saved, attendance, country ISO2). `meta` carries {page,pageSize,total,totalPages}. Requires an active session. The positionId/projectId in each item are INTERNAL handles for calling other tools (e.g. show_project, save_project) — NEVER show or mention them to the talent; refer to a project by its title/company only.",
       inputSchema: FIND_PROJECTS_SCHEMA,
+      annotations: { readOnlyHint: true },
       handler: findProjects,
     },
   ];
