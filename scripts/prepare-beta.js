@@ -22,8 +22,9 @@ if (process.env.CI && !process.env.BETA_VERSION) {
   process.exit(1);
 }
 
+// NPM_PACKAGE_NAME lets the CI prod job reuse this stamper for `shakers-cli`.
 const BETA = {
-  name: 'shakers-cli-beta',
+  name: process.env.NPM_PACKAGE_NAME || 'shakers-cli-beta',
   version: process.env.BETA_VERSION || '0.8.0-beta.15',
   publishConfig: { access: 'public', registry: 'https://registry.npmjs.org/' },
 };

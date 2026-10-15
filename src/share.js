@@ -2,7 +2,7 @@
 
 const crypto = require('crypto');
 
-const { getIngestEndpoint, isTalentProfile } = require('./config');
+const { getIngestEndpoint } = require('./config');
 const { requestBackend } = require('./backend-request');
 const { recordBackendAcceptance } = require('./report-store');
 const {
@@ -53,8 +53,9 @@ async function autoShare(report, maturity, { root, bypassThrottle = false } = {}
   if (!state.email) {
     return { ok: false, skipped: true, reason: 'no-email' };
   }
-  // ADR-006: never SEND under an email whose ownership wasn't proven.
-  if (state.emailVerified === false && isTalentProfile()) {
+  // ADR-006: never SEND under an email whose ownership wasn't proven — every
+  // profile, `external` included (legal requirement), must have verified.
+  if (state.emailVerified === false) {
     return { ok: false, skipped: true, reason: 'email-unverified' };
   }
   if (!bypassThrottle && isThrottled(state)) {

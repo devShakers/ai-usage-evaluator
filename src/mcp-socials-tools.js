@@ -14,7 +14,7 @@ function makeSocialsTools(deps = {}) {
   const requireLoginSession = () => {
     const session = loadAuthSession();
     if (sessionStatus(session) !== 'active') {
-      throw new Error('no active Shakers session — call the login tool (or run `shakers login`) first (list_socials is session-gated).');
+      throw new Error('no active Shakers session — sign in with social_signin_start (or run `shakers login`) first (list_socials is session-gated).');
     }
     return session;
   };
@@ -29,7 +29,9 @@ function makeSocialsTools(deps = {}) {
   return [
     {
       name: 'list_socials',
-      description: "View the talent's social links (linkedin/github/website/twitter/instagram/facebook/dribbble/behance — null when unset). Read-only. Requires an active session.",
+      title: 'Your social links',
+      description: 'Shows the social and web links on your Shakers profile.',
+      guidance: "View the talent's social links (linkedin/github/website/twitter/instagram/facebook/dribbble/behance — null when unset). Read-only. Requires an active session.",
       inputSchema: LIST_SOCIALS_SCHEMA,
       handler: listSocials,
     },

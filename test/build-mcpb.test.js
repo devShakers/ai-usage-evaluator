@@ -21,7 +21,7 @@ function dryRun() {
   const shims = path.join(root, 'shims');
   const log = path.join(root, 'calls.log');
   write(path.join(root, 'scripts/build-mcpb.sh'), fs.readFileSync(path.join(REPO, 'scripts/build-mcpb.sh')));
-  for (const f of ['manifest.json', 'README.md', 'PRIVACY.md']) write(path.join(root, 'packaging/mcpb', f), '{}');
+  for (const f of ['manifest.json', 'README.md', 'PRIVACY.md', 'icon.png']) write(path.join(root, 'packaging/mcpb', f), '{}');
   write(path.join(root, 'LICENSE'), 'license');
   write(path.join(root, 'package.json'), fs.readFileSync(path.join(REPO, 'package.json')));
   write(path.join(root, 'bin/mcp.js'), '');
@@ -51,6 +51,7 @@ test('build-mcpb stages package.json, installs only runtime deps and adds the Li
   const stage = path.join(root, 'dist/mcpb');
   try {
     assert.ok(fs.existsSync(path.join(stage, 'package.json')), 'package.json is staged so the bundle reports its version');
+    assert.ok(fs.existsSync(path.join(stage, 'icon.png')), 'icon.png is staged next to the manifest that references it');
     const install = calls.find((c) => c.startsWith('npm install --omit=dev'));
     assert.equal(fs.realpathSync(install.split(' @ ')[1]), fs.realpathSync(stage), 'runtime deps install inside the stage');
     const packs = calls.filter((c) => c.startsWith('npm pack')).map((c) => c.split(' ')[2]);

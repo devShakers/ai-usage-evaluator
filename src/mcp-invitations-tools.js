@@ -14,7 +14,7 @@ function makeInvitationsTools(deps = {}) {
   const requireLoginSession = () => {
     const session = loadAuthSession();
     if (sessionStatus(session) !== 'active') {
-      throw new Error('no active Shakers session — call the login tool (or run `shakers login`) first (list_invitations is session-gated).');
+      throw new Error('no active Shakers session — sign in with social_signin_start (or run `shakers login`) first (list_invitations is session-gated).');
     }
     return session;
   };
@@ -29,7 +29,9 @@ function makeInvitationsTools(deps = {}) {
   return [
     {
       name: 'list_invitations',
-      description: "List the talent's unread position invitations (projects that invited them). Requires an active session. Any projectId/chatId in the result are INTERNAL handles for calling tools — never show or mention them to the talent; refer to a project by its name.",
+      title: 'Your invitations',
+      description: 'Shows the projects that invited you and that you have not read yet.',
+      guidance: "List the talent's unread position invitations (projects that invited them). Requires an active session. Any projectId/chatId in the result are INTERNAL handles for calling tools — never show or mention them to the talent; refer to a project by its name.",
       inputSchema: LIST_INVITATIONS_SCHEMA,
       handler: listInvitations,
     },

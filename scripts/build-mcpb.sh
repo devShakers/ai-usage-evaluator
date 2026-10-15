@@ -44,6 +44,7 @@ else
 fi
 cp "$ROOT/packaging/mcpb/README.md"     "$STAGE/README.md"
 cp "$ROOT/packaging/mcpb/PRIVACY.md"    "$STAGE/PRIVACY.md"
+cp "$ROOT/packaging/mcpb/icon.png"      "$STAGE/icon.png"
 cp "$ROOT/LICENSE"                      "$STAGE/LICENSE"
 cp "$ROOT/package.json"                 "$STAGE/package.json"
 cp -R "$ROOT/bin" "$STAGE/bin"

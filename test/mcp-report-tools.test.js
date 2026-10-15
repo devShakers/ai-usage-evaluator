@@ -73,8 +73,8 @@ test('report/share tools (injected deps): session gate and data mapping', async 
   };
 
   const noSess = makeReportTools({ ...base, loadAuthSession: () => null });
-  await assert.rejects(noSess.find((t) => t.name === 'report').handler({ root: '/has' }), /call the login tool/);
-  await assert.rejects(noSess.find((t) => t.name === 'share').handler({ root: '/has' }), /call the login tool/);
+  await assert.rejects(noSess.find((t) => t.name === 'report').handler({ root: '/has' }), /sign in with social_signin_start/);
+  await assert.rejects(noSess.find((t) => t.name === 'share').handler({ root: '/has' }), /sign in with social_signin_start/);
 
   const tools = makeReportTools({ ...base, loadAuthSession: () => active });
   const byName = Object.fromEntries(tools.map((t) => [t.name, t]));

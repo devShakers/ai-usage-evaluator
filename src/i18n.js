@@ -637,17 +637,17 @@ const catalogs = {
         + 'puede acarrear penalizaciones en tu cuenta de Shakers, incluida la '
         + 'posible suspensión. Consulta el README de este repositorio para '
         + 'más detalle.',
-      persistQuestion: '¿Guardar este informe en Shakers? (s/n):',
+      persistQuestion: '¿Guardar este informe en Shakers? [s/N]:',
       invalidAnswer: 'Respuesta no reconocida. Responde "s" (sí) o "n" (no).',
       emailPrompt: 'Introduce tu correo:',
-      emailPromptExternal: 'Déjanos tu email para que el equipo de Shakers pueda contactarte (no lo verificamos):',
+      emailPromptExternal: 'Déjanos tu email para que el equipo de Shakers pueda contactarte:',
+      savedUnderEmail: (email) => `El informe se guardará a nombre de: ${email}`,
       invalidEmail: 'Correo no válido, inténtalo de nuevo.',
       notObtained: 'No se ha podido registrar tu respuesta; se te volverá a preguntar la próxima vez.',
       // talents-ai-score, ADR-051: esta pregunta se pide ahora ANTES de cualquier llamada de IA/egress (agent-synthesis, agent-evaluation, personalización de roadmap), no después.
       noReportWithoutConsent: 'Sin tu consentimiento, este informe no incluirá síntesis, evaluación ni roadmap generados por IA esta vez (el resto del informe se muestra igual). Vuelve a ejecutar `usage` y acepta para incluirlos, o usa --consent-reset si quieres que se te pregunte de nuevo.',
       deniedSaved: 'Entendido, no se guardará nada. Puedes cambiar de opinión más adelante volviendo a ejecutar el comando.',
       grantedSaved: (email) => `Gracias. A partir de ahora este informe se guardará automáticamente en Shakers (correo: ${email}, máx. 1 vez por hora).`,
-      grantedSavedExternal: (email) => `Gracias. Hemos guardado tu email (${email}) para que el equipo de Shakers pueda contactarte — no lo hemos verificado.`,
       // talents-ai-score, issue 130: un talento logueado NUNCA ve el prompt de email (su cuenta ya prueba su identidad).
       noSessionEmail: 'No hay un correo asociado a tu sesión todavía, así que no se puede guardar el informe esta vez. Se te preguntará de nuevo la próxima ejecución.',
       skipAlreadyDecided: (decision, path) =>
@@ -2277,17 +2277,17 @@ const catalogs = {
         + 'yours or that you are not authorized to analyze— may result in penalties '
         + "on your Shakers account, up to and including suspension. See this "
         + "repository's README for more detail.",
-      persistQuestion: 'Save this report in Shakers? (y/n):',
+      persistQuestion: 'Save this report in Shakers? [y/N]:',
       invalidAnswer: 'Answer not recognized. Reply "y" (yes) or "n" (no).',
       emailPrompt: 'Enter your email:',
-      emailPromptExternal: "Leave us your email so the Shakers team can reach out (we don't verify it):",
+      emailPromptExternal: 'Leave us your email so the Shakers team can reach out:',
+      savedUnderEmail: (email) => `The report will be saved under: ${email}`,
       invalidEmail: 'Invalid email, try again.',
       notObtained: "Couldn't record your answer; you'll be asked again next time.",
       // talents-ai-score, ADR-051: this question is now asked BEFORE any AI/egress call (agent-synthesis, agent-evaluation, roadmap personalization), not after.
       noReportWithoutConsent: 'Without your consent, this report will not include AI-generated synthesis, evaluation, or roadmap this time (the rest of the report is shown as usual). Run `usage` again and accept to include them, or use --consent-reset if you want to be asked again.',
       deniedSaved: 'Understood, nothing will be saved. You can change your mind later by running the command again.',
       grantedSaved: (email) => `Thanks. From now on this report will be saved in Shakers automatically (email: ${email}, max. once per hour).`,
-      grantedSavedExternal: (email) => `Thanks. We've saved your email (${email}) so the Shakers team can reach out — we haven't verified it.`,
       // talents-ai-score, issue 130: a logged-in Talent is NEVER asked for an email (their account already proves identity).
       noSessionEmail: "There's no email on file for your session yet, so this report can't be saved this time. You'll be asked again next run.",
       skipAlreadyDecided: (decision, path) =>

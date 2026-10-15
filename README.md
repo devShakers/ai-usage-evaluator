@@ -379,7 +379,7 @@ scanned project** — the report can't slip into a commit by accident.
 Desktop) can drive the same features as tools. It exposes, among others:
 
 - **AI usage**: `ai_usage`, `ai_usage_result`.
-- **Auth**: `login`, `logout`, `social_signin_start`, `social_signin_poll`.
+- **Auth**: `social_signin_start`, `social_signin_poll`, `logout`.
 - **Sign-up** (from the talent's own AI, ticket 39540; copy from UX review
   39574): every talent-facing text is fixed, comes from the tools in the
   talent's language (es/en/it/pt, fixed by their first message) and the AI shows
@@ -413,17 +413,36 @@ Desktop) can drive the same features as tools. It exposes, among others:
   pick directly; otherwise it returns `question` and `options` and the AI offers
   them as buttons or a numbered list. The legal texts are always shown in the
   chat before any consent dialog.
+- **Asked before touching this computer**: `suggest_register_context` (look for
+  the CV), `read_cv` (read one CV file), `import_profile` with a CV file (send it)
+  and `add_project` (send the project folder's name, web address, dates and
+  client) each ask the talent themselves, naming exactly what they read or send,
+  the same way as the closed questions above. Without a dialog, the answer only
+  counts when it comes back for a question that tool asked for those exact
+  arguments; a yes the AI sets on its own is ignored and the question is asked
+  again. Nothing is read or sent before the yes.
 - **Profile / skills / agents**: `list_addable`, `add_skill`, `add_agent`,
   `add_project`, `get_profile`, `get_rate`, `get_languages`, `list_socials`,
   `list_experiences`, `list_portfolios`, `get_availability`.
 - **Marketplace**: `find_projects`, `show_project`, `save_project`,
   `unsave_project`, `list_invitations`, `list_applications`.
 - **Certifications**: `list_certifications`, `list_certifiable_dimensions`.
-- **Alma**: `ask`.
+- **Alma**: `alma_chat`, `alma_decision` (a change Alma proposes is applied only
+  after the talent says yes).
+
+Each tool has two audiences. Its `title` and `description` are what the talent
+reads in the client: plain words saying what it does, what it reads on the
+machine and what it sends to Shakers. `packaging/mcpb/manifest.json` declares the
+same tools with the same descriptions, and a test keeps them equal. How the AI
+must use a tool (order, verbatim texts, internal ids) travels in the
+description of its input schema.
 
 MCP tool names are **stable** (renaming would break existing client configs); the
 role tools above were added, not renamed. `register`, `register_preview` and
-`register_status` were removed with the sign-up redesign, not renamed.
+`register_status` were removed with the sign-up redesign, not renamed. `login`
+(it only pointed to `social_signin_start`) and `ask` (a copy of `alma_chat` that
+dropped Alma's confirmation requests) were removed to show the talent fewer
+tools; the `/ask` prompt now uses `alma_chat`.
 
 ## Try it
 
@@ -885,6 +904,12 @@ history directory is absent or unreadable.
   whether it's silently dropped or degraded on failure, is unaffected by
   consent either way. The local **usage** read (Claude Code history) is not
   even a network call — it never leaves the machine, consent or not.
+- **Registration funnel analytics.** `shakers register` and the MCP sign-up
+  send one event per registration step to the Hub, which relays them to
+  Amplitude. Only steps and categories travel (never an exact rate or free
+  text), with a random device id kept in
+  `~/.config/shakers/analytics-device.json` (permissions `600`). A failed
+  send never affects the registration.
 - The consent decision lives in `~/.config/shakers/consent.json`
   (permissions `600`).
 - An **unfinished interview** (agent certification, or the skill-code

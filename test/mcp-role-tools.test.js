@@ -111,6 +111,6 @@ test('set_main_role: promotes the picked role; a role the talent does not hold s
 
 test('role tool descriptions put set_main_role as the sign-up step before open_web', () => {
   const { tools } = harness();
-  assert.match(tools.list_my_roles.description, /waitSeconds/);
-  assert.match(tools.set_main_role.description, /before open_web/);
+  assert.match(tools.list_my_roles.guidance, /waitSeconds/);
+  assert.match(tools.set_main_role.guidance, /before open_web/);
 });

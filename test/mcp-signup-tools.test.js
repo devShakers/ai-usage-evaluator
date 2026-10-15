@@ -444,7 +444,11 @@ test('Google in the window: an existing Google account is signed in without clai
 test('import_profile: fills only empty fields, names the failed source without its code, and waits while the window is open', async () => {
   const cvPath = tmpPdf();
   const signed = harness({ session: SESSION });
-  const r = await signed.tools.import_profile.handler({ linkedinUrl: CREATE.linkedinUrl, cvPath, userQuery: 'x' });
+  const importArgs = { linkedinUrl: CREATE.linkedinUrl, cvPath, userQuery: 'x' };
+  const asked = await signed.tools.import_profile.handler(importArgs);
+  assert.equal(asked.reason, 'consent-required', 'a CV file is sent only after the talent says yes');
+  assert.equal(signed.calls.imports.length, 0);
+  const r = await signed.tools.import_profile.handler({ ...importArgs, answer: asked.options[0] });
   assert.equal(signed.calls.imports[0].fillEmptyOnly, true);
   assert.equal(signed.calls.imports[0].hubAccessToken, 'jwt');
   assert.match(r.message, /except: cv\./);
@@ -513,17 +517,25 @@ test('open_linkedin_profile: only when the talent does not know where to find it
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(calls.opened, ['https://www.linkedin.com/in/me/']);
   assert.equal(r.relayVerbatim, needle(ES.linkedinOpened));
-  assert.match(tools.open_linkedin_profile.description, /ONLY when the talent says they do not know where to find/);
-  assert.match(tools.open_linkedin_profile.description, /linkedinOpening/);
+  assert.match(tools.open_linkedin_profile.guidance, /ONLY when the talent says they do not know where to find/);
+  assert.match(tools.open_linkedin_profile.guidance, /linkedinOpening/);
 });
 
-test('mcpb manifest: lists only tools the server registers, the new sign-up steps included', async () => {
+test('mcpb manifest: declares exactly the tools the server registers, each with the description the talent sees in the client', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'packaging/mcpb/manifest.json'), 'utf8'));
-  const list = await require('../bin/mcp').buildServer().handleMessage({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} });
-  const names = new Set(list.result.tools.map((t) => t.name));
-  for (const t of manifest.tools) assert.ok(names.has(t.name), t.name);
-  for (const name of ['signup_start', 'signup_email', 'signup_draft', 'signup_create_account', 'update_existing_profile']) {
-    assert.ok(manifest.tools.some((t) => t.name === name), name);
+  const tools = require('../bin/mcp').buildServer().listTools().tools;
+  assert.deepEqual(manifest.tools.map((t) => t.name).sort(), tools.map((t) => t.name).sort());
+  const described = Object.fromEntries(tools.map((t) => [t.name, t.description]));
+  for (const t of manifest.tools) assert.equal(t.description, described[t.name], t.name);
+});
+
+test('tool copy: every tool has a short title and a plain description, and its model guidance stays in the schema', () => {
+  const tools = require('../bin/mcp').buildServer().listTools().tools;
+  for (const t of tools) {
+    assert.ok(t.title && t.title.length <= 40, `${t.name} title`);
+    assert.ok(t.description.split(/(?<=[.!?])\s+/).length <= 2, `${t.name}: at most two sentences`);
+    assert.doesNotMatch(t.description, /\b[a-z]+_[a-z_]+\b|redact|session|git\b|`/i, `${t.name}: no tool ids or jargon`);
+    assert.ok(t.inputSchema.description, `${t.name} guidance`);
   }
 });
 
@@ -577,4 +589,24 @@ test('signup_start: the welcome asks for the CV first; only the second option se
     assert.doesNotMatch(give.message, /suggest_register_context/, `${lang}: no search without the second option`);
     assert.match((await tools.signup_start.handler({ answer: '2' })).message, /suggest_register_context/);
   }
+});
+
+test('import_profile: a CV file is sent only after the talent says yes to that file; LinkedIn alone needs no question', async () => {
+  const cvPath = tmpPdf();
+  const h = harness({ session: SESSION });
+  const c = signupCopy('es').consent;
+  const forged = await h.tools.import_profile.handler({ cvPath, answer: c.yes });
+  assert.equal(forged.reason, 'consent-required', 'a yes the AI sets by itself is not consent');
+  assert.equal(h.calls.imports.length, 0);
+  assert.ok(forged.say.includes(c.cvSend(cvPath)), 'the question names the file');
+  const no = await h.tools.import_profile.handler({ cvPath, answer: c.no });
+  assert.equal(no.reason, 'consent-declined');
+  assert.equal(h.calls.imports.length, 0);
+
+  const yes = await h.tools.import_profile.handler({ cvPath }, { elicitation: true, elicit: async () => ({ action: 'accept', content: { choice: c.yes } }) });
+  assert.equal(yes.ok, true);
+  assert.equal(h.calls.imports.length, 1);
+
+  assert.equal((await h.tools.import_profile.handler({ linkedinUrl: CREATE.linkedinUrl })).ok, true);
+  assert.equal(h.calls.imports.length, 2);
 });

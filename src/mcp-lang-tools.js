@@ -14,7 +14,7 @@ function makeLangTools(deps = {}) {
   const requireLoginSession = () => {
     const session = loadAuthSession();
     if (sessionStatus(session) !== 'active') {
-      throw new Error('no active Shakers session — call the login tool (or run `shakers login`) first (get_languages is session-gated).');
+      throw new Error('no active Shakers session — sign in with social_signin_start (or run `shakers login`) first (get_languages is session-gated).');
     }
     return session;
   };
@@ -29,7 +29,9 @@ function makeLangTools(deps = {}) {
   return [
     {
       name: 'get_languages',
-      description: "View the talent's languages and proficiency levels (NATIVE/ADVANCED/INTERMEDIATE/INTERMEDIATE_WRITTEN). Read-only. Requires an active session. Any language ids in the result are internal handles for tools only — never show or mention them to the talent; refer to a language by its name.",
+      title: 'Your languages',
+      description: 'Shows the languages and levels on your Shakers profile.',
+      guidance: "View the talent's languages and proficiency levels (NATIVE/ADVANCED/INTERMEDIATE/INTERMEDIATE_WRITTEN). Read-only. Requires an active session. Any language ids in the result are internal handles for tools only — never show or mention them to the talent; refer to a language by its name.",
       inputSchema: GET_LANGUAGES_SCHEMA,
       handler: getLanguages,
     },

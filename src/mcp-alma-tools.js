@@ -27,7 +27,7 @@ function makeAlmaTools(deps = {}) {
   const requireSession = () => {
     const session = loadAuthSession();
     if (sessionStatus(session) !== 'active') {
-      throw new Error('no active Shakers session — call the login tool (or run `shakers login`) first (alma is session-gated).');
+      throw new Error('no active Shakers session — sign in with social_signin_start (or run `shakers login`) first (alma is session-gated).');
     }
     return session;
   };
@@ -75,13 +75,17 @@ function makeAlmaTools(deps = {}) {
   return [
     {
       name: 'alma_chat',
-      description: "Send a message to Alma, the Shakers AI assistant, and get her answer (about the talent's profile, rate, availability, skills, positions, applications). Continuity is automatic across turns (same session). When Alma proposes a profile change she returns `pendingConfirmation { text, irreversible }` — DO NOT auto-approve: show the talent `pendingConfirmation.text` (and warn when irreversible), ask them yes/no, then call `alma_decision` with their answer. `webLinks` are web-only navigation targets. Relay the answer as-is; never show internal Shakers ids/codes.",
+      title: 'Chat with Alma',
+      description: 'Sends your message to Alma, the Shakers assistant, and shows her answer. If she proposes a change to your profile, you are asked before it is made.',
+      guidance: "Send a message to Alma, the Shakers AI assistant, and get her answer (about the talent's profile, rate, availability, skills, positions, applications). Continuity is automatic across turns (same session). When Alma proposes a profile change she returns `pendingConfirmation { text, irreversible }` — DO NOT auto-approve: show the talent `pendingConfirmation.text` (and warn when irreversible), ask them yes/no, then call `alma_decision` with their answer. `webLinks` are web-only navigation targets. Relay the answer as-is; never show internal Shakers ids/codes.",
       inputSchema: ALMA_CHAT_SCHEMA,
       handler: almaChat,
     },
     {
       name: 'alma_decision',
-      description: "Relay the talent's decision on the pending Alma action from alma_chat: approved=true makes Alma perform the change, approved=false cancels it. Call this ONLY after the talent has explicitly answered yes/no to the pendingConfirmation — never decide on their behalf.",
+      title: "Confirm Alma's change",
+      description: 'Sends your yes or no to a profile change Alma proposed.',
+      guidance: "Relay the talent's decision on the pending Alma action from alma_chat: approved=true makes Alma perform the change, approved=false cancels it. Call this ONLY after the talent has explicitly answered yes/no to the pendingConfirmation — never decide on their behalf.",
       inputSchema: ALMA_DECISION_SCHEMA,
       handler: almaDecision,
     },

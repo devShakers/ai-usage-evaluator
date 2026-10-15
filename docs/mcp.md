@@ -30,6 +30,25 @@ Arguments:
 Returns `{ report, maturity, send, scope, consent }` — the same structured report
 the CLI produces under `--json`, plus the send result.
 
+## Before you install the Claude Desktop extension
+
+When you open the `.mcpb`, Claude Desktop shows this notice for every extension that does not come
+from Anthropic: "Only use extensions from developers you trust. Anthropic does not control which
+tools developers make available and cannot verify that they will work as intended or that they
+won't change." This is expected. Most of the tools only talk to your Shakers account. These ones
+also work with this computer:
+
+- Look for your CV: asks you first. Only if you say yes, it lists the names of PDF and Word files
+  in your Desktop, Documents, Downloads and iCloud Drive folders that look like a CV, and reads the
+  name, email and GitHub user saved by your coding tools. It does not open those files.
+- Read your CV: asks you first, naming the file. Only if you say yes, it reads the text of that CV
+  file.
+- Analyse how you work with AI: asks you first. Only if you say yes, it looks at which AI tools
+  you use and the history of your code projects, and sends a summary with anonymised excerpts to
+  your profile. Your code and your prompts never leave your computer.
+- Add this project to your portfolio: reads the name, web address and dates of the project folder
+  open here, asks you first naming all of them, and sends them to Shakers only if you say yes.
+
 ## Connecting it: the installer does it
 
 The last step of `install.sh` (`shakers mcp install`, `src/mcp-install.js`) writes the `shakers` server into every
@@ -122,9 +141,11 @@ All three are best-effort: a failed local write never fails the tool.
 - `add_skill` `{ skillId }` — declares a discovered skill by id (`requestDeclareSkill`).
 - `add_agent` `{ agentName, whatItDoes?, humanDecides?, timeSavedHoursWeek? }` — declares
   a discovered agent by name (`requestDeclareAgent`).
-- `add_project` `{ root?, name?, type?, description?, url?, skillIds? }` — adds the current
+- `add_project` `{ root?, name?, type?, description?, url?, clientName?, clientDomain?, skillIds?, answer? }` — adds the current
   repo to the portfolio (`requestDeclarePortfolio`); `name`/`url` default to the repo
-  directory and its git remote, `type` defaults to `PORTFOLIO`.
+  directory and its git remote, `type` defaults to `PORTFOLIO`. It first asks the talent,
+  naming the folder, web address, dates and client it will send (dialog, or `say` plus a
+  second call with `answer`); nothing is sent before the yes.
 
 All of `list_addable` / `add_*` are session-gated: without an active session they return
 a clear "call the login tool (or run `shakers login`) first" error. Tokens are never forged.

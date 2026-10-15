@@ -1,13 +1,8 @@
 'use strict';
 
 const path = require('path');
-
-const LOGIN_SCHEMA = {
-  type: 'object',
-  properties: {
-    method: { type: 'string', enum: ['email', 'google', 'linkedin'], description: "Optional auth method. None of them sign in here: this tool points you to social_signin_start/social_signin_poll (the device flow) with that provider. 'email' reuses the talent's open Shakers web session or signs them in on the page (never a password in the chat); 'google'/'linkedin' open that social sign-in. Omit it to default to email (the page still offers Google and LinkedIn)." },
-  },
-};
+const { askConsent } = require('./mcp-choice');
+const { tildify } = require('./env-paths');
 
 const LOGOUT_SCHEMA = { type: 'object', properties: {} };
 
@@ -58,6 +53,7 @@ const ADD_PROJECT_SCHEMA = {
     clientName: { type: 'string', description: 'Client name (optional, e.g. for freelance work).' },
     clientDomain: { type: 'string', description: "Client website or domain (optional, e.g. 'acme.com' or a full URL — normalized to a bare domain). Hub generates the client logo from it." },
     skillIds: { type: 'array', items: { type: 'integer' } },
+    answer: { type: 'string', description: 'The option the talent picked when you printed the question this tool returned. Never set it yourself.' },
   },
 };
 
@@ -89,6 +85,7 @@ function makeOnboardingTools(deps = {}) {
     requestUpdatePortfolioSkills = require('./portfolio-client').requestUpdatePortfolioSkills,
     getRemoteUrl = require('./portfolio-git-info').getRemoteUrl,
     getCommitDateRange = require('./portfolio-git-info').getCommitDateRange,
+    consentCopy = () => require('./signup-copy').signupCopy(require('./signup-language').signupLanguage(require('./i18n').detectFlowLang())).consent,
     normalizeDomain = require('./start-add-portfolio').normalizeDomain,
     isValidEmail = require('./share').isValidEmail,
     normalizeEmail = require('./share').normalizeEmail,
@@ -97,7 +94,7 @@ function makeOnboardingTools(deps = {}) {
   const requireSession = () => {
     const session = loadAuthSession();
     if (sessionStatus(session) !== 'active') {
-      throw new Error('no active Shakers session — call the login tool (or run `shakers login`) first.');
+      throw new Error('no active Shakers session — sign in with social_signin_start (or run `shakers login`) first.');
     }
     return session;
   };
@@ -116,25 +113,6 @@ function makeOnboardingTools(deps = {}) {
     }
     return endpoint;
   };
-
-  // Every method runs through the device flow (start/poll tools); a blocking form
-  // can't surface the code, and email now reuses the web session there instead of
-  // prompting for a password. The start/poll pair persists the session.
-  const socialSigninPointer = (mode, provider = 'email') => ({
-    ok: false,
-    reason: 'use-device-flow',
-    next: 'social_signin_start',
-    mode,
-    provider,
-    message: `For ${provider}, call social_signin_start (provider "${provider}", mode "${mode}") to get a URL and code to show the talent, then social_signin_poll.`,
-  });
-
-  // Email, Google and LinkedIn all hand off to social_signin_start/poll. Email
-  // defaults when no method is given; the /cli-login page still offers the others.
-  async function login(args = {}) {
-    const provider = args.method === 'google' || args.method === 'linkedin' ? args.method : 'email';
-    return socialSigninPointer('login', provider);
-  }
 
   async function logout() {
     const wasLoggedIn = loadAuthSession() !== null;
@@ -299,10 +277,11 @@ function makeOnboardingTools(deps = {}) {
     return { ...base, portfolios, related, relateFailures };
   }
 
-  async function addProject(args = {}) {
+  // Sends the project only after the talent says yes to exactly what goes: name, web address, dates, client.
+  async function addProject(args = {}, ctx = {}) {
     const session = requireSession();
     const endpoint = requireEndpoint(getPortfoliosDeclareEndpoint, 'portfolios-declare');
-    const root = typeof args.root === 'string' && args.root ? args.root : process.cwd();
+    const root = path.resolve(typeof args.root === 'string' && args.root ? args.root : process.cwd());
     const name = typeof args.name === 'string' && args.name ? args.name : path.basename(root);
     const type = args.type === 'EXPERIENCE' ? 'EXPERIENCE' : 'PORTFOLIO';
     let url = typeof args.url === 'string' && args.url ? args.url : null;
@@ -312,14 +291,29 @@ function makeOnboardingTools(deps = {}) {
     let startDate;
     let endDate;
     try { ({ startDate, endDate } = getCommitDateRange(root)); } catch { startDate = null; endDate = null; }
+    const clientName = typeof args.clientName === 'string' && args.clientName ? args.clientName : null;
+    const clientDomain = normalizeDomain(args.clientDomain) || null;
+    const description = typeof args.description === 'string' && args.description ? args.description : null;
+    const sent = { name, type, url, startDate, endDate, clientName, clientDomain, description };
+    const c = consentCopy();
+    const asked = await askConsent(ctx, {
+      tool: 'add_project',
+      key: `add_project:${root}:${JSON.stringify(sent)}`,
+      question: c.project({ folder: tildify(root), name, url, startDate, endDate, client: [clientName, clientDomain].filter(Boolean).join(', '), description }),
+      yes: c.yes,
+      no: c.no,
+      answer: args.answer,
+    });
+    if (asked.reply) return asked.reply;
+    if (!asked.granted) return { ok: false, reason: 'consent-declined', message: 'The talent said no: nothing was sent. Do not add the project.' };
     const result = await requestDeclarePortfolio(
       {
         name,
         type,
-        description: typeof args.description === 'string' ? args.description : undefined,
+        description: description || undefined,
         url: url || undefined,
-        clientName: typeof args.clientName === 'string' && args.clientName ? args.clientName : undefined,
-        clientDomain: normalizeDomain(args.clientDomain) || undefined,
+        clientName: clientName || undefined,
+        clientDomain: clientDomain || undefined,
         startDate: startDate || undefined,
         endDate: endDate || undefined,
         skillIds: Array.isArray(args.skillIds) ? args.skillIds : undefined,
@@ -333,38 +327,42 @@ function makeOnboardingTools(deps = {}) {
 
   return [
     {
-      name: 'login',
-      description: "Start signing the talent in to Shakers so the add_* and certify tools can run. This tool does not sign in itself: it points you to social_signin_start + social_signin_poll (the device flow), which open the Shakers web page and persist the session. Email (the default) reuses the talent's open web session or signs them in on the page — never a password in the chat; 'google'/'linkedin' open that social sign-in. Returns a { ok: false, reason: 'use-device-flow', next, provider } pointer; call social_signin_start next.",
-      inputSchema: LOGIN_SCHEMA,
-      handler: login,
-    },
-    {
       name: 'logout',
-      description: "Sign the talent out of Shakers by clearing the persisted session. Idempotent — returns { ok: true, wasLoggedIn } whether or not a session existed.",
+      title: 'Sign out of Shakers',
+      description: 'Signs you out by deleting the Shakers sign-in saved on this computer.',
+      guidance: "Sign the talent out of Shakers by clearing the persisted session. Idempotent — returns { ok: true, wasLoggedIn } whether or not a session existed.",
       inputSchema: LOGOUT_SCHEMA,
       handler: logout,
     },
     {
       name: 'list_addable',
-      description: "List the skills and AI agents that Shakers discovered from the talent's submitted ai_usage report and that can be added to their Shakers profile. Use it to offer choices before add_skill / add_agent. Present skills and agents to the talent by NAME only; skillId, agent code and catalogId are internal handles for the add_* tools — never show raw IDs or codes. Requires an active session.",
+      title: 'Skills and agents you can add',
+      description: 'Shows the skills and AI agents found in the AI analysis you sent to Shakers, so you can pick which ones go on your profile.',
+      guidance: "List the skills and AI agents that Shakers discovered from the talent's submitted ai_usage report and that can be added to their Shakers profile. Use it to offer choices before add_skill / add_agent. Present skills and agents to the talent by NAME only; skillId, agent code and catalogId are internal handles for the add_* tools — never show raw IDs or codes. Requires an active session.",
       inputSchema: LIST_ADDABLE_SCHEMA,
       handler: listAddable,
     },
     {
       name: 'add_skill',
-      description: "Add a discovered skill to the talent's Shakers profile by skillId (taken from list_addable). skillId is an internal handle — refer to the skill by its name when talking to the talent, never show the id. Optionally pass relatedPortfolioIds to relate it to one or more of the talent's portfolio experiences (matches the web's 'Relate to an experience' step) — the response always includes `portfolios` (id/name/type) so you can ask the talent which one(s) on a later call. If the talent has no portfolios yet, the skill is still added, unrelated. Requires an active session.",
+      title: 'Add a skill to your profile',
+      description: 'Adds the skill you pick to your Shakers profile.',
+      guidance: "Add a discovered skill to the talent's Shakers profile by skillId (taken from list_addable). skillId is an internal handle — refer to the skill by its name when talking to the talent, never show the id. Optionally pass relatedPortfolioIds to relate it to one or more of the talent's portfolio experiences (matches the web's 'Relate to an experience' step) — the response always includes `portfolios` (id/name/type) so you can ask the talent which one(s) on a later call. If the talent has no portfolios yet, the skill is still added, unrelated. Requires an active session.",
       inputSchema: ADD_SKILL_SCHEMA,
       handler: addSkill,
     },
     {
       name: 'add_agent',
-      description: "Add a discovered AI agent to the talent's Shakers profile by name (from list_addable). Optionally pass whatItDoes and humanDecides (what the talent does around the agent — supervision/validation). Optionally pass relatedPortfolios ({ portfolioId }) to relate it to the talent's experiences (matches the web's 'Relate to an experience' step) — the response always includes `portfolios` (id/name/type) so you can ask which one(s) on a later call. If the talent has no experiences yet, the agent is still added, unrelated. Requires an active session.",
+      title: 'Add an AI agent to your profile',
+      description: 'Adds the AI agent you pick, with the description you agree on, to your Shakers profile.',
+      guidance: "Add a discovered AI agent to the talent's Shakers profile by name (from list_addable). Optionally pass whatItDoes and humanDecides (what the talent does around the agent — supervision/validation). Optionally pass relatedPortfolios ({ portfolioId }) to relate it to the talent's experiences (matches the web's 'Relate to an experience' step) — the response always includes `portfolios` (id/name/type) so you can ask which one(s) on a later call. If the talent has no experiences yet, the agent is still added, unrelated. Requires an active session.",
       inputSchema: ADD_AGENT_SCHEMA,
       handler: addAgent,
     },
     {
       name: 'add_project',
-      description: "Add the current repository to the talent's Shakers portfolio as a project. Name and URL default to the repo directory and its git remote, and the start/end dates are derived from the repo's git history. Optionally pass clientName and clientDomain (the client's website/domain, e.g. 'acme.com' — Shakers fetches the client logo from it). Requires an active session. Any ids/codes in the result are internal handles for tools only — never show or mention them to the talent.",
+      title: 'Add this project to your portfolio',
+      description: 'Reads the name of the project folder open here, the web address of its code and the dates of its first and last change. It asks you first, naming all of them, and only then sends them to Shakers as a new portfolio project.',
+      guidance: "Add the current repository to the talent's Shakers portfolio as a project. Name and URL default to the repo directory and its git remote, and the start/end dates are derived from the repo's git history. Optionally pass clientName and clientDomain (the client's website/domain, e.g. 'acme.com' — Shakers fetches the client logo from it). The tool asks the talent first, naming the folder, web address, dates and client it will send (a dialog when the client has one, otherwise it returns `say` to print word for word as your whole reply); nothing is sent until they answer yes. After a `say`, call it again with the same arguments and answer set to the option they pick. Never answer for them. Requires an active session. Any ids/codes in the result are internal handles for tools only — never show or mention them to the talent.",
       inputSchema: ADD_PROJECT_SCHEMA,
       handler: addProject,
     },
@@ -373,7 +371,6 @@ function makeOnboardingTools(deps = {}) {
 
 module.exports = {
   makeOnboardingTools,
-  LOGIN_SCHEMA,
   LOGOUT_SCHEMA,
   LIST_ADDABLE_SCHEMA,
   ADD_SKILL_SCHEMA,

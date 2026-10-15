@@ -1,7 +1,9 @@
 'use strict';
 
 const { TranscriptBuffer } = require('./interview-transcript');
-const { askChoice } = require('./mcp-choice');
+const path = require('path');
+const { askChoice, askConsent } = require('./mcp-choice');
+const { expandHome, tildify } = require('./env-paths');
 
 const ANSWER_MODES = ['drafted', 'own', 'full'];
 
@@ -62,7 +64,7 @@ function withTimeout(promise, ms) {
   return Promise.race([promise, expiry]).finally(() => clearTimeout(timer));
 }
 
-// No telemetry ships in this package: stderr reaches the MCP client's server log, with what is needed to size the gap.
+// Stays local (stderr, the MCP client's log); only the sign-up funnel is sent.
 function defaultReportLivekitFailure(kind, error) {
   const cause = error && error.cause && error.cause.message ? error.cause.message : (error && error.message) || '';
   process.stderr.write(`  [mcp] livekit-unavailable kind=${kind} os=${process.platform} arch=${process.arch} node=${process.version} cause=${JSON.stringify(cause.slice(0, 300))}\n`);
@@ -85,6 +87,8 @@ function makeRegisterTools(deps = {}) {
   const textLang = () => require('./signup-language').signupLanguage(lang);
   const copy = () => require('./signup-copy').signupCopy(textLang());
   const checkCompleted = deps.checkOnboardingCompleted || require('./onboarding-availability').checkOnboardingCompleted;
+  const funnel = deps.funnel || require('./onboarding-funnel').NOOP_FUNNEL;
+  const track = (record) => { record(); funnel.flush(); };
 
   // The LiveKit room is a live WebRTC connection that must survive between the
   // separate start/turn/complete JSON-RPC calls of this long-lived stdio server.
@@ -115,6 +119,7 @@ function makeRegisterTools(deps = {}) {
   }
 
   function interviewLater() {
+    track(() => funnel.completed('pre_interview', { interview_choice: 'skip' }));
     return { ok: false, reason: 'interview-later', message: 'The talent does the interview later on the web: skip it here and go on with the main role, then open_web.' };
   }
 
@@ -157,6 +162,7 @@ function makeRegisterTools(deps = {}) {
     }
     const acknowledged = args.disclaimerAcknowledged === true;
     if (!acknowledged) {
+      track(() => funnel.viewed('pre_interview'));
       const where = await askWhere(args, ctx);
       if (where.here === false) return interviewLater();
       if (where.chat) {
@@ -181,8 +187,10 @@ function makeRegisterTools(deps = {}) {
         message: `${answer.chat.choiceMessage} Then call onboarding_interview_start again with where:"here", disclaimerAcknowledged:true and answerMode: drafted for the first option, own for the second, full for the third.`,
       };
     }
+    track(() => funnel.completed('pre_interview', { interview_choice: 'start_now' }));
     const room = {};
     const opened = await withTimeout(openRoom(args, room), interviewTimeoutMs);
+    if (opened === TIMED_OUT || !opened.ok) track(() => funnel.errored('interview', opened === TIMED_OUT ? 'timeout' : opened.reason));
     if (opened === TIMED_OUT) {
       room.abandoned = true;
       if (room.client) room.client.disconnect().catch(() => {});
@@ -190,6 +198,7 @@ function makeRegisterTools(deps = {}) {
     }
     if (!opened.ok) return opened;
     interviewSessions.set(opened.interviewId, { client: opened.client, buffer: opened.buffer, connectAt: Date.now(), ended: opened.opening.ended === true });
+    track(() => funnel.viewed('interview', { interview_mode: 'text' }));
     return { ok: true, interviewId: opened.interviewId, answerMode: answer.mode, greeting: opened.opening.text, ended: opened.opening.ended === true };
   }
 
@@ -275,6 +284,7 @@ function makeRegisterTools(deps = {}) {
     const saved = await teardownInterview(args.interviewId, { persist: true });
     if (!saved.ok) return { ok: false, reason: saved.reason || 'complete-failed' };
     lastCompletedInterview = { interviewId: args.interviewId, completedAt: Date.now() };
+    track(() => funnel.completed('interview', { interview_mode: 'text' }));
     return { ok: true, state: 'taken', message: catalog.interviewComplete };
   }
 
@@ -311,8 +321,12 @@ function makeRegisterTools(deps = {}) {
     };
   }
 
-  // Content-free context the model may PROPOSE to the talent (never auto-write).
-  async function suggestContext(args = {}) {
+  // Content-free context the model may PROPOSE to the talent (never auto-write), searched only after the talent says yes.
+  async function suggestContext(args = {}, ctx = {}) {
+    const c = copy().consent;
+    const asked = await askConsent(ctx, { tool: 'suggest_register_context', key: 'suggest_register_context', question: c.cvSearch, yes: c.yes, no: c.no, answer: args.answer });
+    if (asked.reply) return asked.reply;
+    if (!asked.granted) return { ok: false, reason: 'consent-declined', message: 'The talent said no: nothing was searched. Do not look for the CV on this computer; ask them to attach it in the chat.' };
     const read = deps.readRegisterContextSuggestions || require('./register-context').readRegisterContextSuggestions;
     const suggestions = read({ talentName: args.talentName });
     const found = suggestions.cvCandidates && suggestions.cvCandidates.length > 0;
@@ -321,16 +335,21 @@ function makeRegisterTools(deps = {}) {
       suggestions,
       note: 'Propose these to the talent to confirm; never write them without confirmation.',
       message: found
-        ? 'The talent already allowed the search: read_cv the first candidate now (the most likely), with talentConsent:true and talentName if you know it. nameMatch:null only means their name is unknown, never that the CV is not theirs. Move to the next candidate only if read_cv says mentionsTalent:false; say you did not find it only when none is left.'
+        ? 'Now call read_cv on the first candidate (the most likely), with talentName if you know it: read_cv asks the talent itself before reading it, so ask nothing in your own words. nameMatch:null only means their name is unknown, never that the CV is not theirs. Move to the next candidate only if read_cv says mentionsTalent:false; say you did not find it only when none is left.'
         : 'No CV was found on this machine: ask the talent to attach it.',
     };
   }
 
-  // Text of the CV the talent confirmed as theirs, read only with their permission.
-  async function readCv(args = {}) {
-    if (args.talentConsent !== true) return { ok: false, reason: 'consent-required', message: 'Ask the talent first whether this CV is theirs and whether you may read it; call again with talentConsent:true only after they say yes.' };
+  // Text of the CV file the talent allowed this tool to read, in its own question.
+  async function readCv(args = {}, ctx = {}) {
+    if (typeof args.path !== 'string' || !args.path.trim()) return { ok: false, reason: 'cv-not-found', message: 'Pass the path of the CV file.' };
+    const file = path.resolve(expandHome(args.path.trim()));
+    const c = copy().consent;
+    const asked = await askConsent(ctx, { tool: 'read_cv', key: `read_cv:${file}`, question: c.cvRead(tildify(file)), yes: c.yes, no: c.no, answer: args.answer });
+    if (asked.reply) return asked.reply;
+    if (!asked.granted) return { ok: false, reason: 'consent-declined', message: 'The talent said no: the file was not read. Do not read it; ask them to attach their CV in the chat or tell you what it says.' };
     const read = deps.readCvText || require('./cv-text').readCvText;
-    const result = read(args.path, { talentName: args.talentName });
+    const result = read(file, { talentName: args.talentName });
     if (!result.ok) return { ...result, message: 'Could not read the CV text here. Ask the talent to attach the CV to the chat, or to tell you what it says.' };
     // Someone else's CV (a candidate they downloaded): never hand its contents over.
     if (result.mentionsTalent === false) return { ok: true, mentionsTalent: false, note: "This CV does not name the talent: it belongs to someone else. Do not use, quote or describe it; try the next candidate." };
@@ -340,27 +359,33 @@ function makeRegisterTools(deps = {}) {
   return [
     {
       name: 'suggest_register_context',
-      description: "SUGGESTIONS for the sign-up read on this machine (no network, no file contents): timezone, git name/email, the gh CLI GitHub login, and cvCandidates: PDF/DOC/DOCX files in Desktop, Documents, Downloads and iCloud Drive whose NAME looks like a CV or carries the talent's name, each with nameMatch (null when their name is unknown) and generic flags. A candidate is only a lead (people who hire keep other people's CVs): confirm it with read_cv. Pass talentName to sharpen the match. Use it when the talent said you may look for their CV on this machine.",
-      inputSchema: { type: 'object', properties: { talentName: { type: 'string', description: "The talent's full name as you know it (memory, chat); improves CV matching." } } },
+      title: 'Look for your CV on this computer',
+      description: 'Asks you first, then lists the names of PDF and Word files in your Desktop, Documents, Downloads and iCloud Drive folders that look like a CV and reads your time zone and the name, email and GitHub user saved by your coding tools. It does not open those files or send anything.',
+      guidance: "SUGGESTIONS for the sign-up read on this machine (no network, no file contents): timezone, git name/email, the gh CLI GitHub login, and cvCandidates: PDF/DOC/DOCX files in Desktop, Documents, Downloads and iCloud Drive whose NAME looks like a CV or carries the talent's name, each with nameMatch (null when their name is unknown) and generic flags. A candidate is only a lead (people who hire keep other people's CVs): confirm it with read_cv. Pass talentName to sharpen the match. The tool asks the talent first (a dialog when the client has one, otherwise it returns `say` to print word for word as your whole reply); nothing is searched until they answer yes. After a `say`, call it again with answer set to the option they pick. Never answer for them.",
+      inputSchema: { type: 'object', properties: { talentName: { type: 'string', description: "The talent's full name as you know it (memory, chat); improves CV matching." }, answer: { type: 'string', description: 'The option the talent picked when you printed the question this tool returned. Never set it yourself.' } } },
       handler: suggestContext,
     },
     {
       name: 'read_cv',
-      description: "Read the TEXT of a CV file (PDF, DOC, DOCX) on this machine, with the talent's permission (talentConsent:true) and talentName set. Returns { mentionsTalent, links: { linkedin, github, emails, phones }, text } for the talent's own CV; a CV that does not name them returns only mentionsTalent:false: it is someone else's, drop it, never describe it, try the next candidate. Nothing is uploaded by this tool: pass the confirmed path to signup_start (or import_profile) as cvPath, use the text for userQuery and the email, and links.linkedin as their LinkedIn URL.",
+      title: 'Read your CV',
+      description: 'Asks you first, then reads the text of the CV file you allow to prepare your profile draft. This step sends nothing to Shakers.',
+      guidance: "Read the TEXT of a CV file (PDF, DOC, DOCX) on this machine, with talentName set. The tool asks the talent first, naming the file (a dialog when the client has one, otherwise it returns `say` to print word for word as your whole reply); nothing is read until they answer yes. After a `say`, call it again with the same path and answer set to the option they pick. Never answer for them. Returns { mentionsTalent, links: { linkedin, github, emails, phones }, text } for the talent's own CV; a CV that does not name them returns only mentionsTalent:false: it is someone else's, drop it, never describe it, try the next candidate. Nothing is uploaded by this tool: pass the confirmed path to signup_start (or import_profile) as cvPath, use the text for userQuery and the email, and links.linkedin as their LinkedIn URL.",
       inputSchema: {
         type: 'object',
         properties: {
           path: { type: 'string', description: 'Path to the CV file, exactly as suggest_register_context gave it (the short ~/ form is fine) or absolute.' },
-          talentConsent: { type: 'boolean', description: 'true ONLY after the talent allowed you to search for and read their CV.' },
+          answer: { type: 'string', description: 'The option the talent picked when you printed the question this tool returned. Never set it yourself.' },
           talentName: { type: 'string', description: "The talent's full name as you know it; used to tell their CV from other people's." },
         },
-        required: ['path', 'talentConsent'],
+        required: ['path'],
       },
       handler: readCv,
     },
     {
       name: 'onboarding_interview_start',
-      description: "Start the onboarding interview, here in the chat. Offer it only when signup_status says onboardingInterview.completed is not true. Call it first without disclaimerAcknowledged: it asks 'here now or later on the web?' (in a dialog when the client has one, otherwise it returns `say` to print word for word; default here), then how they want to answer, with the two interview disclaimers in that same question. reason 'interview-later' means they chose the web: skip the interview. reason 'interview-on-web' (a sign-up language the chat interview does not speak) is the same: print relayVerbatim and skip it. If it returns reason 'interview-already-started' (begun elsewhere and not finished), call open_web so they continue on the web. It runs over LiveKit and the server agent conducts it; the client does not decide its branch. When it returns `say`, print it word for word as your whole reply (it holds the disclaimers and the question) and, once they answer, call with where:'here', disclaimerAcknowledged:true and answerMode. Returns { interviewId, answerMode, greeting, ended }: relay the greeting VERBATIM, then drive it with onboarding_interview_turn. ANSWER MODES. For drafted and full, first gather everything you know (memory, a search of past conversations if you have that tool, their CV, the ai_usage report, the sign-up data) and show ONE short sheet 'esto es lo que se de ti' (roles and projects with concrete facts, stack, languages, what they want next); let them correct it once; those corrections override your memory. Your answers are first person, one or two short sentences in their plain voice, built only from facts on the confirmed sheet: no embellishment, no adjectives, metrics or claims they did not give, no repeating a fact already said unless asked; for wishes, preferences or opinions give your best guess and say it is a guess. (1) drafted: show each question VERBATIM with your proposed answer and send it only after the talent approves or edits it; if the sheet does not cover a question, ask them briefly instead of guessing. Only if the talent explicitly asks you to answer everything yourself (for example 'hazla entera' or 'contéstalas tú todas'), answer the remaining questions without asking for each approval, as in full. (2) full (they chose it, or asked for it as above): answer every question yourself without per-answer approval, still showing each question and your answer, and when the interview ends tell them in one line that you answered those questions yourself. (3) own: you are a pure CONDUIT: show every question VERBATIM and pass back only their REAL, VERBATIM words. In every mode never reword, summarize or translate the questions. `interviewId` is internal: never show it. If it fails with next:'open_web', print relayVerbatim word for word and call open_web so they do the interview on the web.",
+      title: 'Start your onboarding interview',
+      description: 'Starts the short Shakers interview here in the chat, after asking you where and how you want to answer it. Your answers go to Shakers to get to know your profile.',
+      guidance: "Start the onboarding interview, here in the chat. Offer it only when signup_status says onboardingInterview.completed is not true. Call it first without disclaimerAcknowledged: it asks 'here now or later on the web?' (in a dialog when the client has one, otherwise it returns `say` to print word for word; default here), then how they want to answer, with the two interview disclaimers in that same question. reason 'interview-later' means they chose the web: skip the interview. reason 'interview-on-web' (a sign-up language the chat interview does not speak) is the same: print relayVerbatim and skip it. If it returns reason 'interview-already-started' (begun elsewhere and not finished), call open_web so they continue on the web. It runs over LiveKit and the server agent conducts it; the client does not decide its branch. When it returns `say`, print it word for word as your whole reply (it holds the disclaimers and the question) and, once they answer, call with where:'here', disclaimerAcknowledged:true and answerMode. Returns { interviewId, answerMode, greeting, ended }: relay the greeting VERBATIM, then drive it with onboarding_interview_turn. ANSWER MODES. For drafted and full, first gather everything you know (memory, a search of past conversations if you have that tool, their CV, the ai_usage report, the sign-up data) and show ONE short sheet 'esto es lo que se de ti' (roles and projects with concrete facts, stack, languages, what they want next); let them correct it once; those corrections override your memory. Your answers are first person, one or two short sentences in their plain voice, built only from facts on the confirmed sheet: no embellishment, no adjectives, metrics or claims they did not give, no repeating a fact already said unless asked; for wishes, preferences or opinions give your best guess and say it is a guess. (1) drafted: show each question VERBATIM with your proposed answer and send it only after the talent approves or edits it; if the sheet does not cover a question, ask them briefly instead of guessing. Only if the talent explicitly asks you to answer everything yourself (for example 'hazla entera' or 'contéstalas tú todas'), answer the remaining questions without asking for each approval, as in full. (2) full (they chose it, or asked for it as above): answer every question yourself without per-answer approval, still showing each question and your answer, and when the interview ends tell them in one line that you answered those questions yourself. (3) own: you are a pure CONDUIT: show every question VERBATIM and pass back only their REAL, VERBATIM words. In every mode never reword, summarize or translate the questions. `interviewId` is internal: never show it. If it fails with next:'open_web', print relayVerbatim word for word and call open_web so they do the interview on the web.",
       inputSchema: INTERVIEW_START_SCHEMA,
       handler: interviewStart,
       available: async () => {
@@ -373,25 +398,33 @@ function makeRegisterTools(deps = {}) {
     },
     {
       name: 'onboarding_interview_turn',
-      description: "Send the talent's answer to the current onboarding-interview question and get the next one. Follow the answerMode the talent chose at onboarding_interview_start. drafted: `message` is the answer the talent APPROVED or edited after seeing your proposal; never send one they have not confirmed, unless they explicitly asked you to answer the rest yourself ('hazla entera', 'contéstalas tú todas'): from then on, as in full, send your own answers without per-answer approval. full: send your own answer to each question, built only from what they confirmed, and when it ends tell them you answered those questions yourself. own: `message` is ONLY the talent's REAL, VERBATIM answer — never invent, infer or complete it. Outside full, if the talent has not answered or approved yet, do NOT call this, wait for them. Relay the returned `response` (the next question) to the talent VERBATIM — do not reword, summarize or translate it. Keep calling with their next `message` until `ended` is true, then call onboarding_interview_complete. Do NOT show or mention `interviewId` to the talent (internal handle). If it returns reason 'unknown-interview' (the server was restarted and the live room is gone), start again with onboarding_interview_start.",
+      title: 'Answer an interview question',
+      description: 'Sends the answer you gave or approved for the current interview question to Shakers and brings the next one.',
+      guidance: "Send the talent's answer to the current onboarding-interview question and get the next one. Follow the answerMode the talent chose at onboarding_interview_start. drafted: `message` is the answer the talent APPROVED or edited after seeing your proposal; never send one they have not confirmed, unless they explicitly asked you to answer the rest yourself ('hazla entera', 'contéstalas tú todas'): from then on, as in full, send your own answers without per-answer approval. full: send your own answer to each question, built only from what they confirmed, and when it ends tell them you answered those questions yourself. own: `message` is ONLY the talent's REAL, VERBATIM answer — never invent, infer or complete it. Outside full, if the talent has not answered or approved yet, do NOT call this, wait for them. Relay the returned `response` (the next question) to the talent VERBATIM — do not reword, summarize or translate it. Keep calling with their next `message` until `ended` is true, then call onboarding_interview_complete. Do NOT show or mention `interviewId` to the talent (internal handle). If it returns reason 'unknown-interview' (the server was restarted and the live room is gone), start again with onboarding_interview_start.",
       inputSchema: INTERVIEW_TURN_SCHEMA,
       handler: interviewTurn,
     },
     {
       name: 'onboarding_interview_complete',
-      description: "Close the onboarding interview once the turns report ended:true: the buffered transcript is saved and the live room is disconnected. `interviewId` is internal: never show it. Returns { state:'taken' }. If it returns reason 'unknown-interview' the room was already gone (server restart): nothing to complete. In the sign-up flow, go on to the main role (list_my_roles with waitSeconds, then set_main_role) and finish with open_web; do NOT call onboarding_finish there.",
+      title: 'Finish the interview',
+      description: 'Closes the interview and saves it on Shakers.',
+      guidance: "Close the onboarding interview once the turns report ended:true: the buffered transcript is saved and the live room is disconnected. `interviewId` is internal: never show it. Returns { state:'taken' }. If it returns reason 'unknown-interview' the room was already gone (server restart): nothing to complete. In the sign-up flow, go on to the main role (list_my_roles with waitSeconds, then set_main_role) and finish with open_web; do NOT call onboarding_finish there.",
       inputSchema: INTERVIEW_COMPLETE_SCHEMA,
       handler: interviewComplete,
     },
     {
       name: 'repeat_onboarding_interview',
-      description: "OVERWRITE-repeat the onboarding interview: resets the talent's completed onboarding interview IN PLACE; the previous evaluation is DISCARDED and CANNOT be recovered. Clearly warn the talent that this is irreversible and get their explicit go-ahead BEFORE calling this. On success run the interview again (onboarding_interview_start, onboarding_interview_turn until ended, onboarding_interview_complete), then onboarding_finish. Returns { interviewId, language } or reason 'onboarding-not-found' (no onboarding yet), 'http-401'/'http-403'.",
+      title: 'Repeat your onboarding interview',
+      description: 'Deletes your previous onboarding interview on Shakers so you can take it again. This cannot be undone.',
+      guidance: "OVERWRITE-repeat the onboarding interview: resets the talent's completed onboarding interview IN PLACE; the previous evaluation is DISCARDED and CANNOT be recovered. Clearly warn the talent that this is irreversible and get their explicit go-ahead BEFORE calling this. On success run the interview again (onboarding_interview_start, onboarding_interview_turn until ended, onboarding_interview_complete), then onboarding_finish. Returns { interviewId, language } or reason 'onboarding-not-found' (no onboarding yet), 'http-401'/'http-403'.",
       inputSchema: { type: 'object', properties: {} },
       handler: repeatOnboarding,
     },
     {
       name: 'onboarding_finish',
-      description: "Mark the onboarding as COMPLETED on Shakers. NOT part of the sign-up flow (signup_start): there, never call it. Use it only to close a repeat_onboarding_interview run. Idempotent. Returns { finalized, onboardingStatus, registrationLevel, completedProfilePercentage, profileUrl }.",
+      title: 'Complete your onboarding',
+      description: 'Marks your onboarding as completed on Shakers after you repeat the interview.',
+      guidance: "Mark the onboarding as COMPLETED on Shakers. NOT part of the sign-up flow (signup_start): there, never call it. Use it only to close a repeat_onboarding_interview run. Idempotent. Returns { finalized, onboardingStatus, registrationLevel, completedProfilePercentage, profileUrl }.",
       inputSchema: FINISH_SCHEMA,
       handler: onboardingFinish,
     },

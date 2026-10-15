@@ -14,7 +14,6 @@ const { makeAvailabilityTools } = require('../src/mcp-availability-tools');
 const { makeCertificationsTools } = require('../src/mcp-certifications-tools');
 const { makeProfileTools } = require('../src/mcp-profile-tools');
 const { makeRateTools } = require('../src/mcp-rate-tools');
-const { makeAskTools } = require('../src/mcp-ask-tools');
 const { makeAlmaTools } = require('../src/mcp-alma-tools');
 const { makeLangTools } = require('../src/mcp-lang-tools');
 const { makeSocialsTools } = require('../src/mcp-socials-tools');
@@ -29,6 +28,7 @@ const { makeReportTools } = require('../src/mcp-report-tools');
 const { makePrompts } = require('../src/mcp-prompts');
 const { buildServerInstructions } = require('../src/mcp-instructions');
 const { ensureFreshSession } = require('../src/session-refresh');
+const { createFunnel } = require('../src/onboarding-funnel');
 
 let VERSION = '';
 try {
@@ -43,7 +43,7 @@ const HELP = `\n  shakers mcp — local MCP server (stdio)\n\n`
   + `  Usage: shakers mcp\n\n`
   + `  This command speaks JSON-RPC on stdio; it is meant to be launched by an\n`
   + `  MCP client, not run by hand.\n`
-  + `  Tools: ai_usage, ai_usage_result, login, logout, social_signin_start, social_signin_poll,\n`
+  + `  Tools: ai_usage, ai_usage_result, logout, social_signin_start, social_signin_poll,\n`
   + `         list_addable, add_skill, add_agent,\n`
   + `         add_project, signup_start, signup_email, signup_draft, signup_create_account,\n`
   + `         signup_status, update_existing_profile, import_profile, save_profile_details, open_web,\n`
@@ -57,7 +57,7 @@ const HELP = `\n  shakers mcp — local MCP server (stdio)\n\n`
   + `         save_project, unsave_project, list_invitations,\n`
   + `         list_applications, get_availability,\n`
   + `         list_certifications, get_profile, get_rate, get_languages,\n`
-  + `         list_socials, list_experiences, list_portfolios, ask.\n\n`;
+  + `         list_socials, list_experiences, list_portfolios, alma_chat, alma_decision.\n\n`;
 
 // The LOCAL (filesystem/machine) tools — the only ones the .mcpb bundle exposes; the
 // server-backed tools belong to the remote connector.
@@ -65,9 +65,9 @@ const LOCAL_ONLY_TOOL_NAMES = new Set(['ai_usage', 'ai_usage_result', 'read_cv',
 
 // `localOnly` builds the scan-only server for the Claude .mcpb bundle, reusing the SAME
 // tool registry (just filtered) — no duplicate registration.
-function buildServer({ localOnly = false } = {}) {
+function buildServer({ localOnly = false, funnel = createFunnel({ surface: 'mcp' }) } = {}) {
   const lang = detectFlowLang();
-  const allTools = [makeAiUsageTool(), makeAiUsageResultTool(), ...makeOnboardingTools(), ...makeRoleTools({ lang }), ...makeDeviceLoginTools(), ...makeSignupTools({ lang }), ...makeRegisterTools({ lang }), ...makeReportTools(), ...makeCertifyDimensionTools(), ...makeFindProjectsTools(), ...makeShowProjectTools(), ...makeSavedPositionsTools(), ...makeInvitationsTools(), ...makeApplicationsTools(), ...makeAvailabilityTools(), ...makeCertificationsTools(), ...makeProfileTools(), ...makeRateTools(), ...makeLangTools(), ...makeSocialsTools(), ...makePortfolioTools(), ...makeAskTools(), ...makeAlmaTools()];
+  const allTools = [makeAiUsageTool(), makeAiUsageResultTool(), ...makeOnboardingTools(), ...makeRoleTools({ lang, funnel }), ...makeDeviceLoginTools(), ...makeSignupTools({ lang, funnel }), ...makeRegisterTools({ lang, funnel }), ...makeReportTools(), ...makeCertifyDimensionTools(), ...makeFindProjectsTools(), ...makeShowProjectTools(), ...makeSavedPositionsTools(), ...makeInvitationsTools(), ...makeApplicationsTools(), ...makeAvailabilityTools(), ...makeCertificationsTools(), ...makeProfileTools(), ...makeRateTools(), ...makeLangTools(), ...makeSocialsTools(), ...makePortfolioTools(), ...makeAlmaTools()];
   const tools = localOnly ? allTools.filter((t) => LOCAL_ONLY_TOOL_NAMES.has(t.name)) : allTools;
   // Slash-command prompts, kept to the tools actually registered in this mode.
   const prompts = makePrompts(new Set(tools.map((t) => t.name)), lang);
@@ -79,7 +79,13 @@ function buildServer({ localOnly = false } = {}) {
     // Long-lived server: refresh the email session's hub JWT from the stored
     // cookie before each tool call so a stale (~15-min) JWT never reaches a tool.
     beforeCall: () => ensureFreshSession(process.env),
+    onInitialize: ({ clientInfo }) => funnel.setMcpClient(clientInfo.name),
   });
+}
+
+function prepareProcess(env = process.env) {
+  require('../src/config').sanitizeStaleBakedEndpoints(env);
+  require('../src/backend-request').setClientIdentity('mcp');
 }
 
 async function run(argv = process.argv.slice(2)) {
@@ -93,7 +99,7 @@ async function run(argv = process.argv.slice(2)) {
     return;
   }
 
-  require('../src/config').sanitizeStaleBakedEndpoints(process.env);
+  prepareProcess();
 
   // `--local` = the scan-only server shipped in the Claude .mcpb bundle.
   const server = buildServer({ localOnly: argv.includes('--local') });
@@ -111,7 +117,7 @@ async function run(argv = process.argv.slice(2)) {
   });
 }
 
-module.exports = { run, buildServer, buildServerInstructions };
+module.exports = { run, buildServer, buildServerInstructions, prepareProcess };
 
 if (require.main === module) {
   run();

@@ -14,7 +14,7 @@ function makeApplicationsTools(deps = {}) {
   const requireLoginSession = () => {
     const session = loadAuthSession();
     if (sessionStatus(session) !== 'active') {
-      throw new Error('no active Shakers session — call the login tool (or run `shakers login`) first (list_applications is session-gated).');
+      throw new Error('no active Shakers session — sign in with social_signin_start (or run `shakers login`) first (list_applications is session-gated).');
     }
     return session;
   };
@@ -29,7 +29,9 @@ function makeApplicationsTools(deps = {}) {
   return [
     {
       name: 'list_applications',
-      description: "List the positions the talent has applied to, with each candidature's status. Read-only. Requires an active session. Any positionId/projectId in the result are INTERNAL handles for calling tools — never show or mention them to the talent; refer to a project by its title/company.",
+      title: 'Your applications',
+      description: 'Shows the projects you applied to and how each application is going.',
+      guidance: "List the positions the talent has applied to, with each candidature's status. Read-only. Requires an active session. Any positionId/projectId in the result are INTERNAL handles for calling tools — never show or mention them to the talent; refer to a project by its title/company.",
       inputSchema: LIST_APPLICATIONS_SCHEMA,
       handler: listApplications,
     },

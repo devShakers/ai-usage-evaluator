@@ -162,8 +162,8 @@ test('runRate: not-found reason -> notFound copy; --json', async () => {
 test('get_rate tool: session-gated + read', async () => {
   const [tool] = makeRateTools({ loadAuthSession: () => ({ hubAccessToken: 't' }), sessionStatus: () => 'active', fetchPricingRate: async () => ({ ok: true, pricing: { fullTimeSelected: true, fullTimePrice: { amount: 5000, currency: 'EUR' } } }) });
   assert.equal(tool.name, 'get_rate');
-  assert.match(tool.description, /partTimePrice is the hourly rate.*fullTimePrice the annual target/);
-  assert.doesNotMatch(tool.description, /per-project/);
+  assert.match(tool.guidance, /partTimePrice is the hourly rate.*fullTimePrice the annual target/);
+  assert.doesNotMatch(tool.guidance, /per-project/);
   assert.equal((await tool.handler({})).pricing.fullTimePrice.amount, 5000);
   const [gated] = makeRateTools({ loadAuthSession: () => null, sessionStatus: () => 'expired' });
   await assert.rejects(() => gated.handler({}), /no active Shakers session/);

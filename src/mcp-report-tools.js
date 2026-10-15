@@ -33,7 +33,7 @@ function makeReportTools(deps = {}) {
   const requireSession = () => {
     const session = loadAuthSession();
     if (sessionStatus(session) !== 'active') {
-      throw new Error('no active Shakers session — call the login tool (or run `shakers login`) first.');
+      throw new Error('no active Shakers session — sign in with social_signin_start (or run `shakers login`) first.');
     }
     return session;
   };
@@ -85,13 +85,17 @@ function makeReportTools(deps = {}) {
   return [
     {
       name: 'report',
-      description: "Two modes. stored:true returns the talent's ENTIRE stored server report (inventory + activity + AI-fluency level + prompting/interaction level) as plain text, read from certs WITHOUT re-running any scan — says so cleanly when none is stored (this stored view does NOT include the Setup×Usage matrix or the vision/how-I-work narratives). Otherwise builds the local report for this repo from local state: it returns the full human-readable report in `text` (Markdown mirroring the CLI terminal — Setup level and rank rationale, tools, MCP servers, agents, activity, plus the Setup×Usage matrix and vision/how-I-work when available) AND the HTML file path (no browser). Render `text` verbatim to the talent; keep the fenced blocks fenced so the tables stay aligned. Requires an active session. Any internal ids/codes are handles for tools only — never show or mention them to the talent.",
+      title: 'Show your AI report',
+      description: 'Shows your AI report, either the one saved on Shakers or one built from your last AI analysis on this computer, which it also saves there as a file.',
+      guidance: "Two modes. stored:true returns the talent's ENTIRE stored server report (inventory + activity + AI-fluency level + prompting/interaction level) as plain text, read from certs WITHOUT re-running any scan — says so cleanly when none is stored (this stored view does NOT include the Setup×Usage matrix or the vision/how-I-work narratives). Otherwise builds the local report for this repo from local state: it returns the full human-readable report in `text` (Markdown mirroring the CLI terminal — Setup level and rank rationale, tools, MCP servers, agents, activity, plus the Setup×Usage matrix and vision/how-I-work when available) AND the HTML file path (no browser). Render `text` verbatim to the talent; keep the fenced blocks fenced so the tables stay aligned. Requires an active session. Any internal ids/codes are handles for tools only — never show or mention them to the talent.",
       inputSchema: REPORT_SCHEMA,
       handler: report,
     },
     {
       name: 'share',
-      description: "Generate the Shakers-branded LinkedIn share card for this repo and return its file path. Does not open a browser. Requires an active session.",
+      title: 'Create your share card',
+      description: 'Creates on this computer a card with your AI report to share on LinkedIn. It sends nothing.',
+      guidance: "Generate the Shakers-branded LinkedIn share card for this repo and return its file path. Does not open a browser. Requires an active session.",
       inputSchema: SHARE_SCHEMA,
       handler: share,
     },

@@ -48,7 +48,7 @@ Useful official commands (https://www.anthropic.com/engineering/desktop-extensio
 - `npx @anthropic-ai/mcpb validate packaging/mcpb/manifest.json` — schema-validate (passes).
 - `npx @anthropic-ai/mcpb pack dist/mcpb dist/shakers-ai-usage.mcpb` — validate + build.
 - `npx @anthropic-ai/mcpb unpack <file> <dir>` — extract to verify self-contained.
-- `npx @anthropic-ai/mcpb sign <file>` — sign for distribution (release step).
+- Do not run `mcpb sign`: the bundle ships unsigned, because a file signed with mcpb 2.1.2 is rejected by Claude Desktop ("Couldn't preview extension: Invalid comment length. Expected 2264. Found 0…").
 
 Keep `manifest.json.version` synced with `package.json.version` on release.
 

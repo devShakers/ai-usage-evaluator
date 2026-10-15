@@ -5,7 +5,6 @@ const assert = require('node:assert/strict');
 const http = require('http');
 
 const { runLoopbackAuth } = require('../src/mcp-auth-form');
-const { LOGIN_SCHEMA } = require('../src/mcp-onboarding-tools');
 const SIGNUP_SCHEMAS = require('../src/mcp-signup-tools');
 
 function httpGet(url) {
@@ -33,9 +32,7 @@ function loginDeps(overrides = {}) {
   };
 }
 
-test('the login/sign-up tool schemas carry NO password (or any secret) field', () => {
-  assert.equal(LOGIN_SCHEMA.properties.password, undefined);
-  assert.equal(LOGIN_SCHEMA.properties.email, undefined);
+test('the sign-up tool schemas carry NO password (or any secret) field', () => {
   for (const name of ['WELCOME_SCHEMA', 'EMAIL_SCHEMA', 'DRAFT_SCHEMA', 'CREATE_SCHEMA', 'STATUS_SCHEMA', 'IMPORT_SCHEMA']) {
     assert.deepEqual(Object.keys(SIGNUP_SCHEMAS[name].properties).filter((k) => /pass|secret|token|code/i.test(k)), [], `${name}: the claim code and passwords never go through the chat`);
   }

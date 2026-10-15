@@ -141,7 +141,7 @@ test('onboarding_interview_complete: remembers the interview so the main-role st
   const done = completedOnboardingInterview();
   assert.equal(done.interviewId, 'iv-1');
   assert.ok(done.completedAt >= before);
-  assert.match(t.onboarding_interview_complete.description, /set_main_role/);
+  assert.match(t.onboarding_interview_complete.guidance, /set_main_role/);
 });
 
 test('onboarding_interview_turn/complete: unknown interviewId returns a clean restart error, never throws', async () => {

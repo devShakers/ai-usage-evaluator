@@ -157,13 +157,17 @@ function makeDeviceLoginTools(deps = {}) {
   return [
     {
       name: 'social_signin_start',
-      description: "Begin sign-in (or registration) via the device flow — provider 'google' (default), 'linkedin' or 'email'. Email goes through the SAME web flow: the talent reuses their open Shakers session or signs in with their email on the page, never a password in the chat. Returns a verificationUrl and a userCode: show BOTH to the talent verbatim — they open the URL and enter the code in their own browser (they never type anything in the chat, and you never invent or fill the code). Pass mode 'register' to create the account if it is new. After showing them, call social_signin_poll. Returns { ok, status, provider, verificationUrl, userCode, pollIntervalSeconds, ... }.",
+      title: 'Sign in to Shakers',
+      description: 'Opens a Shakers page in your browser where you sign in with Google, LinkedIn or your email. Your password never goes through the chat.',
+      guidance: "Begin sign-in (or registration) via the device flow — provider 'google' (default), 'linkedin' or 'email'. Email goes through the SAME web flow: the talent reuses their open Shakers session or signs in with their email on the page, never a password in the chat. Returns a verificationUrl and a userCode: show BOTH to the talent verbatim — they open the URL and enter the code in their own browser (they never type anything in the chat, and you never invent or fill the code). Pass mode 'register' to create the account if it is new. After showing them, call social_signin_poll. Returns { ok, status, provider, verificationUrl, userCode, pollIntervalSeconds, ... }.",
       inputSchema: START_SCHEMA,
       handler: start,
     },
     {
       name: 'social_signin_poll',
-      description: "Check whether the talent has finished the social sign-in started by social_signin_start, and persist the session when they have. Call it after showing the code; if it returns status 'pending', wait pollIntervalSeconds and call it again — the 'pending' response repeats the verificationUrl and userCode so you can keep the clickable link in front of the talent. Returns status 'authorized' (session saved, with isNewUser + method), 'pending', 'denied', or 'expired'.",
+      title: 'Finish signing in',
+      description: 'Checks whether you finished signing in on that page and, if so, keeps you signed in on this computer.',
+      guidance: "Check whether the talent has finished the social sign-in started by social_signin_start, and persist the session when they have. Call it after showing the code; if it returns status 'pending', wait pollIntervalSeconds and call it again — the 'pending' response repeats the verificationUrl and userCode so you can keep the clickable link in front of the talent. Returns status 'authorized' (session saved, with isNewUser + method), 'pending', 'denied', or 'expired'.",
       inputSchema: POLL_SCHEMA,
       handler: poll,
     },

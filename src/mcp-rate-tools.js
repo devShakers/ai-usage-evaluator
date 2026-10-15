@@ -14,7 +14,7 @@ function makeRateTools(deps = {}) {
   const requireLoginSession = () => {
     const session = loadAuthSession();
     if (sessionStatus(session) !== 'active') {
-      throw new Error('no active Shakers session — call the login tool (or run `shakers login`) first (get_rate is session-gated).');
+      throw new Error('no active Shakers session — sign in with social_signin_start (or run `shakers login`) first (get_rate is session-gated).');
     }
     return session;
   };
@@ -29,7 +29,9 @@ function makeRateTools(deps = {}) {
   return [
     {
       name: 'get_rate',
-      description: "View the talent's rates as the web shows them: partTimePrice is the hourly rate (per hour) and fullTimePrice the annual target (per year); a variant not selected is not offered. Read-only. Requires an active session. Show only the human-facing amounts/currency; any internal ids in the result are handles for tools only — never show or mention them to the talent.",
+      title: 'Your rates',
+      description: 'Shows your hourly rate and your yearly target on Shakers.',
+      guidance: "View the talent's rates as the web shows them: partTimePrice is the hourly rate (per hour) and fullTimePrice the annual target (per year); a variant not selected is not offered. Read-only. Requires an active session. Show only the human-facing amounts/currency; any internal ids in the result are handles for tools only — never show or mention them to the talent.",
       inputSchema: GET_RATE_SCHEMA,
       handler: getRate,
     },

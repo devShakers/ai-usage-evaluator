@@ -52,6 +52,16 @@ function joinParts(parts) {
   return parts.filter((p) => p !== null && p !== undefined && String(p).trim() !== '').join(' · ');
 }
 
+function countryName(lang, code) {
+  if (typeof code !== 'string' || !/^[A-Za-z]{2}$/.test(code.trim())) return null;
+  const upper = code.trim().toUpperCase();
+  try {
+    return new Intl.DisplayNames([LOCALES[toSignupLanguage(lang) || 'en']], { type: 'region' }).of(upper) || upper;
+  } catch {
+    return upper;
+  }
+}
+
 function amount(lang, value) {
   return new Intl.NumberFormat(LOCALES[lang], { maximumFractionDigits: 0 }).format(Number(value));
 }
@@ -95,11 +105,21 @@ const COPY = {
     existingNo: 'No, déjalo como está',
     existingKept: 'Perfecto, dejo tu perfil como está.',
     keptLabels: { workSituation: 'Situación laboral', availability: 'Disponibilidad', languages: 'Idiomas', phone: 'Teléfono' },
+    situationLabels: { FREELANCE: 'Freelance', EMPLOYED: 'Empleado/a', BETWEEN_JOBS: 'Entre proyectos', STUDYING: 'Estudiando', OTHER: 'Otro' },
+    participationLabels: { FULL_TIME: 'jornada completa', PART_TIME: 'media jornada' },
     existingUnchanged: (items) => `Estos datos de tu perfil no los he cambiado, se quedan como estaban: ${items.join(' · ')}. Si quieres otros valores, cámbialos en la web.`,
     aiUsageQuestion: '¿Quieres que analice cómo trabajas con IA? Es opcional y tarda 1-2 min. Solo veo qué herramientas usas, tu código y tus prompts no salen de tu máquina. Miro el uso de IA de todo este equipo, que doy por tuyo. Te ayuda a destacar en proyectos de IA.',
     aiUsageYes: 'Sí, analízalo',
     aiUsageSkip: 'Saltar este paso',
     aiUsageSkipped: "Sin problema, seguimos sin él. Te aviso de que es lo que más pesa para que te lleguen proyectos: lo puedes lanzar cuando quieras diciéndome 'analiza mi uso de IA'.",
+    consent: {
+      yes: 'Sí, adelante',
+      no: 'No',
+      cvSearch: 'Shakers buscará en este ordenador archivos que puedan ser tu CV: mira los nombres de los archivos PDF y Word de tus carpetas Escritorio, Documentos, Descargas e iCloud Drive, y lee tu zona horaria y el nombre, el email y el usuario de GitHub que guardan tus herramientas de programación. No abre esos archivos y no envía nada. ¿Continuamos?',
+      cvRead: (file) => `Shakers leerá el archivo ${file} para preparar el borrador de tu perfil. Todavía no se envía nada. ¿Continuamos?`,
+      cvSend: (file) => `Shakers enviará el archivo ${file} a tu cuenta de Shakers para completar tu perfil. ¿Continuamos?`,
+      project: (p) => `Shakers añadirá el proyecto de la carpeta ${p.folder} a tu portfolio y enviará ${listOf('es', [`el nombre "${p.name}"`, p.url && `la dirección web ${p.url}`, p.startDate && p.endDate ? `las fechas del ${p.startDate} al ${p.endDate}` : (p.startDate || p.endDate) && `la fecha ${p.startDate || p.endDate}`, p.client && `el cliente ${p.client}`, p.description && 'la descripción que acordaste'].filter(Boolean))}. ¿Continuamos?`,
+    },
     importSources: { linkedin: 'tu LinkedIn', cv: 'tu CV', github: 'tu GitHub', web: 'tu web' },
     importFailed: (names) => `No he podido importar ${names.join(' y ')} ahora mismo. El resto de tu perfil está guardado; lo que falte lo puedes añadir en la web.`,
     interviewWhereQuestion: '¿Hacemos la entrevista de onboarding aquí ahora o luego en la web?',
@@ -169,11 +189,21 @@ const COPY = {
     existingNo: 'No, leave it as it is',
     existingKept: 'Sure, I am leaving your profile as it is.',
     keptLabels: { workSituation: 'Work situation', availability: 'Availability', languages: 'Languages', phone: 'Phone' },
+    situationLabels: { FREELANCE: 'Freelance', EMPLOYED: 'Employed', BETWEEN_JOBS: 'Between jobs', STUDYING: 'Studying', OTHER: 'Other' },
+    participationLabels: { FULL_TIME: 'full-time', PART_TIME: 'part-time' },
     existingUnchanged: (items) => `I did not change these details of your profile; they stay as they were: ${items.join(' · ')}. If you want other values, change them on the web.`,
     aiUsageQuestion: 'Do you want me to analyse how you work with AI? It is optional and takes 1-2 min. I only see which tools you use; your code and your prompts do not leave your machine. I look at the AI usage across this whole machine, which I take to be yours. It helps you stand out for AI projects.',
     aiUsageYes: 'Yes, analyse it',
     aiUsageSkip: 'Skip this step',
     aiUsageSkipped: "No problem, we carry on without it. Heads-up: it is what weighs most for projects to reach you. You can run it whenever you like by telling me 'analyse my AI usage'.",
+    consent: {
+      yes: 'Yes, go ahead',
+      no: 'No',
+      cvSearch: 'Shakers will look on this computer for files that may be your CV: it lists the names of the PDF and Word files in your Desktop, Documents, Downloads and iCloud Drive folders, and reads your time zone and the name, email and GitHub user saved by your coding tools. It does not open those files and nothing is sent. Continue?',
+      cvRead: (file) => `Shakers will read the file ${file} to prepare your profile draft. Nothing is sent yet. Continue?`,
+      cvSend: (file) => `Shakers will send the file ${file} to your Shakers account to fill in your profile. Continue?`,
+      project: (p) => `Shakers will add the project in the folder ${p.folder} to your portfolio and send ${listOf('en', [`the name "${p.name}"`, p.url && `the web address ${p.url}`, p.startDate && p.endDate ? `the dates ${p.startDate} to ${p.endDate}` : (p.startDate || p.endDate) && `the date ${p.startDate || p.endDate}`, p.client && `the client ${p.client}`, p.description && 'the description you agreed on'].filter(Boolean))}. Continue?`,
+    },
     importSources: { linkedin: 'your LinkedIn', cv: 'your CV', github: 'your GitHub', web: 'your website' },
     importFailed: (names) => `I couldn't import ${names.join(' and ')} right now. The rest of your profile is saved; you can add what is missing on the web.`,
     interviewWhereQuestion: 'Shall we do the onboarding interview here now or later on the web?',
@@ -243,11 +273,21 @@ const COPY = {
     existingNo: 'No, lascialo così',
     existingKept: 'Perfetto, lascio il tuo profilo così com’è.',
     keptLabels: { workSituation: 'Situazione lavorativa', availability: 'Disponibilità', languages: 'Lingue', phone: 'Telefono' },
+    situationLabels: { FREELANCE: 'Freelance', EMPLOYED: 'Dipendente', BETWEEN_JOBS: "Tra un lavoro e l'altro", STUDYING: 'Studente', OTHER: 'Altro' },
+    participationLabels: { FULL_TIME: 'tempo pieno', PART_TIME: 'part-time' },
     existingUnchanged: (items) => `Questi dati del tuo profilo non li ho cambiati, restano com'erano: ${items.join(' · ')}. Se vuoi altri valori, cambiali sul sito.`,
     aiUsageQuestion: "Vuoi che analizzi come lavori con l'IA? È facoltativo e richiede 1-2 min. Vedo solo quali strumenti usi, il tuo codice e i tuoi prompt non escono dalla tua macchina. Guardo l'uso dell'IA su tutto questo computer, che considero tuo. Ti aiuta a distinguerti nei progetti di IA.",
     aiUsageYes: 'Sì, analizzalo',
     aiUsageSkip: 'Salta questo passaggio',
     aiUsageSkipped: "Nessun problema, andiamo avanti senza. Ti avviso che è ciò che pesa di più perché ti arrivino progetti: puoi lanciarlo quando vuoi dicendomi 'analizza il mio uso dell'IA'.",
+    consent: {
+      yes: 'Sì, procedi',
+      no: 'No',
+      cvSearch: "Shakers cercherà su questo computer i file che potrebbero essere il tuo CV: guarda i nomi dei file PDF e Word nelle cartelle Scrivania, Documenti, Download e iCloud Drive, e legge il tuo fuso orario e il nome, l'email e l'utente GitHub salvati dai tuoi strumenti di programmazione. Non apre quei file e non invia nulla. Continuiamo?",
+      cvRead: (file) => `Shakers leggerà il file ${file} per preparare la bozza del tuo profilo. Per ora non viene inviato nulla. Continuiamo?`,
+      cvSend: (file) => `Shakers invierà il file ${file} al tuo account Shakers per completare il tuo profilo. Continuiamo?`,
+      project: (p) => `Shakers aggiungerà il progetto della cartella ${p.folder} al tuo portfolio e invierà ${listOf('it', [`il nome "${p.name}"`, p.url && `l'indirizzo web ${p.url}`, p.startDate && p.endDate ? `le date dal ${p.startDate} al ${p.endDate}` : (p.startDate || p.endDate) && `la data ${p.startDate || p.endDate}`, p.client && `il cliente ${p.client}`, p.description && 'la descrizione che hai concordato'].filter(Boolean))}. Continuiamo?`,
+    },
     importSources: { linkedin: 'il tuo LinkedIn', cv: 'il tuo CV', github: 'il tuo GitHub', web: 'il tuo sito' },
     importFailed: (names) => `Non sono riuscito a importare ${names.join(' e ')} in questo momento. Il resto del tuo profilo è salvato; quello che manca puoi aggiungerlo sul sito.`,
     interviewWhereQuestion: 'Facciamo il colloquio di onboarding qui adesso o più tardi sul sito?',
@@ -317,11 +357,21 @@ const COPY = {
     existingNo: 'Não, deixe como está',
     existingKept: 'Perfeito, deixo o seu perfil como está.',
     keptLabels: { workSituation: 'Situação profissional', availability: 'Disponibilidade', languages: 'Idiomas', phone: 'Telefone' },
+    situationLabels: { FREELANCE: 'Freelancer', EMPLOYED: 'Por conta de outrem', BETWEEN_JOBS: 'Entre trabalhos', STUDYING: 'A estudar', OTHER: 'Outra' },
+    participationLabels: { FULL_TIME: 'tempo inteiro', PART_TIME: 'tempo parcial' },
     existingUnchanged: (items) => `Estes dados do seu perfil não os alterei, ficam como estavam: ${items.join(' · ')}. Se quiser outros valores, altere-os na web.`,
     aiUsageQuestion: 'Quer que analise como trabalha com IA? É opcional e demora 1-2 min. Só vejo que ferramentas usa; o seu código e os seus prompts não saem da sua máquina. Analiso o uso de IA em todo este computador, que considero seu. Ajuda-o a destacar-se em projetos de IA.',
     aiUsageYes: 'Sim, analise',
     aiUsageSkip: 'Saltar este passo',
     aiUsageSkipped: "Sem problema, seguimos sem ele. Aviso-o de que é o que mais pesa para lhe chegarem projetos: pode lançá-lo quando quiser dizendo-me 'analisa o meu uso de IA'.",
+    consent: {
+      yes: 'Sim, avançar',
+      no: 'Não',
+      cvSearch: 'A Shakers vai procurar neste computador ficheiros que possam ser o seu CV: vê os nomes dos ficheiros PDF e Word das pastas Secretária, Documentos, Transferências e iCloud Drive, e lê o seu fuso horário e o nome, o email e o utilizador de GitHub guardados pelas suas ferramentas de programação. Não abre esses ficheiros e não envia nada. Continuamos?',
+      cvRead: (file) => `A Shakers vai ler o ficheiro ${file} para preparar o rascunho do seu perfil. Ainda não é enviado nada. Continuamos?`,
+      cvSend: (file) => `A Shakers vai enviar o ficheiro ${file} para a sua conta Shakers para completar o seu perfil. Continuamos?`,
+      project: (p) => `A Shakers vai adicionar o projeto da pasta ${p.folder} ao seu portfólio e enviar ${listOf('pt', [`o nome "${p.name}"`, p.url && `o endereço web ${p.url}`, p.startDate && p.endDate ? `as datas de ${p.startDate} a ${p.endDate}` : (p.startDate || p.endDate) && `a data ${p.startDate || p.endDate}`, p.client && `o cliente ${p.client}`, p.description && 'a descrição que combinou'].filter(Boolean))}. Continuamos?`,
+    },
     importSources: { linkedin: 'o seu LinkedIn', cv: 'o seu CV', github: 'o seu GitHub', web: 'o seu site' },
     importFailed: (names) => `Não consegui importar ${names.join(' e ')} neste momento. O resto do seu perfil está guardado; o que faltar pode acrescentá-lo na web.`,
     interviewWhereQuestion: 'Fazemos a entrevista de onboarding aqui agora ou mais tarde na web?',
@@ -372,8 +422,12 @@ function legalCopy(lang) {
 function renderDraft(lang, d = {}) {
   const c = signupCopy(lang);
   const has = (v) => v !== null && v !== undefined && String(v).trim() !== '';
+  const place = [d.city, countryName(lang, d.country)].filter(has).join(', ');
+  const situation = c.situationLabels[d.situation];
+  const participation = d.situation === 'EMPLOYED' ? c.participationLabels[d.participation] : null;
   const lines = [
-    joinParts([d.name, d.role, d.city]),
+    joinParts([d.name, d.role, place]),
+    situation ? `${c.keptLabels.workSituation}: ${participation ? `${situation} (${participation})` : situation}` : '',
     joinParts([has(d.yearsOfExperience) ? c.years(d.yearsOfExperience) : null, d.stack]),
     joinParts([d.languages, d.workMode, has(d.monthlyHours) ? c.hours(d.monthlyHours) : null]),
     has(d.hourlyRate) || has(d.annualRate) ? c.rates(has(d.hourlyRate) ? d.hourlyRate : null, has(d.annualRate) ? d.annualRate : null, d.ratesFromTalent !== true) : '',

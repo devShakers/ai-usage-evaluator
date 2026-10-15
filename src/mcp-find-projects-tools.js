@@ -28,7 +28,7 @@ function makeFindProjectsTools(deps = {}) {
   const requireLoginSession = () => {
     const session = loadAuthSession();
     if (sessionStatus(session) !== 'active') {
-      throw new Error('no active Shakers session — call the login tool (or run `shakers login`) first (find_projects is session-gated).');
+      throw new Error('no active Shakers session — sign in with social_signin_start (or run `shakers login`) first (find_projects is session-gated).');
     }
     return session;
   };
@@ -54,7 +54,9 @@ function makeFindProjectsTools(deps = {}) {
   return [
     {
       name: 'find_projects',
-      description: "List the Positions/Projects available to the talent right now (Shakers Find Positions), paginated and ordered by match desc. Each item carries its parent Project id/name, title, company, budget, work mode and match. Supports server-side pagination (page/limit) and filters (tab all|saved, attendance, country ISO2). `meta` carries {page,pageSize,total,totalPages}. Requires an active session. The positionId/projectId in each item are INTERNAL handles for calling other tools (e.g. show_project, save_project) — NEVER show or mention them to the talent; refer to a project by its title/company only.",
+      title: 'Find projects',
+      description: 'Shows the open Shakers projects that match you best.',
+      guidance: "List the Positions/Projects available to the talent right now (Shakers Find Positions), paginated and ordered by match desc. Each item carries its parent Project id/name, title, company, budget, work mode and match. Supports server-side pagination (page/limit) and filters (tab all|saved, attendance, country ISO2). `meta` carries {page,pageSize,total,totalPages}. Requires an active session. The positionId/projectId in each item are INTERNAL handles for calling other tools (e.g. show_project, save_project) — NEVER show or mention them to the talent; refer to a project by its title/company only.",
       inputSchema: FIND_PROJECTS_SCHEMA,
       handler: findProjects,
     },

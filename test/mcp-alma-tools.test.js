@@ -56,6 +56,6 @@ test('alma_decision: rejects a non-boolean decision', async () => {
 
 test('alma_chat / alma_decision require an active session', async () => {
   const tools = byName({ loadAuthSession: () => null, sessionStatus: () => 'none' });
-  await assert.rejects(tools.alma_chat.handler({ message: 'hi' }), /call the login tool/);
-  await assert.rejects(tools.alma_decision.handler({ approved: true }), /call the login tool/);
+  await assert.rejects(tools.alma_chat.handler({ message: 'hi' }), /sign in with social_signin_start/);
+  await assert.rejects(tools.alma_decision.handler({ approved: true }), /sign in with social_signin_start/);
 });

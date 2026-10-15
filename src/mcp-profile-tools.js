@@ -17,7 +17,7 @@ function makeProfileTools(deps = {}) {
   const requireLoginSession = () => {
     const session = loadAuthSession();
     if (sessionStatus(session) !== 'active') {
-      throw new Error('no active Shakers session — call the login tool (or run `shakers login`) first (get_profile is session-gated).');
+      throw new Error('no active Shakers session — sign in with social_signin_start (or run `shakers login`) first (get_profile is session-gated).');
     }
     return session;
   };
@@ -33,7 +33,9 @@ function makeProfileTools(deps = {}) {
   return [
     {
       name: 'get_profile',
-      description: "Get the talent's summary: main role, per-project rate, and the 'My work with AI' read model (setup/usage tier+level, 3x3 cell, vision, how-I-work). Requires an active session. Present it in human terms; any internal ids/codes in the result are handles for tools only — never show or mention them to the talent.",
+      title: 'Your Shakers profile',
+      description: 'Shows your main role, your rate and your "My work with AI" summary on Shakers.',
+      guidance: "Get the talent's summary: main role, per-project rate, and the 'My work with AI' read model (setup/usage tier+level, 3x3 cell, vision, how-I-work). Requires an active session. Present it in human terms; any internal ids/codes in the result are handles for tools only — never show or mention them to the talent.",
       inputSchema: GET_PROFILE_SCHEMA,
       handler: getProfile,
     },

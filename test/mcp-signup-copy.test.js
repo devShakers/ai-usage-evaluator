@@ -15,7 +15,7 @@ const ES = signupCopy('es');
 const SESSION = { accessToken: 'jwt', hubAccessToken: 'jwt', email: 'ada@example.com', expiresAt: '2999-01-01T00:00:00.000Z' };
 const SIGNUP_TOOLS = ['signup_start', 'signup_email', 'signup_draft', 'signup_create_account', 'signup_status', 'update_existing_profile', 'save_profile_details', 'import_profile', 'open_web', 'open_linkedin_profile',
   'suggest_register_context', 'read_cv', 'onboarding_interview_start', 'onboarding_interview_turn', 'onboarding_interview_complete',
-  'list_my_roles', 'list_available_roles', 'add_role', 'set_main_role', 'ai_usage', 'login', 'social_signin_start', 'social_signin_poll'];
+  'list_my_roles', 'list_available_roles', 'add_role', 'set_main_role', 'ai_usage', 'social_signin_start', 'social_signin_poll'];
 // Words that pull the AI out of character: where the account lives, or whether it is real.
 const OUT_OF_CHARACTER = /\b(local(ly|host)?|localmente|environments?|entornos?|staging|production|producción|development|desarrollo|tests?|testing|pruebas?|sandbox|e2e|demo|127\.0\.0\.1|alias(es)?)\b/i;
 const DRAFT = { name: 'Ada Lovelace', role: 'Data Engineer', city: 'Madrid', yearsOfExperience: 8, stack: 'Spark, dbt', languages: 'Español nativo, inglés C1', workMode: 'Remoto', monthlyHours: '120-160', hourlyRate: 45, annualRate: 60000, sources: ['linkedin', 'cv'] };

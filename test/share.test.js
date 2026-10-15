@@ -764,14 +764,15 @@ test('autoShare: legacy granted state with no emailVerified field still sends (n
   assert.equal(r.reason, 'network-error');
 });
 
-// ADR-058 refinement (dueño, 2026-08-12): the `email-unverified` gate is TALENT-ONLY.
-test('autoShare: profile:"external" -- emailVerified:false does NOT block sending (past the gate, fails at network layer instead)', async () => {
+// Legal requirement C (supersedes ADR-058): the `email-unverified` gate now holds for EVERY profile.
+test('autoShare: profile:"external" -- emailVerified:false NOW blocks sending, exactly like talent', async () => {
   saveConfigFile({ profile: 'external' }, { AI_FOOTPRINT_CONFIG_DIR: tmpDir });
   recordConsent('granted', 'lead@example.com', { verified: false });
   process.env.AI_FOOTPRINT_INGEST_ENDPOINT = 'http://127.0.0.1:1/reports';
   const r = await autoShare(REPORT, MATURITY);
-  assert.notEqual(r.reason, 'email-unverified');
-  assert.equal(r.reason, 'network-error');
+  assert.equal(r.ok, false);
+  assert.equal(r.skipped, true);
+  assert.equal(r.reason, 'email-unverified');
 });
 
 test('autoShare: profile:"talent" (explicit) -- emailVerified:false STILL blocks, exactly as before this change', async () => {

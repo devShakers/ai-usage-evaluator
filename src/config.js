@@ -124,10 +124,17 @@ function resolveIngestEndpoint(env = process.env) {
 // Only the DEFAULT bases; per-endpoint SHAKERS_CLI_* env and config.json overrides
 // still win at each getter (env > config.json > baked profile).
 const ENV_PROFILES = {
+  prod: {
+    certsBase: 'https://api.certifications.shakersworks.com/api/v1',
+    hubBase: 'https://api.hub.shakersworks.com/api/v1',
+    profileUrl: 'https://app.shakersworks.com/login',
+    almaBase: 'https://app.shakersworks.com',
+  },
   staging: {
     certsBase: 'https://api.staging.certifications.shakersworks.com/api/v1',
     hubBase: 'https://api.hub.staging.shakersworks.com/api/v1',
     profileUrl: 'https://works.staging.shakersworks.com/login',
+    almaBase: 'https://works.staging.shakersworks.com',
   },
   dev: {
     certsBase: 'https://api.dev.certifications.shakersworks.com/api/v1',
@@ -142,8 +149,8 @@ const ENV_PROFILES = {
 };
 
 // Which flavor is baked: SHAKERS_CLI_ENV override wins, else derived from the
-// published package name (beta -> staging, private -> dev), else dev (safe default).
-const PACKAGE_NAME_ENV = { 'shakers-cli-beta': 'staging', '@shakers/shakers-cli': 'dev' };
+// published package name (public -> prod, beta -> staging, private -> dev), else dev (safe default).
+const PACKAGE_NAME_ENV = { 'shakers-cli': 'prod', 'shakers-cli-beta': 'staging', '@shakers/shakers-cli': 'dev' };
 const DEFAULT_ENV_PROFILE = 'dev';
 
 function bakedEnvProfileName() {
@@ -395,13 +402,13 @@ function getTalentMeProfileEndpoint(env = process.env) {
 }
 
 // Alma (the AI assistant) is a SEPARATE service — NOT derived from hubBase.
-// Default to the local/dev container; override with SHAKERS_CLI_ALMA_BASE.
+// SHAKERS_CLI_ALMA_BASE > the baked profile's almaBase > the local/dev container.
 const DEFAULT_ALMA_BASE = 'http://127.0.0.1:5030';
 
 function getAlmaBase(env = process.env) {
   const explicit = readEnv(env, 'ALMA_BASE');
   if (explicit && explicit.trim()) return explicit.trim().replace(/\/+$/, '');
-  return DEFAULT_ALMA_BASE;
+  return getEnvProfile(env).almaBase || DEFAULT_ALMA_BASE;
 }
 
 function getAlmaChatEndpoint(env = process.env) {
@@ -551,6 +558,10 @@ function getMcpSignupEndpoint(env = process.env) {
 
 function getMyImportStatusEndpoint(env = process.env) {
   return deriveFromHub(env, 'works/talent/me/import-profile/status');
+}
+
+function getOnboardingEventsEndpoint(env = process.env) {
+  return deriveFromHub(env, 'works/talent/me/onboarding-events');
 }
 
 function getOneTimeTokenEndpoint(env = process.env) {
@@ -786,7 +797,7 @@ module.exports = {
   getMeAvailabilityEndpoint,
   getMeProfileEndpoint,
   getTalentMeProfileEndpoint,
-  // Alma assistant (`ask` command / `ask` MCP tool) — separate service.
+  // Alma assistant (`ask` command / `alma_chat` MCP tool) — separate service.
   getAlmaBase,
   getAlmaChatEndpoint,
   getAlmaDecisionEndpoint,
@@ -816,6 +827,7 @@ module.exports = {
   getImportProfileEndpoint,
   getMcpSignupEndpoint,
   getMyImportStatusEndpoint,
+  getOnboardingEventsEndpoint,
   getOneTimeTokenEndpoint,
   getOneTimeLoginUrl,
   getProfessionalDetailsEndpoint,

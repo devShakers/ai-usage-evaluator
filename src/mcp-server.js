@@ -34,7 +34,7 @@ function errorResponse(id, code, message, data) {
   return { jsonrpc: JSONRPC, id: id === undefined ? null : id, error };
 }
 
-function createMcpServer({ tools = [], prompts = [], serverInfo = {}, protocolVersion, beforeCall = null, instructions = null, elicitationTimeoutMs = ELICITATION_TIMEOUT_MS } = {}) {
+function createMcpServer({ tools = [], prompts = [], serverInfo = {}, protocolVersion, beforeCall = null, onInitialize = null, instructions = null, elicitationTimeoutMs = ELICITATION_TIMEOUT_MS } = {}) {
   const registry = new Map();
   for (const t of tools) {
     if (!t || !t.name || typeof t.handler !== 'function') {
@@ -107,11 +107,14 @@ function createMcpServer({ tools = [], prompts = [], serverInfo = {}, protocolVe
     }
   }
 
+  // `description` and `title` are what the talent reads in the client; `guidance` is how the model must use the tool, so it rides in the schema.
   function shapeTool(t) {
+    const schema = t.inputSchema || { type: 'object' };
     return {
       name: t.name,
+      ...(t.title ? { title: t.title } : {}),
       description: t.description || '',
-      inputSchema: t.inputSchema || { type: 'object' },
+      inputSchema: t.guidance ? { ...schema, description: [t.guidance, schema.description].filter(Boolean).join(' ') } : schema,
     };
   }
 
@@ -205,6 +208,9 @@ function createMcpServer({ tools = [], prompts = [], serverInfo = {}, protocolVe
         case 'initialize': {
           const requested = msg.params && msg.params.protocolVersion;
           clientCapabilities = (msg.params && msg.params.capabilities) || {};
+          if (typeof onInitialize === 'function') {
+            try { onInitialize({ clientInfo: (msg.params && msg.params.clientInfo) || {} }); } catch { /* never breaks the handshake */ }
+          }
           // One line per connection on stderr (never stdout: it carries JSON-RPC), so the host's
           // declared elicitation shape and the resulting decision are visible in the MCP log.
           process.stderr.write(`  [mcp] initialize elicitation=${JSON.stringify(clientCapabilities.elicitation)} -> elicit=${canElicitForm()}\n`);

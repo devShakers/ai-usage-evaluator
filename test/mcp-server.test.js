@@ -258,7 +258,7 @@ test('ai_usage: nothing is scanned without the talent\'s explicit yes; it return
   assert.deepEqual(require('../src/mcp-choice').takeNotices(), [ES.aiUsageSkipped], 'in the sign-up the skip line rides on the next question');
   assert.equal(scanned, 0, 'neither a missing answer nor a no starts a scan');
   assert.deepEqual(recorded, ['denied']);
-  assert.match(tool.description, /explicit yes/);
+  assert.match(tool.guidance, /explicit yes/);
 });
 
 test('smoke: JSON-RPC over stdio subprocess — initialize -> tools/list -> tools/call ai_usage', async () => {

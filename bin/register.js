@@ -20,6 +20,7 @@ const { typeOut } = require('../src/typewriter');
 const { withSpinner } = require('../src/terminal-progress');
 const { openPath } = require('../src/open-file');
 const { c: fmt } = require('../src/terminal-format');
+const { createFunnel } = require('../src/onboarding-funnel');
 const red = (s) => `${fmt.danger}${s}${fmt.reset}`;
 
 const VALID_LANGS = new Set(['es', 'en']);
@@ -285,7 +286,7 @@ function makeIo({ ask, lang, out, acceptDisclaimer, stdinIsTTY = false }) {
 
 async function run(
   argv = process.argv.slice(2),
-  { ask: injectedAsk = null, stdinIsTTY: ttyOverride = undefined, deps = null, out = null, openBrowser = undefined, input = undefined, output = undefined } = {},
+  { ask: injectedAsk = null, stdinIsTTY: ttyOverride = undefined, deps = null, out = null, openBrowser = undefined, input = undefined, output = undefined, funnel = undefined } = {},
 ) {
   const o = parseArgs(argv);
   const lang = o.lang || detectFlowLang();
@@ -316,7 +317,9 @@ async function run(
     const io = makeIo({ ask, lang, out: write, acceptDisclaimer: o.acceptDisclaimer, stdinIsTTY });
     // At a terminal the profile opens in the browser at the end; piped runs, tests and --no-open only print it.
     const openProfile = stdinIsTTY && !o.noOpen ? (openBrowser || openPath) : undefined;
-    const result = await runOnboarding(io, deps || makeDeps(), { method, openBrowser, onAuthUrl: io.onGoogleAuthUrl, openProfile });
+    // Injected deps (tests) bring their own funnel or none.
+    const registrationFunnel = funnel || (deps ? undefined : createFunnel({ surface: 'cli' }));
+    const result = await runOnboarding(io, deps || makeDeps(), { method, openBrowser, onAuthUrl: io.onGoogleAuthUrl, openProfile, funnel: registrationFunnel });
     if (!result.ok) {
       process.stderr.write(`\n  ${red(`register: ${result.reason}${result.step ? ` (${result.step})` : ''}`)}\n\n`);
       process.exitCode = 1;

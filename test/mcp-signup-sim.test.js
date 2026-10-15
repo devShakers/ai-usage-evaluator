@@ -252,7 +252,9 @@ test('CV search: an unknown name is no mismatch, and the message says to read th
   assert.equal(candidate.nameMatch, null);
   assert.equal(findCvCandidates(home, 'Irene Calvo')[0].nameMatch, true);
   const suggest = makeRegisterTools({ lang: 'es', readRegisterContextSuggestions: () => ({ cvCandidates: [candidate] }) }).find((t) => t.name === 'suggest_register_context');
-  const r = await suggest.handler({});
+  const asked = await suggest.handler({});
+  assert.equal(asked.reason, 'consent-required', 'the search waits for the talent');
+  const r = await suggest.handler({ answer: asked.options[0] });
   assert.match(r.message, /read_cv/);
   assert.match(r.message, /nameMatch:null/);
 });

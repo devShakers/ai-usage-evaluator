@@ -256,9 +256,9 @@ test('runConsentPrompt: profile:"talent" (explicit), NOT logged in -> STILL asks
   assert.equal(loadConsentState().emailVerified, true);
 });
 
-/* ---------- ADR-058 refinement (dueño, 2026-08-12): external skips OTP ---------- */
+/* ---------- Legal requirement C (supersedes ADR-058): external must verify by OTP before any send ---------- */
 
-test('runConsentPrompt: profile:"external", NOT logged in, accept -> asks for the EXTERNAL email prompt, no OTP, granted + verified:FALSE', async () => {
+test('runConsentPrompt: profile:"external", NOT logged in, accept -> asks the EXTERNAL email prompt, goes through OTP, granted + verified:TRUE', async () => {
   let verifyCalled = false;
   const spyVerify = async () => { verifyCalled = true; return { verified: true }; };
   const seenQuestions = [];
@@ -266,31 +266,33 @@ test('runConsentPrompt: profile:"external", NOT logged in, accept -> asks for th
   const ask = async (q) => { seenQuestions.push(q); return answers.shift(); };
   const decision = await runConsentPrompt({ ask, catalog: catalogEs, verifyEmail: spyVerify, loggedIn: false, profile: 'external' });
   assert.equal(decision, 'granted');
-  assert.equal(verifyCalled, false, 'external must NEVER go through the OTP round');
+  assert.equal(verifyCalled, true, 'external must now go through the OTP round, exactly like talent');
   assert.ok(seenQuestions.includes(catalogEs.consent.emailPromptExternal), 'must ask the EXTERNAL-specific email prompt');
-  assert.equal(seenQuestions.includes(catalogEs.consent.emailPrompt), false, 'must NOT ask the generic (talent) email prompt');
   const state = loadConsentState();
   assert.equal(getConsentDecision(state), 'granted');
   assert.equal(state.email, 'lead@example.com');
-  assert.equal(state.emailVerified, false, 'ADR-007 model: self-affirmed, explicitly unverified — not merely omitted');
+  assert.equal(state.emailVerified, true, 'verified by OTP before persisting — no self-affirmed unverified grant');
 });
 
-test('runConsentPrompt: profile:"external" prints the EXTERNAL confirmation copy, not the talent one, and never mentions verification', async () => {
+test('runConsentPrompt: profile:"external" accept but OTP verification FAILS -> NOTHING persisted, decision null (re-asked next run)', async () => {
+  const ask = scriptedAsk(['s', 'lead@example.com']);
+  const decision = await runConsentPrompt({ ask, catalog: catalogEs, verifyEmail: failVerify, loggedIn: false, profile: 'external' });
+  assert.equal(decision, null);
+  assert.equal(loadConsentState(), null, 'an unverified external grant is never written');
+});
+
+test('runConsentPrompt: profile:"external" prints the shared granted confirmation after OTP (no external-only unverified copy)', async () => {
   const writes = [];
   const originalWrite = process.stdout.write;
   process.stdout.write = (chunk) => { writes.push(String(chunk)); return true; };
   try {
     const ask = scriptedAsk(['s', 'lead@example.com']);
-    await runConsentPrompt({ ask, catalog: catalogEs, loggedIn: false, profile: 'external' });
+    await runConsentPrompt({ ask, catalog: catalogEs, verifyEmail: passVerify, loggedIn: false, profile: 'external' });
   } finally {
     process.stdout.write = originalWrite;
   }
   const out = writes.join('');
-  assert.match(out, new RegExp(needle(catalogEs.consent.grantedSavedExternal('lead@example.com'), 'grantedSavedExternal').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  // Never the TALENT confirmation ("se guardará automáticamente en Shakers")
-  // or an OTP-style "enter the code" prompt.
-  assert.equal(out.includes(needle(catalogEs.consent.grantedSaved('lead@example.com'), 'grantedSaved')), false);
-  assert.equal(out.includes('OTP'), false);
+  assert.ok(out.includes(needle(catalogEs.consent.grantedSaved('lead@example.com'), 'grantedSaved')));
 });
 
 test('runConsentPrompt: profile:"external" + decline -> denied, exactly like talent (consent question itself is unchanged)', async () => {
@@ -327,6 +329,56 @@ for (const lang of ['es', 'en']) {
     assert.equal(loadConsentState().email, 'talent@example.com');
   });
 }
+
+/* ---------- Legal requirement B: default-NO on the save prompt + email confirmation line ---------- */
+
+test('runConsentPrompt: a blank Enter at the save prompt means NO -> denied, no email asked, nothing sent', async () => {
+  let emailAsked = false;
+  const ask = async (q) => {
+    if (q === catalogEs.consent.emailPrompt || q === catalogEs.consent.emailPromptExternal) emailAsked = true;
+    return '';
+  };
+  const decision = await runConsentPrompt({ ask, catalog: catalogEs, loggedIn: false });
+  assert.equal(decision, 'denied', 'empty input defaults to No, a terminal denied decision');
+  assert.equal(emailAsked, false, 'a No never reaches the email/OTP step');
+  assert.equal(getConsentDecision(loadConsentState()), 'denied');
+});
+
+test('runConsentPrompt: logged-in -> shows the email the report will be saved under BEFORE the save prompt', async () => {
+  const seen = [];
+  let sawEmailLineBeforeQuestion = false;
+  const originalWrite = process.stdout.write;
+  process.stdout.write = (chunk) => { seen.push(String(chunk)); return true; };
+  const ask = async (q) => {
+    if (q === catalogEs.consent.persistQuestion) {
+      sawEmailLineBeforeQuestion = seen.join('').includes(
+        needle(catalogEs.consent.savedUnderEmail('talent@example.com'), 'savedUnderEmail'),
+      );
+    }
+    return 'y';
+  };
+  try {
+    await runConsentPrompt({ ask, catalog: catalogEs, loggedIn: true, sessionEmail: 'talent@example.com' });
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+  assert.ok(sawEmailLineBeforeQuestion, 'the "saved under <email>" line must precede the save question');
+});
+
+test('runConsentPrompt: NOT logged in -> shows the email the report will be saved under once it is resolved', async () => {
+  const writes = [];
+  const originalWrite = process.stdout.write;
+  process.stdout.write = (chunk) => { writes.push(String(chunk)); return true; };
+  try {
+    const ask = scriptedAsk(['s', 'lead@example.com']);
+    await runConsentPrompt({ ask, catalog: catalogEs, verifyEmail: passVerify, loggedIn: false });
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+  assert.ok(writes.join('').includes(
+    needle(catalogEs.consent.savedUnderEmail('lead@example.com'), 'savedUnderEmail'),
+  ));
+});
 
 test('persistIntro: still opt-in/optional and revocable in both languages (ADR-011 model unchanged)', () => {
   assert.match(catalogEs.consent.persistIntro, /opcional/i);

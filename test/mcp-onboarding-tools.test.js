@@ -101,16 +101,9 @@ test('onboarding tools (injected deps): login points to the device flow; add_* g
   const tools = makeOnboardingTools(base);
   const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
 
-  await assert.rejects(byName.add_skill.handler({ skillId: 7 }), /call the login tool/);
-  await assert.rejects(byName.list_addable.handler({}), /call the login tool/);
+  await assert.rejects(byName.add_skill.handler({ skillId: 7 }), /sign in with social_signin_start/);
+  await assert.rejects(byName.list_addable.handler({}), /sign in with social_signin_start/);
 
-  // login no longer signs in here: it points to the device flow and persists nothing.
-  const ptr = await byName.login.handler({});
-  assert.equal(ptr.ok, false);
-  assert.equal(ptr.reason, 'use-device-flow');
-  assert.equal(ptr.next, 'social_signin_start');
-  assert.equal(ptr.provider, 'email');
-  assert.equal(current, null, 'the login tool persists nothing — social_signin_poll does');
 
   // social_signin_poll is what persists the session; simulate its result to exercise the add_* gate.
   base.saveAuthSession({ accessToken: 'A', hubAccessToken: 'H', email: 'talent@shakers.com' });
@@ -139,7 +132,15 @@ test('onboarding tools (injected deps): login points to the device flow; add_* g
   assert.equal(base._agent.humanDecides, 'I supervise it', 'humanDecides forwarded when provided');
   assert.equal(base._agent.whatItDoes, 'Does foo things', 'whatItDoes still auto-forwarded from inventory');
 
-  const proj = await byName.add_project.handler({ root: '/tmp/my-repo' });
+  // The AI cannot answer for the talent: an answer to a question the tool never asked sends nothing.
+  const forged = await byName.add_project.handler({ root: '/tmp/my-repo', answer: 'Yes, go ahead' });
+  assert.equal(forged.reason, 'consent-required');
+  assert.equal(base._portfolio, undefined, 'nothing is sent before the talent answers');
+  assert.match(forged.say, /my-repo/);
+  assert.match(forged.say, /git@github\.com:me\/repo\.git/);
+  assert.match(forged.say, /2025-01-01/);
+  assert.match(forged.say, /2025-06-01/);
+  const proj = await byName.add_project.handler({ root: '/tmp/my-repo', answer: forged.options[0] });
   assert.deepEqual(proj, { ok: true, name: 'my-repo', type: 'PORTFOLIO' });
   assert.equal(base._portfolio.url, 'git@github.com:me/repo.git');
   assert.equal(base._portfolio.startDate, '2025-01-01', 'start/end dates derived from git history');
@@ -147,7 +148,10 @@ test('onboarding tools (injected deps): login points to the device flow; add_* g
   assert.equal(base._portfolio.clientName, undefined, 'clientName omitted when not provided');
   assert.equal(base._portfolio.clientDomain, undefined, 'clientDomain omitted when not provided');
 
-  await byName.add_project.handler({ root: '/tmp/my-repo', clientName: 'Acme', clientDomain: 'https://www.acme.com/about' });
+  const withClient = { root: '/tmp/my-repo', clientName: 'Acme', clientDomain: 'https://www.acme.com/about' };
+  const askClient = await byName.add_project.handler(withClient);
+  assert.match(askClient.say, /Acme, acme\.com/, 'the question names the client it sends');
+  await byName.add_project.handler({ ...withClient, answer: askClient.options[0] });
   assert.equal(base._portfolio.clientName, 'Acme');
   assert.equal(base._portfolio.clientDomain, 'acme.com', 'clientDomain normalized to a bare domain');
 });
@@ -295,50 +299,6 @@ test('add_agent: a genuine declare error (agent absent from the list) is surface
   assert.equal(out.reason, 'hub-upstream-error');
 });
 
-test('login method:google points to the device-flow tools (does not sign in here)', async () => {
-  const tools = makeOnboardingTools({
-    saveAuthSession: () => { throw new Error('login must not persist a session — Google is the device flow'); },
-    loadAuthSession: () => null,
-    sessionStatus: () => 'none',
-  });
-  const login = tools.find((t) => t.name === 'login');
-  const out = await login.handler({ method: 'google' });
-  assert.equal(out.ok, false);
-  assert.equal(out.reason, 'use-device-flow');
-  assert.equal(out.next, 'social_signin_start');
-  assert.equal(out.mode, 'login');
-  assert.match(out.message, /social_signin_start/);
-});
-
-test('login (no method): defaults to the email provider of the device flow', async () => {
-  const tools = makeOnboardingTools({
-    saveAuthSession: () => { throw new Error('must not persist — hand off to the device flow'); },
-    loadAuthSession: () => null,
-    sessionStatus: () => 'none',
-  });
-  const login = tools.find((t) => t.name === 'login');
-  const out = await login.handler({});
-  assert.equal(out.ok, false);
-  assert.equal(out.reason, 'use-device-flow');
-  assert.equal(out.next, 'social_signin_start');
-  assert.equal(out.mode, 'login');
-  assert.equal(out.provider, 'email', 'no method defaults to email; the /cli-login page still offers Google/LinkedIn');
-});
-
-test('login method:email points to the device flow with provider email (no password form)', async () => {
-  const tools = makeOnboardingTools({
-    saveAuthSession: () => { throw new Error('must not persist — hand off to the device flow'); },
-    loadAuthSession: () => null,
-    sessionStatus: () => 'none',
-  });
-  const login = tools.find((t) => t.name === 'login');
-  const out = await login.handler({ method: 'email' });
-  assert.equal(out.ok, false);
-  assert.equal(out.reason, 'use-device-flow');
-  assert.equal(out.next, 'social_signin_start');
-  assert.equal(out.provider, 'email');
-});
-
 test('logout clears the session and is idempotent (injected deps)', async () => {
   let current = { accessToken: 'A' };
   let cleared = 0;
@@ -370,7 +330,7 @@ test('smoke: JSON-RPC subprocess — login then list_addable + add_skill/agent/p
     await client.request(1, 'initialize', { protocolVersion: '2025-06-18' });
     const list = await client.request(2, 'tools/list');
     const names = list.result.tools.map((t) => t.name);
-    for (const n of ['login', 'list_addable', 'add_skill', 'add_agent', 'add_project']) {
+    for (const n of ['list_addable', 'add_skill', 'add_agent', 'add_project']) {
       assert.ok(names.includes(n), `tools/list must expose ${n}`);
     }
 
@@ -391,7 +351,10 @@ test('smoke: JSON-RPC subprocess — login then list_addable + add_skill/agent/p
     assert.equal(addSkill.payload.ok, true);
     const addAgent = await client.call(7, 'add_agent', { agentName: 'foo' });
     assert.equal(addAgent.payload.ok, true);
-    const addProject = await client.call(8, 'add_project', { root });
+    const askProject = await client.call(8, 'add_project', { root });
+    assert.equal(askProject.payload.reason, 'consent-required', 'a client without a dialog gets the question first');
+    assert.equal(svc.seen.some((r) => /portfolio/i.test(r.url) && r.method === 'POST'), false, 'nothing is sent before the answer');
+    const addProject = await client.call(8, 'add_project', { root, answer: askProject.payload.options[0] });
     assert.equal(addProject.payload.ok, true);
     assert.equal(addProject.payload.name, path.basename(root));
 
@@ -412,18 +375,17 @@ test('smoke: JSON-RPC subprocess — login then list_addable + add_skill/agent/p
   }
 });
 
-test('smoke: the login tool over MCP advertises NO password/email field (credentials never in args)', async () => {
+test('smoke: no tool over MCP advertises a password or secret field (credentials never in args)', async () => {
   const configDir = mkTmp('shakers-onb-schema-');
   const homeDir = mkTmp('shakers-onb-schema-home-');
   const client = mcpClient({ SHAKERS_CLI_CONFIG_DIR: configDir, SHAKERS_CLI_HOME_DIR: homeDir });
   try {
     await client.request(1, 'initialize', { protocolVersion: '2025-06-18' });
     const list = await client.request(2, 'tools/list');
-    const login = list.result.tools.find((t) => t.name === 'login');
-    assert.ok(login, 'login tool is exposed');
-    const props = (login.inputSchema && login.inputSchema.properties) || {};
-    assert.equal(props.password, undefined, 'no password field in the login schema');
-    assert.equal(props.email, undefined, 'no email field in the login schema');
+    for (const t of list.result.tools) {
+      assert.deepEqual(Object.keys((t.inputSchema && t.inputSchema.properties) || {}).filter((k) => /pass|secret/i.test(k)), [], t.name);
+    }
+    assert.equal(list.result.tools.some((t) => t.name === 'login'), false, 'signing in goes through social_signin_start');
     const signup = list.result.tools.find((t) => t.name === 'signup_start');
     const signupProps = signup.inputSchema.properties || {};
     assert.equal(signupProps.password, undefined, 'no password in the sign-up schema');

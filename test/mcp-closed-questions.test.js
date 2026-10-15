@@ -314,11 +314,11 @@ test('answer modes: drafted waits for approval unless the talent asks to answer 
   const list = await server.handleMessage({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
   const byName = Object.fromEntries(list.result.tools.map((t) => [t.name, t]));
   const start = byName.onboarding_interview_start;
-  assert.match(start.description, /drafted: show each question VERBATIM with your proposed answer and send it only after the talent approves or edits it/);
-  assert.match(start.description, /'hazla entera' or 'contéstalas tú todas'/);
+  assert.match(start.inputSchema.description, /drafted: show each question VERBATIM with your proposed answer and send it only after the talent approves or edits it/);
+  assert.match(start.inputSchema.description, /'hazla entera' or 'contéstalas tú todas'/);
   assert.deepEqual(start.inputSchema.properties.answerMode.enum, ['drafted', 'own', 'full']);
   const turn = byName.onboarding_interview_turn;
-  assert.match(turn.description, /unless they explicitly asked you to answer the rest yourself \('hazla entera', 'contéstalas tú todas'\)/);
+  assert.match(turn.inputSchema.description, /unless they explicitly asked you to answer the rest yourself \('hazla entera', 'contéstalas tú todas'\)/);
 });
 
 // The real stdio server, driven by a client that declares elicitation and by one that does not.

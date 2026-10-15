@@ -109,12 +109,13 @@ function makeRoleTools(deps = {}) {
     countOpenPositions = (opts) => require('./find-projects-client').countOpenPositions({}, opts),
     sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
     now = () => Date.now(),
+    funnel = require('./onboarding-funnel').NOOP_FUNNEL,
   } = deps;
 
   const requireSession = () => {
     const session = loadAuthSession();
     if (sessionStatus(session) !== 'active') {
-      throw new Error('no active Shakers session — call the login tool (or run `shakers login`) first.');
+      throw new Error('no active Shakers session — sign in with social_signin_start (or run `shakers login`) first.');
     }
     return session;
   };
@@ -317,37 +318,51 @@ function makeRoleTools(deps = {}) {
         const added = await addRole({ clusterId: picked.role.clusterId });
         if (!added.ok) return added;
       }
-      const set = await setMainRole({ clusterId: picked.role.clusterId });
+      const set = await applyMainRole(session, picked.role.clusterId, { suggestion: !picked.add });
       return set.ok ? { ...set, name: picked.role.name } : set;
     }
-    const res = await requestSetMainRole({ clusterId: args.clusterId, hubAccessToken: session.hubAccessToken }, { endpoint: getSetMainRoleEndpoint() });
+    return applyMainRole(session, args.clusterId, { suggestion: args.catalogue === true ? false : undefined });
+  }
+
+  async function applyMainRole(session, clusterId, { suggestion } = {}) {
+    const res = await requestSetMainRole({ clusterId, hubAccessToken: session.hubAccessToken }, { endpoint: getSetMainRoleEndpoint() });
     if (res.ok === false && res.reason === 'http-400') return { ok: false, reason: res.reason, message: 'The talent does not hold that role yet: call add_role with it, then set_main_role again.' };
     if (!res.ok) return { ok: false, reason: res.reason };
-    return { ok: true, clusterId: args.clusterId };
+    funnel.completed('supercluster', { supercluster: clusterId, was_suggestion_accepted: suggestion });
+    funnel.flush();
+    return { ok: true, clusterId };
   }
 
   return [
     {
       name: 'list_available_roles',
-      description: "List the roles the talent can add to their profile (the cluster catalog minus roles they already hold). Each row has clusterId (internal handle), name, category and an optional proposalKind (why it is suggested). Present roles to the talent by NAME; never show clusterId. Requires an active session.",
+      title: 'Roles you can add',
+      description: 'Shows the Shakers roles you can add to your profile.',
+      guidance: "List the roles the talent can add to their profile (the cluster catalog minus roles they already hold). Each row has clusterId (internal handle), name, category and an optional proposalKind (why it is suggested). Present roles to the talent by NAME; never show clusterId. Requires an active session.",
       inputSchema: EMPTY_SCHEMA,
       handler: listAvailableRoles,
     },
     {
       name: 'add_role',
-      description: "Add a role to the talent's profile (a GROWTH role) by clusterId from list_available_roles. Requires an active session. Returns { clusterId, alreadyAssigned? }.",
+      title: 'Add a role',
+      description: 'Adds the role you pick to your Shakers profile.',
+      guidance: "Add a role to the talent's profile (a GROWTH role) by clusterId from list_available_roles. Requires an active session. Returns { clusterId, alreadyAssigned? }.",
       inputSchema: CLUSTER_SCHEMA,
       handler: addRole,
     },
     {
       name: 'list_my_roles',
-      description: "List the roles the talent already holds, plus mainClusterId (their current main role) and `recommended`: the roles the onboarding interview and the CV import suggest, interview first. Use it before set_main_role. In the sign-up pass waitSeconds (20): it waits for the interview evaluation to recommend roles and says when to call again (`pending`) or to fall back to list_available_roles. Follow `message`. clusterId is an internal handle — refer to roles by name to the talent. Requires an active session.",
+      title: 'Your roles',
+      description: 'Shows your roles on Shakers and the ones suggested by your interview and your CV.',
+      guidance: "List the roles the talent already holds, plus mainClusterId (their current main role) and `recommended`: the roles the onboarding interview and the CV import suggest, interview first. Use it before set_main_role. In the sign-up pass waitSeconds (20): it waits for the interview evaluation to recommend roles and says when to call again (`pending`) or to fall back to list_available_roles. Follow `message`. clusterId is an internal handle — refer to roles by name to the talent. Requires an active session.",
       inputSchema: LIST_MY_ROLES_SCHEMA,
       handler: listMyRoles,
     },
     {
       name: 'set_main_role',
-      description: "Set the talent's MAIN role. In the sign-up it is the last step before open_web: after onboarding_interview_complete (or when the talent skipped the interview) and once list_my_roles is no longer pending, call it without clusterId: it asks the talent which of the recommended roles is their main one, with the catalogue as the last option (or straight from the catalogue when nothing is recommended), in a dialog when the client has one; otherwise it returns `say` to print word for word and the roles, to call it again with the clusterId they pick. Then it sets that role (adding a catalogue role first). Also usable standalone with clusterId to change the main role later; catalogue:true adds a catalogue role first. Requires an active session.",
+      title: 'Choose your main role',
+      description: 'Asks you which role is your main one and saves it on your Shakers profile.',
+      guidance: "Set the talent's MAIN role. In the sign-up it is the last step before open_web: after onboarding_interview_complete (or when the talent skipped the interview) and once list_my_roles is no longer pending, call it without clusterId: it asks the talent which of the recommended roles is their main one, with the catalogue as the last option (or straight from the catalogue when nothing is recommended), in a dialog when the client has one; otherwise it returns `say` to print word for word and the roles, to call it again with the clusterId they pick. Then it sets that role (adding a catalogue role first). Also usable standalone with clusterId to change the main role later; catalogue:true adds a catalogue role first. Requires an active session.",
       inputSchema: SET_MAIN_ROLE_SCHEMA,
       handler: setMainRole,
     },

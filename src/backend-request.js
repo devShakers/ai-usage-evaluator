@@ -8,6 +8,14 @@ const crypto = require('crypto');
 
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 
+const CLIENT_IDENTITIES = ['cli', 'mcp'];
+let clientIdentity = 'cli';
+
+function setClientIdentity(identity) {
+  if (!CLIENT_IDENTITIES.includes(identity)) throw new Error(`unknown client identity: ${identity}`);
+  clientIdentity = identity;
+}
+
 // Extra request headers, sanitized (talents-ai-score, issue 038 — the agent certification interview needs `Authorization: Bearer <sessionToken>`).
 const UNSAFE_HEADER_VALUE_RE = /[\r\n\0]/;
 
@@ -39,13 +47,8 @@ function postJsonWithTimeout(url, body, timeoutMs, method = 'POST', idempotencyK
         method,
         headers: {
           Accept: 'application/json',
-          // Lets the backend (and Datadog) tell CLI/MCP traffic apart from the
-          // browser without touching auth — same value regardless of which
-          // bin/ entrypoint is running, since none of them plumb through here
-          // separately today. Set unconditionally so no caller can drop it via
-          // extraHeaders (sanitizeExtraHeaders runs after this, so it can only
-          // add headers, not remove this one).
-          'X-Shakers-Client': 'cli',
+          // Tells CLI and MCP traffic apart from the browser.
+          'X-Shakers-Client': clientIdentity,
           // Only declared when there IS a body — see the bodyless note above.
           ...(data ? { 'Content-Type': 'application/json', 'Content-Length': data.length } : {}),
           ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
@@ -125,7 +128,7 @@ function postMultipartWithTimeout(url, fields, timeoutMs, method = 'POST', extra
         headers: {
           Accept: 'application/json',
           // See postJsonWithTimeout's identical header for why.
-          'X-Shakers-Client': 'cli',
+          'X-Shakers-Client': clientIdentity,
           'Content-Type': `multipart/form-data; boundary=${boundary}`,
           'Content-Length': data.length,
           ...sanitizeExtraHeaders(extraHeaders),
@@ -184,4 +187,5 @@ module.exports = {
   postMultipartWithTimeout,
   extractSetCookie,
   requestBackend,
+  setClientIdentity,
 };

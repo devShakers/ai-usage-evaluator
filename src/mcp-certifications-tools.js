@@ -14,7 +14,7 @@ function makeCertificationsTools(deps = {}) {
   const requireLoginSession = () => {
     const session = loadAuthSession();
     if (sessionStatus(session) !== 'active') {
-      throw new Error('no active Shakers session — call the login tool (or run `shakers login`) first (list_certifications is session-gated).');
+      throw new Error('no active Shakers session — sign in with social_signin_start (or run `shakers login`) first (list_certifications is session-gated).');
     }
     return session;
   };
@@ -29,7 +29,9 @@ function makeCertificationsTools(deps = {}) {
   return [
     {
       name: 'list_certifications',
-      description: "List the talent's role dimensions with their certification state (CERTIFIED/UNCERTIFIED/EXPIRED), band and main role. Requires an active session. Any dimension/cluster ids in the result are INTERNAL handles for calling tools — never show or mention them to the talent; refer to a dimension by its name.",
+      title: 'Your certifications',
+      description: 'Shows which areas of your roles are certified on Shakers.',
+      guidance: "List the talent's role dimensions with their certification state (CERTIFIED/UNCERTIFIED/EXPIRED), band and main role. Requires an active session. Any dimension/cluster ids in the result are INTERNAL handles for calling tools — never show or mention them to the talent; refer to a dimension by its name.",
       inputSchema: LIST_CERTIFICATIONS_SCHEMA,
       handler: listCertifications,
     },

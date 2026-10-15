@@ -46,10 +46,10 @@ const PROMPTS = [
   {
     name: 'ask',
     description: 'Ask Alma, the Shakers AI assistant, a question.',
-    tools: ['ask'],
+    tools: ['alma_chat'],
     arguments: [{ name: 'message', description: 'What to ask Alma.', required: false }],
     buildMessages: (args = {}) => userText(
-      `Ask Alma (the Shakers assistant) and relay her answer as-is. My question: ${typeof args.message === 'string' && args.message ? args.message : '(ask me what I want to know first)'}`,
+      `Ask Alma (the Shakers assistant) with \`alma_chat\` and relay her answer as-is. My question: ${typeof args.message === 'string' && args.message ? args.message : '(ask me what I want to know first)'}`,
     ),
   },
   {

@@ -70,7 +70,7 @@ function makeAiUsageResultTool(deps = {}) {
   async function handler() {
     const session = loadAuthSession();
     if (sessionStatus(session) !== 'active') {
-      throw new Error('no active Shakers session — call the login tool (or run `shakers login`) first.');
+      throw new Error('no active Shakers session — sign in with social_signin_start (or run `shakers login`) first.');
     }
     const endpoint = getUsageDiscoveredInventoryEndpoint();
     if (!endpoint) {
@@ -94,7 +94,9 @@ function makeAiUsageResultTool(deps = {}) {
 
   return {
     name: 'ai_usage_result',
-    description:
+    title: 'Results of your AI analysis',
+    description: 'Fetches from Shakers the description of each AI agent found in the analysis you approved. It reads nothing on this computer.',
+    guidance:
       "Retrieve the enriched Shakers classification for the talent's agents after ai_usage. Shakers classifies agents and writes their descriptions server-side (no client LLM), so this reads the result: per agent { name, tools, model, category, role, level, code, whatItDoes }. Session-keyed, no arguments. Server-side classification can take a few minutes, so this does a bounded internal poll (~90s max, never a long-held call): returns { status: 'ready', agents } once every agent has been classified, or { status: 'pending', agents } while Shakers is still processing (call it again to keep waiting — 'pending' is normal progress, not an error). Present agents to the talent by NAME and category/role only; the `code` field is an internal handle for add_agent, never show it. Requires an active session.",
     inputSchema: RESULT_INPUT_SCHEMA,
     handler,

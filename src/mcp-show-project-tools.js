@@ -20,7 +20,7 @@ function makeShowProjectTools(deps = {}) {
   const requireLoginSession = () => {
     const session = loadAuthSession();
     if (sessionStatus(session) !== 'active') {
-      throw new Error('no active Shakers session — call the login tool (or run `shakers login`) first (show_project is session-gated).');
+      throw new Error('no active Shakers session — sign in with social_signin_start (or run `shakers login`) first (show_project is session-gated).');
     }
     return session;
   };
@@ -37,7 +37,9 @@ function makeShowProjectTools(deps = {}) {
   return [
     {
       name: 'show_project',
-      description: "Get the full detail of one Position/Project available to the talent (Shakers Find Positions detail): title, parent project, company, budget, work mode, required skills/languages, description, goals, FAQs, and the talent's saved/applied/canApply state. Requires an active session and the position id. The `id` (and any positionId/projectId in the result) is an INTERNAL handle for calling tools — NEVER show or mention it to the talent; refer to the project by its title/company.",
+      title: 'See a project',
+      description: 'Shows the full details of one Shakers project.',
+      guidance: "Get the full detail of one Position/Project available to the talent (Shakers Find Positions detail): title, parent project, company, budget, work mode, required skills/languages, description, goals, FAQs, and the talent's saved/applied/canApply state. Requires an active session and the position id. The `id` (and any positionId/projectId in the result) is an INTERNAL handle for calling tools — NEVER show or mention it to the talent; refer to the project by its title/company.",
       inputSchema: SHOW_PROJECT_SCHEMA,
       handler: showProject,
     },

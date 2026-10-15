@@ -6,9 +6,12 @@ const {
 } = require('./onboarding-flow');
 const { signupCopy, legalCopy, renderDraft, amount } = require('./signup-copy');
 const { fixSignupLanguage, signupLanguage } = require('./signup-language');
+const path = require('path');
 const { readLocalCv } = require('./cv-file');
 const { emailFromHubToken } = require('./auth-session-store');
-const { askAfterTexts, optionFor, queueNotice, takeNotices } = require('./mcp-choice');
+const { askAfterTexts, askConsent, optionFor, queueNotice, takeNotices } = require('./mcp-choice');
+const { expandHome, tildify } = require('./env-paths');
+const { NOOP_FUNNEL, weeklyHours, rateTypes, workSituationValue } = require('./onboarding-funnel');
 
 // MCP sign-up (ticket 39540): hub imports into an UNREGISTERED profile that the local window claims with a code kept only in memory.
 
@@ -173,6 +176,15 @@ const EMAIL_SCHEMA = {
 
 // In the order the data notice names them.
 const DRAFT_SOURCES = ['linkedin', 'cv'];
+const DRAFT_FIELDS = ['name', 'role', 'city', 'country', 'situation', 'participation', 'yearsOfExperience', 'stack', 'languages', 'workMode', 'monthlyHours', 'hourlyRate', 'annualRate'];
+// Draft fields per funnel step, for was_edited.
+const STEP_DRAFT_FIELDS = {
+  work_situation: ['situation', 'participation'],
+  availability: ['monthlyHours', 'workMode'],
+  rates: ['hourlyRate', 'annualRate'],
+  languages: ['languages'],
+  location: ['country', 'city'],
+};
 
 const DRAFT_SCHEMA = {
   type: 'object',
@@ -181,6 +193,9 @@ const DRAFT_SCHEMA = {
     name: { type: 'string', description: 'Full name.' },
     role: { type: 'string', description: 'Role, e.g. "Data Engineer".' },
     city: { type: 'string' },
+    country: { type: 'string', description: 'ISO-2 country code (ES, US, GB): the same country save_profile_details will write.' },
+    situation: { type: 'string', enum: WORK_SITUATIONS, description: 'Current work situation, the same code save_profile_details will write.' },
+    participation: { type: 'string', enum: EMPLOYMENT_PARTICIPATIONS, description: 'Only when situation is EMPLOYED.' },
     yearsOfExperience: { type: 'number' },
     stack: { type: 'string', description: 'Main technologies, comma separated, at most five.' },
     languages: { type: 'string', description: 'Languages and level, e.g. "Español nativo, inglés C1".' },
@@ -230,6 +245,7 @@ const IMPORT_SCHEMA = {
     websiteUrl: { type: 'string' },
     userQuery: { type: 'string', description: 'Everything you know about the talent, as free text.' },
     language: { type: 'string', enum: [...IMPORT_LANGUAGES] },
+    answer: { type: 'string', description: 'The option the talent picked when you printed the question this tool returned about the CV file. Never set it yourself.' },
   },
 };
 
@@ -288,6 +304,7 @@ function makeSignupTools(deps = {}) {
     fetchPricingRate = (opts) => require('./rate-client').fetchPricingRate({}, opts),
     fetchAvailability = (opts) => require('./availability-client').fetchAvailability({}, opts),
     fetchLanguages = (opts) => require('./profile-client').fetchLanguages({}, opts),
+    funnel = NOOP_FUNNEL,
     fetchTelephone = (opts) => require('./profile-client').fetchTelephone({}, opts),
     openBrowser = require('./open-file').openPath,
     sleep = defaultSleep,
@@ -301,6 +318,7 @@ function makeSignupTools(deps = {}) {
     sessionToken: null,
     email: null,
     draft: null,
+    firstDraft: null,
     draftConfirmed: false,
     keepProfile: false,
     // Fields the update question already told the talent they keep.
@@ -313,11 +331,18 @@ function makeSignupTools(deps = {}) {
     failedSources: new Set(),
     cvPath: null,
     wake: null,
+    importStartedAt: null,
+    importReported: new Set(),
   };
   currentSignup = state;
 
   function setAccount(next) {
+    const before = state.account.state;
     state.account = next;
+    if ((next.state === 'created' || next.state === 'existing') && before !== next.state) {
+      funnel.completed('account_creation', { auth_method: next.via, is_returning_account: next.state === 'existing' });
+      funnel.identified();
+    }
     if (state.wake) state.wake();
   }
 
@@ -432,7 +457,12 @@ function makeSignupTools(deps = {}) {
     }
     if (!nonEmpty(args.answer)) {
       fixSignupLanguage(args.language);
+      funnel.begin();
+      funnel.viewed('start');
       state.draft = null;
+      state.firstDraft = null;
+      state.importStartedAt = null;
+      state.importReported = new Set();
       state.draftConfirmed = false;
       state.email = null;
       state.failedSources.clear();
@@ -447,13 +477,14 @@ function makeSignupTools(deps = {}) {
     // A CV path in the first message already answers the CV question: that CV is read, and the welcome
     // rides on the next question block, because models skip a relay that comes before another tool call.
     if (!nonEmpty(args.answer) && state.cvPath) {
+      funnel.completed('start');
       queueNotice(c.welcome(nonEmpty(args.firstName)));
       return {
         ok: true,
         step: 'cv-given',
         cvPath: state.cvPath,
         language: lang(),
-        message: `Never explain to the talent what you are doing or what the CV holds: every text they read in this step comes from the tools, the welcome included. Now read_cv cvPath with talentConsent:true, asking nothing about the CV. ${linkedin}`,
+        message: `Never explain to the talent what you are doing or what the CV holds: every text they read in this step comes from the tools, the welcome included. Now call read_cv with cvPath: it asks the talent itself before reading the file, so ask nothing about the CV in your own words. ${linkedin}`,
       };
     }
     const asked = await askAfterTexts(ctx, {
@@ -464,6 +495,7 @@ function makeSignupTools(deps = {}) {
       answer: args.answer,
     });
     if (asked.reply) return { ...asked.reply, language: lang() };
+    funnel.completed('start');
     // A CV path the talent gave wins over both answers: searching could read another candidate.
     const cvPath = state.cvPath;
     if (cvPath) {
@@ -471,7 +503,7 @@ function makeSignupTools(deps = {}) {
         ok: true,
         step: 'cv-given',
         cvPath,
-        message: `The talent already gave their CV: read_cv it now with talentConsent:true, saying nothing about attaching it. ${linkedin}`,
+        message: `The talent already gave their CV: call read_cv with cvPath now (it asks the talent itself before reading the file), saying nothing about attaching it. ${linkedin}`,
       };
     }
     if (asked.answer === c.cvSearch) {
@@ -479,7 +511,7 @@ function makeSignupTools(deps = {}) {
         ok: true,
         step: 'cv-search',
         cvNotFound: c.cvNotFound,
-        message: `The talent allowed you to look for their CV: call suggest_register_context, then read_cv on its first candidate without asking again, even when nameMatch is null (their name is just unknown). Only if there is no candidate, or every one comes back mentionsTalent:false, show \`cvNotFound\` word for word and wait for the file. ${linkedin}`,
+        message: `The talent chose to look for their CV on this computer: call suggest_register_context, then read_cv on its first candidate, even when nameMatch is null (their name is just unknown). Each of them asks the talent itself before searching or reading, so ask nothing in your own words. Only if there is no candidate, or every one comes back mentionsTalent:false, show \`cvNotFound\` word for word and wait for the file. ${linkedin}`,
       };
     }
     return {
@@ -525,9 +557,10 @@ function makeSignupTools(deps = {}) {
     const pricing = pricingFromRates(args);
     if (!pricing.ok) return pricing;
     const draft = {};
-    for (const key of ['name', 'role', 'city', 'yearsOfExperience', 'stack', 'languages', 'workMode', 'monthlyHours', 'hourlyRate', 'annualRate']) {
+    for (const key of DRAFT_FIELDS) {
       if (args[key] !== undefined && args[key] !== null && args[key] !== '') draft[key] = args[key];
     }
+    if (typeof draft.country === 'string') draft.country = draft.country.trim().toUpperCase();
     if (!draft.name || !draft.role) return { ok: false, reason: 'draft-incomplete', message: 'The draft needs at least name and role: read the CV first.' };
     if (draft.hourlyRate === undefined || draft.annualRate === undefined) {
       return { ok: false, reason: 'draft-rates-required', message: 'The draft needs both rates: if the talent gave them, send them with ratesFromTalent:true; otherwise estimate hourlyRate (€/h) and annualRate (€/year) from role, seniority, stack and location, and send them without it. Then call signup_draft again.' };
@@ -538,6 +571,7 @@ function makeSignupTools(deps = {}) {
     if (!sources.length && !optionFor(args.answer, [c.draftOk, c.draftChange])) {
       return { ok: false, reason: 'draft-sources-required', message: "The draft needs sources: 'cv' if you read their CV, 'linkedin' only if you have their LinkedIn URL. Then call signup_draft again." };
     }
+    if (!state.firstDraft) state.firstDraft = draft;
     const asked = await askAfterTexts(ctx, {
       tool: 'signup_draft',
       texts: [renderDraft(lang(), draft), legalCopy(lang()).signupNotice(sources), knownAccount() ? c.windowNoticeSignIn : c.windowNotice],
@@ -617,7 +651,16 @@ function makeSignupTools(deps = {}) {
     state.sources = sources;
     state.reported = { account: 'waiting', import: 'none' };
     const reused = state.account.state === 'waiting';
-    if (!reused) await openWindow(identity);
+    if (!state.importStartedAt) {
+      const attempted = DRAFT_SOURCES.filter((source) => (source === 'cv' ? !!cv : !!sources.linkedinUrl));
+      state.importStartedAt = Object.fromEntries(attempted.map((source) => [source, now()]));
+      for (const source of attempted) funnel.track('source_import_started', 'import_sources', { source_type: source });
+      funnel.completed('import_sources', { sources_attempted: attempted });
+    }
+    if (!reused) {
+      funnel.viewed('account_creation');
+      await openWindow(identity);
+    }
     return {
       ok: true,
       status: 'window-open',
@@ -628,13 +671,35 @@ function makeSignupTools(deps = {}) {
     };
   }
 
+  function trackImportOutcome(imp) {
+    if (!state.importStartedAt) return;
+    let tracked = false;
+    for (const [source, startedAt] of Object.entries(state.importStartedAt)) {
+      if (state.importReported.has(source)) continue;
+      const outcome = imp.sources && imp.sources[source] ? imp.sources[source].state : (imp.state === 'failed' ? 'failed' : null);
+      if (outcome !== 'done' && outcome !== 'failed') continue;
+      state.importReported.add(source);
+      const code = imp.sources && imp.sources[source] && imp.sources[source].code ? imp.sources[source].code : imp.code;
+      funnel.track(outcome === 'done' ? 'source_import_completed' : 'source_import_failed', 'import_sources', {
+        source_type: source,
+        duration_ms: Math.max(0, now() - startedAt),
+        ...(outcome === 'failed' && code ? { failure_reason: code } : {}),
+      });
+      tracked = true;
+    }
+    if (tracked) funnel.flush();
+  }
+
   async function readImport() {
     // An account that already existed got no import from this sign-up: its last import is not news.
     if (state.account.state === 'existing') return { state: 'none' };
     const session = resolved.loadAuthSession();
     if (resolved.sessionStatus(session) !== 'active' || !session || !session.hubAccessToken) return { state: 'none' };
     const res = await requestMyImportStatus({ hubAccessToken: session.hubAccessToken }, { endpoint: getMyImportStatusEndpoint() });
-    return res.ok ? { state: res.state, sources: res.sources, ...(res.code ? { code: res.code } : {}) } : { state: 'unknown', reason: res.reason };
+    if (!res.ok) return { state: 'unknown', reason: res.reason };
+    const imp = { state: res.state, sources: res.sources, ...(res.code ? { code: res.code } : {}) };
+    trackImportOutcome(imp);
+    return imp;
   }
 
   function nextSteps(account) {
@@ -644,7 +709,7 @@ function makeSignupTools(deps = {}) {
       return `This talent already had an account and signed in. Call update_existing_profile: it shows what would change and asks whether to update, and its text tells the talent about the account, so say nothing about it yourself. ${aiUsage} ${interview}`;
     }
     const unclaimed = account.claimed === false ? ' This account did not take over the imported profile: call import_profile with the same LinkedIn/CV first.' : '';
-    return `The account exists.${unclaimed} Now, without asking: save_profile_details with the confirmed draft (situation, motivation, both rates, availability and location, languages). ${aiUsage} ${interview}`;
+    return `The account exists.${unclaimed} Now, without asking: save_profile_details with the confirmed draft (situation, motivation, both rates, availability and location with its country, languages). ${aiUsage} ${interview}`;
   }
 
   // A source that did not import gets its fixed line once, on the next question block.
@@ -697,6 +762,19 @@ function makeSignupTools(deps = {}) {
     return out;
   }
 
+  // The tool: a CV file from this computer is sent only after the talent says yes to that file.
+  async function importProfileAsked(args = {}, ctx = {}) {
+    if (nonEmpty(args.cvPath)) {
+      const file = path.resolve(expandHome(nonEmpty(args.cvPath)));
+      const c = copy().consent;
+      const asked = await askConsent(ctx, { tool: 'import_profile', key: `import_profile:${file}`, question: c.cvSend(tildify(file)), yes: c.yes, no: c.no, answer: args.answer });
+      if (asked.reply) return asked.reply;
+      if (!asked.granted) return { ok: false, reason: 'consent-declined', message: 'The talent said no: nothing was sent. Do not send that file; call import_profile again without cvPath if the other sources still need importing.' };
+      return importProfile({ ...args, cvPath: file });
+    }
+    return importProfile(args);
+  }
+
   async function importProfile(args = {}) {
     if (nonEmpty(args.linkedinUrl) && !isLinkedinProfileUrl(nonEmpty(args.linkedinUrl))) return { ok: false, reason: 'invalid-linkedin-url', message: INVALID_LINKEDIN_MESSAGE };
     const res = await flow.startProfileImport(resolved, {
@@ -710,7 +788,7 @@ function makeSignupTools(deps = {}) {
     });
     if (!res.ok) {
       if (res.reason === 'no-session') {
-        return { ok: false, reason: isSignupPending() ? 'signup-pending' : 'no-session', message: isSignupPending() ? 'The account does not exist yet: wait for signup_status to report it.' : 'The talent is not signed in: use login first.' };
+        return { ok: false, reason: isSignupPending() ? 'signup-pending' : 'no-session', message: isSignupPending() ? 'The account does not exist yet: wait for signup_status to report it.' : 'The talent is not signed in: sign them in with social_signin_start first.' };
       }
       return { ok: false, reason: res.reason };
     }
@@ -869,6 +947,40 @@ function makeSignupTools(deps = {}) {
     return c.ratesSaved(shown, !(state.draft && state.draft.ratesFromTalent));
   }
 
+  function wasEdited(step) {
+    if (!state.firstDraft || !state.draft) return undefined;
+    return STEP_DRAFT_FIELDS[step].some((key) => String(state.firstDraft[key] ?? '') !== String(state.draft[key] ?? ''));
+  }
+
+  function trackSavedSteps(details, results) {
+    const saved = (section) => results[section] && results[section].ok === true;
+    const step = (name, props) => funnel.completed(name, { ...props, is_prefilled: true, was_edited: wasEdited(name) });
+    if (saved('workSituation')) {
+      step('work_situation', { work_situation: workSituationValue(String(details.workSituation.situation || '').trim().toUpperCase()) });
+    }
+    if (saved('availability')) {
+      const a = details.availability;
+      step('availability', { availability_hours_per_week: weeklyHours(a.monthlyHours) });
+      const country = typeof a.country === 'string' && /^[A-Za-z]{2}$/.test(a.country.trim()) ? a.country.trim().toUpperCase() : null;
+      const proposed = state.firstDraft && state.firstDraft.country;
+      const modes = Array.isArray(a.workModes) ? a.workModes.map((m) => String(m).toUpperCase()) : [];
+      step('location', {
+        location_country: country ? country.toLowerCase() : undefined,
+        location_method: country && proposed === country ? 'prefilled' : 'manual',
+        is_remote_only: modes.length ? modes.every((m) => m === 'REMOTE') : undefined,
+      });
+    }
+    if (saved('pricing')) {
+      const types = rateTypes(pricingFromRates(details.pricing).input);
+      funnel.completed('rates', { rate_types_selected: types, rate_type: types[0], rate_currency: 'EUR', is_prefilled: !(state.draft && state.draft.ratesFromTalent), was_edited: wasEdited('rates') });
+    }
+    if (saved('languages')) {
+      const codes = details.languages.map((row) => String(row.language || '').trim().toLowerCase()).filter(Boolean);
+      step('languages', { languages_count: codes.length, languages: codes });
+    }
+    funnel.flush();
+  }
+
   async function saveProfileDetails(args = {}) {
     const { saved } = copy();
     const existing = state.account.state === 'existing';
@@ -902,6 +1014,7 @@ function makeSignupTools(deps = {}) {
         results.phone = again.ok ? { ok: true } : { ok: false, reason: again.reason };
       }
     }
+    trackSavedSteps(details, results);
     const confirmations = sections.filter(([name]) => results[name] && results[name].ok).map(([, , , text]) => text);
     const ok = Object.values(results).every((r) => r.ok);
     const report = keptReport(kept);
@@ -974,61 +1087,81 @@ function makeSignupTools(deps = {}) {
   return [
     {
       name: 'signup_start',
-      description: "FIRST call when the talent asks to sign up or register on Shakers, before you write anything: pass `language` = the language of their message. It returns the welcome to show word for word and its one question (send me your CV, or shall I look for it on this computer?). Then follow its message: CV, LinkedIn, signup_email, signup_draft, signup_create_account, signup_status. Every text it and the next sign-up tools return in `say` or relayVerbatim is printed word for word, in that language.",
+      title: 'Start your Shakers sign-up',
+      description: 'Starts your sign-up here in the chat and asks whether you send your CV or want it looked for on this computer.',
+      guidance: "FIRST call when the talent asks to sign up or register on Shakers, before you write anything: pass `language` = the language of their message. It returns the welcome to show word for word and its one question (send me your CV, or shall I look for it on this computer?). Then follow its message: CV, LinkedIn, signup_email, signup_draft, signup_create_account, signup_status. Every text it and the next sign-up tools return in `say` or relayVerbatim is printed word for word, in that language.",
       inputSchema: WELCOME_SCHEMA,
       handler: signupStart,
     },
     {
       name: 'signup_email',
-      description: 'Sign-up step after the CV and LinkedIn: asks which email to create the account with (the one they read most). Pass the best email you know, or none. Never comment on the email yourself.',
+      title: 'Choose your account email',
+      description: 'Asks which email your Shakers account will use.',
+      guidance: 'Sign-up step after the CV and LinkedIn: asks which email to create the account with (the one they read most). Pass the best email you know, or none. Never comment on the email yourself.',
       inputSchema: EMAIL_SCHEMA,
       handler: signupEmail,
     },
     {
       name: 'signup_draft',
-      description: 'Sign-up step before the account: shows the talent the profile draft you prepared from their CV, LinkedIn and what you know, with the data notice and how the account window works, and asks them to confirm it. The window to create the account opens only after they confirm.',
+      title: 'Review your profile draft',
+      description: 'Shows the profile draft prepared from your CV and LinkedIn, explains how your data is used and asks you to confirm it. Your account is not created until you confirm.',
+      guidance: 'Sign-up step before the account: shows the talent the profile draft you prepared from their CV, LinkedIn and what you know, with the data notice and how the account window works, and asks them to confirm it. The window to create the account opens only after they confirm.',
       inputSchema: DRAFT_SCHEMA,
       handler: signupDraft,
     },
     {
       name: 'signup_create_account',
-      description: "After the talent confirmed the draft: starts the profile import on Shakers and, a few seconds later, opens a window in the talent's browser where they create the account with Google or a password, or sign in if they already have one. No password ever goes through the chat. Returns next: signup_status.",
+      title: 'Create your account',
+      description: 'Once you confirm the draft, sends your CV, LinkedIn and draft to Shakers and opens a browser window where you create your account with Google or a password. Your password never goes through the chat.',
+      guidance: "After the talent confirmed the draft: starts the profile import on Shakers and, a few seconds later, opens a window in the talent's browser where they create the account with Google or a password, or sign in if they already have one. No password ever goes through the chat. Returns next: signup_status.",
       inputSchema: CREATE_SCHEMA,
       handler: signupCreateAccount,
     },
     {
       name: 'signup_status',
-      description: "State of the sign-up: account (waiting | created | existing | failed) and, once it exists, the profile import per source (linkedin, cv: running | done | failed). Pass waitSeconds (up to 25) to wait for a change. Follow `message`: it gives the remaining steps. Never show internal codes to the talent.",
+      title: 'Sign-up progress',
+      description: 'Shows whether your account is ready and how the import of your profile is going.',
+      guidance: "State of the sign-up: account (waiting | created | existing | failed) and, once it exists, the profile import per source (linkedin, cv: running | done | failed). Pass waitSeconds (up to 25) to wait for a change. Follow `message`: it gives the remaining steps. Never show internal codes to the talent.",
       inputSchema: STATUS_SCHEMA,
       handler: signupStatus,
     },
     {
       name: 'update_existing_profile',
-      description: 'When signup_status says the talent already had an account: shows what the confirmed draft would fill in the empty fields of their profile and the value each field they already had keeps, and asks whether to update it; on yes it imports their LinkedIn/CV filling only what is empty.',
+      title: 'Update your existing profile',
+      description: 'If you already had an account, shows what your draft would add to the empty fields of your profile and asks before changing anything. It never overwrites what you already filled in.',
+      guidance: 'When signup_status says the talent already had an account: shows what the confirmed draft would fill in the empty fields of their profile and the value each field they already had keeps, and asks whether to update it; on yes it imports their LinkedIn/CV filling only what is empty.',
       inputSchema: UPDATE_EXISTING_SCHEMA,
       handler: updateExistingProfile,
     },
     {
       name: 'import_profile',
-      description: "Import LinkedIn, CV, GitHub or website into the SIGNED-IN talent's profile, filling only what is empty: existing texts and languages are kept, lists are added without duplicates. Use it when the sign-up import failed for a source, or for a non-PDF CV. Takes up to ~90 s.",
+      title: 'Import into your profile',
+      description: 'Sends your LinkedIn, GitHub or website to Shakers to fill the empty parts of your profile, and a CV file from this computer only after asking you first. What you already wrote is kept.',
+      guidance: "Import LinkedIn, CV, GitHub or website into the SIGNED-IN talent's profile, filling only what is empty: existing texts and languages are kept, lists are added without duplicates. Use it when the sign-up import failed for a source, or for a non-PDF CV. With cvPath the tool first asks the talent, naming the file (a dialog when the client has one, otherwise it returns `say` to print word for word as your whole reply); nothing is sent until they answer yes. After a `say`, call it again with the same arguments and answer set to the option they pick. Never answer for them. Takes up to ~90 s.",
       inputSchema: IMPORT_SCHEMA,
-      handler: importProfile,
+      handler: importProfileAsked,
     },
     {
       name: 'save_profile_details',
-      description: "After the account exists, write the confirmed draft — work situation and motivation, hourly rate and annual target, availability and location, languages, phone — WITHOUT asking again: they can edit every field on the web. Each section is saved on its own; returns per-section results. On an account that already existed it only fills what the profile leaves empty, never overwrites a value the talent set.",
+      title: 'Save your profile details',
+      description: 'Saves the details you confirmed in your draft (work situation, rates, availability, location, languages and phone) to your Shakers profile. On an existing account it only fills empty fields.',
+      guidance: "After the account exists, write the confirmed draft — work situation and motivation, hourly rate and annual target, availability and location, languages, phone — WITHOUT asking again: they can edit every field on the web. Each section is saved on its own; returns per-section results. On an account that already existed it only fills what the profile leaves empty, never overwrites a value the talent set.",
       inputSchema: buildDetailsSchema(deps.lang || 'en'),
       handler: saveProfileDetails,
     },
     {
       name: 'open_web',
-      description: "Open Shakers in the talent's browser already signed in (one-time link, valid 2 minutes, single use). Use it at the end of the sign-up, or when the onboarding interview has to be done on the web. Returns { opened, loggedIn }, plus `link` only when the browser was not opened.",
+      title: 'Open Shakers in your browser',
+      description: 'Opens Shakers in your browser, already signed in.',
+      guidance: "Open Shakers in the talent's browser already signed in (one-time link, valid 2 minutes, single use). Use it at the end of the sign-up, or when the onboarding interview has to be done on the web. Returns { opened, loggedIn }, plus `link` only when the browser was not opened.",
       inputSchema: { type: 'object', properties: { open: { type: 'boolean', description: 'false returns a fresh link without opening the browser: only when the talent says the browser did not open.' } } },
       handler: openWeb,
     },
     {
       name: 'open_linkedin_profile',
-      description: "Open the talent's own LinkedIn profile in their browser (linkedin.com/in/me redirects to it) so they copy the address bar. Use it ONLY when the talent says they do not know where to find their LinkedIn URL, and only after showing them, word for word, the `linkedinOpening` text signup_start returned.",
+      title: 'Open your LinkedIn profile',
+      description: 'Opens your own LinkedIn profile in your browser so you can copy its address.',
+      guidance: "Open the talent's own LinkedIn profile in their browser (linkedin.com/in/me redirects to it) so they copy the address bar. Use it ONLY when the talent says they do not know where to find their LinkedIn URL, and only after showing them, word for word, the `linkedinOpening` text signup_start returned.",
       inputSchema: { type: 'object', properties: {} },
       handler: openLinkedinProfile,
     },

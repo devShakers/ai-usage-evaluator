@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const http = require('http');
 
 const { streamAlmaChat, askAlma } = require('../src/alma-client');
-const { makeAskTools, ASK_SCHEMA } = require('../src/mcp-ask-tools');
+const { makeAlmaTools, ALMA_CHAT_SCHEMA } = require('../src/mcp-alma-tools');
 
 // An NDJSON server that emits a scripted list of events, one JSON per line.
 function ndjsonServer(events, { status = 200 } = {}) {
@@ -86,12 +86,12 @@ test('askAlma: resolves the endpoint from config', async () => {
   assert.equal(passedEndpoint, 'http://alma/alma/chat');
 });
 
-test('ask tool: session-gated, requires message, returns aggregated answer', async () => {
-  const [tool] = makeAskTools({ loadAuthSession: () => ({ hubAccessToken: 't' }), sessionStatus: () => 'active', askAlma: async () => ({ ok: true, text: 'Full answer' }) });
-  assert.equal(tool.name, 'ask');
-  assert.deepEqual(ASK_SCHEMA.required, ['message']);
+test('alma_chat tool: session-gated, requires message, returns aggregated answer', async () => {
+  const [tool] = makeAlmaTools({ loadAuthSession: () => ({ hubAccessToken: 't' }), sessionStatus: () => 'active', askAlma: async () => ({ ok: true, text: 'Full answer' }) });
+  assert.equal(tool.name, 'alma_chat');
+  assert.deepEqual(ALMA_CHAT_SCHEMA.required, ['message']);
   assert.deepEqual(await tool.handler({}), { ok: false, reason: 'no-message' });
   assert.deepEqual(await tool.handler({ message: 'hi' }), { ok: true, answer: 'Full answer' });
-  const [gated] = makeAskTools({ loadAuthSession: () => null, sessionStatus: () => 'expired' });
+  const [gated] = makeAlmaTools({ loadAuthSession: () => null, sessionStatus: () => 'expired' });
   await assert.rejects(() => gated.handler({ message: 'x' }), /no active Shakers session/);
 });

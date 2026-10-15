@@ -15,7 +15,7 @@ function makeAvailabilityTools(deps = {}) {
   const requireLoginSession = () => {
     const session = loadAuthSession();
     if (sessionStatus(session) !== 'active') {
-      throw new Error('no active Shakers session — call the login tool (or run `shakers login`) first (get_availability is session-gated).');
+      throw new Error('no active Shakers session — sign in with social_signin_start (or run `shakers login`) first (get_availability is session-gated).');
     }
     return session;
   };
@@ -30,7 +30,9 @@ function makeAvailabilityTools(deps = {}) {
   return [
     {
       name: 'get_availability',
-      description: "View the talent's availability: open-to-work, monthly hours, work modes (a combinable array of REMOTE/HYBRID/IN_PERSON), and location. Read-only. Requires an active session. Any internal ids in the result (e.g. numeric city id) are handles for tools only — never show or mention them to the talent.",
+      title: 'Your availability',
+      description: 'Shows your availability on Shakers: whether you are open to work, hours per month, work mode and location.',
+      guidance: "View the talent's availability: open-to-work, monthly hours, work modes (a combinable array of REMOTE/HYBRID/IN_PERSON), and location. Read-only. Requires an active session. Any internal ids in the result (e.g. numeric city id) are handles for tools only — never show or mention them to the talent.",
       inputSchema: GET_AVAILABILITY_SCHEMA,
       handler: getAvailability,
     },

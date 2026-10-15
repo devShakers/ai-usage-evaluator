@@ -15,7 +15,7 @@ function makePortfolioTools(deps = {}) {
   const requireLoginSession = (tool) => {
     const session = loadAuthSession();
     if (sessionStatus(session) !== 'active') {
-      throw new Error(`no active Shakers session — call the login tool (or run \`shakers login\`) first (${tool} is session-gated).`);
+      throw new Error(`no active Shakers session — sign in with social_signin_start (or run \`shakers login\`) first (${tool} is session-gated).`);
     }
     return session;
   };
@@ -30,13 +30,17 @@ function makePortfolioTools(deps = {}) {
   return [
     {
       name: 'list_experiences',
-      description: "List the talent's work experiences (company, role/title, dates, location, skills). Read-only. Requires an active session. Any ids in the result are internal handles for tools only — never show or mention them to the talent.",
+      title: 'Your work experience',
+      description: 'Shows the work experience on your Shakers profile.',
+      guidance: "List the talent's work experiences (company, role/title, dates, location, skills). Read-only. Requires an active session. Any ids in the result are internal handles for tools only — never show or mention them to the talent.",
       inputSchema: SCHEMA,
       handler: lister('experiences', 'list_experiences'),
     },
     {
       name: 'list_portfolios',
-      description: "List the talent's portfolio showcase pieces (name, dates, location, skills, link). Read-only. Requires an active session. Any ids in the result are internal handles for tools only — never show or mention them to the talent.",
+      title: 'Your portfolio',
+      description: 'Shows the portfolio projects on your Shakers profile.',
+      guidance: "List the talent's portfolio showcase pieces (name, dates, location, skills, link). Read-only. Requires an active session. Any ids in the result are internal handles for tools only — never show or mention them to the talent.",
       inputSchema: SCHEMA,
       handler: lister('portfolios', 'list_portfolios'),
     },

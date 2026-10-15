@@ -1,18 +1,15 @@
 # Publish runbook — `shakers-cli` (npm)
 
-> **PUBLICACIÓN DIFERIDA (2026-08-25).** El paquete es **local-only** por ahora y
-> NO se publica a ningún registro (ni público ni privado): `package.json` lleva
-> `"private": true`. Motivos: (1) no hay backend público por defecto — un
-> `npx shakers-cli ai-usage` externo sin config deja las features conectadas
-> (persist/login/certify) inertes; (2) la licencia está pendiente de revisión por
-> legal. Este runbook se conserva como referencia para cuando se decida publicar:
-> habrá que quitar `"private": true`, restaurar `publishConfig` y resolver ambos
-> bloqueos antes de ejecutar nada de lo de abajo.
-
-> HUMAN ACTION ONLY. Every step below is executed by a person on their own
-> machine, never by an agent or in CI without explicit sign-off. Nothing here
-> runs automatically. The packaging is already prepared and verified on
-> `feat/talents-ai-score`; this file is the checklist to actually publish.
+> **Publicación automática en CI.** Desde `ci/prod-channel`, cada tag estable
+> `v<X.Y.Z>` que semantic-release crea al mergear a `release` publica `shakers-cli`
+> en npmjs (`publish:npm:prod`) junto al `.mcpb` prod, en paralelo con el canal
+> staging (`shakers-cli-beta`). Los jobs prod solo existen si la variable CI/CD
+> `PROD_ALMA_BASE` está definida, y `preflight:prod` aborta si `src/config.js` no
+> mapea `shakers-cli` al perfil `prod`. El sabor se deriva del nombre del paquete
+> (`PACKAGE_NAME_ENV`), sin flag en runtime. Ver `.gitlab-ci.yml`.
+>
+> Lo de abajo es la checklist para una publicación manual de emergencia y para el
+> smoke test posterior; el camino normal no requiere ningún paso a mano.
 
 ## Naming (fixed decision)
 
@@ -53,8 +50,13 @@
 ## Publish
 
 ```sh
-npm publish --access public
+NPM_PACKAGE_NAME=shakers-cli BETA_VERSION=<X.Y.Z> node scripts/prepare-beta.js
+npm publish --tag latest --access public
+git checkout -- package.json
 ```
+
+The stamp is required: the checkout's `package.json` is `@shakers/shakers-cli`,
+which bakes the `dev` backend.
 
 `--access public` is redundant with `publishConfig.access` but is kept explicit
 as a guard (matters if this ever becomes scoped). This is the irreversible step:
@@ -80,18 +82,10 @@ npm rm -g shakers-cli                        # cleanup
 
 ## Version bumps (subsequent releases)
 
-`version` starts at `0.1.0`. Each release needs a new version (npm rejects a
-re-publish of an existing version). Use semver:
-
-```sh
-npm version patch      # 0.1.0 -> 0.1.1  (fixes)
-npm version minor      # 0.1.0 -> 0.2.0  (backward-compatible features)
-npm version major      # 0.x   -> 1.0.0  (breaking; still pre-1.0 so minor may break)
-npm publish --access public
-```
-
-`npm version` creates a git tag and commit — do it via an MR into `develop`, then an MR `develop` -> `release`; the tag `v<version>` goes on `release`, never
-on `develop`/`release` directly (repo branch policy).
+The version comes from the tag: semantic-release computes it from the
+conventional commits on `release` (`.releaserc.yml`) and CI stamps it into
+`package.json` (`scripts/prepare-beta.js`). Do not run `npm version` or tag by hand;
+merge `develop` -> `release` through an MR.
 
 ## Open decisions to resolve before first publish
 

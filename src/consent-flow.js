@@ -15,9 +15,10 @@ const MAX_ATTEMPTS = 5;
 const YES_RE = /^(y|yes|s|si|sí)$/i;
 const NO_RE = /^(n|no)$/i;
 
-async function askYesNo(ask, question, catalog) {
+async function askYesNo(ask, question, catalog, { defaultNo = false } = {}) {
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const raw = String(await ask(question)).trim();
+    if (defaultNo && raw === '') return false;
     if (YES_RE.test(raw)) return true;
     if (NO_RE.test(raw)) return false;
     process.stdout.write(`  ${catalog.consent.invalidAnswer}\n`);
@@ -62,7 +63,12 @@ async function runConsentPrompt({
 
   if (drainBeforeAsk && typeof ask.drain === 'function') ask.drain();
 
-  const accepted = await askYesNo(ask, c.persistQuestion, catalog);
+  if (loggedIn && sessionEmail && isValidEmail(sessionEmail)) {
+    process.stdout.write(`  ${c.savedUnderEmail(sessionEmail)}\n`);
+  }
+
+  // defaultNo: a blank Enter means "do not save" (legal requirement).
+  const accepted = await askYesNo(ask, c.persistQuestion, catalog, { defaultNo: true });
   if (accepted === null) {
     process.stdout.write(`  ${c.notObtained}\n\n`);
     return null;
@@ -92,13 +98,9 @@ async function runConsentPrompt({
     return null;
   }
 
-  if (profile === 'external') {
-    recordConsent('granted', email, { verified: false });
-    process.stdout.write(`  ${c.grantedSavedExternal(email)}\n\n`);
-    return 'granted';
-  }
+  process.stdout.write(`  ${c.savedUnderEmail(email)}\n`);
 
-  // Prove email ownership BEFORE persisting anything (ADR-006).
+  // Prove email ownership BEFORE persisting (ADR-006) — every profile, external included.
   const verification = await verifyEmail({ email, ask, catalog, env });
   if (verification && verification.verified) {
     recordConsent('granted', email, { verified: true });
@@ -106,8 +108,6 @@ async function runConsentPrompt({
     return 'granted';
   }
 
-  // Not verified: persist nothing, re-ask next run. runEmailVerification
-  // already printed the specific reason (cancelled / technical / exhausted).
   process.stdout.write(`  ${c.notObtained}\n\n`);
   return null;
 }

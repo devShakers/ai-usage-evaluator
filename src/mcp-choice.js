@@ -66,4 +66,30 @@ async function askAfterTexts(ctx, { tool, texts, question, options, answer }) {
   };
 }
 
-module.exports = { askChoice, askAfterTexts, chatChoice, optionFor, queueNotice, takeNotices, SAY_MESSAGE };
+// Questions this process put to the talent in the chat, keyed by exactly what they would allow:
+// an answer counts only for a question the tool asked, so a flag the AI sets by itself never does.
+const pendingConsent = new Set();
+
+// The talent's yes or no before a tool reads this computer or sends data: { granted } or { reply } to return.
+async function askConsent(ctx, { tool, key, question, yes, no, answer }) {
+  const options = [yes, no];
+  const picked = pendingConsent.has(key) ? optionFor(answer, options) : null;
+  if (picked) {
+    pendingConsent.delete(key);
+    return { granted: picked === yes };
+  }
+  const asked = ctx && ctx.elicitation ? await askChoice(ctx, { question, options }) : { chat: chatChoice(question, options) };
+  if (asked.answer) return { granted: asked.answer === yes };
+  pendingConsent.add(key);
+  return {
+    reply: {
+      ok: false,
+      reason: 'consent-required',
+      ...(asked.dismissed ? { dismissed: asked.dismissed } : {}),
+      ...asked.chat,
+      message: `Nothing was read or sent. ${asked.chat.choiceMessage} Then call ${tool} again with the same arguments and answer set to the option they pick.`,
+    },
+  };
+}
+
+module.exports = { askConsent, askChoice, askAfterTexts, chatChoice, optionFor, queueNotice, takeNotices, SAY_MESSAGE };
