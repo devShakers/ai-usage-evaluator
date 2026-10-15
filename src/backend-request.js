@@ -3,6 +3,7 @@
 const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
+const { getHubBase } = require('./config');
 
 // ONE BACKEND: the certifications service (talents-ai-score, ADR-042).
 
@@ -14,6 +15,20 @@ let clientIdentity = 'cli';
 function setClientIdentity(identity) {
   if (!CLIENT_IDENTITIES.includes(identity)) throw new Error(`unknown client identity: ${identity}`);
   clientIdentity = identity;
+}
+
+// Hub profile writes declare which surface made them; reads, auth and the onboarding funnel are not profile updates.
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const HUB_PROFILE_PATH_RE = /^\/(works\/(talents?\/me|me|users\/me)|works\/talent\/(portfolios|certifications\/me))(\/|$)/;
+const NOT_PROFILE_UPDATE_RE = /^\/works\/talent\/me\/onboarding-events(\/|$)/;
+
+function profileUpdateSourceHeader(url, method) {
+  if (!MUTATING_METHODS.has(String(method).toUpperCase())) return {};
+  const hubBase = getHubBase();
+  if (!hubBase || !url.href.startsWith(`${hubBase}/`)) return {};
+  const path = url.href.slice(hubBase.length).split(/[?#]/)[0];
+  if (!HUB_PROFILE_PATH_RE.test(path) || NOT_PROFILE_UPDATE_RE.test(path)) return {};
+  return { 'X-Profile-Update-Source': clientIdentity };
 }
 
 // Extra request headers, sanitized (talents-ai-score, issue 038 — the agent certification interview needs `Authorization: Bearer <sessionToken>`).
@@ -49,6 +64,7 @@ function postJsonWithTimeout(url, body, timeoutMs, method = 'POST', idempotencyK
           Accept: 'application/json',
           // Tells CLI and MCP traffic apart from the browser.
           'X-Shakers-Client': clientIdentity,
+          ...profileUpdateSourceHeader(u, method),
           // Only declared when there IS a body — see the bodyless note above.
           ...(data ? { 'Content-Type': 'application/json', 'Content-Length': data.length } : {}),
           ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
@@ -129,6 +145,7 @@ function postMultipartWithTimeout(url, fields, timeoutMs, method = 'POST', extra
           Accept: 'application/json',
           // See postJsonWithTimeout's identical header for why.
           'X-Shakers-Client': clientIdentity,
+          ...profileUpdateSourceHeader(u, method),
           'Content-Type': `multipart/form-data; boundary=${boundary}`,
           'Content-Length': data.length,
           ...sanitizeExtraHeaders(extraHeaders),

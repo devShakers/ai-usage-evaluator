@@ -400,3 +400,39 @@ test('extractSetCookie: no matching cookie -> null; empty value -> null', () => 
   assert.equal(extractSetCookie({ 'set-cookie': [`__Secure-${NAME}=`] }, NAME), null);
   assert.equal(extractSetCookie(null, NAME), null);
 });
+
+/* ---------- X-Profile-Update-Source on hub profile writes ---------- */
+
+test('postJsonWithTimeout: hub profile writes carry X-Profile-Update-Source per client identity; reads and non-profile routes do not', async () => {
+  const { setClientIdentity } = require('../src/backend-request');
+  const seen = [];
+  const server = await startServer((req, res) => {
+    seen.push({ method: req.method, url: req.url, source: req.headers['x-profile-update-source'] });
+    req.resume();
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{}');
+    });
+  });
+  const prev = process.env.SHAKERS_CLI_HUB_BASE;
+  const { port } = server.address();
+  const hubBase = `http://127.0.0.1:${port}/api/v1`;
+  process.env.SHAKERS_CLI_HUB_BASE = hubBase;
+  const pricing = `${hubBase}/works/talent/me/work-details/pricing-rate`;
+  try {
+    await postJsonWithTimeout(pricing, { rate: 1 }, 2000, 'PUT');
+    setClientIdentity('mcp');
+    await postJsonWithTimeout(pricing, { rate: 1 }, 2000, 'PUT');
+    await postJsonWithTimeout(pricing, null, 2000, 'GET');
+    await postJsonWithTimeout(`${hubBase}/works/talent/me/onboarding-events`, { step: 'x' }, 2000, 'POST');
+    await postJsonWithTimeout(`${hubBase}/auth/sign-in/email`, { email: 'a' }, 2000, 'POST');
+    await postJsonWithTimeout(`http://localhost:${port}/api/v1/works/talent/me/work-details/pricing-rate`, { rate: 1 }, 2000, 'PUT');
+  } finally {
+    setClientIdentity('cli');
+    if (prev === undefined) delete process.env.SHAKERS_CLI_HUB_BASE;
+    else process.env.SHAKERS_CLI_HUB_BASE = prev;
+    server.close();
+  }
+  assert.deepEqual(seen.map((s) => s.source), ['cli', 'mcp', undefined, undefined, undefined, undefined]);
+  assert.deepEqual(seen.map((s) => s.method), ['PUT', 'PUT', 'GET', 'POST', 'POST', 'PUT']);
+});
