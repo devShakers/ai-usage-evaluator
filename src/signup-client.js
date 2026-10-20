@@ -4,7 +4,7 @@ const { postJsonWithTimeout, extractSetCookie } = require('./backend-request');
 const { SESSION_COOKIE_NAME } = require('./auth-client');
 const { toUpperLang } = require('./lang-codes');
 
-// Register a talent via the Hub's better-auth email engine, in two steps (owner decision, supersedes ADR-031 for the email path — WEB-login parity): 1.
+// Register a talent via the Hub's better-auth email engine, in two steps (WEB-login parity): 1.
 
 const DEFAULT_TIMEOUT_MS = 30000;
 

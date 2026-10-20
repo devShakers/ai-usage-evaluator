@@ -3,8 +3,7 @@
 // MCP: list the Positions/Projects available to the talent (Find Positions),
 // paginated + filtered server-side. Same params as the CLI so an agent can page.
 
-const { TABS, ATTENDANCE, DEFAULT_LIMIT } = require('./find-projects-client');
-const { splitRecommended } = require('./find-projects-flow');
+const { TABS, ATTENDANCE, DEFAULT_LIMIT, splitRecommended } = require('./find-projects-client');
 
 const FIND_PROJECTS_SCHEMA = {
   type: 'object',

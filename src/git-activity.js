@@ -55,7 +55,7 @@ function round2(n) {
   return Math.round(n * 100) / 100;
 }
 
-// Deterministic git-activity signals for the project where `shakers ai-usage` runs (hybrid evaluation, Slice 1).
+// Deterministic git-activity signals for the project where `shakers ai-usage` runs.
 function collectGitActivity(root, verifiedEmail) {
   if (!isGitRepo(root)) return null;
 

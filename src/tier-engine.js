@@ -20,7 +20,7 @@ const AGENTIC_IDS = ['claude-code', 'aider', 'gemini-cli', 'codex-cli', 'amazon-
 // Band 0-4 derived from tier (level-model.md, single source of truth): index = tier -> band.
 const BAND_BY_TIER = [0, 1, 2, 3, 3, 4, 4, 4];
 
-// Setup Level (Talent Certification Framework, ADR-016): the 3-value rollup that REPLACES the retired 0-4 band on every display surface.
+// Setup Level (Talent Certification Framework): the 3-value rollup that REPLACES the retired 0-4 band on every display surface.
 const SETUP_LEVELS = [
   { key: 'none', code: null, rank: 0, emoji: '○' },
   { key: 'S1', code: 'S1', rank: 1, emoji: '◔' },
@@ -60,7 +60,7 @@ function aggregateTierSignals(report) {
       ? report.agentCounts.agents
       : 0;
 
-  // THE MCP SIGNAL IS THE DEDUPED SET THE REPORT SHOWS (issue 112).
+  // THE MCP SIGNAL IS THE DEDUPED SET THE REPORT SHOWS.
   const mcpTotal =
     report && report.mcp && typeof report.mcp.total === 'number' ? report.mcp.total : mcp;
 
@@ -93,7 +93,7 @@ function computeTierResult(report) {
     tierKey: meta.key,
     tierName: meta.name,
     band: bandForTier(tier),
-    // Setup Level (ADR-016) — the shown rollup. `{key, code, rank, emoji}`;
+    // Setup Level — the shown rollup. `{key, code, rank, emoji}`;
     // the label is resolved from i18n by `key` at the render layer.
     setupLevel: setupLevelForTier(tier),
     signals,

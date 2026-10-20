@@ -3,7 +3,7 @@
 const { requestBackend } = require('./backend-request');
 const { reporterFor, REASON } = require('./model-call-record');
 
-// Roadmap personalization client (talents-ai-score, ADR-015).
+// Roadmap personalization client.
 
 const DEFAULT_TIMEOUT_MS = 8000;
 
@@ -38,7 +38,7 @@ function buildRoadmapPersonalizationRequest(curatedEntry, tierResult, report, lo
       mistakes: curatedEntry.commonMistakes,
     },
     signals: buildRoadmapSignals(report, tierResult.signals),
-    // ADR-026: detected report language for the personalized prose.
+    // Detected report language for the personalized prose.
     ...(locale === 'es' || locale === 'en' ? { locale } : {}),
     ...(consentGranted === true ? { traceContentConsent: true } : {}),
   };
@@ -66,7 +66,7 @@ function isValidPersonalizedRoadmap(parsed, curated) {
 
 // Requests the roadmap personalization endpoint.
 async function requestRoadmapPersonalization(requestBody, { endpoint, timeoutMs = DEFAULT_TIMEOUT_MS, onOutcome = null } = {}) {
-  // Issue 109 — see agent-synthesis.js#requestAgentSynthesis for the contract.
+  // See agent-synthesis.js#requestAgentSynthesis for the contract.
   const outcome = reporterFor(onOutcome, { timeoutMs });
   if (!endpoint) {
     outcome.skip(REASON.NO_ENDPOINT);

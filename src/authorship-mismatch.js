@@ -1,6 +1,6 @@
 'use strict';
 
-// Display-only authorship-transparency check (talents-ai-score).
+// Display-only authorship-transparency check.
 //
 // Warns the talent when their commits in the selected repos are authored under
 // an email that is not their Shakers account email, so their own work would be

@@ -1,18 +1,11 @@
 'use strict';
 
 const fs = require('fs');
-const path = require('path');
 
-const { getConfigDir } = require('./config-dir');
 const { loadConfigFile, saveConfigFile, VALID_PROFILES } = require('./config');
 const { clearAuthSession } = require('./auth-session-store');
-
-function reportStatePath(env) {
-  return path.join(getConfigDir(env), 'report-state.json');
-}
-function consentStatePath(env) {
-  return path.join(getConfigDir(env), 'consent.json');
-}
+const { consentPath } = require('./share-consent-state');
+const { statePath } = require('./report-store');
 
 // Best-effort delete: a file that doesn't exist (nothing to purge yet, e.g.
 // a superadmin who never ran `usage` in this profile) is not a failure.
@@ -35,12 +28,12 @@ function switchProfile(target, env = process.env) {
   saveConfigFile(config, env);
 
   const purged = {
-    reportState: unlinkIfExists(reportStatePath(env)),
-    consent: unlinkIfExists(consentStatePath(env)),
+    reportState: unlinkIfExists(statePath(env)),
+    consent: unlinkIfExists(consentPath(env)),
     authSession: clearAuthSession(env),
   };
 
   return { ok: true, from, to: target, purged };
 }
 
-module.exports = { switchProfile, reportStatePath, consentStatePath };
+module.exports = { switchProfile };

@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { getConfigDir } = require('./config-dir');
 
-// Names and values mirror works-frontend onboarding-funnel-enums.ts.
+// Names and values mirror the web onboarding funnel enums.
 
 const FLOW_VERSION = 'signup_new_works_v1';
 
@@ -48,10 +48,32 @@ const WORK_SITUATION_VALUES = Object.freeze({
   OTHER: 'other',
 });
 
+const PRE_ACCOUNT_EVENTS = Object.freeze({
+  start: { onboarding_step_viewed: [], onboarding_step_completed: ['time_on_step_ms'] },
+  account_creation: {
+    onboarding_step_viewed: ['auth_methods_offered'],
+    onboarding_step_errored: ['error_type'],
+    onboarding_step_exited: ['time_on_step_ms', 'exited_to_step_name', 'exited_to_step_index'],
+  },
+});
+const AUTH_METHODS = Object.freeze(['google', 'linkedin', 'email']);
+const PRE_ACCOUNT_VALUES = Object.freeze({
+  time_on_step_ms: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0,
+  auth_methods_offered: (v) => Array.isArray(v) && v.every((m) => AUTH_METHODS.includes(m)),
+  error_type: (v) => ERROR_TYPES.includes(v),
+  exited_to_step_name: (v) => v === 'start',
+  exited_to_step_index: (v) => v === STEP_INDEX.start,
+});
+const COMMON_PROPERTIES = new Set(['step_name', 'step_index', 'flow_version', 'surface', 'mcp_client']);
+const MAX_EVENT_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
+
 const ONCE_PER_STEP = new Set(['onboarding_step_viewed', 'onboarding_step_completed']);
 const MAX_EVENTS_PER_REQUEST = 50;
 const SEND_TIMEOUT_MS = 3000;
+const EXIT_FLUSH_CAP_MS = 1500;
 const DEVICE_FILE_NAME = 'analytics-device.json';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function mcpClientFor(clientName) {
   const name = typeof clientName === 'string' ? clientName.toLowerCase() : '';
@@ -83,7 +105,8 @@ function rateTypes({ partTimeSelected, fullTimeSelected } = {}) {
 
 function errorTypeFor(reason) {
   const r = String(reason || '');
-  if (r === 'no-session' || r === 'no-hub-token' || r === 'http-401' || r === 'http-403') return 'auth';
+  if (r === 'no-session' || r === 'no-hub-token' || r === 'http-401' || r === 'http-403' || r === 'login-failed' || r.startsWith('google-')) return 'auth';
+  if (r === 'missing-fields' || r === 'weak-password') return 'validation';
   if (r === 'timeout') return 'timeout';
   if (r === 'no-endpoint') return 'server';
   if (r.startsWith('bad-') || r.startsWith('no-') || r === 'duplicate-language' || r === 'unresolved-languages') return 'validation';
@@ -126,10 +149,25 @@ function loadOrCreateDeviceId(env = process.env, { fs: fsImpl = fs } = {}) {
   }
 }
 
-async function defaultSend({ endpoint, events, hubAccessToken }) {
+async function postEvents(endpoint, body, headers) {
   const { postJsonWithTimeout } = require('./backend-request');
-  const res = await postJsonWithTimeout(endpoint, { events }, SEND_TIMEOUT_MS, 'POST', null, { Authorization: `Bearer ${hubAccessToken}` });
+  const res = await postJsonWithTimeout(endpoint, body, SEND_TIMEOUT_MS, 'POST', null, headers);
   return { ok: res.status >= 200 && res.status < 300, status: res.status };
+}
+
+function defaultSend({ endpoint, events, hubAccessToken }) {
+  return postEvents(endpoint, { events }, { Authorization: `Bearer ${hubAccessToken}` });
+}
+
+function defaultSendToAmplitude({ endpoint, apiKey, events }) {
+  return postEvents(endpoint, { api_key: apiKey, events }, null);
+}
+
+function isPreAccount(item) {
+  const step = PRE_ACCOUNT_EVENTS[item.properties.step_name];
+  const allowed = step && step[item.eventType];
+  return !!allowed && Object.entries(item.properties)
+    .every(([key, value]) => COMMON_PROPERTIES.has(key) || (allowed.includes(key) && PRE_ACCOUNT_VALUES[key](value)));
 }
 
 function defaultHubToken() {
@@ -143,7 +181,9 @@ function createFunnel({
   hubToken = defaultHubToken,
   deviceId = () => loadOrCreateDeviceId(),
   endpoint = () => require('./config').getOnboardingEventsEndpoint(),
+  amplitude = () => require('./config').getAmplitudeIngestion(),
   send = defaultSend,
+  sendToAmplitude = defaultSendToAmplitude,
   now = () => Date.now(),
   uuid = () => crypto.randomUUID(),
 } = {}) {
@@ -172,33 +212,77 @@ function createFunnel({
     return true;
   }
 
+  function currentDeviceId() {
+    if (cachedDeviceId === undefined) cachedDeviceId = safe(deviceId);
+    return cachedDeviceId;
+  }
+
   // Funnel order, each time strictly after the previous one sent.
   function stamp(batch) {
     const ordered = [...batch].sort((a, b) => a.properties.step_index - b.properties.step_index || a.seq - b.seq);
-    const id = cachedDeviceId === undefined ? (cachedDeviceId = safe(deviceId)) : cachedDeviceId;
-    return ordered.map((e) => {
-      lastTime = Math.max(e.at, lastTime + 1);
-      return { event_type: e.eventType, insert_id: e.insertId, time: lastTime, ...(id ? { device_id: id } : {}), properties: e.properties };
+    return ordered.map((item) => {
+      if (item.time === undefined) {
+        lastTime = Math.max(item.at, lastTime + 1);
+        item.time = lastTime;
+      }
+      return { item, time: item.time };
     });
   }
 
-  function flush() {
-    if (!ready || !pending.length) return Promise.resolve();
+  function post(stamped, toWire, deliver) {
+    const sends = [];
+    for (let i = 0; i < stamped.length; i += MAX_EVENTS_PER_REQUEST) {
+      const chunk = stamped.slice(i, i + MAX_EVENTS_PER_REQUEST);
+      sends.push(Promise.resolve()
+        .then(() => deliver(chunk.map(toWire)))
+        .then((res) => !!(res && res.ok), () => false)
+        .then((ok) => (ok ? [] : chunk.map((e) => e.item))));
+    }
+    return Promise.all(sends).then((failed) => failed.flat());
+  }
+
+  function flushAsTalent() {
     const token = safe(hubToken);
     const url = safe(endpoint);
     // Never send under another account signed in since.
     if (!token || !url || accountOf(token) !== account) return Promise.resolve();
-    const events = stamp(pending);
+    const batch = pending;
     pending = [];
-    const sends = [];
-    for (let i = 0; i < events.length; i += MAX_EVENTS_PER_REQUEST) {
-      sends.push(Promise.resolve().then(() => send({ endpoint: url, events: events.slice(i, i + MAX_EVENTS_PER_REQUEST), hubAccessToken: token })).catch(() => null));
-    }
-    const done = Promise.all(sends).then(() => undefined, () => undefined);
+    const id = currentDeviceId();
+    const toWire = ({ item, time }) => ({ event_type: item.eventType, insert_id: item.insertId, time, ...(id ? { device_id: id } : {}), properties: item.properties });
+    return post(stamp(batch), toWire, (events) => send({ endpoint: url, events, hubAccessToken: token })).then(() => undefined);
+  }
+
+  function flushToAmplitude() {
+    const id = currentDeviceId();
+    const target = safe(amplitude);
+    if (!id || !UUID_RE.test(id) || !target) return Promise.resolve();
+    const batch = pending.filter((e) => !e.directFailed && isPreAccount(e));
+    if (!batch.length) return Promise.resolve();
+    pending = pending.filter((e) => !batch.includes(e));
+    const at = now();
+    const stamped = stamp(batch);
+    const inWindow = ({ time }) => time >= at - MAX_EVENT_AGE_MS && time <= at + MAX_CLOCK_SKEW_MS;
+    const outOfWindow = stamped.filter((e) => !inWindow(e)).map((e) => e.item);
+    const toWire = ({ item, time }) => ({ event_type: item.eventType, device_id: id, insert_id: item.insertId, time, event_properties: item.properties });
+    return post(stamped.filter(inWindow), toWire, (events) => sendToAmplitude({ endpoint: target.endpoint, apiKey: target.apiKey, events })).then((failed) => {
+      const waiting = [...outOfWindow, ...failed];
+      if (!waiting.length) return undefined;
+      for (const e of waiting) e.directFailed = true;
+      pending.push(...waiting);
+      return ready ? flush() : undefined;
+    });
+  }
+
+  function flush() {
+    if (!pending.length) return Promise.resolve();
+    const done = (ready ? flushAsTalent() : flushToAmplitude()).then(() => undefined, () => undefined);
     inflight.add(done);
     done.then(() => inflight.delete(done));
     return done;
   }
+
+  const idle = () => Promise.all([...inflight]).then(() => undefined);
 
   return {
     surface,
@@ -221,7 +305,13 @@ function createFunnel({
       return flush();
     },
     flush,
-    idle: () => Promise.all([...inflight]).then(() => undefined),
+    idle,
+    settle(capMs = EXIT_FLUSH_CAP_MS) {
+      flush();
+      let timer;
+      const cap = new Promise((resolve) => { timer = setTimeout(resolve, capMs); });
+      return Promise.race([idle(), cap]).then(() => clearTimeout(timer));
+    },
   };
 }
 
@@ -248,6 +338,7 @@ const NOOP_FUNNEL = Object.freeze({
   identified: () => Promise.resolve(),
   flush: () => Promise.resolve(),
   idle: () => Promise.resolve(),
+  settle: () => Promise.resolve(),
 });
 
 module.exports = {
@@ -259,6 +350,8 @@ module.exports = {
   SOURCE_TYPES,
   ERROR_TYPES,
   MAX_EVENTS_PER_REQUEST,
+  EXIT_FLUSH_CAP_MS,
+  PRE_ACCOUNT_EVENTS,
   DEVICE_FILE_NAME,
   NOOP_FUNNEL,
   createFunnel,

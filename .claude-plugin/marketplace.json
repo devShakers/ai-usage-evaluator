@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "shakers-mcp",
-  "description": "Shakers talent toolset for Claude Code: scan your AI usage, build your profile, find projects, onboard, certify and ask Alma.",
+  "description": "Shakers talent toolset for Claude Code: sign up, build your profile, showcase how you work with AI, find projects and ask Alma.",
   "owner": {
     "name": "Shakers Works S.L.",
     "url": "https://shakersworks.com"
@@ -10,7 +10,7 @@
     {
       "name": "shakers",
       "source": ".",
-      "description": "Local-first Shakers connector. Runs the Shakers MCP server (shipped in the public shakers-cli-beta npm package) plus slash-commands for AI-usage scan, profile, projects, onboarding, certification and Alma."
+      "description": "Local-first Shakers connector. Runs the Shakers MCP server from the public shakers-cli npm package, plus slash-commands to sign up, showcase your AI usage, see your profile, find projects, see what you can certify and ask Alma."
     }
   ]
 }

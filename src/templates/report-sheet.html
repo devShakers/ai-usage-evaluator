@@ -146,7 +146,7 @@ header.top{
 .col-head{display:flex; align-items:baseline; gap:10px; margin:2px 0 14px}
 .col-head h2{margin:0; font-size:13px; letter-spacing:.12em; text-transform:uppercase; color:var(--fg-muted); font-weight:650}
 .col-head .dot{width:6px;height:6px;border-radius:50%; background:var(--accent)}
-/* Column note (issue 096): one line under the column head, for copy that has to
+/* Column note: one line under the column head, for copy that has to
    be read before the numbers below it. `.sub` only exists inside `.card`. */
 .col-note{margin:-8px 0 14px; font-size:12.5px; line-height:1.5; color:var(--fg-muted)}
 .col-note b{color:var(--fg); font-weight:650}
@@ -211,16 +211,15 @@ header.top{
 .chip .d{width:7px;height:7px;border-radius:50%; background:var(--accent)}
 
 /* --- Agent tree --------------------------------------------- *
- * ORPHANED BUT OWNED (issue 090, kept for issue 089).
+ * ORPHANED BUT OWNED.
  *
  * Nothing emits `class="agent"` today: `render-sheet.js` builds no agent tree, so
  * this block styles markup that does not exist. It is NOT dead by accident — it
- * came with the approved mockup and it is exactly the material issue 089 (the
- * shareable report has no agents at all) needs, so that design does not have to
- * re-invent the nesting rail. Recovering the markup that used to pair with it:
- * `git show 7fae2c8^:src/render-html.js` (see `agentNodeHtml`/`agentCardsSection`).
+ * came with the approved mockup and it is exactly the material an agent section in
+ * the shareable report (which has no agents at all) needs, so that design does not
+ * have to re-invent the nesting rail.
  *
- * If 089 is dropped or solved another way, this goes with it. What it must not
+ * If that section is dropped or solved another way, this goes with it. What it must not
  * do is sit here with no owner, which is how it got orphaned in the first place.
  * ------------------------------------------------------------ */
 .tree{margin:0; padding:0; list-style:none}
@@ -312,7 +311,7 @@ header.top{
 .tag-na{background:var(--chip-bg); color:var(--fg-muted)}
 .area .icn{width:16px; text-align:center}
 
-/* anchored quotes (issue 054): one block per quote, under its own area row, with
+/* anchored quotes: one block per quote, under its own area row, with
    a left rail whose colour differs per SOURCE. The .qt-k label is the real
    distinction between the two — the rail is lost in greyscale, the label is not. */
 .area-block{display:flex; flex-direction:column; gap:3px}
@@ -401,7 +400,7 @@ __BODY__
   "use strict";
 
   /* Runs ONE independent init/update step in isolation from its siblings
-     (issue 067). `load`, `resize` and the theme toggle each chain several
+     `load`, `resize` and the theme toggle each chain several
      UNRELATED effects (paint the ring, count up the score, slide the tab
      indicator, sync a label…) as a plain sequence of statements. Before this,
      one throwing — as `paintRing()` did pre-066, on ITS OWN unguarded lookup —
@@ -448,9 +447,8 @@ __BODY__
        reached countUp / moveInd / syncExpandLabel — leaving the tab indicator
        unpositioned and the expand-all label unsynced — and the theme toggle, whose
        handler ends in paintRing(), threw on every single click. A broken script
-       fails no test; it silently degrades a report someone is reading. Found in
-       issue 066, when a report with only an agent certification became reachable
-       for the first time. */
+       fails no test; it silently degrades a report someone is reading. Found when
+       a report with only an agent certification first became reachable. */
     if(!fill) return;
     var circumference = 2 * Math.PI * 54; // r=54
     fill.style.strokeDasharray = circumference;
@@ -556,7 +554,7 @@ __BODY__
   });
 
   /* ---- init ---- */
-  // Four UNRELATED effects (issue 067): each isolated so one failing never
+  // Four UNRELATED effects: each isolated so one failing never
   // takes the other three down with it — see safeStep() above for why this,
   // and not a guard on #ringFill/#scoreNum alone, is the fix at this level.
   window.addEventListener('load', function(){

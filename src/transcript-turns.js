@@ -2,7 +2,7 @@
 
 const { iterateSessionObjects } = require('./session-scan');
 
-// Human-turn reader for the steering/decisions extractors (hybrid evaluation, Slice 2).
+// Human-turn reader for the steering/decisions extractors.
 
 function isHumanTurn(obj) {
   if (!obj || typeof obj !== 'object') return false;

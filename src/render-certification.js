@@ -26,7 +26,7 @@ function anyTruncated(items) {
   return (items || []).some((i) => i && i.sampling && i.sampling.truncated);
 }
 
-// ADR-024 rubric dimension order (terminal).
+// Rubric dimension order (terminal).
 const DIMENSION_KEYS = ['idiomatic', 'correctness', 'depth', 'structure', 'testing'];
 
 // Score band -> semantic (shared with the HTML/graph CSS class via `graph-certs.js`, which still imports this).
@@ -37,7 +37,7 @@ function scoreBand(score) {
   return 'low';
 }
 
-// ADR-016: named skill level (by decision power, not points) shown INSTEAD of the numeric grade.
+// Named skill level (by decision power, not points) shown INSTEAD of the numeric grade.
 function skillLevelForScore(score) {
   const band = scoreBand(score);
   if (typeof score !== 'number') return { key: null, band };
@@ -67,18 +67,18 @@ function renderCertificationTerminal(certification, lang, opts = {}) {
   const r = getCatalog(lang).certify.report;
   const items = Array.isArray(certification && certification.items) ? certification.items : [];
   const lines = [];
-  // issue 123 / ADR-044: the SAME identity gate the footprint report reads.
+  // The SAME identity gate the footprint report reads.
   const gate = opts.gate || DEFAULT_REPORT_GATE;
 
   // Header stands out; disclaimer + cost note are deliberately quiet (dim) so
-  // the per-Skill results below are visually dominant (issue 011 feedback).
+  // the per-Skill results below are visually dominant.
   lines.push(`${C.bold}${C.primary}${r.heading}${C.reset}`);
-  // talents-ai-score, ADR-051: this whole render is now a FALLBACK — reached only when the mandatory interview did not complete.
+  // This whole render is now a FALLBACK — reached only when the mandatory interview did not complete.
   if (opts.noInterview && r.noInterviewNote) lines.push(`${C.bold}${C.warning}${r.noInterviewNote}${C.reset}`);
   lines.push('');
   lines.push(`${C.dim}${r.disclaimer}${C.reset}`);
   lines.push(`${C.dim}${r.costNote}${C.reset}`);
-  // ADR-025 authorship receipt (run-level): repo + commit range + honest note,
+  // Authorship receipt (run-level): repo + commit range + honest note,
   // shown once. Attribution is based on git authorship, NOT cryptographic proof.
   const authorship = (certification && certification.authorship) || null;
   const rc = r.receipt;
@@ -114,10 +114,10 @@ function renderCertificationTerminal(certification, lang, opts = {}) {
       continue;
     }
 
-    // ADR-016: the HEADLINE is the named level (Middle/Senior/Expert) instead of the numeric 0-100 grade.
+    // The HEADLINE is the named level (Middle/Senior/Expert) instead of the numeric 0-100 grade.
     const { key: levelKey } = skillLevelForScore(item.result.score);
     lines.push(`${C.primary}│${C.reset}  ${C.bold}${C.accent}${r.levelLine(skillLevelLabel(levelKey, r))}${C.reset}`);
-    // ADR-024: show the anchored rubric dimensions so the level is explainable.
+    // Show the anchored rubric dimensions so the level is explainable.
     if (item.result.dimensions && r.dimensionsLabel && r.dimensionLabels) {
       lines.push(`${C.primary}│${C.reset}  ${C.bold}${r.dimensionsLabel}:${C.reset}`);
       for (const key of DIMENSION_KEYS) {
@@ -138,7 +138,7 @@ function renderCertificationTerminal(certification, lang, opts = {}) {
       const tag = item.sampling.truncated ? ` ${r.partialTag}` : '';
       lines.push(`${C.primary}│${C.reset}  ${C.dim}${summary}${tag}${C.reset}`);
     }
-    // ADR-025 per-Skill authorship receipt (compact in terminal): attributed
+    // Per-Skill authorship receipt (compact in terminal): attributed
     // file count + the author emails confirmed against the identity.
     if (rc && Array.isArray(item.fileAttribution) && item.fileAttribution.length > 0) {
       const attributed = item.fileAttribution.filter((f) => f.attributed).length;
@@ -151,7 +151,7 @@ function renderCertificationTerminal(certification, lang, opts = {}) {
       }
     }
 
-    // Remediation prompt (issue 011): a clearly delimited copyable block.
+    // Remediation prompt: a clearly delimited copyable block.
     const remediation = gate.showCertifyRemediation ? buildRemediationPrompt(item, lang) : null;
     if (remediation) {
       lines.push(`${C.primary}│${C.reset}`);

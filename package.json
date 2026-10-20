@@ -1,6 +1,7 @@
 {
-  "name": "@shakers/shakers-cli",
-  "version": "0.7.14",
+  "name": "shakers-cli",
+  "private": true,
+  "version": "0.16.0",
   "description": "Shakers AI usage & skills evaluator: a local-first CLI (`shakers` binary) plus a local MCP server. Commands: ai-usage (scan + classify your AI-tool setup, T0-T7), certify (certify Skills from your code), share (branded LinkedIn card).",
   "type": "commonjs",
   "bin": {
@@ -15,9 +16,11 @@
   "scripts": {
     "start": "node bin/shakers.js",
     "shakers": "node bin/shakers.js",
-    "test": "node --test test/*.test.js",
+    "test": "node --require ./test-fixtures/test-env.js --test test/*.test.js",
     "build:mcpb": "sh scripts/build-mcpb.sh",
-    "publish:beta": "node scripts/prepare-beta.js && npm publish --tag latest && git checkout -- package.json"
+    "publish:beta": "node scripts/prepare-beta.js && npm publish --tag latest && git checkout -- package.json README.md",
+    "lint": "oxlint --deny-warnings bin src scripts test test-fixtures",
+    "check:boundaries": "node scripts/check-boundaries.js"
   },
   "engines": {
     "node": ">=18"
@@ -35,8 +38,7 @@
     "certification"
   ],
   "license": "SEE LICENSE IN LICENSE",
-  "publishConfig": {
-    "access": "restricted",
-    "registry": "https://git.shakers.tools/api/v4/projects/201/packages/npm/"
+  "devDependencies": {
+    "oxlint": "1.86.0"
   }
 }

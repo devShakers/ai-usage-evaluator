@@ -2,7 +2,7 @@
 
 const { requestBackend } = require('./backend-request');
 
-// Email-verification client + wait-mode loop (skill-code-certification, ADR-006).
+// Email-verification client + wait-mode loop.
 
 const DEFAULT_TIMEOUT_MS = 15000;
 // Bounded so a Talent who can never produce a matching code can't loop forever — after this many CODE-ENTRY attempts we give up (nothing persisted, asked again next run).
@@ -71,7 +71,7 @@ function classifyVerifyReason(reason) {
 }
 
 // The interactive "modo espera": send a code, then loop reading the pasted code until it verifies, the Talent cancels, or attempts run out.
-// talents-ai-score, ADR-042: `requestUrl`/`verifyUrl` address the ONE backend (the certifications service).
+// `requestUrl`/`verifyUrl` address the ONE backend (the certifications service).
 async function runEmailVerification({
   email,
   ask,
@@ -103,7 +103,7 @@ async function runEmailVerification({
   write(`  ${v.waitHint}\n`);
 
   for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS; ) {
-    // The OTP is a secret too (issue 102): same reader, same echo, and the fix is the same call.
+    // The OTP is a secret too: same reader, same echo, and the fix is the same call.
     const readCode = typeof ask.secret === 'function' ? ask.secret.bind(ask) : ask;
     const raw = String(await readCode(v.codePrompt)).trim();
 

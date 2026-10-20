@@ -13,7 +13,7 @@ const {
   printRoadmap,
 } = require('./terminal-sections');
 
-// talents-ai-score: terminal parity with the HTML report.
+// Terminal parity with the HTML report.
 
 // `lang` ('es'|'en', see src/i18n.js) decides the text catalog.
 function renderTerminal(report, maturity, lang, opts = {}) {
@@ -21,10 +21,10 @@ function renderTerminal(report, maturity, lang, opts = {}) {
   const lines = [];
   const p = (s = '') => lines.push(s);
 
-  // issue 123 / ADR-044: the ONE identity gate.
+  // The ONE identity gate.
   const gate = opts.gate || DEFAULT_REPORT_GATE;
 
-  // ADR-016: Setup Level (S1-S3 / Not certified) replaces the 0-4 band label.
+  // Setup Level (S1-S3 / Not certified) replaces the 0-4 band label.
   const setupKey = (maturity.setupLevel && maturity.setupLevel.key) || 'none';
   const setupLabel = (t.setupLevels && t.setupLevels[setupKey] && t.setupLevels[setupKey].label) || setupKey;
 
@@ -47,7 +47,7 @@ function renderTerminal(report, maturity, lang, opts = {}) {
   sep(p);
   const tierName = (maturity.tierKey && t.tierNames[maturity.tierKey]) || maturity.tierName || '';
   const tierBit = maturity.tierKey ? t.terminal.tierInline(maturity.tierKey, tierName) : '';
-  // This report's ONE headline (dueño, 2026-08-11): the Setup Level IS the evaluation's main result, so it gets `accent` (lime) — and nothing else on this screen does.
+  // This report's ONE headline: the Setup Level IS the evaluation's main result, so it gets `accent` (lime) — and nothing else on this screen does.
   const setupColor = setupKey === 'none' ? c.white : c.accent;
   p(`  ${c.bold}${setupColor}${t.terminal.setupLevel(setupLabel)}${c.reset}${c.muted}${tierBit}${c.reset}`);
   p(`  ${c.primary}${bar(maturity.score)}${c.reset} ${c.dim}${maturity.score}/100${c.reset}`);
@@ -77,7 +77,7 @@ function renderTerminal(report, maturity, lang, opts = {}) {
     }
   }
 
-  // 4b. MCP services (issue 110) — ALWAYS printed, empty state included, because
+  // 4b. MCP services — ALWAYS printed, empty state included, because
   // its absence is a tier criterion the talent needs to know about.
   sep(p);
   printMcpServices(report, t, p);
@@ -105,5 +105,5 @@ function renderTerminal(report, maturity, lang, opts = {}) {
   return lines.join('\n');
 }
 
-// `wrap` is re-exported for its own unit test (issue 087): it is the one piece of the formatting with edge cases worth pinning directly.
+// `wrap` is re-exported for its own unit test: it is the one piece of the formatting with edge cases worth pinning directly.
 module.exports = { renderTerminal, wrap, printAgents };

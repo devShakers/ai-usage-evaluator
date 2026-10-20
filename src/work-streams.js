@@ -4,7 +4,7 @@ const { execFileSync } = require('child_process');
 const { isGitRepo } = require('./git-activity');
 const { takePrefetchedGitLog } = require('./git-log-prefetch');
 
-// Deterministic WORK-STREAM structure for the project where `shakers ai-usage` runs (hybrid evaluation, Slice 2).
+// Deterministic WORK-STREAM structure for the project where `shakers ai-usage` runs.
 
 const GIT_TIMEOUT_MS = 15000;
 const SESSION_GAP_SECONDS = 4 * 3600;

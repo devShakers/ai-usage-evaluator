@@ -49,14 +49,14 @@ function createLineQueueAsk(writeQuestion) {
 
 // `onInterrupt` (optional): a Ctrl-C (SIGINT) handler for a TTY.
 function createStdinAsk({ onInterrupt } = {}) {
-  // `rl` is re-createable (issue 102), not a `const`.
+  // `rl` is re-createable, not a `const`.
   let rl = null;
   let ended = false;
   let suspending = false;
   let currentPrompt = '';
 
   const { ask, pushLine, markEnded, drain } = createLineQueueAsk((question) => {
-    // Long-answer wrap bug (skill-code-certification, certify agents): in a TTY, `readline` runs in terminal mode and redraws the current line on every keystroke (wrap, cursor).
+    // Long-answer wrap bug (certify agents): in a TTY, `readline` runs in terminal mode and redraws the current line on every keystroke (wrap, cursor).
     const text = `  ${question} `;
     const lastNewline = text.lastIndexOf('\n');
     if (lastNewline >= 0) {
@@ -98,7 +98,7 @@ function createStdinAsk({ onInterrupt } = {}) {
     r.close();
     suspending = false;
   }
-  // SECRETS DO NOT ECHO (issue 102).
+  // SECRETS DO NOT ECHO.
   ask.secret = async (question) => {
     if (!canPromptSecretly(process.stdin)) return ask(question);
     process.stdout.write(`  ${question} `);

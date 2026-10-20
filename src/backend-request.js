@@ -5,7 +5,7 @@ const https = require('https');
 const crypto = require('crypto');
 const { getHubBase } = require('./config');
 
-// ONE BACKEND: the certifications service (talents-ai-score, ADR-042).
+// ONE BACKEND: the certifications service.
 
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 
@@ -31,7 +31,7 @@ function profileUpdateSourceHeader(url, method) {
   return { 'X-Profile-Update-Source': clientIdentity };
 }
 
-// Extra request headers, sanitized (talents-ai-score, issue 038 — the agent certification interview needs `Authorization: Bearer <sessionToken>`).
+// Extra request headers, sanitized (the agent certification interview needs `Authorization: Bearer <sessionToken>`).
 const UNSAFE_HEADER_VALUE_RE = /[\r\n\0]/;
 
 function sanitizeExtraHeaders(extraHeaders) {
@@ -183,7 +183,7 @@ async function requestBackend({
     throw Object.assign(new Error('no endpoint configured'), { kind: 'no-endpoint' });
   }
 
-  // Optional trace (talents-ai-score, issue 109).
+  // Optional trace.
   const note = (entry) => {
     if (Array.isArray(trace)) trace.push(entry);
   };

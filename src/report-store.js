@@ -14,8 +14,8 @@ const SCHEMA_VERSION = 2;
 function configDir() {
   return getConfigDir(process.env);
 }
-function statePath() {
-  return path.join(configDir(), 'report-state.json');
+function statePath(env = process.env) {
+  return path.join(getConfigDir(env), 'report-state.json');
 }
 
 // Stable, filesystem-safe per-project file name derived from the absolute path.
@@ -84,7 +84,7 @@ function getOrCreateProject(state, absRoot) {
     };
   }
   // Backward-compat: a project persisted before the two-backend chain
-  // existed (talents-ai-score, ADR-020/021).
+  // existed.
   if (!state.projects[absRoot].backendAcceptance) {
     state.projects[absRoot].backendAcceptance = {};
   }
@@ -98,7 +98,7 @@ function renderProjectHtml(project, lang, gate) {
 }
 
 /* ---------- persist (state only) + materialize (render HTML) ---------- */
-// ADR-016 split: `footprint` and `certify` now PERSIST state only (no HTML file, no printed link).
+// Split: `footprint` and `certify` now PERSIST state only (no HTML file, no printed link).
 
 function stampAndSaveState(state, absRoot) {
   state.schemaVersion = SCHEMA_VERSION;
@@ -179,12 +179,12 @@ function materializeProjectReport({ root, lang }) {
   const state = loadState();
   const project = state.projects[absRoot];
   if (!hasRenderableData(project)) return { hasData: false };
-  // issue 123 / ADR-044: the shareable HTML is gated by identity AT GENERATION TIME — this is the moment the `report` command produces the file, so this is where the gate is resolved.
+  // The shareable HTML is gated by identity AT GENERATION TIME — this is the moment the `report` command produces the file, so this is where the gate is resolved.
   const gate = reportGateForIdentity();
   return { hasData: true, ...writeProjectHtml(project, absRoot, lang, gate) };
 }
 
-// `upsertFootprint` AND `upsertCertification` WERE HERE, and ADR-035 retired them.
+// `upsertFootprint` AND `upsertCertification` WERE HERE, and were retired.
 
 function certKey(item) {
   if (item && item.skillId != null) return `id:${item.skillId}`;

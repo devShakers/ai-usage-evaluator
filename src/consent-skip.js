@@ -1,6 +1,6 @@
 'use strict';
 
-// Explains WHY the consent-to-persist prompt is skipped (or might not complete) this run, instead of doing so silently (talents-ai-score, DX).
+// Explains WHY the consent-to-persist prompt is skipped (or might not complete) this run, instead of doing so silently.
 function computeConsentSkip({ decision, emailVerified, stdinIsTTY, consentFilePath, catalog } = {}) {
   const c = catalog && catalog.consent;
 

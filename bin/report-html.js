@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-// `report` — materializes and OPENS the shareable, cumulative HTML report for the current project (ADR-016).
+// `report` — materializes and OPENS the shareable, cumulative HTML report for the current project.
 
 const { detectReportLang, getCatalog } = require('../src/i18n');
 const { materializeProjectReport } = require('../src/report-store');
@@ -119,7 +119,7 @@ async function run(argv = process.argv.slice(2), { ask } = {}) { // eslint-disab
   const opened = opts.open ? openPath(result.htmlPath) : false;
 
   // Clear "the report was UPDATED" notice (fires once per run — this is the sole
-  // report write point, ADR-016). OSC 8: clickable file:// link where supported.
+  // report write point). OSC 8: clickable file:// link where supported.
   const updatedLabel = lang === 'es' ? 'Report actualizado' : 'Report updated';
   process.stdout.write(`\n  ✓ ${updatedLabel} · ${oscLink(result.fileUrl)}\n`);
   if (opened) process.stdout.write(`  ${r.opening}\n`);

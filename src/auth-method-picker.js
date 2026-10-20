@@ -3,7 +3,7 @@
 const { runInteractiveMultiSelect } = require('./interactive-select');
 const { methodsForFlow, methodLabel } = require('./auth-methods');
 
-// The shared interactive method picker for the CLI (talents-ai-score).
+// The shared interactive method picker for the CLI.
 async function askNumberedChoice(ask, promptText, count) {
   const raw = (await ask(promptText)).trim();
   if (!raw) return null;

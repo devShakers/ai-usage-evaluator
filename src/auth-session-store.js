@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { getConfigDir } = require('./config-dir');
 
-// `~/.config/shakers/auth-session.json` — the logged-in Talent's session (talents-ai-score, issue 122 / ADR-044).
+// `~/.config/shakers/auth-session.json` — the logged-in Talent's session.
 
 // Hub's `UserSubtypeEnum` (shared/domain/enum/user-subtype.enum.ts), copied VERBATIM — this repo never invents a value the wire does not send.
 const PLATFORM_TALENT_USER_TYPES = new Set(['WORKS_TALENT', 'WORKS_PARTNER']);
@@ -89,12 +89,12 @@ function saveAuthSession(session, env = process.env, { fs: fsImpl = fs } = {}) {
   const hubAccessToken = explicitHubToken || (typeof session.accessToken === 'string' && session.accessToken ? session.accessToken : null);
 
   const cookie = typeof session.cookie === 'string' && session.cookie ? session.cookie : null;
+  const sessionToken = typeof session.sessionToken === 'string' && session.sessionToken ? session.sessionToken : null;
   let expiresAt;
   let accessTokenExpiresAt;
-  if (cookie) {
-    expiresAt = (typeof session.cookieExpiresAt === 'string' && session.cookieExpiresAt)
-      ? session.cookieExpiresAt
-      : (typeof session.expiresAt === 'string' && session.expiresAt ? session.expiresAt : null);
+  if (cookie || sessionToken) {
+    expiresAt = [session.cookieExpiresAt, session.sessionExpiresAt, session.expiresAt]
+      .find((v) => typeof v === 'string' && v) || expiresAtFromToken(session.accessToken);
     accessTokenExpiresAt = (typeof session.accessTokenExpiresAt === 'string' && session.accessTokenExpiresAt)
       ? session.accessTokenExpiresAt
       : expiresAtFromToken(session.accessToken);
@@ -109,6 +109,7 @@ function saveAuthSession(session, env = process.env, { fs: fsImpl = fs } = {}) {
       expiresAt: expiresAt ?? null,
       accessTokenExpiresAt: accessTokenExpiresAt ?? null,
       cookie,
+      sessionToken,
       email: (typeof session.email === 'string' && session.email ? session.email : null)
         || emailFromHubToken(hubAccessToken),
       hubAccessToken,
@@ -157,7 +158,8 @@ function loadAuthSession(env = process.env, { fs: fsImpl = fs } = {}) {
   // better-auth) or a JWT (Google/legacy, or an email session whose JWT is cached).
   const hasCookie = typeof parsed.cookie === 'string' && parsed.cookie;
   const hasToken = typeof parsed.accessToken === 'string' && parsed.accessToken;
-  if (!hasCookie && !hasToken) return null;
+  const sessionToken = typeof parsed.sessionToken === 'string' && parsed.sessionToken ? parsed.sessionToken : null;
+  if (!hasCookie && !hasToken && !sessionToken) return null;
   const hubAccessToken = typeof parsed.hubAccessToken === 'string' && parsed.hubAccessToken ? parsed.hubAccessToken : null;
   const email = (typeof parsed.email === 'string' && parsed.email ? parsed.email : null) || emailFromHubToken(hubAccessToken);
   return {
@@ -165,6 +167,7 @@ function loadAuthSession(env = process.env, { fs: fsImpl = fs } = {}) {
     expiresAt: typeof parsed.expiresAt === 'string' ? parsed.expiresAt : null,
     accessTokenExpiresAt: typeof parsed.accessTokenExpiresAt === 'string' ? parsed.accessTokenExpiresAt : null,
     cookie: hasCookie ? parsed.cookie : null,
+    sessionToken,
     email,
     hubAccessToken,
     userType: typeof parsed.userType === 'string' && KNOWN_USER_TYPES.has(parsed.userType) ? parsed.userType : null,
@@ -184,8 +187,8 @@ function clearAuthSession(env = process.env, { fs: fsImpl = fs } = {}) {
 
 // `none | active | expired`, the three states the caller needs to give the Talent a true message.
 function sessionStatus(session, now = Date.now()) {
-  // A credential is either the durable cookie (email) or a JWT (Google/legacy).
-  const hasCred = !!(session && ((typeof session.accessToken === 'string' && session.accessToken) || (typeof session.cookie === 'string' && session.cookie)));
+  // A credential is a durable cookie or session token, or a JWT (Google/legacy).
+  const hasCred = !!(session && [session.accessToken, session.cookie, session.sessionToken].some((v) => typeof v === 'string' && v));
   if (!hasCred) return 'none';
   const expiry = Date.parse(String(session.expiresAt || ''));
   if (!Number.isFinite(expiry)) return 'expired';

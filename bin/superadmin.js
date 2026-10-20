@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-// `superadmin` — NON-PROD, password-authenticated superadmin SESSION (ADR-027, supersedes the ADR-021/022/023 provision/teardown/authorized-authoring flow).
+// `superadmin` — NON-PROD, password-authenticated superadmin SESSION.
 
 const http = require('http');
 const https = require('https');
@@ -94,7 +94,7 @@ async function promptLine(ask, canPrompt, label) {
   return String(await ask(label)).trim();
 }
 
-// The SECRET prompt (issue 102).
+// The SECRET prompt.
 async function promptSecret(ask, canPrompt, label) {
   if (!canPrompt) return '';
   const read = typeof ask.secret === 'function' ? ask.secret.bind(ask) : ask;
@@ -214,7 +214,7 @@ async function run(argv = process.argv.slice(2), { ask: injectedAsk = null, inpu
         return;
       }
       process.stdout.write(`\n  ${c.sessionIntro}\n`);
-      // talents-ai-score, ADR-020/021 (coordinator ruling): superadmin is DELIBERATELY single-hop, PRIMARY (certifications service) ONLY — never hub.
+      // Superadmin is DELIBERATELY single-hop, PRIMARY (certifications service) ONLY — never hub.
       process.stdout.write(`  ${c.queryingPrimary(endpoint)}\n`);
       // Always true (three-way review): the password has NO argv flag anymore, so it must always be collectible — either from a real TTY, the REPL's injected reader, or a piped stdin.
       const password = await promptSecret(ask, true, c.passwordPrompt);
@@ -230,7 +230,7 @@ async function run(argv = process.argv.slice(2), { ask: injectedAsk = null, inpu
   }
 }
 
-// ADR-025 read-only attribution receipt for stored certifications.
+// Read-only attribution receipt for stored certifications.
 async function runInspect({ opts, c, endpoint, password, ask, canPrompt }) {
   const email = await resolveEmailArg(opts, c, ask, canPrompt, c.inspectEmailPrompt);
   if (!password || !email || !isValidEmail(email)) {
@@ -308,7 +308,7 @@ async function resolveEmailArg(opts, c, ask, canPrompt, promptLabel) {
   return null;
 }
 
-// ADR-027: open a superadmin SESSION — validate the password server-side, get a token, persist it locally.
+// Open a superadmin SESSION — validate the password server-side, get a token, persist it locally.
 async function runOpenSession({ opts, c, endpoint, password, ask, canPrompt }) {
   const email = await resolveEmailArg(opts, c, ask, canPrompt, c.emailPrompt);
   if (!password || !email || !isValidEmail(email)) {

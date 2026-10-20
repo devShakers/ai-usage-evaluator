@@ -1,6 +1,6 @@
 'use strict';
 
-// OSC 8 terminal hyperlink helper (talents-ai-score, user request: links were printed as plain text and could NOT be clicked in iTerm2).
+// OSC 8 terminal hyperlink helper (links were printed as plain text and could NOT be clicked in iTerm2).
 
 const OSC = '\x1b]8;;';
 const ST = '\x1b\\';

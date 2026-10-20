@@ -3,7 +3,7 @@
 const { classify } = require('./maturity');
 const { computeTierResult, aggregateTierSignals, computeTier } = require('./tier-engine');
 
-// Where this roadmap leaves you, computed with the REAL engine (issue 084).
+// Where this roadmap leaves you, computed with the REAL engine.
 
 // One entry per TARGET tier: the smallest report-shape changes that satisfy that tier's criterion.
 const AGENTIC_TOOL_ID = 'claude-code';
@@ -42,7 +42,7 @@ const bumpDepth = (field) => (r) => {
   tool.depth[field] = (tool.depth[field] || 0) + 1;
 };
 
-// "Configure one MCP server" needs its own delta, and the reason is a collision worth recording (issue 112 landing after issue 084).
+// "Configure one MCP server" needs its own delta, and the reason is a collision worth recording.
 const addMcpServer = (r) => {
   const tool = ensureDetectedTool(r);
   tool.depth.mcpServers = (tool.depth.mcpServers || 0) + 1;

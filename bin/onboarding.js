@@ -5,6 +5,7 @@ const { detectFlowLang } = require('../src/i18n');
 const { loadAuthSession, sessionStatus } = require('../src/auth-session-store');
 const { createStdinAsk } = require('../src/stdin-ask');
 const { runOnboardingInterview, runRepeatOnboardingInterview, makeDeps } = require('../src/onboarding-flow');
+const { createInterviewClient } = require('../src/interview-client');
 const { checkOnboardingCompleted } = require('../src/onboarding-availability');
 const { makeIo } = require('./register');
 const { c: fmt } = require('../src/terminal-format');
@@ -87,7 +88,7 @@ async function run(
     // Explicit overwrite-repeat: its own warning + confirmation, bypassing the legacy already-completed gate.
     if (o.repeat) {
       const io = makeIo({ ask, lang, out: write, acceptDisclaimer: o.acceptDisclaimer, stdinIsTTY });
-      const result = await runRepeatOnboardingInterview(io, deps || makeDeps(), { confirmed: o.yes });
+      const result = await runRepeatOnboardingInterview(io, deps || makeDeps({ makeInterviewClient: createInterviewClient }), { confirmed: o.yes });
       if (result && result.ok === false) {
         process.stderr.write(`\n  ${red(`onboarding: ${result.reason}`)}\n\n`);
         process.exitCode = 1;
@@ -116,7 +117,7 @@ async function run(
     }
 
     const io = makeIo({ ask, lang, out: write, acceptDisclaimer: o.acceptDisclaimer, stdinIsTTY });
-    const result = await runOnboardingInterview(io, deps || makeDeps());
+    const result = await runOnboardingInterview(io, deps || makeDeps({ makeInterviewClient: createInterviewClient }));
     if (!result.ok) {
       process.stderr.write(`\n  ${red(`onboarding: ${result.reason}${result.step ? ` (${result.step})` : ''}`)}\n\n`);
       process.exitCode = 1;

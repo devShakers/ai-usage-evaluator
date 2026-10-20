@@ -204,6 +204,7 @@ function makeRegisterTools(deps = {}) {
 
   // Creates the interview, joins its room and reads the greeting; `room` lets a timed-out caller close what opened late.
   async function openRoom(args, room) {
+    if (typeof resolved.makeInterviewClient !== 'function') return onWeb('connect', 'livekit-not-installed');
     const start = await flow.createAndStartLivekitOnboarding(resolved, {
       candidateId: args.candidateId,
       language: args.language || lang,

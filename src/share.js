@@ -33,7 +33,7 @@ const {
 
 /* ---------- minimal HTTP utility (no dependencies) ---------- */
 
-// POSTs `body` to the ONE backend (talents-ai-score, ADR-042 — the PRIMARY -> FALLBACK chain is retired), via src/backend-request.js.
+// POSTs `body` to the ONE backend (the PRIMARY -> FALLBACK chain is retired), via src/backend-request.js.
 async function requestJsonBackend(endpoint, body, { timeoutMs = 15000, idempotencyKey = null } = {}) {
   const { status, raw, backend } = await requestBackend({ endpoint, body, timeoutMs, idempotencyKey });
   let json = null;
@@ -53,7 +53,7 @@ async function autoShare(report, maturity, { root, bypassThrottle = false } = {}
   if (!state.email) {
     return { ok: false, skipped: true, reason: 'no-email' };
   }
-  // ADR-006: never SEND under an email whose ownership wasn't proven — every
+  // Never SEND under an email whose ownership wasn't proven — every
   // profile, `external` included (legal requirement), must have verified.
   if (state.emailVerified === false) {
     return { ok: false, skipped: true, reason: 'email-unverified' };
@@ -92,14 +92,14 @@ async function autoShare(report, maturity, { root, bypassThrottle = false } = {}
     return { ok: false, skipped: false, reason: 'rate-limited' };
   }
   if (res.status === 503) {
-    // Generic "service unavailable" from the server (ADR-011 retires the
-    // server-side kill switch that used to be the main 503 cause).
+    // Generic "service unavailable" from the server (the retired
+    // server-side kill switch used to be the main 503 cause).
     return { ok: false, skipped: false, reason: 'service-unavailable' };
   }
   return { ok: false, skipped: false, reason: `http-${res.status}` };
 }
 
-/* ---------- certification persistence (skill-code-certification, issue 005) ---------- */
+/* ---------- certification persistence ---------- */
 
 // Persists the analyzed certification result if (and only if) consent is granted.
 async function shareCertification(items, { repository = null, commitRange = null, toolVersion = null, superadminToken = null, root = null } = {}) {
@@ -112,7 +112,7 @@ async function shareCertification(items, { repository = null, commitRange = null
   if (!state.email) {
     return { ok: false, skipped: true, reason: 'no-email' };
   }
-  // ADR-006 (mirror of autoShare): don't persist under an unverified email.
+  // Don't persist under an unverified email.
   if (state.emailVerified === false) {
     return { ok: false, skipped: true, reason: 'email-unverified' };
   }
@@ -132,7 +132,7 @@ async function shareCertification(items, { repository = null, commitRange = null
 
   let res;
   try {
-    // ADR-027: forward the superadmin session token so the backend stamps test_origin=true (server-authoritative, non-prod only).
+    // Forward the superadmin session token so the backend stamps test_origin=true (server-authoritative, non-prod only).
     const body = { email: state.email, payload };
     if (superadminToken) body.superadminToken = superadminToken;
     // Idempotency-Key (three-way security review, cross-repo): ONE key per

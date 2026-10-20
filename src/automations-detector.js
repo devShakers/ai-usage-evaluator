@@ -5,7 +5,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { getHomeDir } = require('./env-paths');
 
-// Deterministic (no-LLM) automations detector (talents-ai-score, issue 017 / ADR-013-014).
+// Deterministic (no-LLM) automations detector.
 
 const AI_CLI_NAMES = ['claude', 'aider', 'gemini', 'codex'];
 const AI_CLI_RE = new RegExp(`\\b(${AI_CLI_NAMES.join('|')})\\b`, 'i');

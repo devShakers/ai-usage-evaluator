@@ -8,7 +8,7 @@ function normalizeAgentName(name) {
   return String(name || '').trim().toLowerCase().replace(/^[`'"*]+|[`'"*]+$/g, '');
 }
 
-// talents-ai-score, description-always-present (real-browser user feedback): TWO earlier approaches were tried and rejected before this one.
+// TWO earlier approaches were tried and rejected before this one.
 
 function humanizeAgentName(name) {
   const spaced = String(name || '').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -38,9 +38,9 @@ function excerptForCard(text, maxLen = CARD_EXCERPT_MAX_LEN) {
   return `${text.slice(0, maxLen).trim()}…`;
 }
 
-// Every card field that is TALENT-AUTHORED or came OFF THE WIRE, neutralised once, here — issue 055.
+// Every card field that is TALENT-AUTHORED or came OFF THE WIRE, neutralised once, here.
 
-// Every card field that is TALENT-AUTHORED or came OFF THE WIRE, neutralised once, here — issue 055.
+// Every card field that is TALENT-AUTHORED or came OFF THE WIRE, neutralised once, here.
 function sanitizeCardText(v) {
   return typeof v === 'string' ? sanitizeRenderText(v) : v;
 }
@@ -58,7 +58,7 @@ function buildAgentCardTree(report, t) {
   const rawDescByName = new Map(rawDescriptions.map((d) => [normalizeAgentName(d.name), d.description]));
   const byName = new Set(agents.map((a) => a.name));
 
-  // ADR-016 agent evaluation: the ephemeral LLM definition-quality score (+ rationale) keyed by normalized name, and the LOCAL usage count keyed by exact name.
+  // Agent evaluation: the ephemeral LLM definition-quality score (+ rationale) keyed by normalized name, and the LOCAL usage count keyed by exact name.
   const evaluations =
     report.agentEvaluation && Array.isArray(report.agentEvaluation.evaluations)
       ? report.agentEvaluation.evaluations
@@ -111,7 +111,7 @@ function buildAgentCardTree(report, t) {
       symbolicName: sanitizeCardText(synth && synth.symbolicName ? synth.symbolicName : null),
       whatItDoes: sanitizeCardText(whatItDoes),
       tools: sanitizeCardList(tools),
-      // The declared LLM model (issue 089).
+      // The declared LLM model.
       model: sanitizeCardText(a.model),
       aiProduct,
       parent: sanitizeCardText(parentKey),
@@ -120,7 +120,7 @@ function buildAgentCardTree(report, t) {
         ? { ...classification, role: sanitizeCardText(classification.role) }
         : classification,
       improvements: sanitizeCardList(improvements),
-      // Issue 106's provenance rule, applied to the fourth state: ONE field, on the card both surfaces read, so the terminal and the shared report cannot disagree about the same agent.
+      // The provenance rule, applied to the fourth state: ONE field, on the card both surfaces read, so the terminal and the shared report cannot disagree about the same agent.
       evaluationState,
     };
   });

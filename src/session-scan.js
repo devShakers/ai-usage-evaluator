@@ -12,7 +12,7 @@ const {
   parseAiderHistory,
 } = require('./session-normalizers');
 
-// GLOBAL, machine-wide inventory of AI coding-tool SESSIONS (hybrid evaluation, Slice 1).
+// GLOBAL, machine-wide inventory of AI coding-tool SESSIONS.
 
 const MAX_FILES_PER_TOOL = 2000;
 const MAX_BYTES_PER_FILE = 8 * 1024 * 1024;

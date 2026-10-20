@@ -2,7 +2,7 @@
 
 const { execFileSync } = require('child_process');
 
-// Git-derived signals for the "Add project to portfolio" route (talents-ai- score, ADR-059): the remote URL (step 4) and the first/last-commit date range (auto `startDate`/`endDate`).
+// Git-derived signals for the "Add project to portfolio" route: the remote URL (step 4) and the first/last-commit date range (auto `startDate`/`endDate`).
 
 const GIT_TIMEOUT_MS = 15000;
 

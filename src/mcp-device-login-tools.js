@@ -24,6 +24,7 @@ function makeDeviceLoginTools(deps = {}) {
     pollDeviceToken = require('./device-login').pollDeviceToken,
     finalizeDeviceSession = require('./device-login').finalizeDeviceSession,
     appendProviderParam = require('./device-login').appendProviderParam,
+    deviceSessionRecord = require('./device-login').deviceSessionRecord,
     savePendingDevice = require('./device-auth-store').savePendingDevice,
     loadPendingDevice = require('./device-auth-store').loadPendingDevice,
     clearPendingDevice = require('./device-auth-store').clearPendingDevice,
@@ -144,7 +145,7 @@ function makeDeviceLoginTools(deps = {}) {
       return { ok: false, status: 'error', reason: fin.reason };
     }
     try {
-      saveAuthSession({ accessToken: fin.token, hubAccessToken: fin.token, email: res.email || pending.email || null });
+      saveAuthSession(deviceSessionRecord({ token: fin.token, sessionToken: res.accessToken, sessionExpiresIn: res.expiresIn, email: res.email || pending.email || null }));
     } catch {
       clearPendingDevice();
       return { ok: false, status: 'error', reason: 'session-persist-failed' };

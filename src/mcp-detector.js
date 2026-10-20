@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { getHomeDir } = require('./env-paths');
 
-// KEYWORD -> { SERVICE LABEL, CATEGORY } (issue 110).
+// KEYWORD -> { SERVICE LABEL, CATEGORY }.
 const SERVICE_CATALOG = [
   // --- data ---
   { kw: 'postgresql', label: 'Postgres', category: 'data' },
@@ -87,7 +87,7 @@ function serviceForMcpServerName(name) {
   return hit && hit.label ? hit.label : null;
 }
 
-// THE single inventory of MCP config locations (issue 112).
+// THE single inventory of MCP config locations.
 const MCP_CONFIG_LOCATIONS = [
   // --- Claude Code (already read before 112) ---
   { tool: 'claude-code', scope: 'project', keys: ['mcpServers'], confidence: 'high', file: (root) => path.join(root, '.mcp.json') },
@@ -181,7 +181,7 @@ function detectMcpServers(root) {
         // 'project' wins when a server is declared in both: the most specific
         // scope is the honest label for "this repo uses it".
         scope: entry.scopes.has('project') ? 'project' : 'home',
-        // Issue 110: the PRODUCT, derived from the name only. `null` when the
+        // The PRODUCT, derived from the name only. `null` when the
         // name carries none — a state, not a hole.
         service: serviceForMcpServerName(name),
       };

@@ -21,7 +21,7 @@ function aiFluencyHtml(report, lang) {
 
 const TEMPLATE_PATH = path.join(__dirname, 'templates', 'report-sheet.html');
 let _tpl = null;
-// Issue 098: the template's comments are OURS and this document is the one the talent shares, so they are swept here — at load, before any talent data is in the string.
+// The template's comments are OURS and this document is the one the talent shares, so they are swept here — at load, before any talent data is in the string.
 function template() {
   if (_tpl == null) _tpl = stripTemplateComments(fs.readFileSync(TEMPLATE_PATH, 'utf8'));
   return _tpl;
@@ -54,7 +54,7 @@ function tierName(fp, t) {
 
 function bandClass(b) { return b === 'high' ? 'band-high' : b === 'mid' ? 'band-mid' : 'band-low'; }
 
-// Localized Setup Level label from the drawer payload (ADR-016): prefer the
+// Localized Setup Level label from the drawer payload: prefer the
 // i18n `setupLevels` catalog by key, fall back to the label baked into `fp`.
 function setupLabel(fp, t) {
   const key = (fp.setup && fp.setup.key) || 'none';
@@ -65,7 +65,7 @@ function setupLabel(fp, t) {
 function heroHtml(fp, c, t) {
   const rank = (fp.setup && typeof fp.setup.rank === 'number') ? fp.setup.rank : 0;
   const label = setupLabel(fp, t);
-  // Four pips: Not certified + S1/S2/S3, current filled (ADR-016).
+  // Four pips: Not certified + S1/S2/S3, current filled.
   const pills = Array.from({ length: 4 }, (_, i) => `<span class="${i <= rank ? 'on' : ''}"></span>`).join('');
   const chipK = esc(fp.tier.key && fp.tier.key !== 'none' ? fp.tier.key : (fp.setup && fp.setup.code) || '');
   return `<div class="card reveal">
@@ -86,7 +86,7 @@ function heroHtml(fp, c, t) {
   </div>`;
 }
 
-// The Setup Level ladder (ADR-016), with each rung's tiers and short meaning inline — meanings from the localized i18n `setupLevels` catalog (never invented).
+// The Setup Level ladder, with each rung's tiers and short meaning inline — meanings from the localized i18n `setupLevels` catalog (never invented).
 function ladderHtml(fp, c, t) {
   const cur = (fp.setup && typeof fp.setup.rank === 'number') ? fp.setup.rank : 0;
   const catalog = (t && t.setupLevels) || {};
@@ -111,7 +111,7 @@ function chipsCard(title, sub, items, withDot) {
   return `<div class="card reveal"><h3>${esc(title)}</h3><p class="sub">${esc(sub)}</p><div class="chips">${body}</div></div>`;
 }
 
-// MCP SERVICES (issue 110).
+// MCP SERVICES.
 function mcpCard(mcp, c) {
   const services = (mcp && Array.isArray(mcp.services) ? mcp.services : []);
   const unidentified = (mcp && typeof mcp.unidentified === 'number') ? mcp.unidentified : 0;
@@ -129,17 +129,17 @@ function mcpCard(mcp, c) {
   return `<div class="card reveal"><h3>${esc(c.mcpT)}</h3><p class="sub">${esc(c.mcpS)}</p><div class="chips">${chips}</div>${note}</div>`;
 }
 
-// DETECTED AGENTS, left column (issue 089).
+// DETECTED AGENTS, left column.
 function agentRow(a, c, t) {
   const cats = (t.classification && t.classification.categories) || {};
   const model = a.model ? `<span class="model">${esc(a.model)}</span>` : `<span class="model" style="opacity:.6">${esc(c.agentNoModel)}</span>`;
   // The category is the agent → catalog-seed association (per agent), not the Talent's tier.
   const catLabel = a.category ? (cats[a.category] || sanitizeRenderText(a.category)) : null;
   // ONE COLOUR PER CATEGORY (user request), and THREE distinct facts, not two: - a known catalog category -> its own colour token (`.cat-developer` …).
-  // FOUR facts now, not three (issue 120).
+  // FOUR facts now, not three.
   const coloured = !!(a.category && cats[a.category] && !isFloorCategory(a.category));
   const catClass = coloured ? `cat cat-${a.category}` : 'cat cat-none';
-  // Issue 106: the empty badge says WHICH kind of empty it is.
+  // The empty badge says WHICH kind of empty it is.
   const cls = t.classification || {};
   const emptyLabel = a.evaluationState === 'omitted'
     ? cls.agentEvalOmitted
@@ -163,7 +163,7 @@ function agentRow(a, c, t) {
 
 function agentsCard(agents, c, t) {
   const list = Array.isArray(agents) ? agents : [];
-  // SAID ONCE, VISIBLY (issue 106): if nobody was evaluated, the reason the badges are empty is that the run could not classify, not that the agents have no category.
+  // SAID ONCE, VISIBLY: if nobody was evaluated, the reason the badges are empty is that the run could not classify, not that the agents have no category.
   const noneEvaluated = list.length > 0 && list.every((a) => a.evaluated === false);
   // AND THE PARTIAL RUN, NAMED (2026-08-03).
   const omitted = list.filter((a) => a.evaluationState === 'omitted').map((a) => a.name);
@@ -196,7 +196,7 @@ function renderSheet(project, lang, gate = DEFAULT_REPORT_GATE) {
   const t = getCatalog(L);
   const c = t.sheet;
   const hasFoot = !!(project && project.footprint && project.footprint.report);
-  // `t` is passed now (issue 089): the drawer's agent rows use the catalog for the
+  // `t` is passed now: the drawer's agent rows use the catalog for the
   // description fallback and nothing else — it stays optional for the graph report.
   const fp = hasFoot ? buildFootprintDrawer(project.footprint.report, project.footprint.maturity, t) : null;
   // buildCertsPayload returns null when the project has no Skill certs — the sheet still renders both columns, so normalize to an empty list (clean state).

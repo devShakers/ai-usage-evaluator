@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { getHomeDir } = require('./env-paths');
 
-// Deterministic (no-LLM) memory STRUCTURE detector (talents-ai-score, issue 016 / ADR-013-014).
+// Deterministic (no-LLM) memory STRUCTURE detector.
 
 const MAX_FILE_BYTES = 2_000_000; // safety cap: never read a pathologically huge file
 const MAX_IMPORT_DEPTH = 5; // mirrors Claude Code's own documented import-hop limit

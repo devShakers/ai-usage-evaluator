@@ -2,7 +2,7 @@
 
 const path = require('path');
 
-// Directory names never descended into when walking a project tree (skill-code-certification, issue 008).
+// Directory names never descended into when walking a project tree.
 const EXCLUDED_DIRS = new Set([
   'node_modules', 'dist', 'build', '.git', 'vendor', 'coverage', '.next', 'out',
   // Python

@@ -2,12 +2,12 @@
 
 const { postJsonWithTimeout, postMultipartWithTimeout } = require('./backend-request');
 
-// Hub calls of the MCP sign-up (ticket 39540): public sign-up + claim code, the signed-in talent's import status, and the one-time web login token.
+// Hub calls of the MCP sign-up: public sign-up + claim code, the signed-in talent's import status, and the one-time web login token.
 
 const SIGNUP_TIMEOUT_MS = 60000;
 const DEFAULT_TIMEOUT_MS = 15000;
 
-// Hub's coded errors on the sign-up, verified against the works-ai exception filter (hub MR !2198); none says whether an account exists.
+// Hub's coded errors on the sign-up; none says whether an account exists.
 const CODE_TO_REASON = {
   MISSING_SOURCE: 'missing-source',
   INVALID_CV: 'invalid-cv',

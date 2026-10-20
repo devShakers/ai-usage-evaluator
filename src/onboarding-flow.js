@@ -168,7 +168,7 @@ function normalizeAmount(value) {
   return cents / 100;
 }
 
-// Pricing input (ADR-024).
+// Pricing input.
 function validatePricing(input = {}) {
   const fullSelected = input.fullTimeSelected === true;
   const partSelected = input.partTimeSelected === true;
@@ -212,7 +212,7 @@ function buildPricingUpsert({ fullSelected, fullAmount, fullCurrency, partSelect
   };
 }
 
-// Availability + location (ADR-028).
+// Availability + location.
 function validateAvailability(input = {}) {
   const body = { confirmed: true };
   if (typeof input.available === 'boolean') body.available = input.available;
@@ -299,7 +299,6 @@ function makeDeps(overrides = {}) {
     runMainRoleStep: require('./roles-flow').runOnboardingMainRoleStep,
     makeRolesDeps: require('./roles-flow').makeRolesDeps,
     requestDiscoveredInventory: inventory.requestDiscoveredInventory,
-    makeInterviewClient: (opts) => new (require('./interview-client').InterviewClient)(opts),
     // Used by reattachConsentIdentity (A) to re-anchor the ingest identity.
     recordConsent: require('./share-consent-state').recordConsent,
     ...overrides,
@@ -371,7 +370,7 @@ async function establishSessionFromCredentials(deps, { email, password } = {}) {
 
 // Register a talent via a social provider (device flow, RFC 8628); a live session results either way.
 async function registerWithSocialAccount(deps, { provider = 'google', freelanceType, language } = {}, { openBrowser, onAuthUrl } = {}) {
-  const { appendProviderParam } = require('./device-login');
+  const { appendProviderParam, deviceSessionRecord } = require('./device-login');
   const authorizeEndpoint = deps.getDeviceAuthorizeEndpoint();
   const tokenEndpoint = deps.getDeviceTokenEndpoint();
   const authTokenEndpoint = typeof deps.getAuthTokenEndpoint === 'function' ? deps.getAuthTokenEndpoint() : null;
@@ -397,13 +396,8 @@ async function registerWithSocialAccount(deps, { provider = 'google', freelanceT
   );
   if (!result.ok) return { ok: false, reason: result.reason || 'register-failed' };
 
-  // Persist the API JWT the exchange minted (no cookie), like the retired Google flow did.
   try {
-    deps.saveAuthSession({
-      accessToken: result.token,
-      hubAccessToken: result.token,
-      email: result.email || null,
-    });
+    deps.saveAuthSession(deviceSessionRecord(result));
   } catch {
     return { ok: false, reason: 'session-persist-failed' };
   }
@@ -698,6 +692,12 @@ async function runOnboarding(io, deps = makeDeps(), { method = 'email', openBrow
   funnel.completed('start');
   io.section(c.signupTitle);
   funnel.viewed('account_creation');
+  funnel.flush();
+  const accountFailed = (reason) => {
+    funnel.errored('account_creation', reason);
+    funnel.flush();
+    return { ok: false, reason, step: 'signup' };
+  };
 
   if (method === 'google' || method === 'linkedin') {
     // The provider supplies name/email; freelanceType is derived later from work situation.
@@ -709,7 +709,7 @@ async function runOnboarding(io, deps = makeDeps(), { method = 'email', openBrow
     );
     if (!reg.ok) {
       io.error(c.signupError);
-      return { ok: false, reason: reg.reason, step: 'signup' };
+      return accountFailed(reg.reason);
     }
     funnel.completed('account_creation', { auth_method: method, is_returning_account: reg.kind === 'account-already-exists' });
     funnel.identified();
@@ -721,23 +721,23 @@ async function runOnboarding(io, deps = makeDeps(), { method = 'email', openBrow
     notifyOk(io, c.accountReady);
   } else {
     const account = await io.askSignUp(c);
-    if (!account || !account.email) return { ok: false, reason: 'missing-fields', step: 'signup' };
+    if (!account || !account.email) return accountFailed('missing-fields');
     if (!isAcceptablePassword(account.password)) {
       io.error(c.weakPassword);
-      return { ok: false, reason: 'weak-password', step: 'signup' };
+      return accountFailed('weak-password');
     }
 
     const su = await signUp(deps, { ...account, preferredLanguage: account.preferredLanguage || io.lang });
     if (!su.ok) {
       io.error(su.message || c.signupError);
-      return { ok: false, reason: su.reason, step: 'signup' };
+      return accountFailed(su.reason);
     }
 
     if (su.accountExists) {
       // Existing account: sign them in, then STOP — no wizard re-run.
       io.warn(c.accountExists);
       const logged = await io.login(account.email);
-      if (!logged) return { ok: false, reason: 'login-failed', step: 'signup' };
+      if (!logged) return accountFailed('login-failed');
       funnel.completed('account_creation', { auth_method: 'email', is_returning_account: true });
       funnel.identified();
       return { ok: true, alreadyRegistered: true };
@@ -745,7 +745,7 @@ async function runOnboarding(io, deps = makeDeps(), { method = 'email', openBrow
     const sess = await establishSessionFromCredentials(deps, { email: account.email, password: account.password });
     if (!sess.ok) {
       io.error(c.sessionError);
-      return { ok: false, reason: sess.reason, step: 'signup' };
+      return accountFailed(sess.reason);
     }
     funnel.completed('account_creation', { auth_method: 'email', is_returning_account: false });
     funnel.identified();

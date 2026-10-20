@@ -163,7 +163,7 @@ function aggregateFootprint(paths) {
   return { bytes, files };
 }
 
-// Recency = ONLY mtime of already-detected config files/dirs (ADR-003); never reads
+// Recency = ONLY mtime of already-detected config files/dirs; never reads
 // log/history content.
 
 function latestMtime(paths) {
@@ -317,8 +317,8 @@ const probes = {
   }),
 };
 
-// Agent org-chart counts (ADR-009): deterministic, structure+names only. PROJECT ∪ HOME
-// per ADR-014, since the tier engine's T6 (`agents >= 2`) needs the full picture.
+// Agent org-chart counts: deterministic, structure+names only. PROJECT ∪ HOME
+// since the tier engine's T6 (`agents >= 2`) needs the full picture.
 
 function agentOrgChartCounts(root, agentsCount, mcp) {
   const home = getHomeDir();
@@ -330,7 +330,7 @@ function agentOrgChartCounts(root, agentsCount, mcp) {
     commands:
       countFiles(path.join(root, '.claude', 'commands'), '.md') +
       countFiles(path.join(home, '.claude', 'commands'), '.md'),
-    // Issue 112: the third copy of the MCP paths lived here.
+    // The third copy of the MCP paths lived here.
     mcpServers: (mcp && typeof mcp.total === 'number' ? mcp.total : 0),
     hooks:
       countJsonKeys(path.join(root, '.claude', 'settings.json'), 'hooks') +
@@ -342,7 +342,7 @@ function agentOrgChartCounts(root, agentsCount, mcp) {
 
 function scan(options = {}) {
   const root = options.root || process.cwd();
-  // MCP detection runs FIRST (issue 112), because the per-tool depth probes now read their `mcpServers` count from it.
+  // MCP detection runs FIRST, because the per-tool depth probes now read their `mcpServers` count from it.
   const mcp = detectMcpServers(root);
   const scanCtx = { mcp };
 
@@ -366,7 +366,7 @@ function scan(options = {}) {
       // Config footprint: ONLY the aggregated size in bytes and file count, never paths or names.
       footprint: null,
       // Recency: ONLY the date derived from the most recent mtime among its
-      // already-detected config files (ADR-003). Never content, logs or history.
+      // already-detected config files. Never content, logs or history.
       recency: { lastModified: null, daysSinceModified: null, bucket: null },
       // Version: only if the tool was detected via a binary on PATH; runs
       // THAT already-detected binary, with `--version` only.
@@ -397,7 +397,7 @@ function scan(options = {}) {
 
   const detectedTools = tools.filter((t) => t.detected);
 
-  // Deterministic (no-LLM) agent org chart (ADR-009): structure + names
+  // Deterministic (no-LLM) agent org chart: structure + names
   // only (name, wired tools, model, hierarchy). Never descriptions/prompts.
   const agents = parseAgentOrgChart(root);
 
@@ -405,7 +405,7 @@ function scan(options = {}) {
 
   const rawDependencyNames = detectRawDependencyNames(root);
 
-  // Deterministic (no-LLM) memory STRUCTURE (talents-ai-score, issue 016 / ADR-013-014): import count, nesting depth, sections, size — from known context files (project ∪ home).
+  // Deterministic (no-LLM) memory STRUCTURE: import count, nesting depth, sections, size — from known context files (project ∪ home).
   const memory = analyzeMemoryStructure(root);
 
   const automations = detectAutomations(root);
@@ -436,19 +436,19 @@ function scan(options = {}) {
       categories: [...new Set(detectedTools.map((t) => t.category))],
     },
     tools,
-    // Agent org chart (ADR-009): structure + names only, never content.
+    // Agent org chart: structure + names only, never content.
     agents,
     agentCounts: agentOrgChartCounts(root, agents.length, mcp),
     // Projects where each detected AI tool has been used (skill-code-
-    // Project technologies (ADR-012): dependency manifest names only.
+    // Project technologies: dependency manifest names only.
     technologies,
-    // MCP servers by name/category (issue 015): never the raw config.
+    // MCP servers by name/category: never the raw config.
     mcp,
-    // Memory structure (issue 016): imports/nesting/sections/size, never text.
+    // Memory structure: imports/nesting/sections/size, never text.
     memory,
-    // Automations (issue 017): script/scheduler signals, never raw content.
+    // Automations: script/scheduler signals, never raw content.
     automations,
-    // Browser tools (issue 018): composition over technologies + mcp.
+    // Browser tools: composition over technologies + mcp.
     browserTools,
   };
 }

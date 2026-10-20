@@ -2,9 +2,10 @@
 
 const { postJsonWithTimeout, extractSetCookie } = require('./backend-request');
 
-// Login / token acquisition against the Hub's better-auth email engine (owner decision, supersedes ADR-031 for the email path).
+// Login / token acquisition against the Hub's better-auth email engine.
 
 const DEFAULT_TIMEOUT_MS = 20000;
+const SIGN_OUT_TIMEOUT_MS = 3000;
 const SESSION_COOKIE_NAME = 'better-auth.session_token';
 // Refresh the cookie session's own validity from the Set-Cookie Max-Age; fall
 // back to 7 days (better-auth's default) when the attribute is absent.
@@ -88,12 +89,13 @@ function normalizeSignIn(status, raw, headers) {
 }
 
 // Mints a hub JWT from a better-auth session cookie: `GET {tokenEndpoint}` with the `Cookie` header.
-async function requestAuthToken({ cookie } = {}, { endpoint, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+async function requestAuthToken({ cookie, sessionToken } = {}, { endpoint, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   if (!endpoint) return { ok: false, reason: 'no-endpoint' };
-  if (!cookie) return { ok: false, reason: 'no-cookie' };
+  if (!cookie && !sessionToken) return { ok: false, reason: 'no-cookie' };
+  const credential = cookie ? { Cookie: cookie } : { Authorization: `Bearer ${sessionToken}` };
   let res;
   try {
-    res = await postJsonWithTimeout(endpoint, null, timeoutMs, 'GET', null, { Cookie: cookie });
+    res = await postJsonWithTimeout(endpoint, null, timeoutMs, 'GET', null, credential);
   } catch (e) {
     return { ok: false, reason: (e && e.kind) || 'network-error' };
   }
@@ -133,7 +135,19 @@ async function requestLogin(
   };
 }
 
+async function requestSignOut({ cookie, sessionToken } = {}, { endpoint, origin = null, timeoutMs = SIGN_OUT_TIMEOUT_MS } = {}) {
+  if (!endpoint || (!cookie && !sessionToken)) return { ok: false, reason: 'no-credential' };
+  const credential = cookie ? { Cookie: cookie, ...(origin ? { Origin: origin } : {}) } : { Authorization: `Bearer ${sessionToken}` };
+  try {
+    const res = await postJsonWithTimeout(endpoint, {}, timeoutMs, 'POST', null, credential);
+    return { ok: res.status >= 200 && res.status < 300, status: res.status };
+  } catch (e) {
+    return { ok: false, reason: (e && e.kind) || 'network-error' };
+  }
+}
+
 module.exports = {
+  requestSignOut,
   requestLogin,
   requestAuthToken,
   normalizeSignIn,

@@ -1,6 +1,6 @@
 'use strict';
 
-// THE AGENT-CATEGORY VOCABULARY, AND WHICH OF IT IS A SPECIALITY (issue 120).
+// THE AGENT-CATEGORY VOCABULARY, AND WHICH OF IT IS A SPECIALITY.
 
 /** The floor category key, as the service's catalog defines it (`other-1`'s category). */
 const FLOOR_CATEGORY = 'other';

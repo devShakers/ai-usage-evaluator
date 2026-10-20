@@ -3,7 +3,7 @@
 const os = require('os');
 const path = require('path');
 const { scrubSecrets } = require('./agent-synthesis');
-const { loadAuthSession } = require('./auth-session-store');
+const { loadAuthSession, decodeJwtPayload } = require('./auth-session-store');
 const { getCertsBase } = require('./config');
 const { postJsonWithTimeout } = require('./backend-request');
 
@@ -46,6 +46,11 @@ function machineHint() {
   return { osUser, hostname };
 }
 
+function jwtExpired(token, now) {
+  const payload = decodeJwtPayload(token);
+  return !!payload && typeof payload.exp === 'number' && payload.exp * 1000 <= now;
+}
+
 // Builds the record + headers; returns null when there is no endpoint to post to.
 function buildAudit(command, argv, env) {
   let base;
@@ -57,10 +62,8 @@ function buildAudit(command, argv, env) {
   if (!base) return null;
 
   const session = loadAuthSession(env);
-  const token =
-    session && (session.accessToken || session.hubAccessToken)
-      ? session.accessToken || session.hubAccessToken
-      : null;
+  const stored = (session && (session.accessToken || session.hubAccessToken)) || null;
+  const token = stored && !jwtExpired(stored, Date.now()) ? stored : null;
 
   const body = {
     command: String(command || 'unknown').slice(0, 100),

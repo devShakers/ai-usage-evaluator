@@ -9,7 +9,7 @@ const { runInteractiveMultiSelect } = require('./interactive-select');
 const { loadAuthSession, sessionStatus } = require('./auth-session-store');
 const { styleSuccess } = require('./ansi');
 
-// `start`'s "Añadir skills" route (talents-ai-score, ADR-054/055).
+// `start`'s "Añadir skills" route.
 
 // Maps a technical failure reason to the localized `start.errorReason` copy.
 function reasonCopy(reason, c) {
@@ -255,6 +255,6 @@ module.exports = {
   declareAll,
   printProfileBoost,
   offerRelateToPortfolios,
-  // Exported for src/start-add-agents.js's own relate step (ADR-041): the multi-select over the Talent's portfolios, reused verbatim.
+  // Exported for src/start-add-agents.js's own relate step: the multi-select over the Talent's portfolios, reused verbatim.
   pickPortfolios,
 };

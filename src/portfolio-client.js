@@ -3,7 +3,7 @@
 const { postJsonWithTimeout, postMultipartWithTimeout } = require('./backend-request');
 const { reasonForError, WORKS_CODE_TO_REASON } = require('./skills-client');
 
-// Talent-portfolio client (talents-ai-score, ADR-059 — `start`'s "Add project to portfolio" route, src/start-add-portfolio.js).
+// Talent-portfolio client (`start`'s "Add project to portfolio" route, src/start-add-portfolio.js).
 
 const DEFAULT_TIMEOUT_MS = 20000;
 
@@ -155,10 +155,20 @@ async function requestUpdatePortfolioSkills(
   return { ok: true };
 }
 
+function normalizeDomain(raw) {
+  let s = String(raw || '').trim().toLowerCase();
+  if (!s) return '';
+  s = s.replace(/^https?:\/\//, '');
+  s = s.split('/')[0].split('?')[0].split('#')[0];
+  s = s.replace(/^www\./, '');
+  return s;
+}
+
 module.exports = {
   requestListPortfolios,
   requestDeclarePortfolio,
   requestDraftDescription,
   requestUpdatePortfolioSkills,
   WORKS_CODE_TO_REASON,
+  normalizeDomain,
 };

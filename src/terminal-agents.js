@@ -1,6 +1,6 @@
 'use strict';
 
-// The agents + activity blocks of the terminal report, extracted from src/render-terminal.js (structure refactor, issue 020).
+// The agents + activity blocks of the terminal report, extracted from src/render-terminal.js.
 
 const { label } = require('./i18n');
 const { buildAgentCardTree } = require('./render-html');
@@ -11,7 +11,7 @@ const { DEFAULT_REPORT_GATE } = require('./report-gating');
 const { c, wrap, summarize } = require('./terminal-format');
 const { detectedToolNames } = require('./detected-tools');
 
-// agents (ADR-016: one line per agent) As SIMPLE as possible: ONE line per agent.
+// agents: As SIMPLE as possible: ONE line per agent.
 
 // AI product (from the source, e.g. Claude Code) shown in place of the LLM model.
 function agentProductLabel(card, t) {
@@ -24,7 +24,7 @@ function agentLine(card, depth, t) {
   const indent = '  '.repeat(depth);
   // Root = a filled bullet; every deeper level = that many stacked down-arrows.
   const marker = depth === 0 ? `${c.success}●${c.reset}` : `${c.primary}${'↓'.repeat(depth)}${c.reset}`;
-  // card.symbolicName is agent-synthesis (LLM, ADR-010) content; card.name is
+  // card.symbolicName is agent-synthesis (LLM) content; card.name is
   // the local, deterministic agent id — only the former needs stripping.
   const title = card.symbolicName
     ? `${sanitizeRenderText(card.symbolicName)} ${c.muted}(${card.name})${c.reset}`
@@ -67,7 +67,7 @@ function agentClassLine(card, depth, t) {
   const catLabel = (category && cc.categories[category]) || sanitizeRenderText(category);
   const levelLabel = (level && cc.levels[level]) || sanitizeRenderText(level);
   const bits = [];
-  // The FLOOR category is dimmed, not accented (issue 120).
+  // The FLOOR category is dimmed, not accented.
   const floor = isFloorCategory(category);
   if (catLabel) {
     bits.push(floor ? `${c.dim}${catLabel}${c.reset}` : `${c.primary}${catLabel}${c.reset}`);
@@ -127,7 +127,7 @@ function printActivity(report, t, p) {
       `  ${c.success}●${c.reset} ${a.workStreams(w.streamCount, w.multiDayStreams, w.maxStreamSpanDays)}`,
     );
   }
-  // Traction (ADR-039): recency-windowed signals from the local scan; agentsOnProfile
+  // Traction: recency-windowed signals from the local scan; agentsOnProfile
   // is hub-only, shown only when the ai-profile preview has already been fetched.
   const tr = tractionParts(report, s, a);
   if (tr.length) p(`  ${c.success}●${c.reset} ${a.tractionLabel}: ${tr.join(' · ')}`);
@@ -157,7 +157,7 @@ function printAgents(report, t, p, gate = DEFAULT_REPORT_GATE) {
     p();
     return;
   }
-  // THE ROOT THE AGENTS HANG FROM (issue 086 — restored, not invented).
+  // THE ROOT THE AGENTS HANG FROM (restored, not invented).
   p(`  ${c.muted}${label(t.html.orchestratorLabel, 'Orchestrator')}${c.reset}`);
   const visited = new Set();
   const walk = (card, depth) => {
@@ -187,11 +187,11 @@ function printAgents(report, t, p, gate = DEFAULT_REPORT_GATE) {
     const names = [...omittedNames].map(sanitizeRenderText).join(', ');
     for (const line of wrap(t.classification.agentsEvalPartial(names, omittedNames.size))) p(`  ${c.dim}${line}${c.reset}`);
   }
-  // THE CASE THAT SAID NOTHING AT ALL (issue 116).
+  // THE CASE THAT SAID NOTHING AT ALL.
   if (callFailed(report, MODEL_CALL.EVALUATION)) {
     const detected = Array.isArray(report.agents) ? report.agents.length : 0;
     const cls = t.classification;
-    // FOUR outcomes, because they ask the talent to do different things — and ADR-042 is what made three of them distinguishable at all.
+    // FOUR outcomes, because they ask the talent to do different things.
     const record = modelCall(report, MODEL_CALL.EVALUATION);
     const reason = record && record.reason;
     let notice;

@@ -20,7 +20,7 @@ async function hasUsableSession(env = process.env, deps = {}) {
 
   const session = load(env);
   if (sessionStatus(session, now) === 'active') return true;
-  if (!session || !session.cookie) return false;
+  if (!session || (!session.cookie && !session.sessionToken)) return false;
 
   let refreshed = null;
   try { refreshed = await refresh(env, { now }); } catch { refreshed = null; }

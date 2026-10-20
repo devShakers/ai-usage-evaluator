@@ -24,10 +24,10 @@ function buildCertsPayload(project, lang) {
     .filter(Boolean)
     .map((item) => {
       const res = item.result || {};
-      // `skillName` and `technology` both come off the wire (the service's certifiable list / verdict), and `technology` was one of the two fields issue 055 was opened for.
+      // `skillName` and `technology` both come off the wire (the service's certifiable list / verdict).
       const base = sanitizeRenderText(item.skillName) || (item.skillId != null ? String(item.skillId) : 'Skill');
       const name = item.technology ? `${base} · ${sanitizeRenderText(item.technology)}` : base;
-      // ADR-016: named level (Middle/Senior/Expert) instead of the numeric grade.
+      // Named level (Middle/Senior/Expert) instead of the numeric grade.
       const skillReport = (t.certify && t.certify.report) || {};
       const skillLevelNames = skillReport.skillLevels || {};
       const { key: levelKey, band } = levelInfoFromCombinedLevel(res.combinedLevel) || skillLevelForScore(res.score);
@@ -36,7 +36,7 @@ function buildCertsPayload(project, lang) {
         band, // retained for the badge colour (unchanged palette)
         levelKey,
         levelName: levelKey ? (skillLevelNames[levelKey] || levelKey) : (skillLevelNames.na || '—'),
-        // Model-written text off the wire; sanitised (issue 055 — left raw by 052).
+        // Model-written text off the wire; sanitised.
         rationale: typeof res.rationale === 'string' ? sanitizeRenderText(res.rationale) : '',
         improvements: Array.isArray(res.improvements)
           ? res.improvements.map((i) => (typeof i === 'string' ? sanitizeRenderText(i) : i))

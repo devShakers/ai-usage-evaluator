@@ -95,7 +95,7 @@ async function runDeviceLogin(
         timeoutMs,
       });
       if (!fin.ok) return { ok: false, reason: fin.reason };
-      return { ok: true, token: fin.token, sessionToken: res.accessToken, isNewUser: res.isNewUser, email: res.email || null };
+      return { ok: true, token: fin.token, sessionToken: res.accessToken, sessionExpiresIn: res.expiresIn, isNewUser: res.isNewUser, email: res.email || null };
     }
     if (res.status === 'pending') continue;
     if (res.status === 'slow_down') {
@@ -108,7 +108,18 @@ async function runDeviceLogin(
   }
 }
 
+function deviceSessionRecord({ token, sessionToken = null, sessionExpiresIn = null, email = null }, now = Date.now()) {
+  return {
+    accessToken: token,
+    hubAccessToken: token,
+    sessionToken: sessionToken || null,
+    sessionExpiresAt: sessionExpiresIn ? new Date(now + sessionExpiresIn * 1000).toISOString() : null,
+    email: email || null,
+  };
+}
+
 module.exports = {
+  deviceSessionRecord,
   startDeviceLogin,
   pollDeviceToken,
   finalizeDeviceSession,

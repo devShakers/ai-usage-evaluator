@@ -5,7 +5,7 @@ const path = require('path');
 const { readEnv } = require('./env-paths');
 const { getConfigDir } = require('./config-dir');
 
-// Persistent CLI config file (skill-code-certification, endpoint-config task).
+// Persistent CLI config file.
 function configDir(env = process.env) {
   return getConfigDir(env);
 }
@@ -23,7 +23,7 @@ function loadConfigFile(env = process.env) {
   }
 }
 
-// DISTRIBUTION PROFILE (talents-ai-score, ADR-058 fase 1).
+// DISTRIBUTION PROFILE.
 const VALID_PROFILES = new Set(['external', 'talent']);
 const PROFILE_DEFAULT_WHEN_ABSENT = 'talent';
 
@@ -48,7 +48,7 @@ function getUiLang(env = process.env) {
   return null;
 }
 
-// config.json holds the superadmin session token (ADR-027) and consent/ endpoint data, so it must never be briefly world/group-readable.
+// config.json holds the superadmin session token and consent/ endpoint data, so it must never be briefly world/group-readable.
 function saveConfigFile(config, env = process.env) {
   const dir = configDir(env);
   fs.mkdirSync(dir, { recursive: true });
@@ -56,7 +56,7 @@ function saveConfigFile(config, env = process.env) {
   try { fs.chmodSync(configFilePath(env), 0o600); } catch { /* e.g. Windows */ }
 }
 
-// Endpoint safety (skill-code-certification, endpoint-config task) — BOUNDED.
+// Endpoint safety — BOUNDED.
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 const SHAKERS_CLI_DOMAINS = [];
 
@@ -120,7 +120,7 @@ function resolveIngestEndpoint(env = process.env) {
   return { endpoint: null, source: 'none' };
 }
 
-// Baked backend targets per distribution flavor (talents-ai-score, ADR-007/065).
+// Baked backend targets per distribution flavor.
 // Only the DEFAULT bases; per-endpoint SHAKERS_CLI_* env and config.json overrides
 // still win at each getter (env > config.json > baked profile).
 const ENV_PROFILES = {
@@ -130,16 +130,11 @@ const ENV_PROFILES = {
     profileUrl: 'https://app.shakersworks.com/login',
     almaBase: 'https://app.shakersworks.com',
   },
-  staging: {
-    certsBase: 'https://api.staging.certifications.shakersworks.com/api/v1',
-    hubBase: 'https://api.hub.staging.shakersworks.com/api/v1',
-    profileUrl: 'https://works.staging.shakersworks.com/login',
-    almaBase: 'https://works.staging.shakersworks.com',
-  },
   dev: {
     certsBase: 'https://api.dev.certifications.shakersworks.com/api/v1',
-    hubBase: 'https://api.hub.new-works.dev.shakersworks.com/api/v1',
-    profileUrl: 'https://works.new-works.dev.shakersworks.com/login',
+    hubBase: 'https://api.hub.dev.shakersworks.com/api/v1',
+    profileUrl: 'https://works.dev.shakersworks.com/login',
+    almaBase: 'https://works.dev.shakersworks.com',
   },
   local: {
     certsBase: 'http://localhost:3004/api/v1',
@@ -148,23 +143,73 @@ const ENV_PROFILES = {
   },
 };
 
+const RETIRED_ENV_PROFILES = {
+  staging: {
+    certsBase: 'https://api.staging.certifications.shakersworks.com/api/v1',
+    hubBase: 'https://api.hub.staging.shakersworks.com/api/v1',
+    profileUrl: 'https://works.staging.shakersworks.com/login',
+    almaBase: 'https://works.staging.shakersworks.com',
+  },
+  'dev-new-works': {
+    hubBase: 'https://api.hub.new-works.dev.shakersworks.com/api/v1',
+    profileUrl: 'https://works.new-works.dev.shakersworks.com/login',
+    almaBase: 'https://works.new-works.dev.shakersworks.com',
+  },
+};
+
 // Which flavor is baked: SHAKERS_CLI_ENV override wins, else derived from the
-// published package name (public -> prod, beta -> staging, private -> dev), else dev (safe default).
-const PACKAGE_NAME_ENV = { 'shakers-cli': 'prod', 'shakers-cli-beta': 'staging', '@shakers/shakers-cli': 'dev' };
+// published package name (shakers-cli -> prod, shakers-cli-beta -> dev), else dev (safe default).
+const PACKAGE_NAME_ENV = { 'shakers-cli': 'prod', 'shakers-cli-beta': 'dev' };
 const DEFAULT_ENV_PROFILE = 'dev';
 
-function bakedEnvProfileName() {
+function envProfileForPackageName(name) {
+  return PACKAGE_NAME_ENV[name] || DEFAULT_ENV_PROFILE;
+}
+
+function readPackageJson() {
   try {
-    const name = require('../package.json').name;
-    if (PACKAGE_NAME_ENV[name]) return PACKAGE_NAME_ENV[name];
-  } catch { /* package.json unreadable — fall through to the safe default */ }
-  return DEFAULT_ENV_PROFILE;
+    return require('../package.json');
+  } catch {
+    return {};
+  }
+}
+
+function bakedEnvProfileName() {
+  return envProfileForPackageName(readPackageJson().name);
+}
+
+function envOverrideVariable(env) {
+  const next = env.SHAKERS_CLI_ENV;
+  return next !== undefined && next !== '' ? 'SHAKERS_CLI_ENV' : 'AI_FOOTPRINT_ENV';
+}
+
+class UnknownEnvProfileError extends Error {
+  constructor(variable, value) {
+    const known = Object.keys(ENV_PROFILES).join(', ');
+    super(RETIRED_ENV_PROFILES[value]
+      ? `${variable}=${value} is a retired profile. Use one of ${known}, or unset it.`
+      : `${variable}=${value} is not a known profile. Use one of ${known}, or unset it.`);
+    this.name = 'UnknownEnvProfileError';
+    this.variable = variable;
+    this.value = value;
+  }
 }
 
 function getEnvProfileName(env = process.env) {
-  const override = readEnv(env, 'ENV');
-  if (override && ENV_PROFILES[String(override).trim()]) return String(override).trim();
-  return bakedEnvProfileName();
+  const override = String(readEnv(env, 'ENV') || '').trim();
+  if (!override) return bakedEnvProfileName();
+  if (ENV_PROFILES[override]) return override;
+  throw new UnknownEnvProfileError(envOverrideVariable(env), override);
+}
+
+function envProfileProblem(env = process.env) {
+  try {
+    getEnvProfileName(env);
+    return null;
+  } catch (e) {
+    if (e instanceof UnknownEnvProfileError) return e.message;
+    throw e;
+  }
 }
 
 function getEnvProfile(env = process.env) {
@@ -205,7 +250,7 @@ function getCertsBase(env = process.env) {
   if (ingest) return ingest.replace(/\/usage\/reports\/?$/, '').replace(/\/+$/, '');
   // No explicit override anywhere -> the baked flavor profile (never null when a
   // profile exists), so switching the published flavor "just works" without a
-  // seeded config.json (ADR-065 revised).
+  // seeded config.json.
   const baked = getEnvProfile(env).certsBase;
   return baked ? baked.replace(/\/+$/, '') : null;
 }
@@ -217,11 +262,11 @@ function getIngestEndpoint(env = process.env) {
   return base ? `${base}/usage/reports` : null;
 }
 
-// Agent-synthesis endpoint (talents-ai-score, ADR-010/ADR-011).
+// Agent-synthesis endpoint.
 function getSynthesisEndpoint(env = process.env) {
   const value = readEnv(env, 'SYNTHESIS_ENDPOINT');
   if (value && value.trim()) return value.trim();
-  // Issue 111: derived as an ingest sibling when the override is unset.
+  // Derived as an ingest sibling when the override is unset.
   return deriveFromIngest(env, 'agent-synthesis');
 }
 
@@ -231,7 +276,7 @@ function getRoadmapEndpoint(env = process.env) {
   return deriveFromIngest(env, 'roadmap-personalize');
 }
 
-// Email-verification endpoints (ADR-006): the OTP "prove you own this email" step that gates PERSISTENCE. Sibling-of-ingest resolution (`new URL(relative, base)`); unset ingest -> null.
+// Email-verification endpoints: the OTP "prove you own this email" step that gates PERSISTENCE. Sibling-of-ingest resolution (`new URL(relative, base)`); unset ingest -> null.
 function deriveFromIngest(env, relativePath) {
   const ingest = getIngestEndpoint(env);
   if (!ingest) return null;
@@ -254,7 +299,7 @@ function getAgentEvaluationEndpoint(env = process.env) {
   return deriveFromIngest(env, 'agent-evaluation');
 }
 
-// Login endpoint — better-auth email sign-in (owner decision, supersedes ADR-031 for the email path): `POST {hubBase}/auth/sign-in/email` with `{email,password}`.
+// Login endpoint — better-auth email sign-in: `POST {hubBase}/auth/sign-in/email` with `{email,password}`.
 function getLoginEndpoint(env = process.env) {
   const explicit = readEnv(env, 'LOGIN_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
@@ -262,6 +307,10 @@ function getLoginEndpoint(env = process.env) {
 }
 
 // better-auth JWT endpoint: `GET {hubBase}/auth/token` with the session cookie → `{token}` (ES256/JWKS, ~15-min TTL).
+function getSignOutEndpoint(env = process.env) {
+  return deriveFromHub(env, 'auth/sign-out');
+}
+
 function getAuthTokenEndpoint(env = process.env) {
   const explicit = readEnv(env, 'AUTH_TOKEN_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
@@ -462,14 +511,14 @@ function getAiProfileEndpoint(env = process.env) {
   return deriveFromHub(env, 'works/talent/me/ai-profile');
 }
 
-// Evidence emission endpoint for the `cli_scan` instrument (talents-ai-score Phase 2).
+// Evidence emission endpoint for the `cli_scan` instrument.
 function getEvidenceCliScanEndpoint(env = process.env) {
   const explicit = readEnv(env, 'EVIDENCE_CLI_SCAN_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
   return deriveFromIngest(env, '../evidence/cli-scan');
 }
 
-// Talent-portfolio endpoints (talents-ai-score, ADR-059 — `start`'s "Add project to portfolio" route, talent-only).
+// Talent-portfolio endpoints (`start`'s "Add project to portfolio" route, talent-only).
 function getPortfoliosDeclareEndpoint(env = process.env) {
   const explicit = readEnv(env, 'PORTFOLIOS_DECLARE_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
@@ -512,7 +561,7 @@ function getAgentsDraftFieldsEndpoint(env = process.env) {
   return deriveFromIngest(env, '../works/talents/me/agents/draft-fields');
 }
 
-// Agent<->experience relate endpoint (ADR-041, `start`'s "Add agent" relate step / MCP `add_agent.relatedPortfolios`).
+// Agent<->experience relate endpoint (`start`'s "Add agent" relate step / MCP `add_agent.relatedPortfolios`).
 function getAgentPortfoliosEndpoint(agentId, env = process.env) {
   // Null on missing/non-scalar id: no bogus URL, and keeps config.test.js's `fn(env)`
   // getter sweep honest when the env object lands in `agentId`.
@@ -520,7 +569,7 @@ function getAgentPortfoliosEndpoint(agentId, env = process.env) {
   return deriveFromHub(env, `works/talent/me/agents/${encodeURIComponent(agentId)}/portfolios`);
 }
 
-// Onboarding endpoints (evaluation-mcp, ADR-011..015/024 — the register flow).
+// Onboarding endpoints (the register flow).
 function getHubBase(env = process.env) {
   const explicit = readEnv(env, 'HUB_BASE');
   if (explicit && explicit.trim()) return explicit.trim().replace(/\/+$/, '');
@@ -551,7 +600,7 @@ function getImportProfileEndpoint(env = process.env) {
   return deriveFromHub(env, 'works/talent/me/import-profile');
 }
 
-// MCP sign-up (ticket 39540): public UNREGISTERED + claim code, its import status, and the one-time web login.
+// MCP sign-up: public UNREGISTERED + claim code, its import status, and the one-time web login.
 function getMcpSignupEndpoint(env = process.env) {
   return deriveFromHub(env, 'works-ai/talents/mcp-signup');
 }
@@ -564,11 +613,20 @@ function getOnboardingEventsEndpoint(env = process.env) {
   return deriveFromHub(env, 'works/talent/me/onboarding-events');
 }
 
+const AMPLITUDE_HTTP_API = 'https://api.eu.amplitude.com/2/httpapi';
+
+function getAmplitudeIngestion(env = process.env) {
+  const stamped = readPackageJson().amplitude;
+  if (!stamped || typeof stamped.apiKey !== 'string' || !stamped.apiKey.trim()) return null;
+  if (stamped.env !== getEnvProfileName(env)) return null;
+  return { endpoint: AMPLITUDE_HTTP_API, apiKey: stamped.apiKey.trim() };
+}
+
 function getOneTimeTokenEndpoint(env = process.env) {
   return deriveFromHub(env, 'auth/one-time-token/generate');
 }
 
-// The ONE place the web route that redeems a one-time token is spelled (the route itself is a later works-frontend ticket).
+// The ONE place the web route that redeems a one-time token is spelled.
 function getOneTimeLoginUrl(token, env = process.env) {
   if (typeof token !== 'string' || !token) return null;
   const profile = getTalentProfileUrl(env);
@@ -675,7 +733,7 @@ function getOnboardingStatusEndpoint(env = process.env) {
   return base ? `${base}/interviews/onboarding/status` : null;
 }
 
-// Talent profile web URL (evaluation-mcp, ADR-011 — the step-5 skip fallback).
+// Talent profile web URL (the step-5 skip fallback).
 function getTalentProfileUrl(env = process.env) {
   const explicit = readEnv(env, 'PROFILE_URL');
   if (explicit && explicit.trim()) return explicit.trim().replace(/\/+$/, '');
@@ -689,14 +747,14 @@ function getTalentProfileUrl(env = process.env) {
 // user overrides of these, never the baked profile itself.
 const PROFILE_ENDPOINT_KEYS = Object.keys(ENV_PROFILES[DEFAULT_ENV_PROFILE]);
 
-// Boot migration (ADR-065 revised). The CLI used to SEED config.json with the
+// Boot migration. The CLI used to SEED config.json with the
 // baked bases on first run; the getters now fall back to getEnvProfile() directly,
 // so seeding is unnecessary AND harmful: `npm uninstall` leaves the config dir, so
-// a config.json seeded by a previous flavor (e.g. the private @shakers build → dev)
-// survives into a new flavor (the public beta → staging) and pins the old endpoints
+// a config.json seeded by a previous flavor (e.g. the beta when it baked staging)
+// survives into a new flavor (the beta now baking dev) and pins the old endpoints
 // forever, since config.json wins over the baked profile. This sweep removes any
 // endpoint key whose value is byte-identical to that SAME field in a KNOWN profile
-// OTHER than the baked one — i.e. a value that could only have gotten there by the
+// (current or retired) OTHER than the baked one — i.e. a value that could only have gotten there by the
 // old seeding of a different flavor. A value that matches no known profile is a
 // genuine user override (set via `shakers config set`) and is left untouched. We
 // never touch env, auth-session.json or consent.json, and never remove the dir.
@@ -708,7 +766,7 @@ function sanitizeStaleBakedEndpoints(env = process.env) {
     const current = config[key];
     if (typeof current !== 'string' || !current.trim()) continue;
     const normalized = current.trim().replace(/\/+$/, '');
-    const matchesForeignProfile = Object.entries(ENV_PROFILES).some(
+    const matchesForeignProfile = Object.entries({ ...RETIRED_ENV_PROFILES, ...ENV_PROFILES }).some(
       ([name, profile]) =>
         name !== bakedName && String(profile[key]).replace(/\/+$/, '') === normalized,
     );
@@ -735,12 +793,12 @@ function getSuperadminSessionEndpoint(env = process.env) {
   return deriveFromIngest(env, 'superadmin/session');
 }
 
-// Superadmin READ-ONLY certification inspection endpoint (ADR-025, NON-PROD only) — a sibling of the ingest endpoint.
+// Superadmin READ-ONLY certification inspection endpoint (NON-PROD only) — a sibling of the ingest endpoint.
 function getInspectCertificationsEndpoint(env = process.env) {
   return deriveFromIngest(env, 'superadmin/inspect-certifications');
 }
 
-// ADR-027 superadmin SESSION persistence.
+// Superadmin SESSION persistence.
 function loadSuperadminSession(env = process.env) {
   const config = loadConfigFile(env);
   const s = config && typeof config === 'object' ? config.superadminSession : null;
@@ -774,6 +832,7 @@ module.exports = {
   getAgentEvaluationEndpoint,
   getLoginEndpoint,
   getAuthTokenEndpoint,
+  getSignOutEndpoint,
   getCompleteRegistrationEndpoint,
   getDeviceAuthorizeEndpoint,
   getDeviceTokenEndpoint,
@@ -807,19 +866,19 @@ module.exports = {
   getUsageDiscoveredInventoryEndpoint,
   getUsageReportEndpoint,
   getAiProfileEndpoint,
-  // Evidence emission (talents-ai-score Phase 2, evidence-based evaluation).
+  // Evidence emission.
   getEvidenceCliScanEndpoint,
-  // Talent-portfolio endpoints (ADR-059).
+  // Talent-portfolio endpoints.
   getPortfoliosDeclareEndpoint,
   getPortfoliosListEndpoint,
   getPortfolioDraftDescriptionEndpoint,
   getPortfolioUpdateEndpoint,
-  // Talent-agent endpoints (talents-ai-score Phase 2 — "Add agent to profile").
+  // Talent-agent endpoints ("Add agent to profile").
   getAgentsDeclareEndpoint,
   getAgentsListEndpoint,
   getAgentsDraftFieldsEndpoint,
   getAgentPortfoliosEndpoint,
-  // Onboarding / register flow (evaluation-mcp, ADR-011..015/024).
+  // Onboarding / register flow.
   getCertsBase,
   getHubBase,
   sanitizeStaleBakedEndpoints,
@@ -828,6 +887,8 @@ module.exports = {
   getMcpSignupEndpoint,
   getMyImportStatusEndpoint,
   getOnboardingEventsEndpoint,
+  getAmplitudeIngestion,
+  AMPLITUDE_HTTP_API,
   getOneTimeTokenEndpoint,
   getOneTimeLoginUrl,
   getProfessionalDetailsEndpoint,
@@ -849,7 +910,7 @@ module.exports = {
   getEmailVerificationVerifyUrl,
   getSuperadminSessionEndpoint,
   getInspectCertificationsEndpoint,
-  // ADR-027 superadmin session persistence.
+  // Superadmin session persistence.
   loadSuperadminSession,
   saveSuperadminSession,
   clearSuperadminSession,
@@ -863,15 +924,18 @@ module.exports = {
   setIngestEndpoint,
   hasRetiredFallbackConfig,
   resolveIngestEndpoint,
-  // Distribution profile (ADR-058 fase 1).
+  // Distribution profile.
   VALID_PROFILES,
   getProfile,
   isTalentProfile,
   // UI language preference (env SHAKERS_CLI_LANG > config.json `lang`).
   VALID_UI_LANGS,
   getUiLang,
-  // Baked backend target flavor (staging | dev | local).
+  // Baked backend target flavor (prod | dev | local).
   ENV_PROFILES,
   getEnvProfileName,
   getEnvProfile,
+  envProfileForPackageName,
+  envProfileProblem,
+  UnknownEnvProfileError,
 };

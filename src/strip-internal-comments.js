@@ -1,6 +1,6 @@
 'use strict';
 
-// Our comments do not travel in the talent's shareable report (issue 098).
+// Our comments do not travel in the talent's shareable report.
 
 // `<!-- … -->`, including multi-line.
 const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g;

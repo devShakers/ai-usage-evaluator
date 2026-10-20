@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { getHomeDir } = require('./env-paths');
 
-// Local Claude Code agent-usage signal (ADR-016, agent evaluation feature).
+// Local Claude Code agent-usage signal.
 
 const MAX_FILES = 500; // cap total session files scanned (bounded work)
 const MAX_BYTES_PER_FILE = 8 * 1024 * 1024; // read at most an 8MB head per file

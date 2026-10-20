@@ -10,7 +10,7 @@ const {
   isExcludedWalkPath,
 } = require('./scan-exclusions');
 
-// Monorepo support (skill-code-certification, issue 008): manifests are discovered RECURSIVELY under `root`, not just at the top level.
+// Monorepo support: manifests are discovered RECURSIVELY under `root`, not just at the top level.
 
 // Exact dependency-name -> canonical framework/library name (npm + pip).
 const EXACT_FRAMEWORK_MAP = {
@@ -202,7 +202,7 @@ function fromPyprojectTomlFile(filePath) {
   return names;
 }
 
-// Manifest filename -> reader (skill-code-certification, issue 008).
+// Manifest filename -> reader.
 const MANIFEST_READERS = {
   'package.json': fromPackageJsonFile,
   'requirements.txt': fromRequirementsTxtFile,

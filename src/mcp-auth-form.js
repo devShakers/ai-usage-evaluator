@@ -244,7 +244,7 @@ const LINKEDIN_IN = '<svg class="g" viewBox="0 0 24 24" aria-hidden="true">'
 // Each window offers these methods, in this order. The sign-up window has no LinkedIn: only Google carries the claim code there.
 const WINDOW_METHODS = { login: ['google', 'linkedin', 'email'], register: ['google', 'email'] };
 
-// The method-choice screen (talents-ai-score) — the FIRST screen of the loopback form when more than one method is offered for this flow.
+// The method-choice screen — the FIRST screen of the loopback form when more than one method is offered for this flow.
 function methodChoiceHtml(mode, lang, methods) {
   const c = copy(lang);
   const title = mode === 'register' ? c.chooseTitleRegister : c.chooseTitleLogin;

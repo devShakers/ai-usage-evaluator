@@ -1,6 +1,6 @@
 'use strict';
 
-// The three ephemeral model-call orchestrators of the `ai-usage` flow, extracted from bin/ai-usage.js (structure refactor, issue 020).
+// The three ephemeral model-call orchestrators of the `ai-usage` flow, extracted from bin/ai-usage.js.
 
 const { parseAgentDescriptions, parseAgentDefinitionsForRoots } = require('./agent-org-chart');
 const {
@@ -21,7 +21,7 @@ const { hasTraceContentConsent } = require('./share');
 const { getRoadmapEntry } = require('./roadmap-content');
 const { computeTierResult } = require('./tier-engine');
 
-// Agent-synthesis call (talents-ai-score, ADR-010/ADR-011, "ephemeral" — not persisted; ADR-051 amends WHEN it runs, not that).
+// Agent-synthesis call ("ephemeral" — not persisted).
 async function maybeSynthesizeAgents(report, root) {
   const KEY = MODEL_CALL.SYNTHESIS;
   if (!Array.isArray(report.agents) || report.agents.length === 0) {
@@ -51,7 +51,7 @@ async function maybeSynthesizeAgents(report, root) {
   }
 }
 
-// Ephemeral agent-evaluation call (ADR-016): scores each agent's DEFINITION quality server-side (gemini-2.5-flash — see src/agent-evaluation.js).
+// Ephemeral agent-evaluation call: scores each agent's DEFINITION quality server-side (gemini-2.5-flash — see src/agent-evaluation.js).
 async function maybeEvaluateAgents(report, roots, lang) {
   const KEY = MODEL_CALL.EVALUATION;
   if (!Array.isArray(report.agents) || report.agents.length === 0) {
@@ -66,7 +66,7 @@ async function maybeEvaluateAgents(report, roots, lang) {
 
   try {
     const definitions = parseAgentDefinitionsForRoots(roots);
-    // ADR-026: pass the report language so the rationale + the one-line description come back translated (a Spanish-authored definition still yields report-language prose).
+    // Pass the report language so the rationale + the one-line description come back translated (a Spanish-authored definition still yields report-language prose).
     const requestBody = buildAgentEvaluationRequest(report.agents, definitions, lang, hasTraceContentConsent());
     return await requestAgentEvaluation(requestBody, {
       endpoint,
@@ -103,8 +103,8 @@ async function maybePersonalizeRoadmap(report, maturity, lang) {
 
   try {
     const tierResult = computeTierResult(report);
-    // ADR-026: pass the report language so the personalized prose is localized.
-    // ADR-028: fresh consent read, see maybeSynthesizeAgents above.
+    // Pass the report language so the personalized prose is localized.
+    // Fresh consent read, see maybeSynthesizeAgents above.
     const requestBody = buildRoadmapPersonalizationRequest(entry, tierResult, report, lang, hasTraceContentConsent());
     return await requestRoadmapPersonalization(requestBody, {
       endpoint,

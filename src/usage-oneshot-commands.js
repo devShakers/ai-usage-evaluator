@@ -1,6 +1,6 @@
 'use strict';
 
-// One-shot command handlers extracted from bin/ai-usage.js (structure refactor, issue 020).
+// One-shot command handlers extracted from bin/ai-usage.js.
 
 const {
   getConsentStatus,
@@ -17,7 +17,7 @@ const {
 } = require('./config');
 const { buildNextLevelStarter } = require('./build-next-level');
 
-// One-shot consent management commands (issue 007). Mirror the retired
+// One-shot consent management commands. Mirror the retired
 // `--enroll` pattern: they act immediately and do NOT scan.
 
 function doConsentStatus(catalog) {
@@ -41,7 +41,7 @@ function doConsentRevoke(catalog) {
   process.stdout.write(`\n  ${catalog.consent.revoked}\n\n`);
 }
 
-// skill-code-certification / ADR-003: clears the decision back to "no decision yet" so the consent question is asked again next run — distinct from revoke (which persists `denied`).
+// Clears the decision back to "no decision yet" so the consent question is asked again next run — distinct from revoke (which persists `denied`).
 function doConsentReset(catalog) {
   resetConsent();
   process.stdout.write(`\n  ${catalog.consent.reset}\n\n`);
@@ -102,14 +102,14 @@ function doShowEndpoint(catalog) {
     process.stdout.write(`\n  ${e.showNone}\n\n`);
   }
 
-  // ADR-042: there is no second hop any more.
+  // There is no second hop any more.
   if (hasRetiredFallbackConfig()) {
     process.stdout.write(`  ${e.showFallbackRetired}\n\n`);
   }
 
 }
 
-// "Construir el siguiente nivel ahora" (issue 021): optional, explicit phase — never runs unless the talent asks for it via --build-next-level.
+// "Construir el siguiente nivel ahora": optional, explicit phase — never runs unless the talent asks for it via --build-next-level.
 function doBuildNextLevel(root, maturity, force, catalog) {
   const b = catalog.buildNextLevel;
   const result = buildNextLevelStarter(root || process.cwd(), maturity.tierKey, { force });

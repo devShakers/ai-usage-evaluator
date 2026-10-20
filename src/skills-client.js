@@ -2,7 +2,7 @@
 
 const { postJsonWithTimeout } = require('./backend-request');
 
-// Talent-skills client (talents-ai-score, ADR-054/055 — `start`'s "Añadir skills" route, src/start-add-skills.js).
+// Talent-skills client (`start`'s "Añadir skills" route, src/start-add-skills.js).
 
 const DEFAULT_TIMEOUT_MS = 20000;
 

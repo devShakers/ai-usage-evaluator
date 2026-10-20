@@ -3,7 +3,7 @@
 const { palette, styleQuestion } = require('./ansi');
 const { BRAND_ANSI } = require('./brand-ansi');
 
-// Zero-dependency interactive multi-select (skill-code-certification, issue 011).
+// Zero-dependency interactive multi-select.
 
 // COLOUR goes through the one gate (src/ansi.js).
 const ANSI = palette({

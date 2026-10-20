@@ -2,7 +2,7 @@
 
 const { isInteractive } = require('./terminal-progress');
 
-// Progressive reveal of text that is ALREADY IN HAND (talents-ai-score, camino A).
+// Progressive reveal of text that is ALREADY IN HAND.
 
 // 60fps. Fine enough that the reveal reads as continuous, coarse enough that a
 // 700ms budget is ~43 writes rather than one per character.

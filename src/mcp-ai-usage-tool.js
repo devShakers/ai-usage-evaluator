@@ -77,7 +77,7 @@ function buildArgv({ root, repoScope, lang }) {
 
 function makeAiUsageTool(deps = {}) {
   const {
-    scanUsage = (argv) => require('../bin/ai-usage').scanUsage(argv),
+    scanUsage = (argv) => require('./usage-scan').scanUsage(argv),
     autoShare = require('./share').autoShare,
     recordConsent = require('./share').recordConsent,
     isValidEmail = require('./share').isValidEmail,

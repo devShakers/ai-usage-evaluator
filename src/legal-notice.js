@@ -1,6 +1,6 @@
 'use strict';
 
-// Shared PRESENTATION for the CLI's legal/consent disclosures (talents-ai-score).
+// Shared PRESENTATION for the CLI's legal/consent disclosures.
 
 const { palette, colorEnabled } = require('./ansi');
 const { BRAND_ANSI } = require('./brand-ansi');

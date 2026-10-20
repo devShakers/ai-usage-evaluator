@@ -1,6 +1,6 @@
 'use strict';
 
-// Consent state + email identity + client-side throttle, extracted from src/share.js (structure refactor, issue 020).
+// Consent state + email identity + client-side throttle, extracted from src/share.js.
 
 const fs = require('fs');
 const path = require('path');
@@ -10,8 +10,8 @@ function configDir() {
   return getConfigDir(process.env);
 }
 
-function consentPath() {
-  return path.join(configDir(), 'consent.json');
+function consentPath(env = process.env) {
+  return path.join(getConfigDir(env), 'consent.json');
 }
 
 // Client-side throttle: don't retry a submission if the last one was less than 1h ago.
@@ -70,7 +70,7 @@ function recordConsent(decision, email = null, { verified } = {}) {
   state.consent = decision;
   if (email !== null) state.email = normalizeEmail(email);
   if (state.lastSentAt === undefined) state.lastSentAt = null;
-  // Email-ownership verification flag (skill-code-certification / ADR-006).
+  // Email-ownership verification flag.
   if (decision === 'granted' && verified !== undefined) {
     state.emailVerified = verified === true;
   }
@@ -78,7 +78,7 @@ function recordConsent(decision, email = null, { verified } = {}) {
   return state;
 }
 
-// consent management (issue 007: status / revoke / change email) One-shot actions (do not scan), same pattern the retired `--enroll` used.
+// consent management (status / revoke / change email). One-shot actions (do not scan), same pattern the retired `--enroll` used.
 
 // Read-only snapshot for `--consent-status`. Never throws.
 function getConsentStatus() {
@@ -100,7 +100,7 @@ function revokeConsent() {
 function resetConsent() {
   const state = loadConsentState() || {};
   delete state.consent;
-  // A re-grant is "concede de cero" (ADR-006): drop the verification flag so the OTP runs again from scratch and nothing is sent under the old email until it's re-verified.
+  // A re-grant is "concede de cero": drop the verification flag so the OTP runs again from scratch and nothing is sent under the old email until it's re-verified.
   delete state.emailVerified;
   if (state.lastSentAt === undefined) state.lastSentAt = null;
   saveConsentState(state);
@@ -121,7 +121,7 @@ function setEmail(newEmail) {
   }
   const state = loadConsentState() || {};
   state.email = normalizeEmail(newEmail);
-  // A new email is unverified until proven (ADR-006): reset the flag so
+  // A new email is unverified until proven: reset the flag so
   // autoShare won't send under an address whose ownership wasn't checked.
   state.emailVerified = false;
   saveConsentState(state);

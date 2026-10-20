@@ -3,7 +3,7 @@
 const { postJsonWithTimeout } = require('./backend-request');
 const { reasonForError, WORKS_CODE_TO_REASON } = require('./skills-client');
 
-// Talent-agent client for `start`'s "Add agent" route (talents-ai-score Phase 2).
+// Talent-agent client for `start`'s "Add agent" route.
 
 const DEFAULT_TIMEOUT_MS = 20000;
 
@@ -88,14 +88,14 @@ async function requestDeclareAgent(
 
   const json = parseJson(res.raw);
   if (!json || json.status !== 'OK') return { ok: false, reason: 'bad-response' };
-  // Thread the created agent's id back (relayed from Hub's declare response) so the relate step can PATCH `.../agents/:id/portfolios` (ADR-041).
+  // Thread the created agent's id back (relayed from Hub's declare response) so the relate step can PATCH `.../agents/:id/portfolios`.
   const data = json.data && typeof json.data === 'object' ? json.data : null;
   const rawId = data ? data.id : null;
   const agentId = typeof rawId === 'string' || typeof rawId === 'number' ? String(rawId) : null;
   return { ok: true, agentId };
 }
 
-// DIRECT to Hub (ADR-041), replace-set.
+// DIRECT to Hub, replace-set.
 async function requestRelateAgentPortfolios(
   { agentId, items, hubAccessToken } = {},
   { endpoint, timeoutMs = DEFAULT_TIMEOUT_MS } = {},
@@ -124,7 +124,7 @@ async function requestRelateAgentPortfolios(
 }
 
 // `POST .../agents/draft-fields` -> { ok, whatItDoes, humanDecides } | { ok:false, reason }.
-// No X-Hub-Token. The CALLER gates consent (ADR-052), so `consent:true` is always sent.
+// No X-Hub-Token. The CALLER gates consent, so `consent:true` is always sent.
 async function requestDraftAgentFields(
   { name, tools, model, parent, definition, accessToken } = {},
   { endpoint, timeoutMs = DEFAULT_TIMEOUT_MS } = {},

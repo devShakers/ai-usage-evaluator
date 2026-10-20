@@ -2,7 +2,7 @@
 
 const { tierName: getTierName } = require('./i18n');
 
-// Deterministic, ready-to-paste "implementation prompt" (talents-ai-score: "next steps -> prompt").
+// Deterministic, ready-to-paste "implementation prompt" ("next steps -> prompt").
 
 const TEMPLATES = {
   es: {
@@ -65,7 +65,7 @@ function buildImplementationPrompt(entry, report, maturity, lang) {
   const frameworks = Array.isArray(r.technologies) ? r.technologies : [];
   const toolNames = Array.isArray(r.tools) ? r.tools.filter((x) => x && x.detected).map((x) => x.name) : [];
   const tierKey = (maturity && maturity.tierKey) || entry.tierKey || '';
-  // talents-ai-score, i18n audit: NEVER maturity.tierName directly — that field comes straight from tier-engine.js and is Spanish-only by design (domain logic, not i18n).
+  // NEVER maturity.tierName directly — that field comes straight from tier-engine.js and is Spanish-only by design (domain logic, not i18n).
   const tierName = getTierName(tierKey, lang);
 
   const lines = [];

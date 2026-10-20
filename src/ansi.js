@@ -3,7 +3,7 @@
 const { isInteractive } = require('./terminal-progress');
 const { BRAND_ANSI } = require('./brand-ansi');
 
-// THE ONE GATE for terminal colour (talents-ai-score).
+// THE ONE GATE for terminal colour.
 
 // `NO_COLOR` per the de-facto standard: present and non-empty disables colour, whatever the value.
 function noColorRequested(env = process.env) {

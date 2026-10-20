@@ -227,7 +227,7 @@ const catalogs = {
     },
     ladder: {
       levelsHeading: 'Niveles de madurez (0-4)',
-      // ADR-016: the ladder now groups tiers by SETUP LEVEL, not the 0-4 band.
+      // The ladder now groups tiers by SETUP LEVEL, not the 0-4 band.
       setupHeading: 'Nivel de setup',
       setupIntro:
         'Tu nivel de setup (S1–S3) resume tu uso de IA de un vistazo; el tier (T0-T7) es el eje '
@@ -262,7 +262,7 @@ const catalogs = {
         T7: 'Taller orquestado: hooks automatizan el taller y los agentes se orquestan entre sí.',
       },
     },
-    // Agent classification against the AI-agent catalog (skill-code-certification, report req 2) + the "how to improve" tips (req 3).
+    // Agent classification against the AI-agent catalog + the "how to improve" tips.
     classification: {
       label: 'Clasificación',
       noCategory: 'Sin categoría',
@@ -273,14 +273,14 @@ const catalogs = {
       agentsEvalPartial: (names, count = 2) => (count === 1
         ? `Este agente se quedó fuera de esta ejecución: ${names}. La respuesta del modelo no llegó a cubrirlo, así que no es que no tenga categoría: es que no se llegó a evaluarlo. Vuelve a ejecutar \`usage\` para completarlo.`
         : `Estos agentes se quedaron fuera de esta ejecución: ${names}. La respuesta del modelo no llegó a cubrirlos, así que no es que no tengan categoría: es que no se llegó a evaluarlos. Vuelve a ejecutar \`usage\` para completarlos.`),
-      // LA EVALUACIÓN FALLÓ ENTERA (issue 116).
+      // LA EVALUACIÓN FALLÓ ENTERA.
       agentsEvalMissing: 'La categoría de tus agentes no se pudo calcular en esta ejecución: la evaluación no llegó a responder. No es que no tengan categoría. Vuelve a ejecutar `usage` para intentarlo otra vez.',
-      // ADR-042 (issue 125) parte el aviso genérico en dos, y el motivo es que apuntan a sitios distintos.
+      // Se parte el aviso genérico en dos, y el motivo es que apuntan a sitios distintos.
       agentsEvalUnreachable: 'No se pudo conectar con Shakers, así que tus agentes salen sin categoría. Comprueba tu conexión y vuelve a ejecutar `usage`.',
       agentsEvalErrored: 'Shakers respondió con un error, así que tus agentes salen sin categoría. No es cosa de tu configuración; vuelve a intentarlo en un rato.',
       agentsEvalTimedOut: (count) => `La evaluación de tus agentes no respondió dentro del plazo, así que esta vez salen sin categoría. Ese tiempo crece con el número de agentes y tienes ${count}, así que volver a ejecutarlo tal cual probablemente acabe igual.`,
       improvementsHeading: 'Cómo mejorar este agente',
-      // LAS OCHO CATEGORÍAS DEL CATÁLOGO DEL SERVICIO: siete especialidades y el SUELO (issue 120; el catálogo vive en el servicio, ADR-036/037).
+      // LAS OCHO CATEGORÍAS DEL CATÁLOGO DEL SERVICIO: siete especialidades y el SUELO (el catálogo vive en el servicio).
       categories: {
         developer: 'Desarrollo',
         product: 'Producto',
@@ -298,7 +298,7 @@ const catalogs = {
       },
     },
     // LEGACY 0-4 band names — kept only for older persisted reports / the
-    // unchanged sent payload (ADR-016); the report shows `setupLevels` instead.
+    // unchanged sent payload; the report shows `setupLevels` instead.
     levelNames: {
       none: 'Sin rastro de IA',
       exploring: 'Explorando',
@@ -306,7 +306,7 @@ const catalogs = {
       power: 'Power user',
       orchestrator: 'Orquestador',
     },
-    // Setup Level (Talent Certification Framework, ADR-016): the 3-value rollup that REPLACES the 0-4 band on every surface.
+    // Setup Level (Talent Certification Framework): the 3-value rollup that REPLACES the 0-4 band on every surface.
     setupLevels: {
       none: {
         label: 'Sin certificar',
@@ -343,7 +343,7 @@ const catalogs = {
       brandSub: 'perfil de uso de IA',
       toolsDetected: (n, total) => `${n}/${total} herramientas detectadas`,
       level: (level, name) => `Nivel ${level} · ${name}`,
-      // ADR-016: Setup Level shown in the top bar (replaces the 0-4 level line).
+      // Setup Level shown in the top bar (replaces the 0-4 level line).
       setupLevel: (label) => `Setup · ${label}`,
       // Current tier appended to the top bar, next to the level (report req 1 addendum).
       tierInline: (key, name) => ` · Tier ${key} · ${name}`,
@@ -371,16 +371,16 @@ const catalogs = {
       environment: 'Entorno',
       editors: 'editores',
       noEditorsDetected: 'ninguno detectado',
-      // ADR-016 agent evaluation (terminal, one line per agent): compact usage
+      // Agent evaluation (terminal, one line per agent): compact usage
       // signal derived from the local Claude Code history.
       agentUsed: (n) => `usado ${n}×`,
       agentUnused: 'sin uso local',
       agentUsageUnavailable: '(sin historial local de Claude Code: uso no disponible)',
-      // ADR-016: discoverability hint for the next-steps section (behind --roadmap).
+      // Discoverability hint for the next-steps section (behind --roadmap).
       roadmapHint: 'Ejecuta `usage --roadmap` para ver los pasos que te separan del siguiente nivel de uso de IA. No son pasos de esta herramienta: son cambios en tu forma de trabajar, para las próximas semanas.',
       aiProfileGenerating: 'Generando tu perfil de IA (matriz, visión y cómo trabajas)…',
       aiProfilePendingRetry: 'Tu perfil de IA (matriz, visión y cómo trabajas) se está generando; re-lanza `report` en un momento para verlo.',
-      // issue 122 / ADR-044: se muestra cuando había una sesión y ha caducado, para que el talento entienda por qué vuelve a ver el informe completo.
+      // Se muestra cuando había una sesión y ha caducado, para que el talento entienda por qué vuelve a ver el informe completo.
       sessionExpiredNotice: 'Tu sesión ha caducado. Estás viendo el informe completo como usuario general; ejecuta `login` para volver a entrar.',
       nextStep: 'Siguiente paso para subir de nivel',
       files: (n) => `${n} ${n === 1 ? 'fichero' : 'ficheros'}`,
@@ -393,7 +393,7 @@ const catalogs = {
       h1: 'Tu perfil de uso de IA',
       sub: 'Un vistazo local a qué herramientas de IA tienes y cuánto las has configurado.',
       levelOf: (level) => `Nivel ${level} de 4`,
-      // ADR-016: hero label for the Setup Level (replaces the 0-4 "Nivel X de 4").
+      // Hero label for the Setup Level (replaces the 0-4 "Nivel X de 4").
       setupLevelOf: 'Nivel de setup',
       // Current tier shown in the hero bar next to the level (report req 1 addendum).
       currentTier: (key, name) => `Tier ${key} · ${name}`,
@@ -402,7 +402,7 @@ const catalogs = {
       detectedSuffix: (total) => `de ${total} herramientas detectadas`,
       maturity: 'Madurez',
       tools: 'Herramientas',
-      // talents-ai-score: only DETECTED tools are listed now (undetected ones were pure noise — any relevant next step already lives in the tier roadmap section).
+      // Only DETECTED tools are listed now (undetected ones were pure noise — any relevant next step already lives in the tier roadmap section).
       toolsEmpty: 'No se ha detectado ninguna herramienta de IA en tu entorno.',
       configIntensity: 'intensidad de configuración',
       files: (n) => `${n}&nbsp;${n === 1 ? 'fichero' : 'ficheros'}`,
@@ -416,21 +416,21 @@ const catalogs = {
       diagramHeading: 'Agentes',
       agentsEmpty: 'No se han detectado agentes de IA configurados (p. ej. .claude/agents/).',
       orchestratorLabel: 'Orchestrator',
-      // Last-resort description fallback (talents-ai-score, real-browser user feedback: a card must NEVER show only name+model, no description at all).
+      // Last-resort description fallback (a card must NEVER show only name+model, no description at all).
       agentDescriptionFromName: (name) => `Agente "${name}" (sin descripción declarada en su fichero).`,
       // AI product an agent belongs to, derived from its source (proper nouns; same es/en).
       aiProducts: { 'claude-code': 'Claude Code' },
-      // ADR-016 agent evaluation (HTML per-agent detail): definition-quality score + LLM rationale + local usage signal.
+      // Agent evaluation (HTML per-agent detail): definition-quality score + LLM rationale + local usage signal.
       agentScoreLabel: 'Calidad de la definición (0-100)',
       agentQualityLabel: 'Por qué:',
       agentUsageLabel: 'Uso local (historial de Claude Code)',
       agentUsedTimes: (n) => `usado ${n}×`,
       agentUnused: 'sin uso local',
-      // Project technologies (talents-ai-score, ADR-012).
+      // Project technologies.
       technologiesHeading: 'Tecnologías del proyecto',
       technologiesEmpty: 'No se reconoció ningún framework o librería en los manifiestos de dependencias (package.json, requirements.txt, go.mod, pyproject.toml).',
-      // MCP servers by name (talents-ai-score, issue 015).
-      // Issue 110: esta clave existía desde la 015 y NO la pintaba nadie — los servidores MCP se detectaban, contaban para el tier y no se nombraban en ninguna superficie.
+      // MCP servers by name.
+      // Esta clave existía desde la 015 y NO la pintaba nadie — los servidores MCP se detectaban, contaban para el tier y no se nombraban en ninguna superficie.
       mcpHeading: 'Servicios conectados por MCP',
       mcpEmpty: 'No se ha detectado ningún servidor MCP. Conectar uno es el criterio que te sube a T3 (Banco conectado).',
       mcpUnidentified: (n) => `${n} ${n === 1 ? 'servidor más, cuyo servicio no' : 'servidores más, cuyo servicio no'} hemos podido identificar por su nombre.`,
@@ -447,18 +447,18 @@ const catalogs = {
       roadmapConsolidationLabel: 'Pasos de consolidación',
       roadmapHonestyLabel: 'Nota de honestidad',
       roadmapContentUnavailable: 'El contenido detallado de este nivel aún no está disponible en este idioma.',
-      // ADR-015: shown only when the 4 prose gaps below were actually replaced by a validated, project-adapted response — never on fallback to the curated content.
+      // Shown only when the 4 prose gaps below were actually replaced by a validated, project-adapted response — never on fallback to the curated content.
       roadmapPersonalizedNotice: 'Contenido adaptado a tu proyecto.',
-      // Issue 109: los dos avisos que faltaban, hermanos del `agentsEvalMissing` que añadió la 106.
+      // Los dos avisos que faltaban, hermanos del `agentsEvalMissing` que añadió la 106.
       roadmapNotPersonalizedNotice: 'Este roadmap es el genérico de tu tier: esta vez no se ha podido adaptar a tu proyecto. Vuelve a ejecutar `usage` para intentarlo otra vez.',
-      // Issue 084: el antes y el después del roadmap.
+      // El antes y el después del roadmap.
       roadmapNowLabel: 'De dónde partes',
       roadmapProjectionLabel: 'Dónde te deja esta ruta',
       roadmapProjectionTag: 'proyección',
       roadmapProjectionNote: 'Calculado con el mismo motor que tu evaluación, aplicando el mínimo que piden estos pasos. Es una proyección, no una promesa: la evaluación mide uso real, así que darlos es condición necesaria y no suficiente.',
       implementationPromptHeading: 'Prompt para implementar',
       implementationPromptHint: 'Copia este prompt y pégalo en tu IA de confianza (Claude Code, Cursor, ChatGPT...) para que lo implemente en tu proyecto.',
-      // Copy-to-clipboard button (HTML report only — talents-ai-score): navigator.clipboard with a document.execCommand fallback, both inline, zero-network.
+      // Copy-to-clipboard button (HTML report only): navigator.clipboard with a document.execCommand fallback, both inline, zero-network.
       implementationPromptCopyLabel: 'Copiar',
       implementationPromptCopiedLabel: 'Copiado ✓',
       privacyNote:
@@ -470,9 +470,9 @@ const catalogs = {
       rawData: 'Ver los datos exactos de este informe (JSON)',
     },
     cli: {
-      // Reporting redesign (skill-code-certification): el HTML ya NO es opt-in (se retira --html).
+      // Reporting redesign: el HTML ya NO es opt-in (se retira --html).
       reportLink: (url) => `Abre tu informe en el navegador:\n  ${url}`,
-      // `share` command (skill-code-certification): copy del CLI que envuelve a la tarjeta branded para LinkedIn.
+      // `share` command: copy del CLI que envuelve a la tarjeta branded para LinkedIn.
       share: {
         help: 'share — crea una tarjeta branded con tu resultado de uso de IA (tier + nota) para compartir en LinkedIn.\n'
           + '  Usa `usage` primero; `share` toma el último uso de IA de este proyecto.\n'
@@ -522,7 +522,7 @@ const catalogs = {
         available: (from, to) => `Hay una versión nueva del CLI de Shakers: ${from} → ${to}`,
         howTo: 'Ejecuta `shakers update` para actualizar.',
       },
-      // `report` command (ADR-016): genera y ABRE el informe HTML completo y compartible de este proyecto (uso de IA + Skills certificadas).
+      // `report` command: genera y ABRE el informe HTML completo y compartible de este proyecto (uso de IA + Skills certificadas).
       report: {
         help: 'report — genera y abre el informe HTML completo de este proyecto (uso de IA + Skills certificadas) para compartir con tu equipo.\n'
           + '  Usa `usage` (y opcionalmente `certify`) primero; `report` reúne su resultado.\n'
@@ -534,7 +534,7 @@ const catalogs = {
       },
       frameworkIntroUsage:
         'Esto mide tu fluidez con IA en dos ejes: Setup (madurez de tu tooling, T0–T7, determinista) y Usage (cómo lo usas, evaluado en entrevista + código). Te sitúa en el mapa 3×3 (Explorer → AI Native). Completarlo posiciona tu perfil agéntico para los proyectos que valoran cómo trabajas con IA. Por defecto leo el uso de IA de todo este equipo y asumo que es tuyo (un equipo = tú).',
-      // Terminal progress feedback (talents-ai-score): stderr-only status
+      // Terminal progress feedback: stderr-only status
       // during the two slow phases (see src/terminal-progress.js).
       scanningLabel: 'Escaneando entorno y detectores…',
       // Loader de la fase de agregación por repo seleccionado (git + sesiones + steering/decisiones + evidencia + org-chart de agentes).
@@ -555,14 +555,14 @@ const catalogs = {
         `Evaluación de toda la máquina limitada a ${shown} de ${total} repos detectados (los más activos primero).`,
       reposScopeAll: 'Evaluando todo el uso de IA de la máquina.',
       synthesizingLabel: 'Sintetizando agentes con IA…',
-      // Roadmap personalization (talents-ai-score, ADR-015): reuses the
+      // Roadmap personalization: reuses the
       // same spinner mechanism as synthesizingLabel above.
       personalizingRoadmapLabel: 'Personalizando roadmap…',
-      // ADR-016: agent definition-quality evaluation (ephemeral LLM call).
+      // Agent definition-quality evaluation (ephemeral LLM call).
       evaluatingAgentsLabel: 'Evaluando la calidad de tus agentes…',
-      // "Construir el siguiente nivel ahora" (issue 021): now a SECONDARY, opt-in alternative — the copyable implementation prompt (below) is the PRIMARY "how do I implement this" path.
+      // "Construir el siguiente nivel ahora": now a SECONDARY, opt-in alternative — the copyable implementation prompt (below) is the PRIMARY "how do I implement this" path.
       buildNextLevelHint: 'Alternativamente, ejecuta `usage --build-next-level` para generar el fichero de partida directamente en tu proyecto.',
-      // Ayuda localizada (skill-code-certification / ADR-003): antes estaba hardcodeada en español en bin/report.js; ahora pasa por i18n y respeta la locale de la máquina.
+      // Ayuda localizada: antes estaba hardcodeada en español en bin/report.js; ahora pasa por i18n y respeta la locale de la máquina.
       help:
         '\nShakers — perfil local de uso de herramientas de IA\n\n'
         + 'Uso:\n  usage [opciones]\n\n'
@@ -616,7 +616,7 @@ const catalogs = {
       label: 'AVISO LEGAL',
     },
     consent: {
-      // talents-ai-score, ADR-011: the disclosure wall (what's sent / never sent, itemized) is RETIRED from the CLI — that content now lives in the repo's README.
+      // The disclosure wall (what's sent / never sent, itemized) is RETIRED from the CLI — that content now lives in the repo's README.
       persistIntro:
         'Este informe se ha generado y mostrado en tu equipo, siempre. '
         + 'Guardarlo en Shakers es opcional y revocable en cualquier momento '
@@ -644,11 +644,11 @@ const catalogs = {
       savedUnderEmail: (email) => `El informe se guardará a nombre de: ${email}`,
       invalidEmail: 'Correo no válido, inténtalo de nuevo.',
       notObtained: 'No se ha podido registrar tu respuesta; se te volverá a preguntar la próxima vez.',
-      // talents-ai-score, ADR-051: esta pregunta se pide ahora ANTES de cualquier llamada de IA/egress (agent-synthesis, agent-evaluation, personalización de roadmap), no después.
+      // Esta pregunta se pide ahora ANTES de cualquier llamada de IA/egress (agent-synthesis, agent-evaluation, personalización de roadmap), no después.
       noReportWithoutConsent: 'Sin tu consentimiento, este informe no incluirá síntesis, evaluación ni roadmap generados por IA esta vez (el resto del informe se muestra igual). Vuelve a ejecutar `usage` y acepta para incluirlos, o usa --consent-reset si quieres que se te pregunte de nuevo.',
       deniedSaved: 'Entendido, no se guardará nada. Puedes cambiar de opinión más adelante volviendo a ejecutar el comando.',
       grantedSaved: (email) => `Gracias. A partir de ahora este informe se guardará automáticamente en Shakers (correo: ${email}, máx. 1 vez por hora).`,
-      // talents-ai-score, issue 130: un talento logueado NUNCA ve el prompt de email (su cuenta ya prueba su identidad).
+      // Un talento logueado NUNCA ve el prompt de email (su cuenta ya prueba su identidad).
       noSessionEmail: 'No hay un correo asociado a tu sesión todavía, así que no se puede guardar el informe esta vez. Se te preguntará de nuevo la próxima ejecución.',
       skipAlreadyDecided: (decision, path) =>
         `Consentimiento ya respondido (${decision === 'granted' ? 'concedido' : 'rechazado'}) — guardado en ${path}. `
@@ -681,8 +681,8 @@ const catalogs = {
       showConfigFile: (url, path) => `Endpoint de ingesta efectivo: ${url}\n  Origen: fichero de config (${path}).`,
       showConfigInvalid: (path) => `El fichero de config (${path}) tiene un endpoint no válido o inseguro; se ignora. Corrígelo con usage --set-endpoint <url>.`,
       showNone: 'No hay endpoint de ingesta configurado. Define SHAKERS_CLI_INGEST_ENDPOINT o usa usage --set-endpoint <url>. Sin él, el informe se sigue mostrando pero no se envía a Shakers.',
-      // talents-ai-score, ADR-020/021: el CLI habla con una CADENA de dos backends — PRIMARIO (servicio de certificaciones, arriba) y FALLBACK (hub-backend, aquí).
-      // ADR-042 retired the second backend, so the five `showFallback*`/ `setFallbackOk` strings that explained the chain are gone with it.
+      // El CLI habla con una CADENA de dos backends — PRIMARIO (servicio de certificaciones, arriba) y FALLBACK (hub-backend, aquí).
+      // The second backend was retired, so the five `showFallback*`/ `setFallbackOk` strings that explained the chain are gone with it.
       showFallbackRetired: 'Nota: tu config.json todavía tiene `ingestEndpointFallback`. Ya no se usa: el CLI habla con un solo backend. Puedes borrar esa línea a mano; dejarla no afecta a nada.',
       confirmHostPrompt: (host) => `El host "${host}" no es localhost ni un dominio conocido de Shakers. Si continúas, tu código muestreado y tus señales de IA se enviarán ahí.\n  Escribe el hostname exacto para confirmar (déjalo en blanco para cancelar):`,
       confirmHostMismatch: 'No coincide con el hostname mostrado. Cancelado: no se ha guardado nada.',
@@ -716,7 +716,7 @@ const catalogs = {
         }
       },
     },
-    // Email-ownership verification (skill-code-certification / ADR-006): the OTP "modo espera" copy, shared by both binaries.
+    // Email-ownership verification: the OTP "modo espera" copy, shared by both binaries.
     verify: {
       sent: (email) => `Te enviamos un código de verificación a ${email}.`,
       waitHint: 'Pega aquí el código. Pulsa "r" y Enter para reenviarlo, o Enter en blanco para cancelar.',
@@ -732,7 +732,7 @@ const catalogs = {
       cancelled: 'Verificación cancelada. No se guardará el informe (el reporte ya se te ha mostrado).',
       unavailable: 'La verificación de correo no está disponible ahora mismo; no se guardará el informe (el reporte ya se te ha mostrado).',
     },
-    // Skill Code Certification (skill-code-certification, issues 004/006).
+    // Skill Code Certification.
     // Copy for the SECOND binary `ai-certify` (resolve phase V1). Localized
     // like the consent flow — legal/disclaimer copy must not default to a
     // language the Talent may not read. Vocabulario CONTEXT: Talent, Skill.
@@ -1117,7 +1117,7 @@ const catalogs = {
       failed: (reason) => `No se pudo hablar con Alma (${reason}). Inténtalo de nuevo en un momento.`,
     },
     certify: {
-      // Aviso legal (ADR-001): asume el proyecto propiedad del Talent y le
+      // Aviso legal: asume el proyecto propiedad del Talent y le
       // atribuye la responsabilidad. Aceptación explícita obligatoria.
       disclaimer:
         'AVISO LEGAL — léelo antes de continuar:\n'
@@ -1140,7 +1140,7 @@ const catalogs = {
       disclaimerDeclined: 'No has aceptado el aviso legal. No se ha enviado nada.',
       disclaimerInvalidAnswer: 'Respuesta no reconocida. Responde "s" (sí) o "n" (no).',
       disclaimerNoAnswer: 'No se ha obtenido respuesta. No se ha enviado nada.',
-      // Certify report (terminal + HTML). Rúbrica anclada + agregación determinista (ADR-024).
+      // Certify report (terminal + HTML). Rúbrica anclada + agregación determinista.
       report: {
         heading: 'Resultado de certificación de Skills TÉCNICAS',
         noInterviewNote: 'Preliminar, sin entrevista: la certificación combinada de esta Skill requiere completar su entrevista.',
@@ -1152,7 +1152,7 @@ const catalogs = {
         partialSampleWarning:
           'Muestra parcial: por los límites de tamaño la valoración se basa en una muestra del '
           + 'código, no en todo el proyecto.',
-        // ADR-016 skill levels (by decision power, NOT points) — replace the
+        // Skill levels (by decision power, NOT points) — replace the
         // numeric grade in the skill output. `key` from skillLevelForScore.
         levelLine: (label) => `Nivel: ${label}`,
         skillLevels: {
@@ -1161,7 +1161,7 @@ const catalogs = {
           expert: 'Expert',
           na: '—',
         },
-        // ADR-024 rubric dimensions.
+        // Rubric dimensions.
         dimensionsLabel: 'Dimensiones',
         dimensionNA: 'N/A',
         dimensionLabels: {
@@ -1173,7 +1173,7 @@ const catalogs = {
         },
         rationaleLabel: 'Por qué',
         improvementsLabel: 'Mejoras sugeridas',
-        // ADR-025 authorship receipt (atribución, NO prueba criptográfica).
+        // Authorship receipt (atribución, NO prueba criptográfica).
         receipt: {
           label: 'Autoría',
           repoLabel: 'Repo',
@@ -1196,11 +1196,11 @@ const catalogs = {
           `No hay muestreo definido para la tecnología "${technology}": todavía no se puede certificar por código.`,
         htmlTitle: 'Certificación de Skills técnicas · Shakers',
         noItems: 'No hay resultados de certificación que mostrar.',
-        // Coste (issue 012): input mayor = más € por run.
+        // Coste: input mayor = más € por run.
         costNote:
           'Nota de coste: se analiza bastante código por Skill (hasta ~150k tokens/Skill), '
           + 'lo que tiene un coste por ejecución.',
-        // Prompt de remediación (issue 011): generado en local desde las mejoras.
+        // Prompt de remediación: generado en local desde las mejoras.
         remediationHeading: 'Prompt para aplicar las mejoras',
         remediationHint: 'Copia este prompt y pégalo en tu herramienta de IA (Claude Code, Cursor…) para aplicar las mejoras.',
         remediationIntro: (skillName, technology) =>
@@ -1213,7 +1213,7 @@ const catalogs = {
         remediationCopiedLabel: 'Copiado ✓',
       },
     },
-    // Branded mini-shell chrome (skill-code-certification / ADR-014).
+    // Branded mini-shell chrome.
     login: {
       intro: 'Inicia sesión con tu email y contraseña de Shakers.',
       sessionExpiredIntro: 'Tu sesión anterior caducó. Vuelve a iniciar sesión.',
@@ -1234,7 +1234,7 @@ const catalogs = {
       errorNoEndpoint: 'No hay endpoint configurado. login usa la misma base que usage: define SHAKERS_CLI_INGEST_ENDPOINT o usa `usage --set-endpoint <url>`.',
       errorPersist: 'El inicio de sesión funcionó, pero no se pudo guardar la sesión en disco. Revisa los permisos de ~/.config/shakers y vuelve a intentarlo.',
       errorGeneric: 'No se pudo iniciar sesión. Inténtalo de nuevo.',
-      // ADR-046 — login con Google por loopback (`login --google`).
+      // Login con Google por loopback (`login --google`).
       googleIntro: 'Inicia sesión con Google. Se abrirá tu navegador para autorizar; al terminar, vuelve aquí.',
       googleOpening: 'Abriendo el navegador para iniciar sesión con Google…',
       googlePasteUrl: 'Si el navegador no se abre solo, pega esta URL en él:',
@@ -1264,7 +1264,7 @@ const catalogs = {
       selectHint: 'Flechas ↑/↓ para moverte · enter para elegir · esc para cancelar',
       chooseMethodPrompt: (max) => `Número (1-${max}), vacío para cancelar: `,
     },
-    // `start` (talents-ai-score, ADR-054/055): la herramienta para un talento YA registrado en Shakers que quiere completar su perfil agéntico.
+    // `start`: la herramienta para un talento YA registrado en Shakers que quiere completar su perfil agéntico.
     start: {
       help:
         'start — completa tu perfil de talento agéntico en Shakers: inicia sesión, evalúa tu uso de IA\n'
@@ -1288,10 +1288,10 @@ const catalogs = {
       menuHint: 'Flechas ↑/↓ para moverte · enter para elegir · esc para cancelar',
       menuPrompt: (max) => `Número (1-${max}), vacío para cancelar: `,
       menuRerun: 'Volver a lanzar la evaluación de uso de IA',
-      // dueño (2026-08-12): renombrado — el label decía "Añadir" pero la acción es declarar/subir lo detectado al PERFIL de Shakers, no crear algo nuevo desde cero.
+      // Renombrado — el label decía "Añadir" pero la acción es declarar/subir lo detectado al PERFIL de Shakers, no crear algo nuevo desde cero.
       menuAddSkills: 'Subir skills a tu perfil',
       menuAddAgents: 'Subir agentes a tu perfil',
-      // talents-ai-score, ADR-059: "Añadir proyecto al portfolio" — junto a las de skills/agentes, antes de certificar (declarar cosas de tu perfil, luego certificarlas).
+      // "Añadir proyecto al portfolio" — junto a las de skills/agentes, antes de certificar (declarar cosas de tu perfil, luego certificarlas).
       menuAddPortfolio: 'Añadir proyecto al portfolio',
       menuCertifySkills: 'Certificar skills',
       menuCertifyAgents: 'Certificar agentes',
@@ -1310,7 +1310,7 @@ const catalogs = {
       menuCertifyAgentsDesc:
         'Un reto valida que el agente es real, es tuyo y lo operas con criterio. Obtienes el agente Certified con su tracción → la señal más fuerte de tu perfil agéntico.',
       menuCancelled: 'Cancelado. No se ha hecho nada.',
-      // dueño (2026-08-12): cierre del BUCLE del menú — usado tanto al elegir "Salir" explícitamente como al cancelar (esc / respuesta vacía) DESDE DENTRO del bucle.
+      // Cierre del BUCLE del menú — usado tanto al elegir "Salir" explícitamente como al cancelar (esc / respuesta vacía) DESDE DENTRO del bucle.
       menuGoodbye: 'Sesión de `start` terminada. Ejecuta `start` de nuevo cuando quieras seguir completando tu perfil.',
       addAgentsComingSoon:
         'Añadir agentes: próximamente. Tus agentes serán activos de tu perfil agéntico — todavía no existe esa ficha en Shakers, así que de momento no hay dónde guardarlos.',
@@ -1329,7 +1329,7 @@ const catalogs = {
       addSkillsNoneChosen: 'No has elegido ninguna skill. No se ha añadido nada a tu perfil.',
       addSkillsDeclaredOne: (skillName) => `✓ Añadida a tu perfil: ${skillName} (sin verificar).`,
       addSkillsDeclareFailed: (skillName, reason) => `✗ No se pudo añadir ${skillName}: ${reason}`,
-      // Cierre de la visión (dueño, 2026-08-11): UNA vez, después del lote — no repetido por cada skill (issue 106/097's lección: repetir la misma frase por ítem es ruido, no refuerzo).
+      // Cierre de la visión: UNA vez, después del lote — no repetido por cada skill (repetir la misma frase por ítem es ruido, no refuerzo).
       addSkillsProfileBoost: 'Cada skill que añades suma a tu perfil: apareces en más búsquedas.',
       addSkillsHubSessionExpired: 'Tu sesión de Shakers ha caducado mientras añadíamos tus skills.',
       addSkillsOfferRelogin: '¿Quieres volver a iniciar sesión ahora para seguir? (s/n):',
@@ -1344,7 +1344,7 @@ const catalogs = {
       addSkillsRelateSkipped: (skillName) => `"${skillName}" añadida sin relacionar.`,
       addSkillsRelated: (skillName, portfolioName) => `  ✓ "${skillName}" relacionada con "${portfolioName}".`,
       addSkillsRelateFailed: (skillName, portfolioName, reason) => `  ✗ No se pudo relacionar "${skillName}" con "${portfolioName}": ${reason}`,
-      // talents-ai-score, ADR-059: "Añadir proyecto al portfolio".
+      // "Añadir proyecto al portfolio".
       portfolioIntro:
         'Vamos a añadir este proyecto a tu portfolio de Shakers. La mayoría de los datos vienen pre-rellenados desde tu código y tu git: confirma o edita cada uno.',
       portfolioErrorNoEndpoint:
@@ -1356,7 +1356,7 @@ const catalogs = {
       portfolioDuplicateName: (name) => `Ya tienes un proyecto llamado "${name}" en tu portfolio. No se ha creado uno duplicado — vuelve a ejecutar esta opción con otro título si quieres añadir uno distinto.`,
       // (1) Título ← nombre del directorio, editable.
       portfolioTitlePrompt: (def) => `Título del proyecto [${def}]:`,
-      // (2) Tipo ← PORTFOLIO/EXPERIENCE, obligatorio. Copy de visión (dueño):
+      // (2) Tipo ← PORTFOLIO/EXPERIENCE, obligatorio. Copy de visión:
       // qué significa cada tipo para tu perfil, mostrado SOLO al resaltar.
       portfolioTypeHeading: '¿Qué tipo de entrada es?',
       portfolioTypeHint: 'Flechas ↑/↓ para moverte · enter para elegir · esc para cancelar',
@@ -1367,7 +1367,7 @@ const catalogs = {
       portfolioTypeExperience: 'Experiencia',
       portfolioTypeExperienceDesc:
         'Lo añade a tu perfil como experiencia profesional (freelance o de plantilla): cuenta en tu trayectoria, no como una pieza para mostrar.',
-      // (3) Descripción ← IA pre-redacta tras consentimiento (ADR-052/059).
+      // (3) Descripción ← IA pre-redacta tras consentimiento.
       portfolioDescriptionConsentDisclaimer:
         'Para redactar un borrador de la descripción con IA, se enviarán a Shakers: el nombre del proyecto, las tecnologías detectadas y, si existen, el contenido del README y la descripción del package.json.',
       portfolioDescriptionDraftLabel: 'Borrador generado por IA:',
@@ -1395,7 +1395,7 @@ const catalogs = {
       portfolioRelaunchAfterRelogin: 'Sesión renovada. Reintentamos añadir el proyecto a tu portfolio.',
       portfolioRelaunchDeclined: 'Vale. Ejecuta `login` y vuelve a elegir "Añadir proyecto al portfolio" cuando quieras.',
       portfolioReloginFailed: 'No se pudo volver a iniciar sesión. El proyecto no se ha añadido a tu portfolio.',
-      // talents-ai-score Phase 2: "Añadir agente al perfil".
+      // "Añadir agente al perfil".
       agentErrorNoEndpoint:
         'No hay endpoint configurado. `start` usa la misma base que `usage`: define el endpoint con `usage --set-endpoint <url>` (o SHAKERS_CLI_INGEST_ENDPOINT).',
       agentNoHubToken:
@@ -1416,7 +1416,7 @@ const catalogs = {
       agentCancelled: 'Cancelado. No se ha añadido ningún agente a tu perfil.',
       // (3) Nombre ← detectado, editable.
       agentNamePrompt: (def) => `Nombre del agente [${def}]:`,
-      // (4) whatItDoes + humanDecides ← IA pre-redacta tras consentimiento (ADR-052).
+      // (4) whatItDoes + humanDecides ← IA pre-redacta tras consentimiento.
       agentFieldsConsentDisclaimer:
         'Para redactar un borrador con IA de qué hace tu agente y qué decides tú, se enviarán a Shakers: el nombre del agente, sus herramientas/modelo/agente padre detectados y un resumen de su definición (sus propias instrucciones).',
       agentDraftingLabel: 'Redactando un borrador con IA…',
@@ -1459,7 +1459,7 @@ const catalogs = {
       errorReasonHttp: (status) => `el servidor respondió con un error (HTTP ${status}).`,
     },
     superadmin: {
-      // ADR-027 — sesión de superadmin autenticada por contraseña (no-prod).
+      // Sesión de superadmin autenticada por contraseña (no-prod).
       sessionIntro:
         'Abre una sesión de superadmin (solo entornos no productivos): certify funcionará con CUALQUIER email en CUALQUIER repo, saltándose los gates de identidad y autoría.',
       passwordPrompt: 'Contraseña de superadmin:',
@@ -1472,7 +1472,7 @@ const catalogs = {
       sessionHint:
         'Ejecuta:  certify --email <cualquiera> --accept-disclaimer --skill <nombre>   ·   Para cerrarla:  superadmin --logout',
       loggedOut: 'Sesión de superadmin olvidada (token local eliminado).',
-      // talents-ai-score, "conmutador de perfil vía superadmin" (dueño, 2026-08-12): conveniencia de dev/testing — cambia entre perfil talent/external sin reinstalar.
+      // Conmutador de perfil vía superadmin: conveniencia de dev/testing — cambia entre perfil talent/external sin reinstalar.
       profileMenuHeading: '¿Qué quieres hacer?',
       profileMenuHint: 'Flechas ↑/↓ para moverte · enter para elegir · esc para cancelar',
       profileMenuPrompt: (max) => `Número (1-${max}), vacío para cancelar: `,
@@ -1487,7 +1487,7 @@ const catalogs = {
       profileMenuCancelled: 'Cancelado. No se ha cambiado nada.',
       profileAlreadyOn: (profile) => `Ya estás en el perfil ${profile === 'talent' ? 'Talent' : 'External'}. No se ha cambiado ni purgado nada.`,
       profileSwitched: (profile) => `Perfil cambiado a ${profile === 'talent' ? 'Talent' : 'External'} · historial limpiado (informe, consentimiento, sesión de talento) · efecto inmediato, sin reiniciar.`,
-      // talents-ai-score, ADR-020/021 (decisión del coordinador): superadmin es DELIBERADAMENTE single-hop, SOLO PRIMARIO (servicio de certificaciones) — nunca hub.
+      // Superadmin es DELIBERADAMENTE single-hop, SOLO PRIMARIO (servicio de certificaciones) — nunca hub.
       queryingPrimary: (endpoint) => `Consultando Shakers: ${endpoint}`,
       errorNoEndpoint:
         'No hay endpoint configurado. Configura el backend (SHAKERS_CLI_INGEST_ENDPOINT o usage --set-endpoint) y reinténtalo.',
@@ -1495,7 +1495,7 @@ const catalogs = {
       errorDisabled:
         'Endpoint no disponible: la sesión de superadmin está deshabilitada fuera de entornos no productivos.',
       errorGeneric: 'No se pudo abrir la sesión de superadmin. Inténtalo de nuevo.',
-      // Inspect (ADR-025) — recibo de atribución de certificaciones YA guardadas.
+      // Inspect — recibo de atribución de certificaciones YA guardadas.
       inspectIntro:
         'Audita la evidencia de autoría de las certificaciones ya guardadas (solo lectura, entornos no productivos).',
       inspectEmailPrompt: 'Email cuya(s) certificación(es) quieres inspeccionar:',
@@ -1521,7 +1521,7 @@ const catalogs = {
     // in-shell command help and messages — the commands keep their own copy.
     repl: {
       prompt: 'ϟ shakers ›',
-      // dueño (2026-08-12): el BANNER de arranque (src/repl-shell.js) ahora es profile-aware y localizado.
+      // El BANNER de arranque (src/repl-shell.js) ahora es profile-aware y localizado.
       bannerWelcome: 'Bienvenido a',
       bannerTalentLine1: 'Completa o actualiza tu perfil de talento',
       bannerTalentLine2: 'agéntico en Shakers: no solo qué sabes, sino',
@@ -1542,7 +1542,7 @@ const catalogs = {
       bannerExternalMapDesc: 'informe LOCAL (grafo)',
       bannerExternalReportDesc: 'informe HTML compartible',
       bannerExternalShareDesc: 'tarjeta para LinkedIn',
-      // FLUJO DE COMANDOS (issues 081 y 082) VOCABULARIO, y lo hereda la 083: aquí se habla de COMANDOS de la herramienta.
+      // FLUJO DE COMANDOS VOCABULARIO, y lo hereda la 083: aquí se habla de COMANDOS de la herramienta.
       completeNeeds: (cmd) => `(necesita: ${cmd})`,
       completeDone: '(ya ejecutado)',
       completeDoneStale: (days) => `(ya ejecutado, hace ${days} días)`,
@@ -1575,7 +1575,7 @@ const catalogs = {
       journeyDone: 'Has completado el recorrido de la herramienta: no queda ningún comando por ejecutar. Los siguientes pasos para subir tu nivel de uso de IA son otra cosa y están en `usage --roadmap`.',
       goodbye: 'Hasta pronto.',
       unknown: (cmd) => `Comando no reconocido: "${cmd}". Escribe "help" para ver los comandos disponibles.`,
-      // ORDEN: lo declara src/command-graph.js (issue 081).
+      // ORDEN: lo declara src/command-graph.js.
       help:
         'Shakers — comandos disponibles\n\n'
         + '  usage     [opciones]   Escanea este proyecto y tu equipo; puntúa tu setup de IA (T0-T7)\n'
@@ -1618,7 +1618,7 @@ const catalogs = {
       toolsS: 'Clientes de IA presentes en tu entorno.',
       techT: 'Tecnologías del proyecto',
       techS: 'Stack reconocido en el repositorio.',
-      // Issue 110: los SERVICIOS detrás de los MCP.
+      // Los SERVICIOS detrás de los MCP.
       mcpT: 'Servicios conectados por MCP',
       mcpS: 'Productos a los que tu IA tiene acceso.',
       mcpEmpty: 'No se ha detectado ningún servidor MCP. Conectar uno es el criterio que te sube a T3 (Banco conectado).',
@@ -1626,7 +1626,7 @@ const catalogs = {
       // 085: la pestaña decía "Skills" a secas junto a una de "Agentes", que es
       // la colisión exacta que la issue nombra.
       skills: 'Skills técnicas',
-      // ---- Agentes DETECTADOS, columna izquierda (issue 089) --------------
+      // ---- Agentes DETECTADOS, columna izquierda --------------
       agentsT: 'Agentes detectados',
       agentsS: 'Todos los agentes que hay configurados en tu entorno. Certificar es otra cosa y está en la columna de la derecha.',
       agentsEmpty: 'No se ha detectado ningún agente configurado (p. ej. en .claude/agents/). Si tienes agentes y no salen aquí, es que la herramienta no los ha encontrado, no que no cuenten.',
@@ -1642,7 +1642,7 @@ const catalogs = {
       hereYouAre: 'Estás aquí',
       noFoot: 'Aún no hay uso de IA. Ejecuta usage en este proyecto.',
       noSkills: 'Aún no hay Skills técnicas certificadas. Ejecuta certify skills.',
-      // Agent certifications were removed from the report (ADR-033); the sheet's agent-cert tab, its empty state and its detected-vs-certified copy went with it.
+      // Agent certifications were removed from the report; the sheet's agent-cert tab, its empty state and its detected-vs-certified copy went with it.
       footer: 'Informe generado localmente · Shakers',
       // Template chrome that used to be hardcoded Spanish in report-sheet.html (including inside its inline <script>), so an English report shipped Spanish controls.
       themeToggle: 'Cambiar tema',
@@ -1869,10 +1869,10 @@ const catalogs = {
         t7Blocking: (n) => `To reach T7 (Orchestrated workshop) you need at least one automation hook configured — you have ${n} now.`,
       },
     },
-    // Progression ladder (skill-code-certification, report req 1) — see the es block.
+    // Progression ladder — see the es block.
     ladder: {
       levelsHeading: 'Maturity levels (0-4)',
-      // ADR-016: the ladder now groups tiers by SETUP LEVEL, not the 0-4 band.
+      // The ladder now groups tiers by SETUP LEVEL, not the 0-4 band.
       setupHeading: 'Setup Level',
       setupIntro:
         'Your setup level (S1–S3) sums up your AI usage at a glance; the tier (T0-T7) is the '
@@ -1909,7 +1909,7 @@ const catalogs = {
         T7: 'Orchestrated workshop: hooks automate the workshop and agents orchestrate each other.',
       },
     },
-    // Agent classification + improvement tips (skill-code-certification req 2/3) — see the es block.
+    // Agent classification + improvement tips — see the es block.
     classification: {
       label: 'Classification',
       noCategory: 'No category',
@@ -1946,7 +1946,7 @@ const catalogs = {
       },
     },
     // LEGACY 0-4 band names — kept only for older persisted reports / the
-    // unchanged sent payload (ADR-016); the report shows `setupLevels` instead.
+    // unchanged sent payload; the report shows `setupLevels` instead.
     levelNames: {
       none: 'No AI usage',
       exploring: 'Exploring',
@@ -1954,7 +1954,7 @@ const catalogs = {
       power: 'Power user',
       orchestrator: 'Orchestrator',
     },
-    // Setup Level (Talent Certification Framework, ADR-016): the 3-value rollup that REPLACES the 0-4 band on every surface.
+    // Setup Level (Talent Certification Framework): the 3-value rollup that REPLACES the 0-4 band on every surface.
     setupLevels: {
       none: {
         label: 'Not certified',
@@ -1991,7 +1991,7 @@ const catalogs = {
       brandSub: 'AI usage profile',
       toolsDetected: (n, total) => `${n}/${total} tools detected`,
       level: (level, name) => `Level ${level} · ${name}`,
-      // ADR-016: Setup Level shown in the top bar (replaces the 0-4 level line).
+      // Setup Level shown in the top bar (replaces the 0-4 level line).
       setupLevel: (label) => `Setup · ${label}`,
       // Current tier appended to the top bar, next to the level (report req 1 addendum).
       tierInline: (key, name) => ` · Tier ${key} · ${name}`,
@@ -2019,22 +2019,22 @@ const catalogs = {
       environment: 'Environment',
       editors: 'editors',
       noEditorsDetected: 'none detected',
-      // ADR-016 agent evaluation (terminal, one line per agent): compact usage
+      // Agent evaluation (terminal, one line per agent): compact usage
       // signal derived from the local Claude Code history.
       agentUsed: (n) => `used ${n}×`,
       agentUnused: 'no local use',
       agentUsageUnavailable: '(no local Claude Code history: usage unavailable)',
-      // ADR-016: discoverability hint for the next-steps section (behind --roadmap).
+      // Discoverability hint for the next-steps section (behind --roadmap).
       roadmapHint: 'Run `usage --roadmap` to see the steps between you and the next AI-usage level. These are not steps in this tool: they are changes to how you work, over the coming weeks.',
       aiProfileGenerating: 'Generating your AI profile (matrix, vision and how you work)…',
       aiProfilePendingRetry: 'Your AI profile (matrix, vision and how you work) is still being generated; re-run `report` in a moment to see it.',
-      // issue 122 / ADR-044: shown when a session existed and has expired. Opens
+      // Shown when a session existed and has expired. Opens
       // with "Your session has expired" — see the Spanish catalog.
       sessionExpiredNotice: 'Your session has expired. You are seeing the full report as a general user; run `login` to sign in again.',
       nextStep: 'Next step to level up',
       files: (n) => `${n} ${n === 1 ? 'file' : 'files'}`,
       lastModified: (label) => `last modified: ${label}`,
-      // dueño (2026-08-12): "Project technologies" is renamed "Skills" for the TALENT profile only (naming unicity with the rest of the talent surface).
+      // "Project technologies" is renamed "Skills" for the TALENT profile only (naming unicity with the rest of the talent surface).
       skillsHeading: 'Skills',
     },
     html: {
@@ -2043,7 +2043,7 @@ const catalogs = {
       h1: 'Your AI usage profile',
       sub: 'A local snapshot of which AI tools you have and how deeply you have configured them.',
       levelOf: (level) => `Level ${level} of 4`,
-      // ADR-016: hero label for the Setup Level (replaces the 0-4 "Level X of 4").
+      // Hero label for the Setup Level (replaces the 0-4 "Level X of 4").
       setupLevelOf: 'Setup Level',
       // Current tier shown in the hero bar next to the level (report req 1 addendum).
       currentTier: (key, name) => `Tier ${key} · ${name}`,
@@ -2066,17 +2066,17 @@ const catalogs = {
       agentDescriptionFromName: (name) => `"${name}" agent (no description declared in its file).`,
       // AI product an agent belongs to, derived from its source (proper nouns; same es/en).
       aiProducts: { 'claude-code': 'Claude Code' },
-      // ADR-016 agent evaluation (HTML per-agent detail): definition-quality score + LLM rationale + local usage signal.
+      // Agent evaluation (HTML per-agent detail): definition-quality score + LLM rationale + local usage signal.
       agentScoreLabel: 'Definition quality (0-100)',
       agentQualityLabel: 'Why:',
       agentUsageLabel: 'Local usage (Claude Code history)',
       agentUsedTimes: (n) => `used ${n}×`,
       agentUnused: 'no local use',
-      // Project technologies (talents-ai-score, ADR-012). Refined: shows
+      // Project technologies. Refined: shows
       // recognized FRAMEWORKS/LIBRARIES only, not a raw dependency dump.
       technologiesHeading: 'Project technologies',
       technologiesEmpty: 'No recognized framework or library was found in the dependency manifests (package.json, requirements.txt, go.mod, pyproject.toml).',
-      // MCP servers by name (talents-ai-score, issue 015).
+      // MCP servers by name.
       mcpHeading: 'Services connected over MCP',
       mcpEmpty: 'No MCP server detected. Connecting one is the criterion that takes you to T3 (Connected bench).',
       mcpUnidentified: (n) => `${n} more server${n === 1 ? '' : 's'} whose service we could not identify from its name.`,
@@ -2092,10 +2092,10 @@ const catalogs = {
       roadmapHonestyLabel: 'Honesty note',
       roadmapContentUnavailable: "This level's detailed content isn't available in this language yet.",
       roadmapPersonalizedNotice: 'Content adapted to your project.',
-      // Issue 109 — see the Spanish catalog for why these say what was lost
+      // See the Spanish catalog for why these say what was lost
       // rather than what went wrong, and when they are allowed to show.
       roadmapNotPersonalizedNotice: 'This roadmap is the generic one for your tier: it could not be adapted to your project this run. Run `usage` again to retry.',
-      // Issue 084 — see the Spanish catalog for why the tag sits next to the
+      // See the Spanish catalog for why the tag sits next to the
       // heading instead of in a footnote.
       roadmapNowLabel: 'Where you start from',
       roadmapProjectionLabel: 'Where this path leaves you',
@@ -2114,9 +2114,9 @@ const catalogs = {
       rawData: "View this report's exact data (JSON)",
     },
     cli: {
-      // Reporting redesign (skill-code-certification): HTML is no longer opt-in (--html retired).
+      // Reporting redesign: HTML is no longer opt-in (--html retired).
       reportLink: (url) => `Open your report in your browser:\n  ${url}`,
-      // `share` command (skill-code-certification): CLI copy wrapping the branded LinkedIn card.
+      // `share` command: CLI copy wrapping the branded LinkedIn card.
       share: {
         help: 'share — build a branded card with your AI usage result (tier + score) to post on LinkedIn.\n'
           + '  Run `usage` first; `share` uses this project\'s latest AI usage.\n'
@@ -2166,7 +2166,7 @@ const catalogs = {
         available: (from, to) => `A newer Shakers CLI is available: ${from} → ${to}`,
         howTo: 'Run `shakers update` to upgrade.',
       },
-      // `report` command (ADR-016): builds and OPENS the full, shareable HTML report for this project (AI usage + certified Skills).
+      // `report` command: builds and OPENS the full, shareable HTML report for this project (AI usage + certified Skills).
       report: {
         help: 'report — build and open the full HTML report for this project (AI usage + certified Skills) to share with your team.\n'
           + '  Run `usage` (and optionally `certify`) first; `report` gathers their result.\n'
@@ -2198,10 +2198,10 @@ const catalogs = {
       reposScopeAll: 'Evaluating all AI usage on this machine.',
       synthesizingLabel: 'Synthesizing agents with AI…',
       personalizingRoadmapLabel: 'Personalizing roadmap…',
-      // ADR-016: agent definition-quality evaluation (ephemeral LLM call).
+      // Agent definition-quality evaluation (ephemeral LLM call).
       evaluatingAgentsLabel: 'Evaluating your agents’ quality…',
       buildNextLevelHint: 'Alternatively, run `usage --build-next-level` to generate the starter file directly in your project.',
-      // Localized help (skill-code-certification / ADR-003): previously hardcoded Spanish in bin/report.js; now routed through i18n so it respects the machine locale.
+      // Localized help: previously hardcoded Spanish in bin/report.js; now routed through i18n so it respects the machine locale.
       help:
         '\nShakers — local profile of your AI-tool usage\n\n'
         + 'Usage:\n  usage [options]\n\n'
@@ -2236,7 +2236,7 @@ const catalogs = {
         + 'file (--set-endpoint) > none. Without an endpoint, the report is shown but not sent\n'
         + 'to Shakers.\n',
     },
-    // Cumulative report (skill-code-certification, reporting redesign) — English mirror.
+    // Cumulative report — English mirror.
     cumulative: {
       title: 'Your Shakers report',
       privacyNote: 'This report is generated and stored only on your machine. Nothing is sent to Shakers unless you give explicit consent.',
@@ -2252,12 +2252,12 @@ const catalogs = {
       noFileTarget: "The next step isn't a file this command can create — check the roadmap snippet in the report.",
       unrecognizedTier: "Couldn't determine your current tier.",
     },
-    // talents-ai-score: mirrors the es catalog's `legalNotice` — see its comment.
+    // Mirrors the es catalog's `legalNotice` — see its comment.
     legalNotice: {
       label: 'LEGAL NOTICE',
     },
     consent: {
-      // talents-ai-score, ADR-011: the disclosure wall (itemized sends / never sends) is RETIRED from the CLI — that content now lives in the repo's README.
+      // The disclosure wall (itemized sends / never sends) is RETIRED from the CLI — that content now lives in the repo's README.
       persistIntro:
         'This report has already been generated and shown on your machine, '
         + 'always. Saving it in Shakers is optional and revocable at any '
@@ -2284,11 +2284,11 @@ const catalogs = {
       savedUnderEmail: (email) => `The report will be saved under: ${email}`,
       invalidEmail: 'Invalid email, try again.',
       notObtained: "Couldn't record your answer; you'll be asked again next time.",
-      // talents-ai-score, ADR-051: this question is now asked BEFORE any AI/egress call (agent-synthesis, agent-evaluation, roadmap personalization), not after.
+      // This question is now asked BEFORE any AI/egress call (agent-synthesis, agent-evaluation, roadmap personalization), not after.
       noReportWithoutConsent: 'Without your consent, this report will not include AI-generated synthesis, evaluation, or roadmap this time (the rest of the report is shown as usual). Run `usage` again and accept to include them, or use --consent-reset if you want to be asked again.',
       deniedSaved: 'Understood, nothing will be saved. You can change your mind later by running the command again.',
       grantedSaved: (email) => `Thanks. From now on this report will be saved in Shakers automatically (email: ${email}, max. once per hour).`,
-      // talents-ai-score, issue 130: a logged-in Talent is NEVER asked for an email (their account already proves identity).
+      // A logged-in Talent is NEVER asked for an email (their account already proves identity).
       noSessionEmail: "There's no email on file for your session yet, so this report can't be saved this time. You'll be asked again next run.",
       skipAlreadyDecided: (decision, path) =>
         `Consent already answered (${decision}) — stored at ${path}. `
@@ -2321,7 +2321,7 @@ const catalogs = {
       showConfigFile: (url, path) => `Effective ingest endpoint: ${url}\n  Source: config file (${path}).`,
       showConfigInvalid: (path) => `The config file (${path}) has an invalid or insecure endpoint; it is ignored. Fix it with usage --set-endpoint <url>.`,
       showNone: 'No ingest endpoint configured. Set SHAKERS_CLI_INGEST_ENDPOINT or use usage --set-endpoint <url>. Without it, the report is still shown but not sent to Shakers.',
-      // talents-ai-score, ADR-020/021: the CLI now talks to a CHAIN of two backends — PRIMARY (certifications service, above) and FALLBACK (hub-backend, here).
+      // The CLI now talks to a CHAIN of two backends — PRIMARY (certifications service, above) and FALLBACK (hub-backend, here).
       showFallbackRetired: 'Note: your config.json still has `ingestEndpointFallback`. It is no longer used: the CLI talks to a single backend. You can delete that line by hand; leaving it changes nothing.',
       confirmHostPrompt: (host) => `The host "${host}" is not localhost or a known Shakers domain. If you continue, your sampled code and AI signals will be sent there.\n  Type the exact hostname to confirm (leave blank to cancel):`,
       confirmHostMismatch: "That didn't match the hostname shown. Cancelled: nothing was saved.",
@@ -2355,7 +2355,7 @@ const catalogs = {
         }
       },
     },
-    // Email-ownership verification (skill-code-certification / ADR-006): the OTP "wait mode" copy, shared by both binaries.
+    // Email-ownership verification: the OTP "wait mode" copy, shared by both binaries.
     verify: {
       sent: (email) => `We sent a verification code to ${email}.`,
       waitHint: 'Paste the code here. Press "r" then Enter to resend it, or Enter on a blank line to cancel.',
@@ -2371,7 +2371,7 @@ const catalogs = {
       cancelled: 'Verification cancelled. The report will not be saved (it has already been shown to you).',
       unavailable: 'Email verification is not available right now; the report will not be saved (it has already been shown to you).',
     },
-    // Skill Code Certification (skill-code-certification, issues 004/006) —
+    // Skill Code Certification —
     // English mirror of the `certify` catalog. Same content/invariants.
     certifyDimension: {
       help:
@@ -2787,7 +2787,7 @@ const catalogs = {
         partialSampleWarning:
           'Partial sample: due to size limits the assessment is based on a sample of the code, '
           + 'not the whole project.',
-        // ADR-016 skill levels (by decision power, NOT points) — replace the
+        // Skill levels (by decision power, NOT points) — replace the
         // numeric grade in the skill output. `key` from skillLevelForScore.
         levelLine: (label) => `Level: ${label}`,
         skillLevels: {
@@ -2796,7 +2796,7 @@ const catalogs = {
           expert: 'Expert',
           na: '—',
         },
-        // ADR-024 rubric dimensions.
+        // Rubric dimensions.
         dimensionsLabel: 'Dimensions',
         dimensionNA: 'N/A',
         dimensionLabels: {
@@ -2808,7 +2808,7 @@ const catalogs = {
         },
         rationaleLabel: 'Why',
         improvementsLabel: 'Suggested improvements',
-        // ADR-025 authorship receipt (attribution, NOT cryptographic proof).
+        // Authorship receipt (attribution, NOT cryptographic proof).
         receipt: {
           label: 'Authorship',
           repoLabel: 'Repo',
@@ -2846,7 +2846,7 @@ const catalogs = {
         remediationCopiedLabel: 'Copied ✓',
       },
     },
-    // Branded mini-shell chrome (skill-code-certification / ADR-014).
+    // Branded mini-shell chrome.
     login: {
       intro: 'Log in with your Shakers email and password.',
       sessionExpiredIntro: 'Your previous session expired. Log in again.',
@@ -2867,7 +2867,7 @@ const catalogs = {
       errorNoEndpoint: 'No endpoint configured. login uses the same base as usage: set SHAKERS_CLI_INGEST_ENDPOINT or use `usage --set-endpoint <url>`.',
       errorPersist: 'Login succeeded, but the session could not be saved to disk. Check the permissions of ~/.config/shakers and try again.',
       errorGeneric: 'Could not log in. Try again.',
-      // ADR-046 — Google login by loopback (`login --google`).
+      // Google login by loopback (`login --google`).
       googleIntro: 'Log in with Google. Your browser will open to authorize; when you are done, come back here.',
       googleOpening: 'Opening your browser to log in with Google…',
       googlePasteUrl: 'If your browser does not open on its own, paste this URL into it:',
@@ -2898,7 +2898,7 @@ const catalogs = {
       selectHint: 'Arrows ↑/↓ to move · enter to pick · esc to cancel',
       chooseMethodPrompt: (max) => `Number (1-${max}), empty to cancel: `,
     },
-    // `start` (talents-ai-score, ADR-054/055): the tool for a talent ALREADY registered in Shakers who wants to complete their agentic profile.
+    // `start`: the tool for a talent ALREADY registered in Shakers who wants to complete their agentic profile.
     start: {
       help:
         'start — complete your agentic talent profile in Shakers: log in, run the AI-usage\n'
@@ -2922,16 +2922,16 @@ const catalogs = {
       menuHint: 'Arrows ↑/↓ to move · enter to pick · esc to cancel',
       menuPrompt: (max) => `Number (1-${max}), empty to cancel: `,
       menuRerun: 'Run the AI-usage evaluation again',
-      // dueño (2026-08-12): renamed — the label said "Add" but the action is declaring/uploading what was DETECTED to the Shakers profile, not creating something new from scratch.
+      // Renamed — the label said "Add" but the action is declaring/uploading what was DETECTED to the Shakers profile, not creating something new from scratch.
       menuAddSkills: 'Upload skills to profile',
       menuAddAgents: 'Upload agents to profile',
-      // talents-ai-score, ADR-059: "Add project to portfolio" — grouped with skills/agents, before certifying (declare things on your profile, then certify them).
+      // "Add project to portfolio" — grouped with skills/agents, before certifying (declare things on your profile, then certify them).
       menuAddPortfolio: 'Add project to portfolio',
       menuCertifySkills: 'Certify skills',
       menuCertifyAgents: 'Certify agents',
       menuExit: 'Exit',
       menuExitDesc: 'Ends this `start` session. Run it again whenever you want to keep completing your profile.',
-      // Per-option descriptions (dueño, 2026-08-11): shown ONLY for the HIGHLIGHTED item in the interactive picker (or compactly in the numbered fallback) — never all at once.
+      // Per-option descriptions: shown ONLY for the HIGHLIGHTED item in the interactive picker (or compactly in the numbered fallback) — never all at once.
       menuRerunDesc:
         'Re-scans your AI setup and recomputes your AI fluency. You get your updated position on the map (Explorer → AI Native) on your profile.',
       menuAddSkillsDesc:
@@ -2945,7 +2945,7 @@ const catalogs = {
       menuCertifyAgentsDesc:
         'A challenge validates the agent is real, is yours, and you run it with judgment. You get the agent Certified with its traction → the strongest signal of your agentic profile.',
       menuCancelled: 'Cancelled. Nothing was done.',
-      // dueño (2026-08-12): closes the menu LOOP — used both when "Exit" is explicitly chosen and when cancelling (esc / empty answer) FROM INSIDE the loop.
+      // Closes the menu LOOP — used both when "Exit" is explicitly chosen and when cancelling (esc / empty answer) FROM INSIDE the loop.
       menuGoodbye: '`start` session ended. Run `start` again whenever you want to keep completing your profile.',
       addAgentsComingSoon:
         "Add agents: coming soon. Your agents will become assets of your agentic profile — that record doesn't exist in Shakers yet, so there's nowhere to save them for now.",
@@ -2964,7 +2964,7 @@ const catalogs = {
       addSkillsNoneChosen: 'No skill was chosen. Nothing was added to your profile.',
       addSkillsDeclaredOne: (skillName) => `✓ Added to your profile: ${skillName} (unverified).`,
       addSkillsDeclareFailed: (skillName, reason) => `✗ Could not add ${skillName}: ${reason}`,
-      // Vision close (dueño, 2026-08-11): ONCE, after the batch — not repeated per skill (issue 106/097's lesson: the same line repeated per item is noise, not reinforcement).
+      // Vision close: ONCE, after the batch — not repeated per skill (the same line repeated per item is noise, not reinforcement).
       addSkillsProfileBoost: 'Every skill you add counts toward your profile: you show up in more searches.',
       addSkillsHubSessionExpired: 'Your Shakers session expired while we were adding your skills.',
       addSkillsOfferRelogin: 'Do you want to log in again now to continue? (y/n):',
@@ -2979,7 +2979,7 @@ const catalogs = {
       addSkillsRelateSkipped: (skillName) => `"${skillName}" added without a relation.`,
       addSkillsRelated: (skillName, portfolioName) => `  ✓ "${skillName}" related to "${portfolioName}".`,
       addSkillsRelateFailed: (skillName, portfolioName, reason) => `  ✗ Could not relate "${skillName}" to "${portfolioName}": ${reason}`,
-      // talents-ai-score, ADR-059: "Add project to portfolio".
+      // "Add project to portfolio".
       portfolioIntro:
         "Let's add this project to your Shakers portfolio. Most of the data is pre-filled from your code and your git history: confirm or edit each one.",
       portfolioErrorNoEndpoint:
@@ -2991,7 +2991,7 @@ const catalogs = {
       portfolioDuplicateName: (name) => `You already have a project named "${name}" in your portfolio. No duplicate was created — run this option again with a different title if you want to add a distinct one.`,
       // (1) Title ← directory name, editable.
       portfolioTitlePrompt: (def) => `Project title [${def}]:`,
-      // (2) Type ← PORTFOLIO/EXPERIENCE, obligatorio. Vision copy (dueño):
+      // (2) Type ← PORTFOLIO/EXPERIENCE, obligatorio. Vision copy:
       // what each type means for your profile, shown ONLY on highlight.
       portfolioTypeHeading: 'What type of entry is this?',
       portfolioTypeHint: 'Arrows ↑/↓ to move · enter to pick · esc to cancel',
@@ -3002,7 +3002,7 @@ const catalogs = {
       portfolioTypeExperience: 'Experience',
       portfolioTypeExperienceDesc:
         "Adds it to your profile as professional experience (freelance or in-house): counts toward your track record, not as a piece to show.",
-      // (3) Description ← AI pre-drafts after consent (ADR-052/059).
+      // (3) Description ← AI pre-drafts after consent.
       portfolioDescriptionConsentDisclaimer:
         'To draft a description with AI, this will send to Shakers: the project name, the detected technologies, and — if present — the README content and the package.json description.',
       portfolioDescriptionDraftLabel: 'AI-drafted description:',
@@ -3031,8 +3031,8 @@ const catalogs = {
       portfolioRelaunchAfterRelogin: 'Session renewed. Retrying adding the project to your portfolio.',
       portfolioRelaunchDeclined: 'OK. Run `login` and pick "Add project to portfolio" again whenever you want.',
       portfolioReloginFailed: 'Could not log in again. The project was not added to your portfolio.',
-      // talents-ai-score Phase 2: "Add agent to profile". Same model as the
-      // portfolio (ADR-059): AI pre-drafts, the talent edits.
+      // "Add agent to profile". Same model as the
+      // portfolio: AI pre-drafts, the talent edits.
       agentErrorNoEndpoint:
         'No endpoint configured. `start` uses the same base as `usage`: set the endpoint with `usage --set-endpoint <url>` (or SHAKERS_CLI_INGEST_ENDPOINT).',
       agentNoHubToken:
@@ -3053,7 +3053,7 @@ const catalogs = {
       agentCancelled: 'Cancelled. No agent was added to your profile.',
       // (3) Name ← detected, editable.
       agentNamePrompt: (def) => `Agent name [${def}]:`,
-      // (4) whatItDoes + humanDecides ← AI pre-drafts after consent (ADR-052).
+      // (4) whatItDoes + humanDecides ← AI pre-drafts after consent.
       agentFieldsConsentDisclaimer:
         "To draft what your agent does and what you decide with AI, this will send to Shakers: the agent name, its detected tools/model/parent, and a summary of its definition (its own instructions).",
       agentDraftingLabel: 'Drafting with AI…',
@@ -3069,7 +3069,7 @@ const catalogs = {
       agentDeclaredSuccess: (name) => `✓ "${name}" added to your profile.`,
       agentDeclareFailed: (reason) => `✗ Could not add the agent to your profile: ${reason}`,
       agentHubSessionExpired: 'Your Shakers session expired while we were adding the agent to your profile.',
-      // ADR-041: AFTER the agent is declared, offer to relate it to the experiences/projects the talent already declared (portfolioId only).
+      // AFTER the agent is declared, offer to relate it to the experiences/projects the talent already declared (portfolioId only).
       agentRelateNoPortfolios: "You don't have any experiences in your profile yet, so the agent was added without a relation. Add one with \"Add project to portfolio\" and relate it later.",
       agentRelateAsk: (agentName) => `Do you want to relate "${agentName}" to any of your experiences? (y/n):`,
       agentRelateSelectHeading: (agentName) => `Relate "${agentName}" to one or more experiences:`,
@@ -3096,7 +3096,7 @@ const catalogs = {
       },
       errorReasonHttp: (status) => `the server answered with an error (HTTP ${status}).`,
     },
-    // ADR-027 — password-authenticated superadmin SESSION (NON-PROD only).
+    // Password-authenticated superadmin SESSION (NON-PROD only).
     superadmin: {
       sessionIntro:
         'Open a superadmin session (non-production environments only): certify will run against ANY email on ANY repo, bypassing the identity and authorship gates.',
@@ -3110,7 +3110,7 @@ const catalogs = {
       sessionHint:
         'Run:  certify --email <anyone> --accept-disclaimer --skill <name>   ·   To end it:  superadmin --logout',
       loggedOut: 'Superadmin session forgotten (local token removed).',
-      // talents-ai-score, "profile switch via superadmin" (dueño, 2026-08-12): a dev/testing convenience — flips between the talent/ external profile without reinstalling.
+      // Profile switch via superadmin: a dev/testing convenience — flips between the talent/ external profile without reinstalling.
       profileMenuHeading: 'What do you want to do?',
       profileMenuHint: 'Arrows ↑/↓ to move · enter to pick · esc to cancel',
       profileMenuPrompt: (max) => `Number (1-${max}), empty to cancel: `,
@@ -3125,7 +3125,7 @@ const catalogs = {
       profileMenuCancelled: 'Cancelled. Nothing was changed.',
       profileAlreadyOn: (profile) => `You are already on the ${profile === 'talent' ? 'Talent' : 'External'} profile. Nothing was changed or purged.`,
       profileSwitched: (profile) => `Profile switched to ${profile === 'talent' ? 'Talent' : 'External'} · history cleared (report, consent, talent session) · takes effect immediately, no restart needed.`,
-      // talents-ai-score, ADR-020/021 (coordinator ruling): superadmin is DELIBERATELY single-hop, PRIMARY (certifications service) ONLY — never hub.
+      // Superadmin is DELIBERATELY single-hop, PRIMARY (certifications service) ONLY — never hub.
       queryingPrimary: (endpoint) => `Querying Shakers: ${endpoint}`,
       errorNoEndpoint:
         'No endpoint configured. Set the backend (SHAKERS_CLI_INGEST_ENDPOINT or usage --set-endpoint) and retry.',
@@ -3133,7 +3133,7 @@ const catalogs = {
       errorDisabled:
         'Endpoint unavailable: the superadmin session is disabled outside non-production environments.',
       errorGeneric: 'Could not open the superadmin session. Try again.',
-      // Inspect (ADR-025) — attribution receipt for ALREADY-stored certifications.
+      // Inspect — attribution receipt for ALREADY-stored certifications.
       inspectIntro:
         'Audit the authorship evidence of already-stored certifications (read-only, non-production).',
       inspectEmailPrompt: 'Email whose certification(s) to inspect:',
@@ -3158,7 +3158,7 @@ const catalogs = {
     // `shakers` REPL is the single entrypoint; this covers the prompt, the in-shell command help and messages — the commands keep their own copy.
     repl: {
       prompt: 'ϟ shakers ›',
-      // dueño (2026-08-12): the startup BANNER (src/repl-shell.js) is now profile-aware and localized.
+      // The startup BANNER (src/repl-shell.js) is now profile-aware and localized.
       bannerWelcome: 'Welcome to',
       bannerTalentLine1: 'Complete or update your agentic talent',
       bannerTalentLine2: "profile on Shakers: it's not just what you know,",
@@ -3178,7 +3178,7 @@ const catalogs = {
       bannerExternalMapDesc: 'LOCAL report (graph)',
       bannerExternalReportDesc: 'shareable HTML report',
       bannerExternalShareDesc: 'card for LinkedIn',
-      // COMMAND FLOW (issues 081 and 082) VOCABULARY, inherited by issue 083: this is about the tool's COMMANDS.
+      // COMMAND FLOW VOCABULARY: this is about the tool's COMMANDS.
       completeNeeds: (cmd) => `(needs: ${cmd})`,
       completeDone: '(already run)',
       completeDoneStale: (days) => `(already run, ${days} days ago)`,
@@ -3207,7 +3207,7 @@ const catalogs = {
       journeyDone: 'You have completed the tool\u2019s flow: there is no command left to run. The next steps for raising your AI-usage level are a different thing, and they live in `usage --roadmap`.',
       goodbye: 'See you soon.',
       unknown: (cmd) => `Unknown command: "${cmd}". Type "help" to list the available commands.`,
-      // ORDER: declared by src/command-graph.js (issue 081).
+      // ORDER: declared by src/command-graph.js.
       help:
         'Shakers — available commands\n\n'
         + '  usage     [options]   Scan this project + your machine; score your AI setup (T0-T7)\n'
@@ -3250,7 +3250,7 @@ const catalogs = {
       toolsS: 'AI clients present in your environment.',
       techT: 'Project technologies',
       techS: 'Stack recognized in the repository.',
-      // Issue 110 — see the Spanish catalog for why the service is shown and the
+      // See the Spanish catalog for why the service is shown and the
       // server name never is, and why the empty state carries the T3 criterion.
       mcpT: 'Services connected over MCP',
       mcpS: 'Products your AI has access to.',
@@ -3259,7 +3259,7 @@ const catalogs = {
       // 085: the tab said a bare "Skills" next to an "Agents" one, which is the
       // exact collision the issue names.
       skills: 'Technical Skills',
-      // ---- DETECTED agents, left column (issue 089) -----------------------
+      // ---- DETECTED agents, left column -----------------------
       agentsT: 'Detected agents',
       agentsS: 'Every agent configured in your environment. Certifying is a different thing, and it lives in the right-hand column.',
       agentsEmpty: 'No configured agent detected (e.g. under .claude/agents/). If you have agents and they are not here, the tool did not find them — it is not that they do not count.',
@@ -3275,7 +3275,7 @@ const catalogs = {
       hereYouAre: 'You are here',
       noFoot: 'No AI usage yet. Run usage in this project.',
       noSkills: 'No certified technical Skills yet. Run certify skills.',
-      // Agent certifications were removed from the report (ADR-033); the sheet's agent-cert tab, its empty state and its detected-vs-certified copy went with it.
+      // Agent certifications were removed from the report; the sheet's agent-cert tab, its empty state and its detected-vs-certified copy went with it.
       footer: 'Report generated locally · Shakers',
       themeToggle: 'Toggle theme',
       themeDark: 'Dark',
@@ -3333,7 +3333,7 @@ function tierName(tierKey, lang) {
   return (names && names[tierKey]) || tierKey;
 }
 
-// Defensive i18n lookup (talents-ai-score — ported from d7c4d23, adapted).
+// Defensive i18n lookup.
 function label(value, fallback) {
   return typeof value === 'string' && value ? value : fallback;
 }

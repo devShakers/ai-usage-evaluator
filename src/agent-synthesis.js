@@ -3,7 +3,7 @@
 const { requestBackend } = require('./backend-request');
 const { reporterFor, REASON } = require('./model-call-record');
 
-// Agent synthesis client (talents-ai-score, ADR-010 / ADR-011).
+// Agent synthesis client.
 
 const DEFAULT_TIMEOUT_MS = 8000;
 
@@ -28,7 +28,7 @@ const PEM_BLOCK_RE = /-----BEGIN[ A-Z]*PRIVATE KEY-----[\s\S]*?-----END[ A-Z]*PR
 const CONN_STRING_RE = /\b([a-zA-Z][a-zA-Z0-9+.-]{1,15}:\/\/)[^\s'"/:@]+:[^\s'"@]+@/g; // scheme://user:pass@ -> scheme://[REDACTED]@
 const GENERIC_KV_RE = /\b(?:password|secret|token|api[_-]?key|bearer)\s*[:=]\s*\S+/gi;
 
-// Heuristic, best-effort redaction — an "invisible safety net" (ADR-011), not a substitute for the talent's own judgment about what they write in agent descriptions.
+// Heuristic, best-effort redaction — an "invisible safety net", not a substitute for the talent's own judgment about what they write in agent descriptions.
 function scrubSecrets(text) {
   if (typeof text !== 'string' || !text) return '';
   let out = text;
@@ -77,7 +77,7 @@ function isValidSynthesisResponse(parsed) {
 
 // Requests the agent-synthesis endpoint.
 async function requestAgentSynthesis(requestBody, { endpoint, timeoutMs = DEFAULT_TIMEOUT_MS, onOutcome = null } = {}) {
-  // Issue 109: the four `return null`s below are four DIFFERENT situations that used to be one.
+  // The four `return null`s below are four DIFFERENT situations that used to be one.
   const outcome = reporterFor(onOutcome, { timeoutMs });
   if (!endpoint) {
     outcome.skip(REASON.NO_ENDPOINT);

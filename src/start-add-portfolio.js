@@ -8,7 +8,7 @@ const {
   getPortfoliosListEndpoint, getPortfoliosDeclareEndpoint, getPortfolioDraftDescriptionEndpoint,
   getSkillsResolveMatchedEndpoint, getSkillsResolveAddableEndpoint, getSkillsDeclareEndpoint,
 } = require('./config');
-const { requestListPortfolios, requestDeclarePortfolio, requestDraftDescription } = require('./portfolio-client');
+const { requestListPortfolios, requestDeclarePortfolio, requestDraftDescription, normalizeDomain } = require('./portfolio-client');
 const { requestResolveAddableSkills: requestResolveMatchedSkills, requestResolveAddableSkills } = require('./skills-client');
 const { getRemoteUrl, getCommitDateRange } = require('./portfolio-git-info');
 const { confirmDisclaimerAcceptance } = require('./certify-disclaimer');
@@ -21,7 +21,7 @@ const { palette, styleQuestion, styleSuccess } = require('./ansi');
 // Only `dim`/`reset` for the numbered fallback's descriptions — the exact treatment bin/start.js's own menu and bin/certify.js's picker give theirs.
 const ANSI = palette({ reset: '\x1b[0m', dim: '\x1b[2m' });
 
-// `start`'s "Add project to portfolio" route (talents-ai-score, ADR-059).
+// `start`'s "Add project to portfolio" route.
 
 const MAX_README_CHARS = 4000;
 const MAX_PACKAGE_DESCRIPTION_CHARS = 500;
@@ -54,15 +54,6 @@ async function askWithDefault(ask, promptText, defaultValue) {
 
 async function askFreeText(ask, promptText) {
   return String(await ask(styleQuestion(promptText))).trim();
-}
-
-function normalizeDomain(raw) {
-  let s = String(raw || '').trim().toLowerCase();
-  if (!s) return '';
-  s = s.replace(/^https?:\/\//, '');
-  s = s.split('/')[0].split('?')[0].split('#')[0];
-  s = s.replace(/^www\./, '');
-  return s;
 }
 
 // Step 2 — Type.
@@ -345,7 +336,7 @@ async function runAddPortfolio({
 
   if (declared.ok) {
     process.stdout.write(`\n  ${styleSuccess(c.portfolioDeclaredSuccess(title))}\n\n`);
-    // OPT-IN (dueño, 2026-08-12): offer the REST of the detected skills for the Talent's PROFILE, now that the portfolio itself (and whatever skillIds it carried) is safely declared.
+    // OPT-IN: offer the REST of the detected skills for the Talent's PROFILE, now that the portfolio itself (and whatever skillIds it carried) is safely declared.
     await offerAddableSkillsForProfile({ ask, catalog, c, technologies, session, stdinIsTTY, input, output, runLogin });
     return;
   }
@@ -383,6 +374,5 @@ module.exports = {
   askWithDefault,
   chooseType,
   typeOptions,
-  normalizeDomain,
   offerAddableSkillsForProfile,
 };

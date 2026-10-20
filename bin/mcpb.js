@@ -2,4 +2,4 @@
 'use strict';
 
 // Claude Desktop's built-in Node imports this entry from its own host, so it starts without a require.main check.
-require('./mcp').run();
+require('./mcp').run(process.argv.slice(2), { makeInterviewClient: require('../src/interview-client').createInterviewClient });

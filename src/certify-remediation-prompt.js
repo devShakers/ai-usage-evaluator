@@ -2,7 +2,7 @@
 
 const { getCatalog } = require('./i18n');
 
-// Client-side "remediation prompt" for the certify report (skill-code- certification, issue 011).
+// Client-side "remediation prompt" for the certify report.
 function buildRemediationPrompt(item, lang) {
   const r = getCatalog(lang).certify.report;
   const improvements =

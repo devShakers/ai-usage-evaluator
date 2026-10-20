@@ -4,7 +4,7 @@
 
 // Upper case: certs validates the role against its AGENT/USER enum and 400s the
 // whole PATCH otherwise, so every terminal onboarding lost its transcript
-// ("no se pudo guardar la transcripcion (http-400)", new-works 2026-09-25).
+// ("no se pudo guardar la transcripcion (http-400)").
 const ROLE_AGENT = 'AGENT';
 const ROLE_USER = 'USER';
 

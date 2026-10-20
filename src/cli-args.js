@@ -39,7 +39,7 @@ function parseArgs(argv) {
     repo: false,
     scope: null,
     noAi: false,
-    // Issue 103: turns the section reveal off. Same name in both parsers, and the
+    // Turns the section reveal off. Same name in both parsers, and the
     // env var `NO_ANIMATION` does the same thing (the `NO_COLOR` pattern of 079).
     noAnimation: false,
   };
@@ -59,7 +59,7 @@ function parseArgs(argv) {
     else if (a === '--show-endpoint') opts.showEndpoint = true;
     else if (a === '--build-next-level') opts.buildNextLevel = true;
     else if (a === '--force') opts.force = true;
-    // ADR-016: the tier roadmap / "next steps" block is removed from the
+    // The tier roadmap / "next steps" block is removed from the
     // default footprint output; `--roadmap` (alias `--next`) shows it again.
     else if (a === '--roadmap' || a === '--next') opts.roadmap = true;
     else if (a === '--lang') opts.lang = VALID_LANGS.has(argv[++i]) ? argv[i] : null;

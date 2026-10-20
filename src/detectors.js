@@ -147,7 +147,7 @@ const detectors = [
     ],
   },
 
-  // ---- Expansion (talents-ai-score, more signals) — confidence per entry below ----
+  // ---- Expansion — confidence per entry below ----
   {
     id: 'amazon-q-developer',
     name: 'Amazon Q Developer',

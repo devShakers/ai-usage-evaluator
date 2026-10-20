@@ -1,6 +1,6 @@
 'use strict';
 
-// The single named surface for every model-backed (LLM) call this CLI makes (talents-ai-score, arch-cleanup #4).
+// The single named surface for every model-backed (LLM) call this CLI makes.
 
 const agentSynthesis = require('./agent-synthesis');
 const agentEvaluation = require('./agent-evaluation');

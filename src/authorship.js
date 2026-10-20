@@ -3,7 +3,7 @@
 const { execFileSync } = require('child_process');
 const path = require('path');
 
-// Git AUTHORSHIP + provenance for the certify phase (skill-code-certification, ADR-017).
+// Git AUTHORSHIP + provenance for the certify phase.
 
 const { takePrefetchedGitLog } = require('./git-log-prefetch');
 
@@ -164,7 +164,7 @@ function buildAttributionPredicate(verifiedEmail, authorizedSet) {
   };
 }
 
-// Applies the ADR-017 gate (with the ADR-023 widening for test identities) to ONE sampled Skill.
+// Applies the authorship gate (widened for test identities) to ONE sampled Skill.
 function attributeSample(sample, verifiedEmail, authorship, authorizedSet = null) {
   const isAttributable = buildAttributionPredicate(verifiedEmail, authorizedSet);
   const files = Array.isArray(sample.files) ? sample.files : [];

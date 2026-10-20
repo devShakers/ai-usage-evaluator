@@ -1,6 +1,6 @@
 'use strict';
 
-// SECRET PROMPT — reads a secret WITHOUT painting it (issue 102).
+// SECRET PROMPT — reads a secret WITHOUT painting it.
 
 const CTRL_C = '\u0003';
 const CTRL_D = '\u0004';

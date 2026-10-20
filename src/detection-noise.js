@@ -4,7 +4,7 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-// Anti-noise CLASSIFICATION for detected candidates (hybrid evaluation, Slice 3 — issue 019).
+// Anti-noise CLASSIFICATION for detected candidates.
 
 const GIT_TIMEOUT_MS = 15000;
 const README_MAX_BYTES = 8 * 1024;

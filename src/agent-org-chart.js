@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { getHomeDir } = require('./env-paths');
 
-// Deterministic (no-LLM) parser of the talent's AI agent org chart (talents-ai-score, ADR-009).
+// Deterministic (no-LLM) parser of the talent's AI agent org chart.
 
 // Safety caps mirror scanner.js's FOOTPRINT_MAX_* (avoid pathological scans,
 // never a product requirement).
@@ -145,12 +145,12 @@ function buildAgentFromFrontmatter(fm, filePath) {
     // the card in place of the LLM `model`.
     aiProduct: deriveAiProduct(filePath),
     model: typeof fm.model === 'string' && fm.model ? fm.model : null,
-    // Hierarchy (ADR-009): first honour an explicit `parent` frontmatter key when a project declares one.
+    // Hierarchy: first honour an explicit `parent` frontmatter key when a project declares one.
     parent: typeof fm.parent === 'string' && fm.parent ? fm.parent : null,
   };
 }
 
-// `parseAgentFile` USED TO BE HERE (removed by issue 093's sweep): read one `.md` and build an agent from its frontmatter.
+// `parseAgentFile` USED TO BE HERE (removed): read one `.md` and build an agent from its frontmatter.
 
 // Markdown body (everything after the closing ` ` of the frontmatter).
 function bodyAfterFrontmatter(content) {
@@ -239,7 +239,7 @@ function parseAgentOrgChartFromDirs(dirs) {
   return agents;
 }
 
-// Deterministic (no-LLM) agent org chart, scoped to `.claude/agents/` in BOTH the project root and the home directory (ADR-014, project ∪ home).
+// Deterministic (no-LLM) agent org chart, scoped to `.claude/agents/` in BOTH the project root and the home directory (project ∪ home).
 function parseAgentOrgChart(root) {
   return parseAgentOrgChartFromDirs(agentDirs(root));
 }
@@ -249,7 +249,7 @@ function parseAgentOrgChartForRoots(roots) {
   return parseAgentOrgChartFromDirs(agentDirsForRoots(Array.isArray(roots) ? roots : [roots]));
 }
 
-// talents-ai-score, ADR-010: returns `[{ name, description }]` — the ONLY function in this module that ever returns description/prompt content.
+// Returns `[{ name, description }]` — the ONLY function in this module that ever returns description/prompt content.
 function parseAgentDescriptionsFromDirs(dirs) {
   const seen = new Set();
   const result = [];

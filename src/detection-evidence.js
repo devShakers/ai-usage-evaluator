@@ -5,7 +5,7 @@ const { detectTechnologyManifests } = require('./tech-detector');
 const { agentSourceFilesByName } = require('./agent-org-chart');
 const { classifyVendored, collectProvenance } = require('./detection-noise');
 
-// Per-CANDIDATE authorship + depth (hybrid evaluation, Slice 3c).
+// Per-CANDIDATE authorship + depth.
 
 const SKILL_DEPTH_SATURATION = 3;
 const AGENT_DEPTH_SATURATION = 8;
@@ -38,7 +38,7 @@ function recencyDaysForPaths(relPaths, authorship, nowSeconds) {
   return Math.max(0, Math.floor((nowSeconds - mostRecent) / 86400));
 }
 
-// Attributes a candidate's evidence files against the talent's own email via the ADR-017 gate.
+// Attributes a candidate's evidence files against the talent's own email via the authorship gate.
 function attributionCounts(relPaths, verifiedEmail, authorship) {
   if (!Array.isArray(relPaths) || relPaths.length === 0) {
     return { authoredFileCount: 0, totalFileCount: 0, authorshipKnown: false };

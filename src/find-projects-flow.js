@@ -3,7 +3,7 @@
 // `find-projects` flow: list the Positions/Projects available to the talent,
 // paginated and filtered server-side via the endpoint's `criteria`. Read-only.
 
-const { TABS, ATTENDANCE, DEFAULT_LIMIT } = require('./find-projects-client');
+const { TABS, ATTENDANCE, DEFAULT_LIMIT, splitRecommended } = require('./find-projects-client');
 const { styleLabelPrefix } = require('./ansi');
 
 function makeFindProjectsDeps(overrides = {}) {
@@ -28,17 +28,6 @@ function resolveQuery(opts = {}) {
   const country = countryRaw && /^[A-Z]{2}$/.test(countryRaw) ? countryRaw : null;
   const countryInvalid = !!(countryRaw && !/^[A-Z]{2}$/.test(countryRaw));
   return { tab, limit, page, offset, attendance, country, attendanceInvalid, countryInvalid, recommended: !!opts.recommended };
-}
-
-// `--recommended` is a CLIENT-SIDE filter over the fetched page (the hub has no
-// server-side "recommended" criterion — `match` is output-only). Recommended =
-// items that have a match. If none on this page, fall back to the available
-// items so the user is never left with an empty screen.
-function splitRecommended(items, recommended) {
-  if (!recommended) return { shown: items, mode: null };
-  const rec = items.filter((it) => it.match != null);
-  if (rec.length > 0) return { shown: rec, mode: 'recommended' };
-  return { shown: items, mode: 'fallback' };
 }
 
 function budgetLine(item, fp) {
@@ -157,7 +146,6 @@ module.exports = {
   makeFindProjectsDeps,
   runFindProjects,
   resolveQuery,
-  splitRecommended,
   formatItem,
   paginationFooter,
   recommendedFooter,

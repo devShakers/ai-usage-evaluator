@@ -70,7 +70,7 @@ function loadProjectFootprint(root, { load = loadState } = {}) {
     score: m.score,
     level: m.level,
     levelKey: m.key,
-    // ADR-016: Setup Level for the card pill (replaces the 0-4 band). Prefer the
+    // Setup Level for the card pill (replaces the 0-4 band). Prefer the
     // persisted `setupLevel`; derive from the tier for older stored reports.
     setupLevelKey: (m.setupLevel && m.setupLevel.key)
       || (typeof m.tier === 'number' ? setupLevelForTier(m.tier).key : 'none'),
@@ -95,7 +95,7 @@ function buildCardModel(fp) {
   const en = getCatalog('en');
   const tierKey = fp.tierKey;
   const tierName = (en.tierNames && en.tierNames[tierKey]) || tierKey;
-  // ADR-016: Setup Level label for the pill (English-fixed like the tier name).
+  // Setup Level label for the pill (English-fixed like the tier name).
   const setupKey = fp.setupLevelKey || 'none';
   const bandName = (en.setupLevels && en.setupLevels[setupKey] && en.setupLevels[setupKey].label) || '';
 

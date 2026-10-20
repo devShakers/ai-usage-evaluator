@@ -1,6 +1,6 @@
 'use strict';
 
-// The SINGLE source of truth for which auth methods exist and where each one is offered (talents-ai-score).
+// The SINGLE source of truth for which auth methods exist and where each one is offered.
 const AUTH_METHODS = [
   { id: 'email', labelKey: 'methodEmail', availableFor: { login: true, register: true } },
   { id: 'google', labelKey: 'methodGoogle', availableFor: { login: true, register: true } },

@@ -34,7 +34,7 @@ function errorResponse(id, code, message, data) {
   return { jsonrpc: JSONRPC, id: id === undefined ? null : id, error };
 }
 
-function createMcpServer({ tools = [], prompts = [], serverInfo = {}, protocolVersion, beforeCall = null, onInitialize = null, instructions = null, elicitationTimeoutMs = ELICITATION_TIMEOUT_MS } = {}) {
+function createMcpServer({ tools = [], prompts = [], serverInfo = {}, protocolVersion, beforeCall = null, afterCall = null, onInitialize = null, instructions = null, elicitationTimeoutMs = ELICITATION_TIMEOUT_MS } = {}) {
   const registry = new Map();
   for (const t of tools) {
     if (!t || !t.name || typeof t.handler !== 'function') {
@@ -185,6 +185,10 @@ function createMcpServer({ tools = [], prompts = [], serverInfo = {}, protocolVe
         content: [{ type: 'text', text: `${name} tool error: ${e && e.message ? e.message : String(e)}` }],
         isError: true,
       };
+    } finally {
+      if (typeof afterCall === 'function') {
+        try { afterCall(name); } catch { /* hook must never break a tool call */ }
+      }
     }
   }
 

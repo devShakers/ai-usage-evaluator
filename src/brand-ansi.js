@@ -1,6 +1,6 @@
 'use strict';
 
-// BRAND_ANSI — the Shakers brand palette, reincarnated as ANSI 256-colour SGR codes (talents-ai-score, terminal design-consistency pass).
+// BRAND_ANSI — the Shakers brand palette, reincarnated as ANSI 256-colour SGR codes.
 
 const BRAND_ANSI = {
   primary: '\x1b[38;5;73m',

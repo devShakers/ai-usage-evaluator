@@ -1,6 +1,6 @@
 'use strict';
 
-// The MCP-services, tier-analysis, progression-ladder and tier-roadmap sections of the terminal report, extracted from src/render-terminal.js (structure refactor, issue 020).
+// The MCP-services, tier-analysis, progression-ladder and tier-roadmap sections of the terminal report, extracted from src/render-terminal.js.
 
 const { getRoadmapEntry } = require('./roadmap-content');
 const { analyzeTier, buildLadder } = require('./tier-analysis');
@@ -27,7 +27,7 @@ function printMcpServices(report, t, p) {
     p(`  ${c.primary}${shown.join(`${c.reset}${c.muted} · ${c.reset}${c.primary}`)}${c.reset}`);
   }
   // Stated, never omitted: the list has to account for every server the tier
-  // counted, or the screen shows two different numbers for one set (issue 096).
+  // counted, or the screen shows two different numbers for one set.
   if (unidentified > 0) {
     for (const line of wrap(t.html.mcpUnidentified(unidentified))) p(`  ${c.dim}${line}${c.reset}`);
   }
@@ -82,7 +82,7 @@ function printLadder(report, t, p) {
   p(`  ${c.muted}${ld.setupIntro}${c.reset}`);
   p(`  ${c.dim}${ld.legend(done, current, pending)}${c.reset}`);
   p();
-  // NESTED (ADR-016): each SETUP LEVEL, then its tiers indented beneath.
+  // NESTED: each SETUP LEVEL, then its tiers indented beneath.
   for (const lvl of setupLevels) {
     const nameStyle = lvl.status === 'pending' ? c.muted : `${c.bold}${c.white}`;
     const keys = lvl.tierKeys.length ? ` ${c.muted}— [${lvl.tierKeys.join(', ')}]${c.reset}` : '';
@@ -138,8 +138,8 @@ function printRoadmap(report, maturity, t, lang, p) {
   }
 
   p(`  ${c.bold}${c.warning}${t.html.roadmapHeading}${c.reset}`);
-  // Issue 083: the register, stated before the content.
-  // Wrapped like every other prose line in this block (issue 087): it was the one line still running past the 80th column, which is the shape the squad read as a dump.
+  // The register, stated before the content.
+  // Wrapped like every other prose line in this block: it was the one line still running past the 80th column, which is the shape the squad read as a dump.
   for (const line of wrap(t.html.roadmapSubheading)) p(`  ${c.dim}${line}${c.reset}`);
 
   if (curatedEntry.contentUnavailable) {
@@ -152,15 +152,15 @@ function printRoadmap(report, maturity, t, lang, p) {
   const personalization = report && report.roadmapPersonalization;
   const entry = mergeRoadmapPersonalization(curatedEntry, personalization);
 
-  // Issue 087: the jump title gets air and its own line, and everything below it hangs off it.
-  // THE BEFORE AND THE AFTER (issue 084), above the steps and not below them.
+  // The jump title gets air and its own line, and everything below it hangs off it.
+  // THE BEFORE AND THE AFTER, above the steps and not below them.
   printProjection(report, t, p);
 
   p();
   p(`  ${c.white}${c.bold}${sanitizeRenderText(entry.title)}${c.reset}`);
   p();
 
-  // Issue 109: whether this roadmap is YOURS or the template, said out loud.
+  // Whether this roadmap is YOURS or the template, said out loud.
   if (personalization) {
     p(`  ${c.dim}${t.html.roadmapPersonalizedNotice}${c.reset}`);
     p();
@@ -170,7 +170,7 @@ function printRoadmap(report, maturity, t, lang, p) {
   }
 
   if (entry.maxTier) {
-    // ADR-008 (skill-code-certification): T7 is NOT a dead end.
+    // T7 is NOT a dead end.
     if (entry.whatRemains) {
       for (const line of wrap(sanitizeRenderText(entry.whatRemains))) p(`  ${c.muted}${line}${c.reset}`);
       p();
@@ -198,7 +198,7 @@ function printRoadmap(report, maturity, t, lang, p) {
   {
     const promptText = buildImplementationPrompt(entry, report, maturity, lang);
     if (promptText) {
-      // Issue 087: THE wall of text.
+      // THE wall of text.
       sep(p);
       p(`  ${c.bold}${t.html.implementationPromptHeading}${c.reset}`);
       for (const line of wrap(t.html.implementationPromptHint)) p(`  ${c.dim}${line}${c.reset}`);
@@ -210,7 +210,7 @@ function printRoadmap(report, maturity, t, lang, p) {
     }
   }
 
-  // --build-next-level (issue 021) is now a SECONDARY, opt-in alternative to the prompt above — never when already at the terminal T7 entry (there is nothing left to build).
+  // --build-next-level is now a SECONDARY, opt-in alternative to the prompt above — never when already at the terminal T7 entry (there is nothing left to build).
   if (!entry.maxTier) p(`  ${c.dim}${t.cli.buildNextLevelHint}${c.reset}`);
 
   p();

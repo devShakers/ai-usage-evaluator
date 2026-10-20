@@ -21,7 +21,7 @@ function bar(score, width = 24) {
   return '█'.repeat(filled) + '░'.repeat(width - filled);
 }
 
-// ADR-016: a light visual break between the reordered sections — a dim rule
+// A light visual break between the reordered sections — a dim rule
 // with air around it, keeping the branded ANSI look and zero deps.
 function sep(p) {
   p();
@@ -29,7 +29,7 @@ function sep(p) {
   p();
 }
 
-// WRAPPING, added for issue 087.
+// WRAPPING.
 const WRAP_COLS = 76;
 
 function wrap(text, width = WRAP_COLS) {
@@ -71,7 +71,7 @@ function labelledBlock(p, label, value, indent = '    ') {
   for (const line of wrap(value, WRAP_COLS - indent.length)) p(`${indent}${c.muted}${line}${c.reset}`);
 }
 
-// Terminal-SUMMARIZE (user feedback, 2026-07-16): the earlier condense (commit 465badb) over-trimmed — it left the terminal as headings + copyable prompts with the prose stripped out.
+// Terminal-SUMMARIZE: the earlier condense over-trimmed — it left the terminal as headings + copyable prompts with the prose stripped out.
 function summarize(text, max = 140) {
   const s = String(text || '').trim().replace(/\s+/g, ' ');
   if (s.length <= max) return s;

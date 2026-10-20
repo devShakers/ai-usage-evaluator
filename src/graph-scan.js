@@ -7,7 +7,7 @@ const { scan } = require('./scanner');
 const { classify } = require('./maturity');
 const { setupLevelForTier } = require('./tier-engine');
 const { sanitizeRenderText } = require('./sanitize-network-text');
-// The ONE agent-shaping layer, shared with the terminal report (issue 089).
+// The ONE agent-shaping layer, shared with the terminal report.
 const { buildAgentCardTree } = require('./render-html');
 
 function slug(s) {
@@ -115,7 +115,7 @@ function buildGraphScan(root, { scanFn = scan, classifyFn = classify } = {}) {
   };
 }
 
-// Setup-level ladder for the drawer (ADR-016): the 3 Setup Levels + "Not certified", replacing the retired 0-4 maturity ladder.
+// Setup-level ladder for the drawer: the 3 Setup Levels + "Not certified", replacing the retired 0-4 maturity ladder.
 const SETUP_LADDER = [
   { rank: 0, key: 'none', label: 'Sin certificar' },
   { rank: 1, key: 'S1', label: 'S1 · Asistido' },
@@ -124,7 +124,7 @@ const SETUP_LADDER = [
 ];
 
 // #3 footprint drawer payload from the live scan (defensive). Detected agents =
-// a FLAT list with a depth number, not a tree object (issue 089).
+// a FLAT list with a depth number, not a tree object.
 function drawerAgents(report, t) {
   let tree;
   try {
@@ -155,7 +155,7 @@ function drawerAgents(report, t) {
       whatItDoes: card.whatItDoes || null,
       // The category is a REQUIREMENT of the design, and it is the agent → catalog-seed association, not the Talent's tier.
       category: cls ? cls.category : null,
-      // THREE STATES, NOT TWO (issue 106).
+      // THREE STATES, NOT TWO.
       evaluated: evaluatedNames.has(card.name),
       // COPIED from the card, never recomputed (2026-08-03).
       evaluationState: card.evaluationState || (evaluatedNames.has(card.name) ? (cls ? 'classified' : 'unclassified') : 'not-evaluated'),
@@ -176,11 +176,11 @@ function buildFootprintDrawer(report, maturity, t) {
     ? maturity.tier
     : (/^T([0-7])$/.test(tierKey) ? Number(tierKey.slice(1)) : null);
   const tierName = (maturity && maturity.tierName) || '—';
-  // Setup Level (ADR-016) replaces the 0-4 band as the drawer's headline rollup.
+  // Setup Level replaces the 0-4 band as the drawer's headline rollup.
   const setup = (maturity && maturity.setupLevel)
     || (tierNum != null ? setupLevelForTier(tierNum) : { key: 'none', code: null, rank: 0, emoji: '○' });
   const setupLabel = (SETUP_LADDER.find((s) => s.key === setup.key) || SETUP_LADDER[0]).label;
-  // Issue 055: this drawer payload feeds the shareable sheet AND the graph report, and both only `esc()`.
+  // This drawer payload feeds the shareable sheet AND the graph report, and both only `esc()`.
   const technologies = (Array.isArray(report.technologies) ? report.technologies : [])
     .map((x) => (typeof x === 'string' ? sanitizeRenderText(x) : x));
   // Installed AI dev tools (assistants).
@@ -198,7 +198,7 @@ function buildFootprintDrawer(report, maturity, t) {
 
   return {
     score,
-    // `setup` is the ADR-016 rollup shown in the drawer hero; `tier` keeps the tierKey · tierName chip.
+    // `setup` is the Setup Level rollup shown in the drawer hero; `tier` keeps the tierKey · tierName chip.
     setup: { key: setup.key, code: setup.code, rank: setup.rank, emoji: setup.emoji, label: setupLabel },
     tier: { key: tierKey || 'none', name: tierName, label: tierKey ? `${tierKey} · ${tierName}` : tierName },
     ladder: SETUP_LADDER,
@@ -207,9 +207,9 @@ function buildFootprintDrawer(report, maturity, t) {
     summary: buildReading({ setupLabel, tierKey, tierName, score, nTools: tools.length, nTech: technologies.length }),
     tools,
     technologies,
-    // Issue 089: ALL detected agents, always.
+    // ALL detected agents, always.
     agents: drawerAgents(report, t),
-    // Issue 110: the SERVICES behind the MCP servers, shaped ONCE here for both consumers of this drawer (the shareable sheet and the graph report), the same way `agents` is.
+    // The SERVICES behind the MCP servers, shaped ONCE here for both consumers of this drawer (the shareable sheet and the graph report), the same way `agents` is.
     mcp: {
       services: (report.mcp && Array.isArray(report.mcp.services) ? report.mcp.services : [])
         .map((x) => ({ label: sanitizeRenderText(x.label), count: x.count })),

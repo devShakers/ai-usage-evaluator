@@ -17,7 +17,7 @@ set -euo pipefail
 # ─── Configuration (EDIT THIS with your real org/repo) ─────────────────────
 OWNER="devShakers"
 REPO="ai-usage-evaluator"
-# "Distribution only" PoC (active-work/talents-ai-score, ADR-002): the CLI
+# "Distribution only" PoC: the CLI
 # already lives on release (the curl | raw.githubusercontent one-liner resolves
 # files by branch, so the installer breaks if BRANCH doesn't match the
 # branch published on the remote).
@@ -26,7 +26,7 @@ BRANCH="release"
 # from $BRANCH (the mutable default, current behaviour). Set to a full commit
 # SHA to pin every download to that exact tree regardless of what `main`
 # later becomes — closes the "curl|bash always fetches whatever main is
-# TODAY" exposure without needing a signing key (none assigned yet, ADR-001).
+# TODAY" exposure without needing a signing key (none assigned yet).
 # Overridable per-run via SHAKERS_CLI_INSTALL_REF (legacy AI_FOOTPRINT_INSTALL_REF
 # still honoured) for one-off pinned installs without editing this file.
 PIN_REF="${SHAKERS_CLI_INSTALL_REF:-${AI_FOOTPRINT_INSTALL_REF:-}}"
@@ -38,12 +38,12 @@ INSTALL_DIR="${SHAKERS_CLI_HOME:-${AI_FOOTPRINT_HOME:-$HOME/.shakers}}"
 BIN_DIR="${SHAKERS_CLI_BIN:-${AI_FOOTPRINT_BIN:-$HOME/.local/bin}}"
 VERSION="0.1.0"
 
-# talents-ai-score, ADR-042: the CLI talks to ONE backend,
-# sh-web-works-certifications. The installer writes no endpoint unless a hosted
+# The CLI talks to ONE backend,
+# the certifications service. The installer writes no endpoint unless a hosted
 # base is given (SHAKERS_CLI_CERTS_BASE below): the CLI's built-in defaults
 # point at the deployed backend, and every endpoint derives from it.
 # The config dir mirrors src/config-dir.js (SHAKERS_CLI_CONFIG_DIR override, legacy
-# AI_FOOTPRINT_CONFIG_DIR still honoured, else ~/.config/shakers). ADR-045: the
+# AI_FOOTPRINT_CONFIG_DIR still honoured, else ~/.config/shakers). The
 # CLI migrates an existing ~/.config/ai-footprint to ~/.config/shakers on first
 # boot, so an upgrading Talent keeps their config/consent/login session.
 CONFIG_DIR="${SHAKERS_CLI_CONFIG_DIR:-${AI_FOOTPRINT_CONFIG_DIR:-$HOME/.config/shakers}}"
@@ -56,7 +56,7 @@ else
   C=''; G=''; Y=''; R=''; B=''; N=''
 fi
 
-# ─── Distribution profile (talents-ai-score, ADR-058 fase 1) ────────────────
+# ─── Distribution profile ────────────────
 # `SHAKERS_PROFILE` gates the CLI SURFACE (src/config.js#getProfile,
 # src/command-graph.js): `external` = only `usage` (local report), the
 # default for the public `curl|bash`; `talent` = the full surface built in
@@ -111,12 +111,12 @@ uninstall() {
   printf "\n  ${B}${C}Shakers — uninstall${N}\n\n"
   rm -rf "$INSTALL_DIR" && say "${G}+${N} removed $INSTALL_DIR"
   rm -f "$BIN_DIR/shakers" && say "${G}+${N} removed $BIN_DIR/shakers"
-  # ADR-045 clean cut: `sh-eval` is renamed to `shakers`, so the OLD `sh-eval`
+  # Clean cut: `sh-eval` is renamed to `shakers`, so the OLD `sh-eval`
   # launcher is removed here too — an upgrade must not leave a stale `sh-eval`
   # shim pointing at a bin/sh-eval.js that no longer exists. (Same reason the
-  # pre-ADR-014 `ai-footprint`/`ai-certify` launchers below are swept.)
+  # older `ai-footprint`/`ai-certify` launchers below are swept.)
   rm -f "$BIN_DIR/sh-eval" && say "${G}+${N} removed legacy $BIN_DIR/sh-eval"
-  # Legacy launchers from installs before ADR-014's single-entrypoint REPL.
+  # Legacy launchers from installs before the single entrypoint.
   rm -f "$BIN_DIR/ai-footprint" && say "${G}+${N} removed legacy $BIN_DIR/ai-footprint"
   rm -f "$BIN_DIR/ai-certify" && say "${G}+${N} removed legacy $BIN_DIR/ai-certify"
   # $CONFIG_DIR (~/.config/ai-footprint by default) holds MORE than "reports":
@@ -158,7 +158,7 @@ if [ "$SHAKERS_PROFILE" = "talent" ]; then
   say  "                offline; PNG exported in your browser) to post on LinkedIn."
   say  ""
 else
-  # ADR-058 fase 1 (widened by the dueño, 2026-08-12): the `external` profile's
+  # The `external` profile's
   # surface is usage/report/share — the pre-pivot public surface — so the
   # pre-flight description mirrors THAT instead of pitching the talent-only
   # commands (certify/start/login) this install never exposes.
@@ -263,7 +263,7 @@ fi
 # is caught loudly instead of silently shipping a broken install.
 #
 # NOT covered (documented, not fixed here — no signing key/owner assigned
-# yet, ADR-001 Open Q6): this manifest proves INTERNAL consistency (what got
+# yet): this manifest proves INTERNAL consistency (what got
 # installed matches what was staged), not AUTHENTICITY (that the staged bytes
 # are what Shakers actually published) — that needs the repo owner to publish
 # a detached signature (e.g. `minisign`/`cosign`) alongside each release and
@@ -419,7 +419,7 @@ if [ "${SHAKERS_SKIP_NATIVE_INSTALL:-}" != "1" ]; then
   fi
 fi
 
-# ─── Create the single `shakers` launcher (ADR-014) ─────────────────────────
+# ─── Create the single `shakers` launcher ─────────────────────────
 # The branded REPL is the ONLY command. bin/report.js / bin/certify.js are
 # shipped (the REPL imports them) but get NO standalone launcher.
 SHIM="$BIN_DIR/shakers"
@@ -456,13 +456,13 @@ rm -f "$BIN_DIR/sh-eval" "$BIN_DIR/ai-footprint" "$BIN_DIR/ai-certify" 2>/dev/nu
 # ABOVE — this is loopback and MUST change before this repo's `main` is what
 # Talents actually install.
 #
-# ADR-042 NOTE, and it is the reason `--show-endpoint` now has a line about this:
+# NOTE, and it is the reason `--show-endpoint` now has a line about this:
 # preserving an existing config means a talent who installed before this change
 # KEEPS the obsolete `ingestEndpointFallback` key in their file. Nothing reads it
 # any more, and this installer does not rewrite their config to strip it — see
 # the policy docblock in src/config.js (`hasRetiredFallbackConfig`).
 #
-# ADR-058 fase 1 NOTE: `profile` is seeded the SAME way — only on a config.json
+# NOTE: `profile` is seeded the SAME way — only on a config.json
 # this installer is creating fresh, never added/changed on an EXISTING file.
 # An existing config predates this feature (no `profile` key at all), and
 # src/config.js#getProfile's own default for that case is 'talent' (see its
@@ -528,7 +528,7 @@ if [ "$SHAKERS_PROFILE" = "talent" ]; then
   say "  ${B}Getting started:${N} run ${C}shakers${N} in any project, then type ${C}usage${N}"
   say "  and, once done, ${C}certify${N}. Local-first; nothing is sent without your consent."
 else
-  # ADR-058 fase 1 (widened by the dueño, 2026-08-12): `external`'s surface is
+  # `external`'s surface is
   # usage/report/share — no certify/start/login pitch here either.
   say "    ${C}shakers${N}               Open the shakers shell, then type a command:"
   say "      ${C}usage${N}               Scan this project + machine; print a LOCAL report to the terminal"
@@ -540,11 +540,11 @@ else
   say "  Local-first; nothing is sent without your consent."
 fi
 printf "\n"
-# ─── Legal notice (skill-code-certification / ADR-001 + ADR-003) ─────────────
-# talents-ai-score, ADR-028: Langfuse is deprecated for this module — content
+# ─── Legal notice ─────────────
+# Langfuse is deprecated for this module — content
 # now goes to Datadog LLM Observability, a THIRD-PARTY provider, gated on your
 # consent, with NO promise of later deletion (revises the "own systems / does
-# not leave Shakers infrastructure" claim from ADR-027, no longer true once
+# not leave Shakers infrastructure" claim, no longer true once
 # Datadog is in the loop).
 say "  ${B}${Y}Before you use these tools:${N}"
 say "  ${Y}These tools run locally inside the shakers shell. usage sends only derived${N}"

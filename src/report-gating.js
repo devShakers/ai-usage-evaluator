@@ -3,7 +3,7 @@
 const { loadAuthSession, sessionStatus, isPlatformTalent } = require('./auth-session-store');
 const { getProfile } = require('./config');
 
-// THE ONE LAYER THAT DECIDES WHAT THE REPORT SHOWS ACCORDING TO IDENTITY (talents-ai-score, issue 123 / ADR-044).
+// THE ONE LAYER THAT DECIDES WHAT THE REPORT SHOWS ACCORDING TO IDENTITY.
 
 // Pure: identity in, policy out.
 function resolveReportGate({ loggedIn = false, status = null, email = null, userType = null, profile = 'talent' } = {}) {

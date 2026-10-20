@@ -8,7 +8,7 @@ const {
 const { runEmailVerification } = require('./email-verification');
 const { renderLegalNotice } = require('./legal-notice');
 
-// Consent prompt (talents-ai-score, ADR-011 — revises issue 006 / ADR-007's disclosure wall; ADR-051 revises ADR-011's OWN ordering in turn, see below).
+// Consent prompt (replaces the earlier disclosure wall; its ordering is revised in turn, see below).
 
 const MAX_ATTEMPTS = 5;
 
@@ -45,7 +45,7 @@ async function defaultVerifyEmail({ email, ask, catalog, env = process.env }) {
   });
 }
 
-// Runs the short consent-to-persist prompt + (if accepted) email collection + (skill-code-certification / ADR-006) EMAIL-OWNERSHIP VERIFICATION.
+// Runs the short consent-to-persist prompt + (if accepted) email collection + EMAIL-OWNERSHIP VERIFICATION.
 async function runConsentPrompt({
   ask,
   catalog,
@@ -57,7 +57,7 @@ async function runConsentPrompt({
   profile = 'talent',
 }) {
   const c = catalog.consent;
-  // Presentation only (talents-ai-score): framed by src/legal-notice.js on a
+  // Presentation only: framed by src/legal-notice.js on a
   // real TTY, byte-identical (no heading, no rule) otherwise.
   process.stdout.write(`\n  ${renderLegalNotice(c.persistIntro, catalog)}\n`);
 
@@ -100,7 +100,7 @@ async function runConsentPrompt({
 
   process.stdout.write(`  ${c.savedUnderEmail(email)}\n`);
 
-  // Prove email ownership BEFORE persisting (ADR-006) — every profile, external included.
+  // Prove email ownership BEFORE persisting — every profile, external included.
   const verification = await verifyEmail({ email, ask, catalog, env });
   if (verification && verification.verified) {
     recordConsent('granted', email, { verified: true });

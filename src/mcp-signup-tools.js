@@ -13,7 +13,7 @@ const { askAfterTexts, askConsent, optionFor, queueNotice, takeNotices } = requi
 const { expandHome, tildify } = require('./env-paths');
 const { NOOP_FUNNEL, weeklyHours, rateTypes, workSituationValue } = require('./onboarding-funnel');
 
-// MCP sign-up (ticket 39540): hub imports into an UNREGISTERED profile that the local window claims with a code kept only in memory.
+// MCP sign-up: hub imports into an UNREGISTERED profile that the local window claims with a code kept only in memory.
 
 const SIGNUP_WINDOW_TIMEOUT_MS = 15 * 60 * 1000;
 // The browser opens this long after the tool answers, so the AI's reply is on screen first.
@@ -302,6 +302,7 @@ function makeSignupTools(deps = {}) {
     pollDeviceToken = require('./device-login').pollDeviceToken,
     finalizeDeviceSession = require('./device-login').finalizeDeviceSession,
     appendProviderParam = require('./device-login').appendProviderParam,
+    deviceSessionRecord = require('./device-login').deviceSessionRecord,
     buildRegistrationContext = require('./signup-client').buildRegistrationContext,
     runLoopbackAuth = require('./mcp-auth-form').runLoopbackAuth,
     checkOnboardingCompleted = require('./onboarding-availability').checkOnboardingCompleted,
@@ -347,6 +348,10 @@ function makeSignupTools(deps = {}) {
       funnel.completed('account_creation', { auth_method: next.via, is_returning_account: next.state === 'existing' });
       funnel.identified();
     }
+    if (next.state === 'failed' && before !== 'failed') {
+      funnel.errored('account_creation', next.reason);
+      funnel.flush();
+    }
     if (state.wake) state.wake();
   }
 
@@ -385,7 +390,7 @@ function makeSignupTools(deps = {}) {
       }
       const email = res.email || emailFromHubToken(fin.token);
       try {
-        resolved.saveAuthSession({ accessToken: fin.token, hubAccessToken: fin.token, email });
+        resolved.saveAuthSession(deviceSessionRecord({ token: fin.token, sessionToken: res.accessToken, sessionExpiresIn: res.expiresIn, email }));
       } catch {
         setAccount({ state: 'failed', reason: 'session-persist-failed' });
         return;
@@ -576,6 +581,7 @@ function makeSignupTools(deps = {}) {
       return { ok: false, reason: 'draft-sources-required', message: "The draft needs sources: 'cv' if you read their CV, 'linkedin' only if you have their LinkedIn URL. Then call signup_draft again." };
     }
     if (!state.firstDraft) state.firstDraft = draft;
+    trackDraftShown(draft);
     const asked = await askAfterTexts(ctx, {
       tool: 'signup_draft',
       texts: [renderDraft(lang(), draft), legalCopy(lang()).signupNotice(sources), knownAccount() ? c.windowNoticeSignIn : c.windowNotice],
@@ -951,6 +957,20 @@ function makeSignupTools(deps = {}) {
     return c.ratesSaved(shown, !(state.draft && state.draft.ratesFromTalent));
   }
 
+  function trackDraftShown(draft) {
+    funnel.viewed('work_situation', { is_prefilled: true });
+    funnel.viewed('availability');
+    funnel.viewed('rates', { suggested_rate_shown: draft.ratesFromTalent !== true });
+    funnel.viewed('languages');
+    funnel.viewed('location');
+    funnel.viewed('profile_summary');
+  }
+
+  function draftFieldsEdited() {
+    if (!state.firstDraft || !state.draft) return undefined;
+    return DRAFT_FIELDS.filter((key) => String(state.firstDraft[key] ?? '') !== String(state.draft[key] ?? '')).length;
+  }
+
   function wasEdited(step) {
     if (!state.firstDraft || !state.draft) return undefined;
     return STEP_DRAFT_FIELDS[step].some((key) => String(state.firstDraft[key] ?? '') !== String(state.draft[key] ?? ''));
@@ -981,6 +1001,10 @@ function makeSignupTools(deps = {}) {
     if (saved('languages')) {
       const codes = details.languages.map((row) => String(row.language || '').trim().toLowerCase()).filter(Boolean);
       step('languages', { languages_count: codes.length, languages: codes });
+    }
+    const sections = Object.entries(results).filter(([name]) => name !== 'phone');
+    if (sections.length && sections.every(([, r]) => r.ok === true)) {
+      funnel.completed('profile_summary', { fields_edited_count: draftFieldsEdited() });
     }
     funnel.flush();
   }

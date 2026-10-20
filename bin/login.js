@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 'use strict';
 
-// `login` / `logout` — a registered Talent identifies themselves to the CLI (talents-ai-score, issue 122 / ADR-044).
+// `login` / `logout` — a registered Talent identifies themselves to the CLI.
 
 const { detectReportLang, getCatalog } = require('../src/i18n');
 const { getAuthTokenEndpoint, getDeviceAuthorizeEndpoint, getDeviceTokenEndpoint, getCompleteRegistrationEndpoint } = require('../src/config');
-const { runDeviceLogin, appendProviderParam } = require('../src/device-login');
+const { runDeviceLogin, appendProviderParam, deviceSessionRecord } = require('../src/device-login');
 const { buildRegistrationContext } = require('../src/signup-client');
 const { openPath } = require('../src/open-file');
+const { endSession } = require('../src/session-refresh');
 const {
   saveAuthSession,
-  clearAuthSession,
   loadAuthSession,
   sessionStatus,
 } = require('../src/auth-session-store');
@@ -68,13 +68,13 @@ async function run(
 
   if (!method) {
     const stdinIsTTY = ttyOverride !== undefined ? ttyOverride : !!process.stdin.isTTY;
-    // ADR-044: an ACTIVE session is not silently overwritten, and the picker never shows.
+    // An ACTIVE session is not silently overwritten, and the picker never shows.
     if (sessionStatus(loadAuthSession()) === 'active') {
       (output || process.stdout).write(`\n  ${c.alreadyLoggedIn}\n\n`);
       return;
     }
     if (stdinIsTTY) {
-      // ADR-041/046 — the picker offers Email, Google and LinkedIn.
+      // The picker offers Email, Google and LinkedIn.
       const pickerAsk = injectedAsk || createStdinAsk();
       try {
         method = await chooseLoginMethod({ ask: pickerAsk, stdinIsTTY, c, input, output });
@@ -108,6 +108,8 @@ function persistAndReport(result, c, email = null, output = process.stdout) {
       accessTokenExpiresAt: result.expiresAt,
       cookie: result.cookie || null,
       cookieExpiresAt: result.cookieExpiresAt || null,
+      sessionToken: result.sessionToken || null,
+      sessionExpiresAt: result.sessionExpiresAt || null,
       email,
       hubAccessToken: result.hubAccessToken || null,
     });
@@ -167,9 +169,8 @@ async function runDeviceFlow(provider, c, { openBrowser = openPath, sleep = unde
 
 function handleDeviceResult(result, c, output = process.stdout) {
   if (result.ok) {
-    // Map the device-flow JWT to the shared persist shape (no cookie).
     return void persistAndReport(
-      { accessToken: result.token, hubAccessToken: result.token, email: result.email || null },
+      deviceSessionRecord(result),
       c,
       result.email || null,
       output,
@@ -196,13 +197,12 @@ function handleDeviceResult(result, c, output = process.stdout) {
   process.exitCode = 1;
 }
 
-// `logout` — local only (no endpoint, no network): forget the stored session.
+// `logout`: revoke the hub session (best-effort) and forget the stored one.
 async function runLogout(argv = process.argv.slice(2), { output = process.stdout } = {}) {
   const opts = parseArgs(argv);
   const lang = opts.lang || detectReportLang();
   const c = getCatalog(lang).login;
-  const had = loadAuthSession() !== null;
-  clearAuthSession();
+  const had = await endSession(process.env);
   clearConsentState();
   output.write(`\n  ${had ? c.loggedOut : c.notLoggedIn}\n\n`);
 }

@@ -4,7 +4,7 @@ const { scrubSecrets } = require('./agent-synthesis');
 const { requestBackend } = require('./backend-request');
 const { reporterFor, REASON } = require('./model-call-record');
 
-// Agent definition-quality evaluation client (ADR-016, agent evaluation).
+// Agent definition-quality evaluation client.
 
 // HOW LONG TO WAIT FOR THE AGENT EVALUATION, and why it keeps growing.
 const DEFAULT_TIMEOUT_MS = 150000;
@@ -29,7 +29,7 @@ function buildAgentEvaluationRequest(structuralAgents, definitionsByName, locale
       parent: a.parent || null,
     })),
     promptVersion: PROMPT_VERSION,
-    // ADR-026: detected report language for the rationale + description prose.
+    // Detected report language for the rationale + description prose.
     ...(locale === 'es' || locale === 'en' ? { locale } : {}),
     ...(consentGranted === true ? { traceContentConsent: true } : {}),
   };
@@ -103,7 +103,7 @@ function normalizeEvaluations(list) {
     .map((e) => ({
       name: e.name,
       rationale: typeof e.rationale === 'string' ? e.rationale : '',
-      // ADR-026: target-language one-line description; null when the server
+      // Target-language one-line description; null when the server
       // omitted it — the caller falls back to the verbatim phrase.
       description: typeof e.description === 'string' && e.description ? e.description : null,
       // v4 (agent classification): closest catalog agent + how it was matched.

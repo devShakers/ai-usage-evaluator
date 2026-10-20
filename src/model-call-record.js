@@ -1,6 +1,6 @@
 'use strict';
 
-// What happened with each model call, written down (talents-ai-score, issue 109).
+// What happened with each model call, written down.
 
 // The three keys.
 const MODEL_CALL = Object.freeze({
@@ -163,7 +163,7 @@ function callPartial(report, key) {
   return !!c && c.ok === true && Array.isArray(c.omitted) && c.omitted.length > 0;
 }
 
-// THE CALL LOST TIME TO A DEADLINE — and this is NOT `reason === TIMEOUT` (issue 116, found by measuring, not by reading).
+// THE CALL LOST TIME TO A DEADLINE — and this is NOT `reason === TIMEOUT` (found by measuring, not by reading).
 function callTimedOut(report, key) {
   const c = modelCall(report, key);
   if (!c || c.ok !== false) return false;

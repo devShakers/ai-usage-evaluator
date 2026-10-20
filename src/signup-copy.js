@@ -1,6 +1,6 @@
 'use strict';
 
-// Talent-facing copy of the MCP sign-up (ticket 39540, UX review 39574): fixed text the AI shows word for word, in the talent's language.
+// Talent-facing copy of the MCP sign-up: fixed text the AI shows word for word, in the talent's language.
 
 const SIGNUP_LANGUAGES = ['es', 'en', 'it', 'pt'];
 

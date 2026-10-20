@@ -1,6 +1,6 @@
 'use strict';
 
-// Shakers hand-drawn "shakers" WORDMARK, inlined VERBATIM from the design asset shakers-hub-frontend/apps/hub/public/images/shakers-text-logo.svg (viewBox 0 0 87 18, 7 glyph <path>s).
+// Shakers hand-drawn "shakers" WORDMARK, inlined VERBATIM from the Shakers text-logo SVG (viewBox 0 0 87 18, 7 glyph <path>s).
 
 const WORDMARK_VIEWBOX = { w: 87, h: 18 };
 

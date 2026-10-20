@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { getHomeDir, readEnv } = require('./env-paths');
 
-// Single source of truth for the CLI's config directory (ADR-045).
+// Single source of truth for the CLI's config directory.
 
 const DIR_NAME = 'shakers';
 const LEGACY_DIR_NAME = 'ai-footprint';

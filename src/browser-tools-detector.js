@@ -1,6 +1,6 @@
 'use strict';
 
-// Deterministic (no-LLM) browser tools detector (talents-ai-score, issue 018 / ADR-013-014).
+// Deterministic (no-LLM) browser tools detector.
 
 const BROWSER_DEPENDENCY_NAMES = new Set(['playwright', '@playwright/test', 'puppeteer', 'puppeteer-core']);
 

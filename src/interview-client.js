@@ -100,7 +100,7 @@ class InterviewClient {
 
     // The end of the interview is a protocol message, not a sentence: matching the
     // goodbye text never fired (certs sends no closingMessage), so the CLI kept
-    // asking for answers until its turn-timeout (new-works, 2026-09-25).
+    // asking for answers until its turn-timeout.
     if (RoomEvent && RoomEvent.DataReceived && typeof room.on === 'function') {
       room.on(RoomEvent.DataReceived, (payload, _participant, _kind, topic) => {
         if (topic !== PROTOCOL_TOPIC) return;
@@ -216,8 +216,13 @@ class InterviewClient {
   }
 }
 
+function createInterviewClient(opts) {
+  return new InterviewClient(opts);
+}
+
 module.exports = {
   InterviewClient,
+  createInterviewClient,
   LiveKitNotInstalledError,
   loadLiveKitSdk,
   CHAT_TOPIC,

@@ -1,6 +1,6 @@
 'use strict';
 
-// The derived-payload whitelist for the `usage/reports` ingest, extracted from src/share.js (structure refactor, issue 020).
+// The derived-payload whitelist for the `usage/reports` ingest, extracted from src/share.js.
 
 const { scrubSecrets } = require('./agent-synthesis');
 const { MAX_DEFINITION_CHARS } = require('./agent-evaluation');
@@ -13,7 +13,7 @@ function whitelistSchedulerProbe(probe) {
   };
 }
 
-// WHY ONE MORE FIELD IS ADMISSIBLE ON THE AGENT WHITELIST (issue 115).
+// WHY ONE MORE FIELD IS ADMISSIBLE ON THE AGENT WHITELIST.
 function agentCatalogIdsByName(report) {
   const evaluations =
     report.agentEvaluation && Array.isArray(report.agentEvaluation.evaluations)
@@ -86,7 +86,7 @@ function derivePayload(report, maturity) {
       tools: Array.isArray(a.tools) ? a.tools : [],
       model: a.model || null,
       parent: a.parent || null,
-      // issue 115 — the ONLY classification field that travels.
+      // The ONLY classification field that travels.
       catalogId: catalogIdsByName.get(a.name) || null,
       // agent-classifier fix — the agent's own definition (frontmatter description + body), scrubbed + capped.
       ...(definitionsByName.get(a.name)
@@ -132,14 +132,14 @@ function derivePayload(report, maturity) {
         mcp: Array.isArray(browserToolsVia.mcp) && browserToolsVia.mcp.length > 0,
       },
     },
-    // Hybrid evaluation, Slice 1: two DETERMINISTIC behavioural blocks (no LLM).
+    // Two DETERMINISTIC behavioural blocks (no LLM).
     gitActivity: whitelistGitActivity(report.gitActivity),
     sessions: whitelistSessions(report.sessions),
-    // Hybrid evaluation, Slice 2: one DETERMINISTIC block (workStreams) and two REDACTED-excerpt blocks (steering, decisions).
+    // One DETERMINISTIC block (workStreams) and two REDACTED-excerpt blocks (steering, decisions).
     workStreams: whitelistWorkStreams(report.workStreams),
     steering: whitelistSteering(report.steering),
     decisions: whitelistDecisions(report.decisions),
-    // Hybrid evaluation, Slice 3c: PER-CANDIDATE authorship + depth (per detected skill, per detected agent).
+    // PER-CANDIDATE authorship + depth (per detected skill, per detected agent).
     detectionEvidence: whitelistDetectionEvidence(report.detectionEvidence),
   };
 }
@@ -176,7 +176,7 @@ function whitelistDetectionEvidence(evidence) {
   return { skills, agents, provenance: whitelistProvenance(evidence.provenance) };
 }
 
-// Re-derives the repo-level anti-noise `provenance` (Slice 3): the (weak) fork signal and the (conservative) boilerplate/tutorial signal.
+// Re-derives the repo-level anti-noise `provenance`: the (weak) fork signal and the (conservative) boilerplate/tutorial signal.
 function whitelistProvenance(provenance) {
   if (!provenance || typeof provenance !== 'object') return null;
   const marker =

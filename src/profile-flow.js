@@ -62,7 +62,7 @@ async function runProfile({ io, rawOut, session, catalog, opts = {}, deps = make
   const agentsCount = aiProfile ? aiProfile.agentsOnProfile : null;
 
   if (opts.json) {
-    (rawOut || ((s) => process.stdout.write(s)))(`${JSON.stringify({
+    rawOut(`${JSON.stringify({
       ok: true, mainRole, headline, completedProfilePercentage: completion, freelanceType,
       languageCodes, skillsCount, agentsCount, availability: availabilitySummary, aiProfile, pricing,
     }, null, 2)}\n`);

@@ -24,7 +24,7 @@ const { reasonCopy, pickPortfolios } = require('./start-add-skills');
 const { askWithDefault } = require('./start-add-portfolio');
 const { styleQuestion, styleSuccess } = require('./ansi');
 
-// `start`'s "Add agent to profile" route (talents-ai-score Phase 2), mirror of src/start-add-portfolio.js: the IA pre-drafts, the Talent edits.
+// `start`'s "Add agent to profile" route, mirror of src/start-add-portfolio.js: the IA pre-drafts, the Talent edits.
 
 const MAX_DEFINITION_CHARS = 4000;
 
@@ -68,7 +68,7 @@ async function chooseAgent({ ask, stdinIsTTY, agents, c, input, output }) {
   return idx === null ? null : agents[idx];
 }
 
-// Step 4 — the two AI-drafted fields, consent-gated (ADR-052) before any egress.
+// Step 4 — the two AI-drafted fields, consent-gated before any egress.
 async function resolveAgentFields({ ask, catalog, c, stdinIsTTY, agent, accessToken, preAccepted = false }) {
   const freeText = async () => ({
     whatItDoes: await askFreeText(ask, c.agentWhatItDoesFreeTextPrompt),

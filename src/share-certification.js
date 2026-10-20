@@ -1,13 +1,13 @@
 'use strict';
 
-// Certification-persistence payload (skill-code-certification, issue 005), extracted from src/share.js (structure refactor, issue 020).
+// Certification-persistence payload, extracted from src/share.js.
 
 const { scrubSecrets } = require('./agent-synthesis');
 
 const CERTIFY_SEND_THROTTLE_MS = 60 * 60 * 1000;
 const CERT_SCHEMA_VERSION = 1;
 
-// Strict whitelist: the analyzed RESULT + observability provenance (ADR-017), rebuilt field-by-field (never spread).
+// Strict whitelist: the analyzed RESULT + observability provenance, rebuilt field-by-field (never spread).
 const CERT_DIMENSION_KEYS = ['idiomatic', 'correctness', 'depth', 'structure', 'testing'];
 function deriveDimensionScores(dimensions) {
   if (!dimensions || typeof dimensions !== 'object') return null;
@@ -74,13 +74,13 @@ function deriveCertificationPayload(items, { repository = null, commitRange = nu
               note: typeof f.note === 'string' && f.note ? scrubSecrets(f.note) : null,
             }))
         : [],
-      // ADR-024 rubric dimensions (0-4 or null) — the inputs the server used to
+      // Rubric dimensions (0-4 or null) — the inputs the server used to
       // compute the deterministic score. Rebuilt key-by-key, never spread.
       dimensionScores: deriveDimensionScores(i.result.dimensions),
       };
       const certifyToken = certifyEvidenceTokenOf(i);
       if (certifyToken) assessment.evidenceToken = certifyToken;
-      // ADR-049 / issue 128: the attested combined level, bound ONLY when an
+      // The attested combined level, bound ONLY when an
       // interview ran. Added conditionally so an item without one is byte-identical.
       const token = interviewEvidenceTokenOf(i);
       if (token) assessment.interviewEvidenceToken = token;

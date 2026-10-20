@@ -2,7 +2,7 @@
 
 const os = require('os');
 
-// Shared home-directory + env resolution (talents-ai-score, ADR-014 — "Alcance del tier: Talento = proyecto ∪ home", applied uniformly to every category).
+// Shared home-directory + env resolution (tier scope = project ∪ home, applied uniformly to every category).
 function readEnv(env, suffix) {
   const next = env[`SHAKERS_CLI_${suffix}`];
   if (next !== undefined && next !== '') return next;

@@ -76,6 +76,7 @@ function makeOnboardingTools(deps = {}) {
     requestDiscoveredInventory = require('./inventory-client').requestDiscoveredInventory,
     requestDiscoveredInventoryWithRefresh = require('./inventory-client').requestDiscoveredInventoryWithRefresh,
     ensureFreshSession = require('./session-refresh').ensureFreshSession,
+    endSession = require('./session-refresh').endSession,
     requestDeclareSkill = require('./skills-client').requestDeclareSkill,
     requestDeclareAgent = require('./agents-client').requestDeclareAgent,
     requestListAgents = require('./agents-client').requestListAgents,
@@ -86,7 +87,7 @@ function makeOnboardingTools(deps = {}) {
     getRemoteUrl = require('./portfolio-git-info').getRemoteUrl,
     getCommitDateRange = require('./portfolio-git-info').getCommitDateRange,
     consentCopy = () => require('./signup-copy').signupCopy(require('./signup-language').signupLanguage(require('./i18n').detectFlowLang())).consent,
-    normalizeDomain = require('./start-add-portfolio').normalizeDomain,
+    normalizeDomain = require('./portfolio-client').normalizeDomain,
     isValidEmail = require('./share').isValidEmail,
     normalizeEmail = require('./share').normalizeEmail,
   } = deps;
@@ -115,8 +116,7 @@ function makeOnboardingTools(deps = {}) {
   };
 
   async function logout() {
-    const wasLoggedIn = loadAuthSession() !== null;
-    try { clearAuthSession(); } catch { /* idempotent — nothing to clear */ }
+    const wasLoggedIn = await endSession(process.env, { loadAuthSession, clearAuthSession });
     return { ok: true, wasLoggedIn };
   }
 
@@ -251,7 +251,7 @@ function makeOnboardingTools(deps = {}) {
     const relatedInput = Array.isArray(args.relatedPortfolios) ? args.relatedPortfolios : [];
     if (relatedInput.length === 0 || !agentId) return { ...base, portfolios };
 
-    // ADR-041 replace-set: validate every portfolioId against the talent's own
+    // Replace-set: validate every portfolioId against the talent's own
     // list, then PATCH the whole set in ONE call.
     const items = [];
     const relateFailures = [];

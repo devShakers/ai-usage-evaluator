@@ -11,6 +11,7 @@ const {
   WORK_SITUATIONS, EMPLOYMENT_PARTICIPATIONS, FREELANCE_OPINIONS, CHANGE_MOTIVATORS, WORK_MODES,
   LANGUAGE_CODES, LANGUAGE_LEVELS, showsFreelanceOpinion, showsChangeMotivators,
 } = require('../src/onboarding-flow');
+const { createInterviewClient } = require('../src/interview-client');
 const { promptSelect, promptMultiSelect } = require('../src/prompt-select');
 const { chooseAuthMethod } = require('../src/auth-method-picker');
 const { methodIdsForFlow } = require('../src/auth-methods');
@@ -305,7 +306,20 @@ async function run(
     return;
   }
 
-  const ask = injectedAsk || createStdinAsk();
+  // Injected deps (tests) bring their own funnel or none.
+  const registrationFunnel = funnel || (deps ? undefined : createFunnel({ surface: 'cli' }));
+  let interrupted = false;
+  const onInterrupt = () => {
+    if (interrupted) process.exit(130);
+    interrupted = true;
+    process.stdout.write('\n');
+    const settled = registrationFunnel ? registrationFunnel.settle() : Promise.resolve();
+    settled.then(() => {
+      ask.close();
+      process.exit(130);
+    });
+  };
+  const ask = injectedAsk || createStdinAsk({ onInterrupt });
   try {
     // Method choice (Email + Google) from the shared auth-methods registry; a
     // valid method flag skips the picker.
@@ -317,9 +331,7 @@ async function run(
     const io = makeIo({ ask, lang, out: write, acceptDisclaimer: o.acceptDisclaimer, stdinIsTTY });
     // At a terminal the profile opens in the browser at the end; piped runs, tests and --no-open only print it.
     const openProfile = stdinIsTTY && !o.noOpen ? (openBrowser || openPath) : undefined;
-    // Injected deps (tests) bring their own funnel or none.
-    const registrationFunnel = funnel || (deps ? undefined : createFunnel({ surface: 'cli' }));
-    const result = await runOnboarding(io, deps || makeDeps(), { method, openBrowser, onAuthUrl: io.onGoogleAuthUrl, openProfile, funnel: registrationFunnel });
+    const result = await runOnboarding(io, deps || makeDeps({ makeInterviewClient: createInterviewClient }), { method, openBrowser, onAuthUrl: io.onGoogleAuthUrl, openProfile, funnel: registrationFunnel });
     if (!result.ok) {
       process.stderr.write(`\n  ${red(`register: ${result.reason}${result.step ? ` (${result.step})` : ''}`)}\n\n`);
       process.exitCode = 1;
@@ -327,6 +339,7 @@ async function run(
     return result;
   } finally {
     if (!injectedAsk) ask.close();
+    if (registrationFunnel) await registrationFunnel.settle();
   }
 }
 

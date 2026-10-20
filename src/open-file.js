@@ -2,7 +2,7 @@
 
 const { spawn } = require('child_process');
 
-// Zero-dependency, best-effort "open this file in the OS default app" (ADR-016, used by the `report` command to open the generated HTML in the browser).
+// Zero-dependency, best-effort "open this file in the OS default app" (used by the `report` command to open the generated HTML in the browser).
 function openPath(target) {
   let cmd;
   let args;

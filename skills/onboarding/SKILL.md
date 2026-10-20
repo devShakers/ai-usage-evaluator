@@ -1,8 +1,8 @@
 ---
 name: onboarding
-description: Register and onboard on Shakers (profile import, pricing, availability, interview).
+description: "Sign up on Shakers from this chat: your CV and LinkedIn, a password or Google, and your profile filled in for you."
 disable-model-invocation: true
-allowed-tools: mcp__shakers__register, mcp__shakers__register_preview, mcp__shakers__suggest_register_context, mcp__shakers__onboarding_interview_start
+allowed-tools: mcp__plugin_shakers_shakers__signup_start
 ---
 
-Help me get set up on Shakers. Use `suggest_register_context` to pre-fill what you can, show me `register_preview`, then `register`, and offer the `onboarding_interview_*` tools. Ask me only for what you cannot infer. Never show internal ids or codes.
+Sign me up on Shakers following the sign-up flow in your Shakers instructions. Start with `signup_start` (language: the one I write in; "en" if I have not written anything yet) and show me its texts word for word. Ask me only the questions the tools return, with their options, and nothing you can infer. Never narrate internal steps or tool state to me, and speak only in my language.

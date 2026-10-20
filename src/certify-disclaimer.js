@@ -1,6 +1,6 @@
 'use strict';
 
-// Legal disclaimer + EXPLICIT acceptance gate (ADR-001), shown before egress. Skill-code certify was retired (certify is now a dimension LiveKit interview); consumers today are the add-skill/add-agent/add-project consent gates.
+// Legal disclaimer + EXPLICIT acceptance gate, shown before egress. Skill-code certify was retired (certify is now a dimension LiveKit interview); consumers today are the add-skill/add-agent/add-project consent gates.
 
 const { renderLegalNotice } = require('./legal-notice');
 const { styleQuestion } = require('./ansi');

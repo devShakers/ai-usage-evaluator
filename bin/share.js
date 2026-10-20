@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-// `share` — turns the project's AI-usage FOOTPRINT result into a branded card to post on LinkedIn (skill-code-certification).
+// `share` — turns the project's AI-usage FOOTPRINT result into a branded card to post on LinkedIn.
 
 const { detectReportLang, getCatalog } = require('./../src/i18n');
 const { generateShareCard } = require('./../src/share-card');

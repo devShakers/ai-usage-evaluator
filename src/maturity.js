@@ -12,7 +12,7 @@ const LEVELS = [
   { level: 4, key: 'orchestrator', name: 'Orquestador', emoji: '●' },
 ];
 
-// DECISION (talents-ai-score, signal expansion): the level definitions (LEVELS, HANDOFF §4) have NOT been touched.
+// DECISION: the level definitions (LEVELS) have NOT been touched.
 function depthTotals(tools) {
   let instructions = 0; // project instructions/rules files
   let mcp = 0; // configured MCP servers
@@ -30,7 +30,7 @@ function depthTotals(tools) {
   return { instructions, mcp, custom, hooks };
 }
 
-// Score model 0-100 for the visual meter — RECALIBRATED (ADR-008, skill-code-certification).
+// Score model 0-100 for the visual meter — RECALIBRATED.
 const SCORE_MODEL = [
   { key: 'breadth', weight: 12, full: 3 }, // number of AI tools detected
   { key: 'context', weight: 16, full: 2 }, // instructions + config files
@@ -61,7 +61,7 @@ function classify(report) {
       ? report.agentCounts.agents
       : 0;
 
-  // Score scope reverted to PROJECT ∪ HOME (skill-code-certification / ADR-010, which reverts ADR-009).
+  // Score scope reverted to PROJECT ∪ HOME.
   const score = computeScore({
     breadth,
     context: d.instructions, // depthTotals already folds `config` into instructions
@@ -72,7 +72,7 @@ function classify(report) {
     multiAgent: agentCount,
   });
 
-  // Band 0-4 derived from the tier engine (issue 019, single source of truth).
+  // Band 0-4 derived from the tier engine (single source of truth).
   const tierResult = computeTierResult(report);
   const level = tierResult.band;
   const meta = LEVELS[level];
@@ -87,11 +87,11 @@ function classify(report) {
     depth: d,
     hasAgentic,
     next: nextStep(level, { breadth, ...d, hasAgentic }),
-    // Tier (T0-T7, issue 019): the fine-grained axis the band is derived from.
+    // Tier (T0-T7): the fine-grained axis the band is derived from.
     tier: tierResult.tier,
     tierKey: tierResult.tierKey,
     tierName: tierResult.tierName,
-    // Setup Level (ADR-016): the 3-value rollup shown to the talent, derived
+    // Setup Level: the 3-value rollup shown to the talent, derived
     // from the tier. `{key, code, rank, emoji}`; label localized via i18n.
     setupLevel: tierResult.setupLevel,
   };

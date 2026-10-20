@@ -65,9 +65,9 @@ const LOCAL_ONLY_TOOL_NAMES = new Set(['ai_usage', 'ai_usage_result', 'read_cv',
 
 // `localOnly` builds the scan-only server for the Claude .mcpb bundle, reusing the SAME
 // tool registry (just filtered) — no duplicate registration.
-function buildServer({ localOnly = false, funnel = createFunnel({ surface: 'mcp' }) } = {}) {
+function buildServer({ localOnly = false, funnel = createFunnel({ surface: 'mcp' }), makeInterviewClient = null } = {}) {
   const lang = detectFlowLang();
-  const allTools = [makeAiUsageTool(), makeAiUsageResultTool(), ...makeOnboardingTools(), ...makeRoleTools({ lang, funnel }), ...makeDeviceLoginTools(), ...makeSignupTools({ lang, funnel }), ...makeRegisterTools({ lang, funnel }), ...makeReportTools(), ...makeCertifyDimensionTools(), ...makeFindProjectsTools(), ...makeShowProjectTools(), ...makeSavedPositionsTools(), ...makeInvitationsTools(), ...makeApplicationsTools(), ...makeAvailabilityTools(), ...makeCertificationsTools(), ...makeProfileTools(), ...makeRateTools(), ...makeLangTools(), ...makeSocialsTools(), ...makePortfolioTools(), ...makeAlmaTools()];
+  const allTools = [makeAiUsageTool(), makeAiUsageResultTool(), ...makeOnboardingTools(), ...makeRoleTools({ lang, funnel }), ...makeDeviceLoginTools(), ...makeSignupTools({ lang, funnel }), ...makeRegisterTools({ lang, funnel, flowDeps: { makeInterviewClient } }), ...makeReportTools(), ...makeCertifyDimensionTools(), ...makeFindProjectsTools(), ...makeShowProjectTools(), ...makeSavedPositionsTools(), ...makeInvitationsTools(), ...makeApplicationsTools(), ...makeAvailabilityTools(), ...makeCertificationsTools(), ...makeProfileTools(), ...makeRateTools(), ...makeLangTools(), ...makeSocialsTools(), ...makePortfolioTools(), ...makeAlmaTools()];
   const tools = localOnly ? allTools.filter((t) => LOCAL_ONLY_TOOL_NAMES.has(t.name)) : allTools;
   // Slash-command prompts, kept to the tools actually registered in this mode.
   const prompts = makePrompts(new Set(tools.map((t) => t.name)), lang);
@@ -79,6 +79,7 @@ function buildServer({ localOnly = false, funnel = createFunnel({ surface: 'mcp'
     // Long-lived server: refresh the email session's hub JWT from the stored
     // cookie before each tool call so a stale (~15-min) JWT never reaches a tool.
     beforeCall: () => ensureFreshSession(process.env),
+    afterCall: () => { funnel.flush(); },
     onInitialize: ({ clientInfo }) => funnel.setMcpClient(clientInfo.name),
   });
 }
@@ -88,21 +89,23 @@ function prepareProcess(env = process.env) {
   require('../src/backend-request').setClientIdentity('mcp');
 }
 
-async function run(argv = process.argv.slice(2)) {
-  // The installer's last step; not a command the Talent needs to know.
-  if (argv[0] === 'install') {
-    await require('../src/mcp-install').runMcpInstall();
-    return;
-  }
+async function run(argv = process.argv.slice(2), { makeInterviewClient = null } = {}) {
   if (argv.includes('--help') || argv.includes('-h')) {
     process.stdout.write(HELP);
     return;
   }
 
+  const problem = require('../src/config').envProfileProblem(process.env);
+  if (problem) {
+    process.stderr.write(`  [mcp] ${problem}\n`);
+    process.exitCode = 1;
+    return;
+  }
   prepareProcess();
 
   // `--local` = the scan-only server shipped in the Claude .mcpb bundle.
-  const server = buildServer({ localOnly: argv.includes('--local') });
+  const funnel = createFunnel({ surface: 'mcp' });
+  const server = buildServer({ localOnly: argv.includes('--local'), funnel, makeInterviewClient });
   const rl = server.start({
     input: process.stdin,
     output: process.stdout,
@@ -115,6 +118,7 @@ async function run(argv = process.argv.slice(2)) {
     rl.on('close', resolve);
     process.stdin.on('end', () => rl.close());
   });
+  await funnel.settle();
 }
 
 module.exports = { run, buildServer, buildServerInstructions, prepareProcess };
