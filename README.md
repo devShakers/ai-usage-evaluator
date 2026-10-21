@@ -64,14 +64,19 @@ Run `shakers` with no command to see every command.
 ## Privacy
 
 - The `ai-usage` scan runs on your machine and its report is shown there first.
-- Saving it to Shakers is opt-in. You are asked once, after you see the report. Change
-  your decision any time with `shakers ai-usage --consent-status`, `--consent-revoke` or
-  `--consent-email`.
-- What is saved is derived data (counts, categories, tier, detected technologies), never
-  file contents, paths, environment variables or credentials.
+- Saving it to Shakers is opt-in. Every time, before anything is uploaded, you see what
+  would be sent and what Shakers does with it, and it is uploaded only if you say yes. You
+  can leave out agents and text excerpts there. `--consent-revoke` stops future uploads
+  from this computer; it does not delete what was already uploaded. To ask for that, write
+  to talent@shakersworks.com.
+- What is saved is mostly derived data (counts, categories, tier, detected technologies).
+  Two kinds of text travel too, and the review shows how many: the definition text of your
+  AI agents and short excerpts of what you ask the AI (200 characters at most), both with
+  secrets, paths and emails removed. Never your code, your full conversations, the names of
+  your repositories, environment variables or credentials.
 - Certification sends secret-scrubbed samples of your code and your interview answers to
   Shakers to assess them.
-- Read the full policy at <https://shakersworks.com/legal/mcp-privacy>.
+- Read the full policy at <https://www.shakersworks.com/en/politica-de-privacidad>.
 
 ## License
 

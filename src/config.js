@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { readEnv } = require('./env-paths');
 const { getConfigDir } = require('./config-dir');
+const { recordAccountMarker } = require('./account-marker');
 
 // Persistent CLI config file.
 function configDir(env = process.env) {
@@ -815,6 +816,7 @@ function saveSuperadminSession(session, env = process.env) {
     expiresAt: session.expiresAt || null,
   };
   saveConfigFile(config, env);
+  recordAccountMarker('superadmin', env);
 }
 
 function clearSuperadminSession(env = process.env) {

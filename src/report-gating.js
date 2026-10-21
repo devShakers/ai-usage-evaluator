@@ -2,11 +2,12 @@
 
 const { loadAuthSession, sessionStatus, isPlatformTalent } = require('./auth-session-store');
 const { getProfile } = require('./config');
+const { hasAccountTrace } = require('./account-trace');
 
 // THE ONE LAYER THAT DECIDES WHAT THE REPORT SHOWS ACCORDING TO IDENTITY.
 
 // Pure: identity in, policy out.
-function resolveReportGate({ loggedIn = false, status = null, email = null, userType = null, profile = 'talent' } = {}) {
+function resolveReportGate({ loggedIn = false, accountTrace = false, status = null, email = null, userType = null, profile = 'talent' } = {}) {
   const showEverything = !loggedIn;
   const resolvedProfile = profile === 'external' ? 'external' : 'talent';
   return Object.freeze({
@@ -16,7 +17,7 @@ function resolveReportGate({ loggedIn = false, status = null, email = null, user
     email: loggedIn && typeof email === 'string' && email ? email : null,
     // --roadmap AND its server-side computation/egress (see bin/report.js): a
     // logged-in Talent's roadmap is not merely hidden, it is not requested.
-    showRoadmap: showEverything,
+    showRoadmap: showEverything && !accountTrace,
     // Per-agent "how to improve this agent" tips in the footprint report.
     showAgentSuggestions: showEverything,
     // The copyable remediation prompt in a `certify` verdict.
@@ -35,6 +36,7 @@ function reportGateForIdentity(env = process.env, now = Date.now()) {
   const status = sessionStatus(session, now);
   return resolveReportGate({
     loggedIn: status === 'active',
+    accountTrace: hasAccountTrace(env),
     status,
     email: session ? session.email : null,
     userType: session ? session.userType : null,

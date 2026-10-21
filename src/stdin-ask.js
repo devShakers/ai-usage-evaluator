@@ -126,4 +126,16 @@ function createStdinAsk({ onInterrupt } = {}) {
   return ask;
 }
 
-module.exports = { createStdinAsk, createLineQueueAsk };
+function createLazyStdinAsk() {
+  let real = null;
+  const open = () => { real = real || createStdinAsk(); return real; };
+  const ask = (question) => open()(question);
+  ask.secret = (question) => open().secret(question);
+  ask.drain = () => { if (real) real.drain(); };
+  ask.close = () => { if (real) real.close(); };
+  ask.suspend = () => { if (real) real.suspend(); };
+  ask.resume = () => { if (real) real.resume(); };
+  return ask;
+}
+
+module.exports = { createStdinAsk, createLazyStdinAsk, createLineQueueAsk };

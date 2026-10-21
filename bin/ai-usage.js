@@ -4,7 +4,9 @@
 const { detectReportLang, getCatalog } = require('../src/i18n');
 const { parseArgs } = require('../src/cli-args');
 const { handleOneShotCommand } = require('../src/usage-oneshot-commands');
+const { createLazyStdinAsk } = require('../src/stdin-ask');
 const { computeUsage } = require('../src/usage-scan');
+const { hasAccountTrace } = require('../src/account-trace');
 const {
   resolveRepoScope,
   machineWideToplevels,
@@ -32,18 +34,35 @@ async function run(argv = process.argv.slice(2), { ask: injectedAsk = null, bypa
   // One-shot commands (consent/endpoint config): act immediately, do NOT scan.
   if (await handleOneShotCommand({ opts, catalog, injectedAsk })) return;
 
-  const { report, maturity, root, gate } = await computeUsage({
-    opts,
-    catalog,
-    lang,
-    inRegistration,
-    prepareIdentity: prepareIdentityAndUsage,
-    resolveConsent: (args) => resolveAiConsent({ ...args, injectedAsk }),
-    resolveScope: (args) => resolveRepoScope({ ...args, injectedAsk }),
-  });
+  if (opts.roadmap && hasAccountTrace()) {
+    process.stdout.write(`\n  ${catalog.cli.roadmapNotForAccounts}\n\n`);
+    return;
+  }
 
-  // 7. Render (or emit --json), persist, optional --build-next-level, auto-share.
-  await renderAndFinalize({ report, maturity, lang, opts, root, gate, catalog, bypassThrottle });
+  const ask = injectedAsk || createLazyStdinAsk();
+  try {
+    const { report, maturity, root, gate, repos } = await computeUsage({
+      opts,
+      catalog,
+      lang,
+      inRegistration,
+      prepareIdentity: prepareIdentityAndUsage,
+      resolveConsent: (args) => resolveAiConsent({ ...args, injectedAsk: ask }),
+      resolveScope: async (args) => {
+        if (injectedAsk) return resolveRepoScope({ ...args, injectedAsk });
+        ask.suspend();
+        try {
+          return await resolveRepoScope(args);
+        } finally {
+          ask.resume();
+        }
+      },
+    });
+
+    await renderAndFinalize({ report, maturity, lang, opts, root, gate, catalog, bypassThrottle, repos, injectedAsk: ask });
+  } finally {
+    if (!injectedAsk) ask.close();
+  }
 }
 
 module.exports = { run, resolveRepoScope, machineWideToplevels, promptScope };

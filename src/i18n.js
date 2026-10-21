@@ -450,7 +450,7 @@ const catalogs = {
       // Shown only when the 4 prose gaps below were actually replaced by a validated, project-adapted response — never on fallback to the curated content.
       roadmapPersonalizedNotice: 'Contenido adaptado a tu proyecto.',
       // Los dos avisos que faltaban, hermanos del `agentsEvalMissing` que añadió la 106.
-      roadmapNotPersonalizedNotice: 'Este roadmap es el genérico de tu tier: esta vez no se ha podido adaptar a tu proyecto. Vuelve a ejecutar `usage` para intentarlo otra vez.',
+      roadmapNotPersonalizedNotice: 'Este roadmap es el genérico de tu tier: esta vez no se ha podido adaptar a tu proyecto. Vuelve a ejecutar `usage --roadmap` para intentarlo otra vez.',
       // El antes y el después del roadmap.
       roadmapNowLabel: 'De dónde partes',
       roadmapProjectionLabel: 'Dónde te deja esta ruta',
@@ -558,6 +558,7 @@ const catalogs = {
       // Roadmap personalization: reuses the
       // same spinner mechanism as synthesizingLabel above.
       personalizingRoadmapLabel: 'Personalizando roadmap…',
+      roadmapNotForAccounts: 'El roadmap no está disponible para cuentas de Shakers: tu nivel sale de certificarte.',
       // Agent definition-quality evaluation (ephemeral LLM call).
       evaluatingAgentsLabel: 'Evaluando la calidad de tus agentes…',
       // "Construir el siguiente nivel ahora": now a SECONDARY, opt-in alternative — the copyable implementation prompt (below) is the PRIMARY "how do I implement this" path.
@@ -575,7 +576,7 @@ const catalogs = {
         + '      --repo             Evalúa solo el repo actual\n'
         + '      --scope machine|repo  Igual que --machine / --repo (salta el selector)\n'
         + '      --all-repos        Alias de --machine\n'
-        + '      --roadmap          Muestra los pasos para subir tu nivel de uso de IA (oculto por defecto)\n'
+        + '      --roadmap          Muestra los pasos para subir tu nivel de uso de IA (solo sin cuenta de Shakers)\n'
         + '      --build-next-level Genera el starter del siguiente tier (alternativa secundaria)\n'
         + '      --force            Junto a --build-next-level, sobrescribe un fichero existente\n'
         + '      --lang es|en       Fuerza el idioma (informe + prompt) en vez de detectarlo del sistema\n'
@@ -647,7 +648,7 @@ const catalogs = {
       // Esta pregunta se pide ahora ANTES de cualquier llamada de IA/egress (agent-synthesis, agent-evaluation, personalización de roadmap), no después.
       noReportWithoutConsent: 'Sin tu consentimiento, este informe no incluirá síntesis, evaluación ni roadmap generados por IA esta vez (el resto del informe se muestra igual). Vuelve a ejecutar `usage` y acepta para incluirlos, o usa --consent-reset si quieres que se te pregunte de nuevo.',
       deniedSaved: 'Entendido, no se guardará nada. Puedes cambiar de opinión más adelante volviendo a ejecutar el comando.',
-      grantedSaved: (email) => `Gracias. A partir de ahora este informe se guardará automáticamente en Shakers (correo: ${email}, máx. 1 vez por hora).`,
+      grantedSaved: (email) => `Gracias. Antes de subir nada a Shakers te enseñaré lo que se enviaría y solo lo subiré si lo apruebas (correo: ${email}, máx. 1 vez por hora).`,
       // Un talento logueado NUNCA ve el prompt de email (su cuenta ya prueba su identidad).
       noSessionEmail: 'No hay un correo asociado a tu sesión todavía, así que no se puede guardar el informe esta vez. Se te preguntará de nuevo la próxima ejecución.',
       skipAlreadyDecided: (decision, path) =>
@@ -972,12 +973,13 @@ const catalogs = {
     },
     mcpInstall: {
       title: 'Conectando el MCP de Shakers',
-      clients: { claudeDesktop: 'Claude Desktop', claudeCode: 'Claude Code', cursor: 'Cursor', geminiCli: 'Gemini CLI', codex: 'Codex (y ChatGPT en modo Codex)', vscode: 'VS Code', windsurf: 'Windsurf' },
+      clients: { claudeDesktop: 'Claude Desktop', claudeCode: 'Claude Code', cursor: 'Cursor', geminiCli: 'Gemini CLI', codex: 'Codex / ChatGPT', vscode: 'VS Code', windsurf: 'Windsurf' },
       status: {
         configured: 'conectado',
         unchanged: 'ya estaba conectado',
         'not-found': 'no instalado en esta máquina',
-        'invalid-json': 'su configuración no es JSON válido; no la he tocado',
+        'invalid-config': 'no puedo editar su configuración con seguridad; no la he tocado',
+        manual: 'ejecuta este comando en tu terminal:',
         failed: 'no se pudo conectar',
       },
       removedLegacy: 'Sustituye a la entrada antigua "shakers-ai-usage".',
@@ -985,7 +987,10 @@ const catalogs = {
       confirm: '¿Conecto Shakers a ellas para que puedas usarlo desde tu IA? [S/n]',
       declined: 'No he tocado nada. Para conectarlo más tarde, vuelve a ejecutar el instalador.',
       noTerminal: 'No hay una terminal donde preguntarte, así que no he tocado nada. Vuelve a ejecutar el instalador en tu terminal para conectarlo.',
-      restart: 'Reinicia las apps que estén abiertas para que carguen Shakers.',
+      restart: (apps) => `Reinicia ${apps} (o recarga sus servidores MCP) para que aparezcan las herramientas de Shakers.`,
+      alreadyConnected: 'Shakers ya estaba conectado. Si no ves sus herramientas, reinicia la app o recarga sus servidores MCP.',
+      yesHint: 'Para conectarlas sin preguntar (por ejemplo, desde un asistente de IA): shakers mcp install --yes',
+      help: 'mcp install — conecta Shakers a las apps de IA de esta máquina (Claude Desktop, Claude Code, Cursor, Gemini CLI, Codex / ChatGPT, VS Code, Windsurf).\n\nUso:\n  shakers mcp install            pregunta en la terminal y conecta las apps encontradas\n  shakers mcp install --yes      conecta sin preguntar (-y; para asistentes de IA y scripts)\n  shakers mcp install --json     imprime el resultado como un único objeto JSON\n\nSin --yes y sin terminal no toca nada. SHAKERS_MCP_INSTALL=1 equivale a --yes.\nAl terminar, reinicia las apps que indique (o recarga sus servidores MCP) para que aparezcan las herramientas de Shakers.',
       noneFound: 'No he encontrado ninguna app de IA compatible en esta máquina.',
       failedAll: 'No he podido conectar Shakers a tus apps de IA. Vuelve a ejecutar el instalador para reintentarlo.',
     },
@@ -1224,7 +1229,7 @@ const catalogs = {
       needInput: 'Se necesitan email y contraseña para iniciar sesión.',
       success: 'Sesión iniciada. Tu informe ya no incluye el roadmap ni las sugerencias de mejora: tu nivel sale de certificarte.',
       expiresAt: (iso) => `La sesión caduca: ${iso}. Cuando expire te lo diré y podrás volver a entrar con \`login\`.`,
-      loggedOut: 'Sesión cerrada. Vuelves a ver el informe completo, con roadmap y sugerencias.',
+      loggedOut: 'Sesión cerrada. Vuelves a ver las sugerencias de mejora en tu informe.',
       notLoggedIn: 'No había ninguna sesión iniciada. No hay nada que cerrar.',
       errorInvalidCredentials: 'Credenciales incorrectas: revisa tu email y contraseña e inténtalo otra vez.',
       errorNoEmailPassword: 'Esta cuenta existe pero no tiene contraseña de email: la registraste con Google o LinkedIn. Si fue con Google, usa `login --google`. Si fue con LinkedIn, entra desde la web para añadir una contraseña por ahora.',
@@ -2094,7 +2099,7 @@ const catalogs = {
       roadmapPersonalizedNotice: 'Content adapted to your project.',
       // See the Spanish catalog for why these say what was lost
       // rather than what went wrong, and when they are allowed to show.
-      roadmapNotPersonalizedNotice: 'This roadmap is the generic one for your tier: it could not be adapted to your project this run. Run `usage` again to retry.',
+      roadmapNotPersonalizedNotice: 'This roadmap is the generic one for your tier: it could not be adapted to your project this run. Run `usage --roadmap` again to retry.',
       // See the Spanish catalog for why the tag sits next to the
       // heading instead of in a footnote.
       roadmapNowLabel: 'Where you start from',
@@ -2198,6 +2203,7 @@ const catalogs = {
       reposScopeAll: 'Evaluating all AI usage on this machine.',
       synthesizingLabel: 'Synthesizing agents with AI…',
       personalizingRoadmapLabel: 'Personalizing roadmap…',
+      roadmapNotForAccounts: 'The roadmap is not available for Shakers accounts: your level comes from certifying.',
       // Agent definition-quality evaluation (ephemeral LLM call).
       evaluatingAgentsLabel: 'Evaluating your agents’ quality…',
       buildNextLevelHint: 'Alternatively, run `usage --build-next-level` to generate the starter file directly in your project.',
@@ -2214,7 +2220,7 @@ const catalogs = {
         + '      --repo             Evaluate the current repo only\n'
         + '      --scope machine|repo  Same as --machine / --repo (skips the picker)\n'
         + '      --all-repos        Alias of --machine\n'
-        + '      --roadmap          Show the steps to raise your AI-usage level (hidden by default)\n'
+        + '      --roadmap          Show the steps to raise your AI-usage level (only without a Shakers account)\n'
         + '      --build-next-level Generate the next tier starter (secondary alternative)\n'
         + '      --force            With --build-next-level, overwrite an existing file\n'
         + '      --lang es|en       Force the language (report + prompt) instead of OS detection\n'
@@ -2287,7 +2293,7 @@ const catalogs = {
       // This question is now asked BEFORE any AI/egress call (agent-synthesis, agent-evaluation, roadmap personalization), not after.
       noReportWithoutConsent: 'Without your consent, this report will not include AI-generated synthesis, evaluation, or roadmap this time (the rest of the report is shown as usual). Run `usage` again and accept to include them, or use --consent-reset if you want to be asked again.',
       deniedSaved: 'Understood, nothing will be saved. You can change your mind later by running the command again.',
-      grantedSaved: (email) => `Thanks. From now on this report will be saved in Shakers automatically (email: ${email}, max. once per hour).`,
+      grantedSaved: (email) => `Thanks. Before anything is uploaded to Shakers I will show you what would be sent, and I will upload it only if you approve it (email: ${email}, at most once an hour).`,
       // A logged-in Talent is NEVER asked for an email (their account already proves identity).
       noSessionEmail: "There's no email on file for your session yet, so this report can't be saved this time. You'll be asked again next run.",
       skipAlreadyDecided: (decision, path) =>
@@ -2609,12 +2615,13 @@ const catalogs = {
     },
     mcpInstall: {
       title: 'Connecting the Shakers MCP',
-      clients: { claudeDesktop: 'Claude Desktop', claudeCode: 'Claude Code', cursor: 'Cursor', geminiCli: 'Gemini CLI', codex: 'Codex (and ChatGPT in Codex mode)', vscode: 'VS Code', windsurf: 'Windsurf' },
+      clients: { claudeDesktop: 'Claude Desktop', claudeCode: 'Claude Code', cursor: 'Cursor', geminiCli: 'Gemini CLI', codex: 'Codex / ChatGPT', vscode: 'VS Code', windsurf: 'Windsurf' },
       status: {
         configured: 'connected',
         unchanged: 'already connected',
         'not-found': 'not installed on this machine',
-        'invalid-json': 'its config is not valid JSON; left untouched',
+        'invalid-config': 'its config cannot be edited safely; left untouched',
+        manual: 'run this command in your terminal:',
         failed: 'could not connect',
       },
       removedLegacy: 'Replaces the old "shakers-ai-usage" entry.',
@@ -2622,7 +2629,10 @@ const catalogs = {
       confirm: 'Connect Shakers to them so you can use it from your AI? [Y/n]',
       declined: 'Nothing touched. To connect it later, run the installer again.',
       noTerminal: 'There is no terminal to ask you on, so nothing was touched. Run the installer again in your terminal to connect it.',
-      restart: 'Restart any of these apps that is open so it loads Shakers.',
+      restart: (apps) => `Restart ${apps} (or reload their MCP servers) so the Shakers tools appear.`,
+      alreadyConnected: 'Shakers was already connected. If its tools do not appear, restart the app or reload its MCP servers.',
+      yesHint: 'To connect them without being asked (for example from an AI assistant): shakers mcp install --yes',
+      help: 'mcp install — connect Shakers to the AI apps on this machine (Claude Desktop, Claude Code, Cursor, Gemini CLI, Codex / ChatGPT, VS Code, Windsurf).\n\nUsage:\n  shakers mcp install            ask on the terminal, then connect every app found\n  shakers mcp install --yes      connect without asking (-y; for AI assistants and scripts)\n  shakers mcp install --json     print the result as one JSON object\n\nWithout --yes and without a terminal, nothing is touched. SHAKERS_MCP_INSTALL=1 works like --yes.\nWhen it finishes, restart the apps it names (or reload their MCP servers) so the Shakers tools appear.',
       noneFound: 'Found no supported AI app on this machine.',
       failedAll: 'Could not connect Shakers to your AI apps. Re-run this installer to retry.',
     },
@@ -2857,7 +2867,7 @@ const catalogs = {
       needInput: 'Email and password are required to log in.',
       success: 'Logged in. Your report no longer includes the roadmap or the improvement suggestions: your level comes from certifying.',
       expiresAt: (iso) => `The session expires: ${iso}. When it does I will tell you, and you can log in again with \`login\`.`,
-      loggedOut: 'Logged out. You are back to the full report, with roadmap and suggestions.',
+      loggedOut: 'Logged out. Your report shows the improvement suggestions again.',
       notLoggedIn: 'No session was active. Nothing to log out of.',
       errorInvalidCredentials: 'Wrong credentials: check your email and password and try again.',
       errorNoEmailPassword: 'This account exists but has no email password: you registered with Google or LinkedIn. If it was Google, use `login --google`. If it was LinkedIn, sign in on the web to add a password for now.',

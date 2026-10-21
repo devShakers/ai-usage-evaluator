@@ -88,6 +88,7 @@ async function runAddRole({ io, session, catalog, deps = makeRolesDeps() }) {
 // deduped, for setting/switching the MAIN role.
 async function fetchHeldRoles({ deps, hubAccessToken }) {
   const held = [];
+  const assigned = [];
   let mainClusterId = null;
   const certEndpoint = deps.getMyCertificationsEndpoint();
   if (certEndpoint) {
@@ -99,10 +100,11 @@ async function fetchHeldRoles({ deps, hubAccessToken }) {
   }
   const assignedEndpoint = deps.getAssignedClustersEndpoint();
   if (assignedEndpoint) {
-    const assigned = await deps.requestAssignedClusters({ hubAccessToken }, { endpoint: assignedEndpoint });
-    if (assigned.ok) for (const c of assigned.clusters || []) held.push(c);
+    const res = await deps.requestAssignedClusters({ hubAccessToken }, { endpoint: assignedEndpoint });
+    if (res.ok) assigned.push(...(res.clusters || []));
   }
-  return { held: dedupeByCluster(held), mainClusterId };
+  held.push(...assigned);
+  return { held: dedupeByCluster(held), assigned, mainClusterId };
 }
 
 // `change-role`: switch the MAIN role to one of the roles the talent already holds.
@@ -130,12 +132,12 @@ async function runChangeMainRole({ io, session, catalog, deps = makeRolesDeps() 
 
 // The onboarding final step: pick a MAIN role from the roles resolved for the
 // talent (interview recommendations + any held). Degrades gracefully to a skip.
-async function runOnboardingMainRoleStep({ io, session, catalog, deps = makeRolesDeps() }) {
+async function runOnboardingMainRoleStep({ io, session, catalog, deps = makeRolesDeps(), onRolesShown = () => {} }) {
   const r = catalog.roles;
   const hubAccessToken = session ? session.hubAccessToken : null;
 
   io.section(r.mainRoleTitle);
-  const { held, mainClusterId } = await io.withProgress(r.loadingHeld, () => fetchHeldRoles({ deps, hubAccessToken }));
+  const { held, assigned, mainClusterId } = await io.withProgress(r.loadingHeld, () => fetchHeldRoles({ deps, hubAccessToken }));
 
   // Prefer the talent's own/recommended roles; fall back to the catalog for a
   // fresh talent so a main role can always be set (picking one adds it first).
@@ -150,6 +152,7 @@ async function runOnboardingMainRoleStep({ io, session, catalog, deps = makeRole
     io.notify(r.mainRolePending);
     return { ok: true, chosen: null };
   }
+  onRolesShown({ suggested: assigned.filter((c) => c.type === 'RECOMMENDED').map((c) => c.clusterId), clustersCount: assigned.length });
   const choice = await chooseRole({
     io, roles, header: r.mainRolePrompt, hint: r.selectHint, initialClusterId: mainClusterId,
   });

@@ -338,6 +338,7 @@ function makeSignupTools(deps = {}) {
     wake: null,
     importStartedAt: null,
     importReported: new Set(),
+    authAttempts: undefined,
   };
   currentSignup = state;
 
@@ -345,8 +346,8 @@ function makeSignupTools(deps = {}) {
     const before = state.account.state;
     state.account = next;
     if ((next.state === 'created' || next.state === 'existing') && before !== next.state) {
-      funnel.completed('account_creation', { auth_method: next.via, is_returning_account: next.state === 'existing' });
-      funnel.identified();
+      funnel.completed('account_creation', { auth_method: next.via, auth_attempts: state.authAttempts, is_returning_account: next.state === 'existing' });
+      funnel.identified({ newAccount: next.state === 'created' });
     }
     if (next.state === 'failed' && before !== 'failed') {
       funnel.errored('account_creation', next.reason);
@@ -439,6 +440,7 @@ function makeSignupTools(deps = {}) {
         onUrl: (url) => { state.windowUrl = url; announce(url); },
       },
     ).then((outcome) => {
+      if (outcome && outcome.ok) state.authAttempts = outcome.attempts;
       if (outcome && outcome.viaSocial) return;
       if (!outcome || !outcome.ok) {
         setAccount({ state: 'failed', reason: (outcome && outcome.reason) || 'window-failed' });
@@ -487,6 +489,7 @@ function makeSignupTools(deps = {}) {
     // rides on the next question block, because models skip a relay that comes before another tool call.
     if (!nonEmpty(args.answer) && state.cvPath) {
       funnel.completed('start');
+      funnel.viewed('import_sources', { sources_offered: DRAFT_SOURCES });
       queueNotice(c.welcome(nonEmpty(args.firstName)));
       return {
         ok: true,
@@ -505,6 +508,7 @@ function makeSignupTools(deps = {}) {
     });
     if (asked.reply) return { ...asked.reply, language: lang() };
     funnel.completed('start');
+    funnel.viewed('import_sources', { sources_offered: DRAFT_SOURCES });
     // A CV path the talent gave wins over both answers: searching could read another candidate.
     const cvPath = state.cvPath;
     if (cvPath) {
@@ -665,10 +669,10 @@ function makeSignupTools(deps = {}) {
       const attempted = DRAFT_SOURCES.filter((source) => (source === 'cv' ? !!cv : !!sources.linkedinUrl));
       state.importStartedAt = Object.fromEntries(attempted.map((source) => [source, now()]));
       for (const source of attempted) funnel.track('source_import_started', 'import_sources', { source_type: source });
-      funnel.completed('import_sources', { sources_attempted: attempted });
+      funnel.completed('import_sources', { sources_attempted: attempted, sources_connected: attempted, sources_connected_count: attempted.length });
     }
     if (!reused) {
-      funnel.viewed('account_creation');
+      funnel.viewed('account_creation', { auth_methods_offered: require('./mcp-auth-form').WINDOW_METHODS.register });
       await openWindow(identity);
     }
     return {
@@ -714,7 +718,7 @@ function makeSignupTools(deps = {}) {
 
   function nextSteps(account) {
     const interview = 'Then the onboarding interview: if onboardingInterview.completed is true, skip it without mentioning it; otherwise call onboarding_interview_start without disclaimerAcknowledged (it asks here now or later on the web). Then, also if they skip it, the main role: list_my_roles (waitSeconds 45), then set_main_role without clusterId only when its next says so. Finally open_web.';
-    const aiUsage = 'Then ai_usage without consent: it returns the two AI-usage disclaimers and the question (show them right before asking; no scan happens before a yes).';
+    const aiUsage = 'Then ai_usage without consent: it returns the two AI-usage disclaimers and the question (show them right before asking; no scan happens before a yes). After a yes, ai_usage_upload (waitSeconds 30) shows the talent what would be sent and asks; nothing is uploaded without their pick.';
     if (account.state === 'existing') {
       return `This talent already had an account and signed in. Call update_existing_profile: it shows what would change and asks whether to update, and its text tells the talent about the account, so say nothing about it yourself. ${aiUsage} ${interview}`;
     }
@@ -958,11 +962,12 @@ function makeSignupTools(deps = {}) {
   }
 
   function trackDraftShown(draft) {
-    funnel.viewed('work_situation', { is_prefilled: true });
-    funnel.viewed('availability');
+    const prefilled = (step) => ({ is_prefilled: STEP_DRAFT_FIELDS[step].some((key) => draft[key] !== undefined) });
+    funnel.viewed('work_situation', prefilled('work_situation'));
+    funnel.viewed('availability', prefilled('availability'));
     funnel.viewed('rates', { suggested_rate_shown: draft.ratesFromTalent !== true });
-    funnel.viewed('languages');
-    funnel.viewed('location');
+    funnel.viewed('languages', prefilled('languages'));
+    funnel.viewed('location', prefilled('location'));
     funnel.viewed('profile_summary');
   }
 
@@ -978,7 +983,8 @@ function makeSignupTools(deps = {}) {
 
   function trackSavedSteps(details, results) {
     const saved = (section) => results[section] && results[section].ok === true;
-    const step = (name, props) => funnel.completed(name, { ...props, is_prefilled: true, was_edited: wasEdited(name) });
+    const draftTime = funnel.stepTime('profile_summary');
+    const step = (name, props) => funnel.completed(name, { ...props, is_prefilled: true, was_edited: wasEdited(name), time_on_step_ms: draftTime });
     if (saved('workSituation')) {
       step('work_situation', { work_situation: workSituationValue(String(details.workSituation.situation || '').trim().toUpperCase()) });
     }
@@ -996,7 +1002,7 @@ function makeSignupTools(deps = {}) {
     }
     if (saved('pricing')) {
       const types = rateTypes(pricingFromRates(details.pricing).input);
-      funnel.completed('rates', { rate_types_selected: types, rate_type: types[0], rate_currency: 'EUR', is_prefilled: !(state.draft && state.draft.ratesFromTalent), was_edited: wasEdited('rates') });
+      funnel.completed('rates', { rate_types_selected: types, rate_type: types[0], rate_currency: 'EUR', is_prefilled: !(state.draft && state.draft.ratesFromTalent), was_edited: wasEdited('rates'), time_on_step_ms: draftTime });
     }
     if (saved('languages')) {
       const codes = details.languages.map((row) => String(row.language || '').trim().toLowerCase()).filter(Boolean);
@@ -1004,7 +1010,7 @@ function makeSignupTools(deps = {}) {
     }
     const sections = Object.entries(results).filter(([name]) => name !== 'phone');
     if (sections.length && sections.every(([, r]) => r.ok === true)) {
-      funnel.completed('profile_summary', { fields_edited_count: draftFieldsEdited() });
+      funnel.completed('profile_summary', { fields_edited_count: draftFieldsEdited(), time_on_step_ms: draftTime });
     }
     funnel.flush();
   }

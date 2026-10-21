@@ -2,7 +2,7 @@
 'use strict';
 
 const { createMcpServer } = require('../src/mcp-server');
-const { makeAiUsageTool } = require('../src/mcp-ai-usage-tool');
+const { makeAiUsageTools } = require('../src/mcp-ai-usage-tool');
 const { makeAiUsageResultTool } = require('../src/mcp-ai-usage-result-tool');
 const { makeCertifyDimensionTools } = require('../src/mcp-certify-dimension-tools');
 const { makeFindProjectsTools } = require('../src/mcp-find-projects-tools');
@@ -43,7 +43,7 @@ const HELP = `\n  shakers mcp — local MCP server (stdio)\n\n`
   + `  Usage: shakers mcp\n\n`
   + `  This command speaks JSON-RPC on stdio; it is meant to be launched by an\n`
   + `  MCP client, not run by hand.\n`
-  + `  Tools: ai_usage, ai_usage_result, logout, social_signin_start, social_signin_poll,\n`
+  + `  Tools: ai_usage, ai_usage_upload, ai_usage_result, logout, social_signin_start, social_signin_poll,\n`
   + `         list_addable, add_skill, add_agent,\n`
   + `         add_project, signup_start, signup_email, signup_draft, signup_create_account,\n`
   + `         signup_status, update_existing_profile, import_profile, save_profile_details, open_web,\n`
@@ -61,13 +61,14 @@ const HELP = `\n  shakers mcp — local MCP server (stdio)\n\n`
 
 // The LOCAL (filesystem/machine) tools — the only ones the .mcpb bundle exposes; the
 // server-backed tools belong to the remote connector.
-const LOCAL_ONLY_TOOL_NAMES = new Set(['ai_usage', 'ai_usage_result', 'read_cv', 'suggest_register_context']);
+const LOCAL_ONLY_TOOL_NAMES = new Set(['ai_usage', 'ai_usage_upload', 'ai_usage_result', 'read_cv', 'suggest_register_context']);
 
 // `localOnly` builds the scan-only server for the Claude .mcpb bundle, reusing the SAME
 // tool registry (just filtered) — no duplicate registration.
 function buildServer({ localOnly = false, funnel = createFunnel({ surface: 'mcp' }), makeInterviewClient = null } = {}) {
   const lang = detectFlowLang();
-  const allTools = [makeAiUsageTool(), makeAiUsageResultTool(), ...makeOnboardingTools(), ...makeRoleTools({ lang, funnel }), ...makeDeviceLoginTools(), ...makeSignupTools({ lang, funnel }), ...makeRegisterTools({ lang, funnel, flowDeps: { makeInterviewClient } }), ...makeReportTools(), ...makeCertifyDimensionTools(), ...makeFindProjectsTools(), ...makeShowProjectTools(), ...makeSavedPositionsTools(), ...makeInvitationsTools(), ...makeApplicationsTools(), ...makeAvailabilityTools(), ...makeCertificationsTools(), ...makeProfileTools(), ...makeRateTools(), ...makeLangTools(), ...makeSocialsTools(), ...makePortfolioTools(), ...makeAlmaTools()];
+  const aiUsage = makeAiUsageTools();
+  const allTools = [aiUsage.usage, aiUsage.upload, makeAiUsageResultTool(), ...makeOnboardingTools(), ...makeRoleTools({ lang, funnel }), ...makeDeviceLoginTools(), ...makeSignupTools({ lang, funnel }), ...makeRegisterTools({ lang, funnel, flowDeps: { makeInterviewClient } }), ...makeReportTools(), ...makeCertifyDimensionTools(), ...makeFindProjectsTools(), ...makeShowProjectTools(), ...makeSavedPositionsTools(), ...makeInvitationsTools(), ...makeApplicationsTools(), ...makeAvailabilityTools(), ...makeCertificationsTools(), ...makeProfileTools(), ...makeRateTools(), ...makeLangTools(), ...makeSocialsTools(), ...makePortfolioTools(), ...makeAlmaTools()];
   const tools = localOnly ? allTools.filter((t) => LOCAL_ONLY_TOOL_NAMES.has(t.name)) : allTools;
   // Slash-command prompts, kept to the tools actually registered in this mode.
   const prompts = makePrompts(new Set(tools.map((t) => t.name)), lang);

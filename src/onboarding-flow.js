@@ -669,18 +669,15 @@ function trackImport(funnel, attempted, importRes, durationMs) {
   const bySource = new Map();
   const report = importRes.ok && importRes.report ? importRes.report.sources : [];
   for (const src of report) bySource.set(sourceTypeFor(src.source), src);
-  const connected = [];
   for (const type of attempted) {
     const src = bySource.get(type);
     const ok = importRes.ok && (!src || src.status === 'imported');
     if (ok) {
-      connected.push(type);
       funnel.track('source_import_completed', 'import_sources', { source_type: type, duration_ms: durationMs });
     } else {
       funnel.track('source_import_failed', 'import_sources', { source_type: type, duration_ms: durationMs, failure_reason: (src && src.code) || importRes.reason });
     }
   }
-  return connected;
 }
 
 // Blocking orchestrator used by the CLI (`bin/onboarding.js`).
@@ -689,9 +686,10 @@ async function runOnboarding(io, deps = makeDeps(), { method = 'email', openBrow
   const c = getCatalog(io.lang).onboarding;
 
   funnel.begin();
+  funnel.viewed('start');
   funnel.completed('start');
   io.section(c.signupTitle);
-  funnel.viewed('account_creation');
+  funnel.viewed('account_creation', { auth_methods_offered: require('./auth-methods').methodIdsForFlow('register') });
   funnel.flush();
   const accountFailed = (reason) => {
     funnel.errored('account_creation', reason);
@@ -711,8 +709,8 @@ async function runOnboarding(io, deps = makeDeps(), { method = 'email', openBrow
       io.error(c.signupError);
       return accountFailed(reg.reason);
     }
-    funnel.completed('account_creation', { auth_method: method, is_returning_account: reg.kind === 'account-already-exists' });
-    funnel.identified();
+    funnel.completed('account_creation', { auth_method: method, auth_attempts: 1, is_returning_account: reg.kind === 'account-already-exists' });
+    funnel.identified({ newAccount: reg.kind !== 'account-already-exists' });
     if (reg.kind === 'account-already-exists') {
       // Existing account: already signed in — stop, no wizard re-run.
       io.warn(c.accountExists);
@@ -738,8 +736,8 @@ async function runOnboarding(io, deps = makeDeps(), { method = 'email', openBrow
       io.warn(c.accountExists);
       const logged = await io.login(account.email);
       if (!logged) return accountFailed('login-failed');
-      funnel.completed('account_creation', { auth_method: 'email', is_returning_account: true });
-      funnel.identified();
+      funnel.completed('account_creation', { auth_method: 'email', auth_attempts: 1, is_returning_account: true });
+      funnel.identified({ newAccount: false });
       return { ok: true, alreadyRegistered: true };
     }
     const sess = await establishSessionFromCredentials(deps, { email: account.email, password: account.password });
@@ -747,13 +745,13 @@ async function runOnboarding(io, deps = makeDeps(), { method = 'email', openBrow
       io.error(c.sessionError);
       return accountFailed(sess.reason);
     }
-    funnel.completed('account_creation', { auth_method: 'email', is_returning_account: false });
+    funnel.completed('account_creation', { auth_method: 'email', auth_attempts: 1, is_returning_account: false });
     funnel.identified();
     notifyOk(io, c.accountReady);
   }
 
   io.section(c.title);
-  funnel.viewed('import_sources');
+  funnel.viewed('import_sources', { sources_offered: ['linkedin', 'cv', 'github', 'web_page'] });
   const linkedinUrl = (await io.ask(c.askLinkedin) || '').trim();
   if (!linkedinUrl) {
     funnel.errored('import_sources', 'no-linkedin', { error_field: 'linkedin' });
@@ -772,15 +770,15 @@ async function runOnboarding(io, deps = makeDeps(), { method = 'email', openBrow
   const importStartedAt = Date.now();
   const importRes = await withProgress(c.importChecking, () =>
     startProfileImport(deps, { linkedinUrl, cvPath, githubUrl, websiteUrl, language: io.lang }));
-  const connected = trackImport(funnel, attempted, importRes, Date.now() - importStartedAt);
-  funnel.completed('import_sources', { sources_attempted: attempted, sources_connected: connected, sources_connected_count: connected.length });
+  trackImport(funnel, attempted, importRes, Date.now() - importStartedAt);
+  funnel.completed('import_sources', { sources_attempted: attempted, sources_connected: attempted, sources_connected_count: attempted.length });
   funnel.flush();
   if (importRes.ok) notifyOk(io, c.importDone);
   else io.warn(c.importUnavailable);
 
   // Steps 4-8 are saved out of funnel order: sent together once all are answered.
   io.section(c.professionalTitle);
-  funnel.viewed('work_situation');
+  funnel.viewed('work_situation', { is_prefilled: false });
   const workSituationInput = await io.askWorkSituation(c);
   const workSituationRes = await saveWorkSituation(deps, workSituationInput);
   if (!workSituationRes.ok) {
@@ -788,11 +786,11 @@ async function runOnboarding(io, deps = makeDeps(), { method = 'email', openBrow
     funnel.flush();
     return { ok: false, reason: workSituationRes.reason, step: 'work-situation' };
   }
-  funnel.completed('work_situation', { work_situation: workSituationValue(String(workSituationInput.situation || '').trim().toUpperCase()) });
+  funnel.completed('work_situation', { work_situation: workSituationValue(String(workSituationInput.situation || '').trim().toUpperCase()), was_edited: true });
   notifyOk(io, c.professionalSaved);
 
   io.section(c.pricingTitle);
-  funnel.viewed('rates');
+  funnel.viewed('rates', { suggested_rate_shown: false });
   const pricingInput = await io.askPricing(c);
   const priceRes = await savePricing(deps, pricingInput);
   if (!priceRes.ok) {
@@ -805,23 +803,31 @@ async function runOnboarding(io, deps = makeDeps(), { method = 'email', openBrow
     rate_types_selected: selectedRates,
     rate_type: selectedRates[0],
     rate_currency: normalizeCurrency(pricingInput.partTimeSelected === true ? pricingInput.partTimeCurrency : pricingInput.fullTimeCurrency) || undefined,
+    was_edited: true,
   });
   notifyOk(io, c.pricingSaved);
 
   // Optional/skippable and fail-soft: a decline or a failed write never aborts the alta.
   io.section(c.availabilityTitle);
-  funnel.viewed('availability');
+  funnel.viewed('availability', { is_prefilled: false });
   if (await io.confirm(c.availabilityAsk)) {
-    const availabilityInput = await io.askAvailability(c);
+    let availabilityTime;
+    const availabilityInput = await io.askAvailability(c, {
+      onLocation: () => {
+        availabilityTime = funnel.stepTime('availability');
+        funnel.viewed('location', { is_prefilled: false });
+      },
+    });
     const availRes = await saveAvailability(deps, availabilityInput);
     if (availRes.ok) {
-      funnel.completed('availability', { availability_hours_per_week: weeklyHours(normalizeMonthlyHours(availabilityInput.monthlyHours)) });
+      funnel.completed('availability', { availability_hours_per_week: weeklyHours(normalizeMonthlyHours(availabilityInput.monthlyHours)), time_on_step_ms: availabilityTime, was_edited: true });
       const country = normalizeCountry(availabilityInput.country);
       const modes = Array.isArray(availabilityInput.workModes) ? availabilityInput.workModes.map((m) => String(m).trim().toUpperCase()) : [];
       funnel.completed('location', {
         location_country: country ? country.toLowerCase() : undefined,
         location_method: 'manual',
         is_remote_only: modes.length ? modes.every((m) => m === 'REMOTE') : undefined,
+        was_edited: true,
       });
       notifyOk(io, c.availabilitySaved);
     } else {
@@ -839,13 +845,13 @@ async function runOnboarding(io, deps = makeDeps(), { method = 'email', openBrow
   }
 
   io.section(c.languagesTitle);
-  funnel.viewed('languages');
+  funnel.viewed('languages', { is_prefilled: false });
   if (await io.confirm(c.languagesAsk)) {
     const languageRows = await io.askLanguages(c);
     const langRes = await saveLanguages(deps, languageRows);
     if (langRes.ok) {
       const codes = validateLanguageRows(languageRows).rows.map((r) => r.language);
-      funnel.completed('languages', { languages_count: codes.length, languages: codes });
+      funnel.completed('languages', { languages_count: codes.length, languages: codes, was_edited: true });
       notifyOk(io, c.languagesSaved);
     } else {
       funnel.errored('languages', langRes.reason);
@@ -888,20 +894,35 @@ async function runOnboarding(io, deps = makeDeps(), { method = 'email', openBrow
   // Every ending points the Talent at their profile, and opens it when a browser is at hand.
   const showProfile = () => {
     const url = profileUrl(deps);
+    funnel.viewed('profile_summary');
     notifyOk(io, url ? c.profileReadyUrl(url) : c.profileReadyNoUrl);
     if (url && typeof openProfile === 'function') {
       try { openProfile(url); } catch { /* the printed link covers it */ }
     }
+    funnel.completed('profile_summary');
+    funnel.flush();
     return url;
   };
 
   const mainRole = async () => {
-    const role = await runMainRoleFinalStep(io, deps);
-    if (role && role.ok && role.chosen) funnel.completed('supercluster', { supercluster: role.chosen });
-    else if (role && role.ok) funnel.skipped('supercluster');
+    let shown = null;
+    const role = await runMainRoleFinalStep(io, deps, {
+      onRolesShown: (info) => {
+        shown = info;
+        funnel.viewed('supercluster', { suggested_superclusters: info.suggested, suggestion_source: 'assigned_clusters', suggestions_count: info.suggested.length });
+      },
+    });
+    if (role && role.ok && role.chosen) {
+      funnel.completed('supercluster', {
+        supercluster: role.chosen,
+        clusters_count: shown ? shown.clustersCount : undefined,
+        was_suggestion_accepted: shown ? shown.suggested.includes(role.chosen) : undefined,
+      });
+    } else if (role && role.ok) funnel.skipped('supercluster');
     funnel.flush();
   };
 
+  funnel.holdUntil('profile_summary');
   io.section(c.interviewTitle);
   funnel.viewed('pre_interview');
   io.disclaimer(c.interviewInfoAccessed, c.interviewGoalDuration);
@@ -1010,14 +1031,14 @@ async function conductLivekitInterview(io, deps, { interviewId = null, language 
 }
 
 // Runs the final main-role step, degrading softly (never aborts the flow / never throws).
-async function runMainRoleFinalStep(io, deps, session = null) {
-  const active = session || (typeof deps.loadAuthSession === 'function' ? deps.loadAuthSession() : null);
+async function runMainRoleFinalStep(io, deps, { onRolesShown } = {}) {
+  const active = typeof deps.loadAuthSession === 'function' ? deps.loadAuthSession() : null;
   if (typeof deps.runMainRoleStep !== 'function' || !active) return;
   const { getCatalog } = require('./i18n');
   const catalog = getCatalog(io.lang);
   try {
     const rolesDeps = typeof deps.makeRolesDeps === 'function' ? deps.makeRolesDeps() : undefined;
-    return await deps.runMainRoleStep({ io, session: active, catalog, deps: rolesDeps });
+    return await deps.runMainRoleStep({ io, session: active, catalog, deps: rolesDeps, onRolesShown });
   } catch {
     return null;
   }

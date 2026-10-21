@@ -71,6 +71,7 @@ function postJsonWithTimeout(url, body, timeoutMs, method = 'POST', idempotencyK
           ...sanitizeExtraHeaders(extraHeaders),
         },
         timeout: timeoutMs,
+        agent: false,
       },
       (res) => {
         let raw = '';
@@ -151,6 +152,7 @@ function postMultipartWithTimeout(url, fields, timeoutMs, method = 'POST', extra
           ...sanitizeExtraHeaders(extraHeaders),
         },
         timeout: timeoutMs,
+        agent: false,
       },
       (res) => {
         let raw = '';

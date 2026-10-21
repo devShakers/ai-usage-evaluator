@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { getConfigDir } = require('./config-dir');
+const { recordAccountMarker } = require('./account-marker');
 
 // `~/.config/shakers/auth-session.json` — the logged-in Talent's session.
 
@@ -141,6 +142,7 @@ function saveAuthSession(session, env = process.env, { fs: fsImpl = fs } = {}) {
     try { fsImpl.unlinkSync(tmp); } catch { /* never existed */ }
     throw e;
   }
+  recordAccountMarker(cookie ? 'email' : sessionToken ? 'device' : 'token', env, { fs: fsImpl });
   return target;
 }
 
@@ -172,6 +174,10 @@ function loadAuthSession(env = process.env, { fs: fsImpl = fs } = {}) {
     hubAccessToken,
     userType: typeof parsed.userType === 'string' && KNOWN_USER_TYPES.has(parsed.userType) ? parsed.userType : null,
   };
+}
+
+function hasAuthSessionFile(env = process.env, { fs: fsImpl = fs } = {}) {
+  return fsImpl.existsSync(authSessionPath(env));
 }
 
 // Removes the file. Idempotent and never throws — `logout` on no session is a
@@ -207,6 +213,7 @@ module.exports = {
   authSessionPath,
   saveAuthSession,
   loadAuthSession,
+  hasAuthSessionFile,
   clearAuthSession,
   sessionStatus,
   isLoggedIn,

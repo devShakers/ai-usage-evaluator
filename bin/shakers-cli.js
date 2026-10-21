@@ -92,7 +92,7 @@ const HANDLERS = {
   login: runLogin,
   logout: runLogout,
   superadmin: runSuperadmin,
-  mcp: () => require('../src/mcp-install').runMcpInstall(),
+  mcp: (args) => require('../src/mcp-install').runMcpInstall({ args }),
 };
 
 const SESSION_EXEMPT = new Set(['ai-usage', 'register', 'config', 'login', 'logout', 'superadmin', 'mcp', 'share', 'alma', 'update']);

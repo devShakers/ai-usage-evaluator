@@ -124,9 +124,10 @@ async function runModelCalls({
   const willAttemptSynthesis = aiConsentGranted && hasAgents && !!getSynthesisEndpoint();
   const willAttemptEvaluation = aiConsentGranted && hasAgents && !!getAgentEvaluationEndpoint();
   const roadmapEntryForTier = maturity.tierKey ? getRoadmapEntry(maturity.tierKey, lang) : null;
+  const roadmapRequested = opts.roadmap === true && gate.showRoadmap;
   const willAttemptRoadmapPersonalization =
     aiConsentGranted
-    && gate.showRoadmap
+    && roadmapRequested
     && !!roadmapEntryForTier && !roadmapEntryForTier.maxTier
     && !!getRoadmapEndpoint();
 
@@ -151,7 +152,7 @@ async function runModelCalls({
       )
       : null;
     // `runPhase` runs `call()` whether or not a spinner is shown, so gating the roadmap CANNOT be done by flipping `willAttempt` — that only hides the spinner.
-    roadmapPersonalization = gate.showRoadmap
+    roadmapPersonalization = roadmapRequested
       ? await runPhase(
         willAttemptRoadmapPersonalization,
         catalog.cli.personalizingRoadmapLabel,
@@ -183,8 +184,7 @@ async function computeUsage({
   // 1. Local scan + classify (always computed and shown).
   const { report, root, rootDir } = performScan({ opts, catalog });
 
-  // 2. Identity gate + local agent-usage signal. Roadmap only for anonymous runs
-  //    (gate.showRoadmap = !loggedIn) AND never during register/onboarding.
+  // 2. Identity gate + local agent-usage signal.
   const { gate: identityGate } = prepareIdentity({ report, catalog, quiet: opts.json === true });
   const gate = (inRegistration && identityGate.showRoadmap)
     ? { ...identityGate, showRoadmap: false }
@@ -212,15 +212,15 @@ async function computeUsage({
   await runModelCalls({
     report, maturity, aiConsentGranted, opts, gate, hasAgents, agentRoots, rootDir, lang, catalog,
   });
-  return { report, maturity, root, gate };
+  return { report, maturity, root, gate, repos: scope.toplevels };
 }
 
 // The MCP's scan: same steps, returned instead of printed, since stdout is its JSON-RPC channel.
 async function scanUsage(argv) {
-  const opts = parseArgs(argv);
+  const opts = { ...parseArgs(argv), roadmap: false };
   const lang = opts.lang || detectReportLang();
-  const { report, maturity } = await computeUsage({ opts, catalog: getCatalog(lang), lang });
-  return { report, maturity };
+  const { report, maturity, repos } = await computeUsage({ opts, catalog: getCatalog(lang), lang });
+  return { report, maturity, repos };
 }
 
 module.exports = {

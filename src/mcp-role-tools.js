@@ -112,7 +112,24 @@ function makeRoleTools(deps = {}) {
     sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }),
     now = () => Date.now(),
     funnel = require('./onboarding-funnel').NOOP_FUNNEL,
+    inSignup = () => require('./mcp-signup-tools').signupPhase() === 'account',
+    completeOnboarding = (session) => require('./onboarding-client').requestCompleteOnboarding(
+      { accessToken: session.accessToken, hubAccessToken: session.hubAccessToken },
+      { endpoint: require('./config').getCompleteOnboardingEndpoint() },
+    ),
   } = deps;
+  let clustersCount;
+  let onboardingCompleted = false;
+
+  async function finishSignup(session) {
+    if (onboardingCompleted || !inSignup()) return;
+    const res = await completeOnboarding(session).catch(() => null);
+    onboardingCompleted = !!(res && res.ok);
+  }
+
+  function trackSuggestions(roles) {
+    funnel.viewed('supercluster', { suggested_superclusters: roles.map((r) => r.clusterId), suggestion_source: 'assigned_clusters', suggestions_count: roles.length });
+  }
 
   const requireSession = () => {
     const session = loadAuthSession();
@@ -167,6 +184,7 @@ function makeRoleTools(deps = {}) {
     }
     const assigned = await requestAssignedClusters({ hubAccessToken }, { endpoint: getAssignedClustersEndpoint() });
     const clusters = assigned.ok ? assigned.clusters || [] : [];
+    if (assigned.ok) clustersCount = clusters.length;
     const recommended = clusters
       .filter((c) => c.type === 'RECOMMENDED')
       .sort((a, b) => (SOURCE_ORDER[a.source] ?? 2) - (SOURCE_ORDER[b.source] ?? 2));
@@ -193,6 +211,7 @@ function makeRoleTools(deps = {}) {
       next = 'set_main_role';
       message = 'Call set_main_role without clusterId: it asks the talent which recommended role is their main one, in a dialog or with options it returns for you to show.';
     } else if (read.mainClusterId) {
+      await finishSignup(session);
       next = 'open_web';
       message = 'The talent already has a main role and nothing new was recommended: do not ask it again, go on to open_web. Only if the talent asks to change it, call set_main_role with catalogue:true.';
     } else {
@@ -230,11 +249,13 @@ function makeRoleTools(deps = {}) {
     const read = await readRoles(session.hubAccessToken);
     const recommended = byName(read.recommended);
     if (!recommended.length && read.mainClusterId) {
+      await finishSignup(session);
       return { reply: { ok: true, alreadySet: true, clusterId: read.mainClusterId, message: 'The talent already has a main role and nothing new was recommended: nothing to ask. Go on to open_web; only if they ask to change it, call set_main_role with catalogue:true.' } };
     }
     if (!recommended.length) return chooseFromCatalogue(args, ctx);
     const c = copy();
     const counts = await openCounts(session.hubAccessToken, recommended);
+    trackSuggestions(recommended);
     const evidence = args.evidence && typeof args.evidence === 'object' ? args.evidence : {};
     const blocks = recommended.map((r, i) => renderRole(lang(), { name: r.name, source: r.source, evidence: evidence[r.clusterId], openProjects: counts[i], recommended: i === 0 }));
     const asked = await askAfterTexts(ctx, {
@@ -296,6 +317,7 @@ function makeRoleTools(deps = {}) {
       typeof counts[i] === 'number' && counts[i] > 0 ? c.openProjects(counts[i]) : null,
     ].filter(Boolean).join('\n'));
     const texts = [[...(blocks.length ? [c.rolesIntro, ...blocks] : []), c.rolesOutro].join('\n\n')];
+    trackSuggestions([]);
     const asked = await askChoice(ctx, { texts, question: c.mainRoleQuestion, options: [...options.map((r) => r.name), c.mainRoleNotListed] });
     if (asked.answer === c.mainRoleNotListed) return askOwnRole();
     const role = asked.answer && options.find((r) => r.name === asked.answer);
@@ -330,8 +352,9 @@ function makeRoleTools(deps = {}) {
     const res = await requestSetMainRole({ clusterId, hubAccessToken: session.hubAccessToken }, { endpoint: getSetMainRoleEndpoint() });
     if (res.ok === false && res.reason === 'http-400') return { ok: false, reason: res.reason, message: 'The talent does not hold that role yet: call add_role with it, then set_main_role again.' };
     if (!res.ok) return { ok: false, reason: res.reason };
-    funnel.completed('supercluster', { supercluster: clusterId, was_suggestion_accepted: suggestion });
+    funnel.completed('supercluster', { supercluster: clusterId, clusters_count: clustersCount, was_suggestion_accepted: suggestion });
     funnel.flush();
+    await finishSignup(session);
     return { ok: true, clusterId };
   }
 

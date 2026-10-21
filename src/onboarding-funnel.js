@@ -196,8 +196,17 @@ function createFunnel({
   let active = false;
   let mcpClient = null;
   let cachedDeviceId;
+  let begunAt = null;
+  let lastCompletedAt = null;
+  let heldFrom = null;
   const seen = new Set();
   const inflight = new Set();
+  const viewedAt = new Map();
+
+  function stepTime(stepName) {
+    const since = viewedAt.has(stepName) ? viewedAt.get(stepName) : (lastCompletedAt ?? begunAt);
+    return since === null ? undefined : Math.max(0, now() - since);
+  }
 
   function track(eventType, stepName, properties = {}) {
     if (!active || !EVENT_TYPES.includes(eventType) || !STEP_INDEX[stepName]) return false;
@@ -206,9 +215,20 @@ function createFunnel({
       if (seen.has(key)) return false;
       seen.add(key);
     }
+    const at = now();
+    const own = cleanProperties(properties);
+    if (eventType === 'onboarding_step_viewed') viewedAt.set(stepName, at);
+    if (eventType === 'onboarding_step_completed') {
+      if (own.time_on_step_ms === undefined) {
+        const elapsed = stepTime(stepName);
+        if (elapsed !== undefined) own.time_on_step_ms = elapsed;
+      }
+      lastCompletedAt = at;
+    }
+    if (heldFrom === STEP_INDEX[stepName] && (eventType === 'onboarding_step_completed' || eventType === 'onboarding_step_skipped')) heldFrom = null;
     const common = { step_name: stepName, step_index: STEP_INDEX[stepName], flow_version: FLOW_VERSION, surface };
     if (surface === 'mcp') common.mcp_client = mcpClient || 'other';
-    pending.push({ eventType, insertId: uuid(), at: now(), seq: seq++, properties: { ...cleanProperties(properties), ...common } });
+    pending.push({ eventType, insertId: uuid(), at, seq: seq++, properties: { ...own, ...common } });
     return true;
   }
 
@@ -220,9 +240,16 @@ function createFunnel({
   // Funnel order, each time strictly after the previous one sent.
   function stamp(batch) {
     const ordered = [...batch].sort((a, b) => a.properties.step_index - b.properties.step_index || a.seq - b.seq);
-    return ordered.map((item) => {
+    const latest = [];
+    let next = Infinity;
+    for (let i = ordered.length - 1; i >= 0; i--) {
+      const item = ordered[i];
+      latest[i] = item.time !== undefined ? item.time : Math.min(item.at, next - 1);
+      next = latest[i];
+    }
+    return ordered.map((item, i) => {
       if (item.time === undefined) {
-        lastTime = Math.max(item.at, lastTime + 1);
+        lastTime = Math.max(latest[i], lastTime + 1);
         item.time = lastTime;
       }
       return { item, time: item.time };
@@ -246,8 +273,9 @@ function createFunnel({
     const url = safe(endpoint);
     // Never send under another account signed in since.
     if (!token || !url || accountOf(token) !== account) return Promise.resolve();
-    const batch = pending;
-    pending = [];
+    const batch = heldFrom === null ? pending : pending.filter((e) => e.properties.step_index < heldFrom);
+    if (!batch.length) return Promise.resolve();
+    pending = pending.filter((e) => !batch.includes(e));
     const id = currentDeviceId();
     const toWire = ({ item, time }) => ({ event_type: item.eventType, insert_id: item.insertId, time, ...(id ? { device_id: id } : {}), properties: item.properties });
     return post(stamp(batch), toWire, (events) => send({ endpoint: url, events, hubAccessToken: token })).then(() => undefined);
@@ -288,6 +316,10 @@ function createFunnel({
     surface,
     begin() {
       seen.clear();
+      viewedAt.clear();
+      lastCompletedAt = null;
+      heldFrom = null;
+      begunAt = now();
       active = true;
     },
     get active() { return active; },
@@ -296,8 +328,13 @@ function createFunnel({
     viewed: (step, props) => track('onboarding_step_viewed', step, props),
     completed: (step, props) => track('onboarding_step_completed', step, props),
     skipped: (step, props) => track('onboarding_step_skipped', step, props),
+    stepTime: (step) => (active ? stepTime(step) : undefined),
+    holdUntil(step) {
+      if (active && STEP_INDEX[step]) heldFrom = STEP_INDEX[step];
+    },
     errored: (step, reason, props = {}) => track('onboarding_step_errored', step, { error_type: errorTypeFor(reason), ...props }),
-    identified() {
+    identified({ newAccount = true } = {}) {
+      if (!newAccount) pending = pending.filter((e) => !(e.eventType === 'onboarding_step_completed' && STEP_INDEX[e.properties.step_name] <= STEP_INDEX.account_creation));
       const token = safe(hubToken);
       if (!token) return Promise.resolve();
       account = accountOf(token);
@@ -307,6 +344,7 @@ function createFunnel({
     flush,
     idle,
     settle(capMs = EXIT_FLUSH_CAP_MS) {
+      heldFrom = null;
       flush();
       let timer;
       const cap = new Promise((resolve) => { timer = setTimeout(resolve, capMs); });
@@ -334,6 +372,8 @@ const NOOP_FUNNEL = Object.freeze({
   viewed: () => false,
   completed: () => false,
   skipped: () => false,
+  stepTime: () => undefined,
+  holdUntil() {},
   errored: () => false,
   identified: () => Promise.resolve(),
   flush: () => Promise.resolve(),

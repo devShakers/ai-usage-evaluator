@@ -75,11 +75,36 @@ function buildArgv({ root, repoScope, lang }) {
   return argv;
 }
 
-function makeAiUsageTool(deps = {}) {
+const VERBATIM = 'Print relayVerbatim word for word now, as its own block, with nothing of your own added to it.';
+
+const UPLOAD_INPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    confirm: {
+      type: 'boolean',
+      description: 'Chat only: true ONLY when the talent picked the upload option in the review this tool or ai_usage showed them; false when they picked not to upload. Omit it to show the review.',
+    },
+    exclude: {
+      type: 'object',
+      description: 'What the talent asked to leave out, with confirm:true. Names exactly as listed in `excludable`.',
+      properties: {
+        repos: { type: 'array', items: { type: 'string' } },
+        agents: { type: 'array', items: { type: 'string' } },
+        excerpts: { type: 'boolean', description: 'true = send no text excerpts.' },
+      },
+    },
+    waitSeconds: { type: 'number', description: 'Sign-up only: how long to wait for the background analysis before answering (max 45).' },
+  },
+};
+
+const MAX_WAIT_MS = 45000;
+
+function makeAiUsageTools(deps = {}) {
   const {
     scanUsage = (argv) => require('./usage-scan').scanUsage(argv),
     autoShare = require('./share').autoShare,
     recordConsent = require('./share').recordConsent,
+    sendThrottled = () => require('./share').isThrottled(require('./share').loadConsentState()),
     isValidEmail = require('./share').isValidEmail,
     persistFootprint = require('./report-store').persistFootprint,
     cwdIsRepo = defaultCwdIsRepo,
@@ -90,64 +115,218 @@ function makeAiUsageTool(deps = {}) {
     pollClassifiedInventory = require('./mcp-ai-usage-result-tool').pollClassifiedInventory,
     tierLadder = require('./tier-engine').tierLadder,
     inlineWaitMs = 35000,
-    // "My work with AI" preview, from the same hub endpoint the front paints.
     resolveAiProfilePreview = require('./ai-profile-preview').resolveAiProfilePreview,
     ensureFreshSession = require('./session-refresh').ensureFreshSession,
     getAiProfileEndpoint = require('./config').getAiProfileEndpoint,
-    // Plain-text render of the full report (terminal sections + matrix/vision/howIWork), shared with the CLI (no ANSI).
     renderFullReportText = require('./render-report-text').renderFullReportText,
     detectFlowLang = require('./i18n').detectFlowLang,
     aiFluencyWaitMs = 30000,
     signupPhase = () => require('./mcp-signup-tools').signupPhase(),
     usageDisclaimers = (lang) => require('./onboarding-flow').usageDisclaimers(lang),
     signupCopy = require('./signup-copy').signupCopy,
+    reviewCopy = require('./signup-copy').reviewCopy,
     signupLanguage = require('./signup-language').signupLanguage,
+    reviewTexts = require('./ai-usage-review'),
   } = deps;
 
-  // The sign-up's one scan: started on the talent's yes once the account exists, uploaded in the background.
   let job = null;
   // The talent's answer in the consent dialog, so a later call cannot contradict it.
   let dialogConsent = null;
+  let pending = null;
 
-  function startSignupScan(argv, root) {
-    if (job) return job;
-    job = { state: 'scanning', send: null, uploading: null };
+  function startSignupScan(argv, root, lang) {
+    if (job && job.state !== 'failed') return job;
+    job = { state: 'scanning', root, lang };
     // performScan is synchronous: start it after this answer has gone out.
     job.scan = new Promise((resolve) => { setImmediate(resolve); }).then(() => scanUsage(argv)).then((scan) => {
       try { persistFootprint({ root, report: scan.report, maturity: scan.maturity }); } catch { /* local copy is best-effort */ }
+      job.state = 'scanned';
       return scan;
     });
     job.scan.catch(() => { job.state = 'failed'; });
-    job.root = root;
     return job;
   }
 
-  function uploadSignupScan() {
-    if (!job) return Promise.resolve(null);
-    if (job.uploading) return job.uploading;
-    const current = job;
-    current.uploading = current.scan.then(async (scan) => {
-      const session = loadAuthSession();
-      if (sessionStatus(session) !== 'active' || !session || !isValidEmail(session.email)) {
-        current.uploading = null;
-        return { ok: false, skipped: true, reason: 'no-session' };
-      }
-      current.state = 'uploading';
-      // Nobody awaits this promise: a local write error must end as a failed send, never as an
-      // unhandled rejection that takes the MCP process down.
-      let send;
-      try {
-        recordConsent('granted', session.email, { verified: true });
-        send = await autoShare(scan.report, scan.maturity, { root: current.root, bypassThrottle: true });
-      } catch (error) {
-        send = { ok: false, reason: 'upload-failed', message: error && error.message ? error.message : String(error) };
-      }
-      current.state = send && send.ok ? 'sent' : 'failed';
-      current.send = send;
-      return send;
-    }, () => ({ ok: false, skipped: true, reason: 'scan-failed' }));
-    return current.uploading;
+  function activeSession() {
+    const session = loadAuthSession();
+    return sessionStatus(session) === 'active' && session && isValidEmail(session.email) ? session : null;
   }
+
+  function openReview({ scan, root, lang, registration }) {
+    pending = { scan, root, lang, registration, askedInChat: false, outcome: null };
+    return pending;
+  }
+
+  function reviewFacts(review) {
+    return reviewTexts.uploadFacts({ report: review.scan.report, maturity: review.scan.maturity, repos: review.scan.repos || [] });
+  }
+
+  function reviewSchema(c, facts) {
+    const properties = { decision: { type: 'string', title: c.question, enum: [c.yes, c.no] } };
+    if (facts.conversationExcerpts + facts.commandExcerpts > 0) properties.excerpts = { type: 'boolean', title: c.formExcerpts, default: true };
+    if (facts.repos.length > 1) facts.repos.forEach((name, i) => { properties[`repo_${i}`] = { type: 'boolean', title: c.formRepo(name), default: true }; });
+    facts.agents.forEach((name, i) => { properties[`agent_${i}`] = { type: 'boolean', title: c.formAgent(name), default: true }; });
+    return { type: 'object', properties, required: ['decision'] };
+  }
+
+  function exclusionsFromForm(review, facts, content) {
+    const repos = review.scan.repos || [];
+    return {
+      repos: repos.filter((_, i) => content[`repo_${i}`] === false),
+      agents: facts.agents.filter((_, i) => content[`agent_${i}`] === false),
+      excerpts: content.excerpts !== false,
+    };
+  }
+
+  function exclusionsFromChat(review, exclude) {
+    const e = exclude && typeof exclude === 'object' ? exclude : {};
+    const names = new Set((Array.isArray(e.repos) ? e.repos : []).map(String));
+    const known = review.scan.repos || [];
+    const repos = known.filter((r) => names.has(r) || names.has(reviewTexts.repoName(r)));
+    const agentNames = reviewFacts(review).agents;
+    const agents = Array.isArray(e.agents) ? e.agents.map(String) : [];
+    const unknown = [
+      ...[...names].filter((n) => !known.some((r) => r === n || reviewTexts.repoName(r) === n)),
+      ...agents.filter((a) => !agentNames.includes(a)),
+    ];
+    return { repos, agents, excerpts: e.excerpts !== true, unknown };
+  }
+
+  function declineUpload(review) {
+    const c = reviewCopy(review.lang);
+    review.outcome = { ok: false, reason: 'upload-declined', relayVerbatim: c.declined, message: `Nothing was sent. ${VERBATIM} Then carry on.` };
+    return review.outcome;
+  }
+
+  async function presentReview(review, ctx) {
+    const c = reviewCopy(review.lang);
+    if (!review.registration && sendThrottled()) {
+      return { ok: false, reason: 'throttled', relayVerbatim: c.throttled, message: `Nothing was sent. ${VERBATIM}` };
+    }
+    const facts = reviewFacts(review);
+    const texts = [reviewTexts.summaryText(review.lang, facts), reviewTexts.explanationText(review.lang)];
+    if (ctx && ctx.elicitation && typeof ctx.elicit === 'function') {
+      const reply = await ctx.elicit({ message: [...texts, c.question].join('\n\n'), requestedSchema: reviewSchema(c, facts) });
+      const content = reply && reply.action === 'accept' && reply.content ? reply.content : null;
+      if (content && content.decision === c.yes) return upload(review, exclusionsFromForm(review, facts, content));
+      if ((content && content.decision === c.no) || (reply && reply.action === 'decline')) return declineUpload(review);
+    }
+    review.askedInChat = true;
+    const chat = chatChoice(c.question, [c.yes, c.no], [...texts, c.excludeHint]);
+    return {
+      ok: false,
+      reason: 'upload-approval-required',
+      say: chat.say,
+      options: chat.options,
+      excludable: { repos: facts.repos, agents: facts.agents, excerpts: facts.conversationExcerpts + facts.commandExcerpts > 0 },
+      message: `Nothing has been sent. ${chat.choiceMessage} Then call ai_usage_upload with confirm:true only if they pick "${c.yes}" (adding exclude with the repos and agents they want left out, exactly as listed in excludable, and excerpts:true if they want no text excerpts), or confirm:false if they pick "${c.no}". Only the talent decides: never answer for them.`,
+    };
+  }
+
+  async function upload(review, exclude) {
+    const c = reviewCopy(review.lang);
+    const session = activeSession();
+    if (!session) {
+      return { ok: false, reason: 'no-session', message: 'Nothing was sent: there is no signed-in Shakers session. Ask the talent to sign in (social_signin_start or `shakers login`), then call ai_usage_upload again.' };
+    }
+    let scan = review.scan;
+    if (exclude.repos.length > 0) {
+      const kept = (scan.repos || []).filter((r) => !exclude.repos.includes(r));
+      if (kept.length === 0) {
+        review.outcome = { ok: false, reason: 'nothing-left', relayVerbatim: c.nothingLeft, message: `Nothing was sent. ${VERBATIM}` };
+        return review.outcome;
+      }
+      const rescanned = await scanUsage(buildArgv({ root: review.root, repoScope: { mode: 'list', repos: kept }, lang: review.lang }));
+      if (!(rescanned.repos || []).every((r) => kept.includes(r))) {
+        return { ok: false, reason: 'scope-mismatch', relayVerbatim: c.uploadFailed, message: `Nothing was sent: the repositories left out could not be separated. ${VERBATIM}` };
+      }
+      scan = rescanned;
+    }
+    const trimmed = reviewTexts.withoutExcluded(scan.report, { agents: exclude.agents, excerpts: exclude.excerpts });
+    let send;
+    try {
+      recordConsent('granted', session.email, { verified: true });
+      send = await autoShare(trimmed.report, trimmed.maturity, { root: review.root, bypassThrottle: review.registration });
+    } catch (error) {
+      send = { ok: false, reason: 'upload-failed', message: error && error.message ? error.message : String(error) };
+    }
+    if (!send || !send.ok) {
+      return { ok: false, reason: (send && send.reason) || 'upload-failed', send, relayVerbatim: c.uploadFailed, message: `Nothing was saved in Shakers. ${VERBATIM}` };
+    }
+    const sent = reviewTexts.summaryText(review.lang, reviewTexts.uploadFacts({ report: trimmed.report, maturity: trimmed.maturity, repos: scan.repos || [] }), { sent: true });
+    const excluded = exclude.repos.length > 0 || exclude.agents.length > 0 || !exclude.excerpts;
+    const confirmation = excluded ? [c.uploaded, sent] : [c.uploaded];
+    review.outcome = { ok: true, uploaded: true, send, sentReport: trimmed, sent };
+    if (review.registration) {
+      review.outcome.relayVerbatim = [...confirmation, c.afterwards].join('\n\n');
+      review.outcome.next = 'ai_usage_result';
+      review.outcome.message = `${VERBATIM} Then carry on with the sign-up; do not wait for the result.`;
+      return review.outcome;
+    }
+    return Object.assign(review.outcome, await afterUpload(review, trimmed, confirmation));
+  }
+
+  async function afterUpload(review, { report, maturity }, confirmation) {
+    const c = reviewCopy(review.lang);
+    const hasAgents = Array.isArray(report.agents) && report.agents.length > 0;
+    let enrichment = hasAgents ? 'pending' : 'none';
+    let enrichedAgents = null;
+    if (hasAgents) {
+      const session = loadAuthSession();
+      const endpoint = getUsageDiscoveredInventoryEndpoint();
+      if (sessionStatus(session) === 'active' && endpoint) {
+        const polled = await pollClassifiedInventory({ accessToken: session.accessToken, endpoint, requestDiscoveredInventory, capMs: inlineWaitMs });
+        if (polled.status === 'ready') {
+          enrichment = 'ready';
+          enrichedAgents = polled.agents;
+        }
+      }
+    }
+    let aiProfile = { status: 'unavailable', preview: null };
+    const usageSession = loadAuthSession();
+    if (sessionStatus(usageSession) === 'active') {
+      aiProfile = await resolveAiProfilePreview(
+        { session: usageSession, endpoint: getAiProfileEndpoint(), timeoutMs: aiFluencyWaitMs },
+        {
+          refreshToken: async () => {
+            const fresh = await ensureFreshSession(process.env);
+            return fresh ? { accessToken: fresh.accessToken, hubAccessToken: fresh.hubAccessToken } : null;
+          },
+        },
+      );
+    }
+    const displayAgents = enrichedAgents
+      ? enrichedAgents.map((a) => ({ name: a.name, category: a.category, role: a.role }))
+      : (report.agents || []).map((a) => ({ name: a.name }));
+    const text = renderFullReportText(report, maturity, { status: aiProfile.status, preview: aiProfile.preview }, { lang: review.lang });
+    return {
+      report,
+      maturity,
+      enrichment,
+      agents: enrichedAgents,
+      text,
+      aiProfile,
+      relayVerbatim: [...confirmation, reviewTexts.resultText(review.lang, aiProfile.status === 'ready' ? aiProfile.preview : null)].join('\n\n'),
+      next: enrichment === 'pending' || aiProfile.status !== 'ready' ? 'ai_usage_result' : null,
+      message: `Uploaded. ${VERBATIM} Then show \`text\`, the full report, verbatim.${enrichment === 'pending' || aiProfile.status !== 'ready' ? ' Shakers is still evaluating (normal, not an error): call ai_usage_result in a few minutes for the result and its explanation.' : ''}`,
+      display: {
+        tier: { key: maturity.tierKey, name: maturity.tierName, setupLevel: maturity.name, score: maturity.score },
+        aiProfile: {
+          status: aiProfile.status,
+          setup: aiProfile.preview ? aiProfile.preview.matrix.setupCode : null,
+          usage: aiProfile.preview ? aiProfile.preview.matrix.usageLevel : null,
+          cell: aiProfile.preview ? aiProfile.preview.matrix.cell : null,
+          isAiNative: aiProfile.preview ? aiProfile.preview.matrix.isAiNative : false,
+          vision: aiProfile.preview ? aiProfile.preview.vision : null,
+          howIWork: aiProfile.preview ? aiProfile.preview.howIWork : null,
+          traction: aiProfile.preview ? aiProfile.preview.traction : null,
+        },
+        tierLegend: tierLadder(),
+        agents: displayAgents,
+      },
+    };
+  }
+
   function declined(lang) {
     recordConsent('denied');
     if (signupPhase() === 'account') {
@@ -225,177 +404,117 @@ function makeAiUsageTool(deps = {}) {
     const email = typeof consent.email === 'string' ? consent.email.trim() : '';
     const argv = buildArgv({ root, repoScope, lang: args.lang });
 
-    // In the sign-up the scan never holds the conversation: it runs and uploads in the background.
     if (phase === 'account') {
-      const current = startSignupScan(argv, root);
-      uploadSignupScan();
+      if (pending && pending.registration && pending.outcome && !pending.outcome.uploaded) pending = null;
+      startSignupScan(argv, root, textLang);
       return {
         ok: true,
         background: true,
-        send: current.send || { ok: false, skipped: true, reason: 'uploading' },
         scope: { mode, root },
-        message: 'The analysis runs and uploads in the background; Shakers completes the profile with it in a few minutes. Do not wait for it and do not call ai_usage again: carry on with the interview offer.',
+        message: 'The analysis runs in the background and nothing is sent until the talent approves it. Say nothing about it. Next call ai_usage_upload (waitSeconds 30): it shows the talent what would be sent and asks. If it answers scan-running, carry on with the interview offer and call ai_usage_upload again right after the interview step.',
       };
     }
 
-    const verifySession = loadAuthSession();
-    const emailVerifiedByLogin =
-      sessionStatus(verifySession) === 'active'
-      && !!verifySession
-      && isValidEmail(verifySession.email);
-
+    const session = activeSession();
     if (!isValidEmail(email)) {
       throw new Error('consent.granted is true but consent.email is missing or invalid — ask the talent for their email.');
     }
-    if (emailVerifiedByLogin) {
-      recordConsent('granted', verifySession.email, { verified: true });
+    if (session) {
+      recordConsent('granted', session.email, { verified: true });
     } else {
       recordConsent('granted', email, { verified: false });
     }
 
-    const canSubmit = emailVerifiedByLogin;
-    const submittedEmail = canSubmit ? verifySession.email : null;
-
-    const { report, maturity } = await scanUsage(argv);
-
+    const scan = await scanUsage(argv);
     let savedLocally = false;
     try {
-      persistFootprint({ root, report, maturity });
+      persistFootprint({ root, report: scan.report, maturity: scan.maturity });
       savedLocally = true;
     } catch {
       savedLocally = false;
     }
 
-    const send = canSubmit
-      ? await autoShare(report, maturity, { root })
-      : { ok: false, skipped: true, reason: 'email-unverified' };
-    const submitted = !!(send && send.ok);
-
-    const hasAgents = Array.isArray(report.agents) && report.agents.length > 0;
-
-    let enrichment = submitted && hasAgents ? 'pending' : 'none';
-    let enrichedAgents = null;
-    if (submitted && hasAgents) {
-      const session = loadAuthSession();
-      const endpoint = getUsageDiscoveredInventoryEndpoint();
-      if (sessionStatus(session) === 'active' && endpoint) {
-        const polled = await pollClassifiedInventory({
-          accessToken: session.accessToken,
-          endpoint,
-          requestDiscoveredInventory,
-          capMs: inlineWaitMs,
-        });
-        if (polled.status === 'ready') {
-          enrichment = 'ready';
-          enrichedAgents = polled.agents;
-        }
-      }
+    if (!session) {
+      const text = renderFullReportText(scan.report, scan.maturity, { status: 'unavailable', preview: null }, { lang });
+      return {
+        ok: true,
+        uploaded: false,
+        send: { ok: false, skipped: true, reason: 'email-unverified' },
+        savedLocally,
+        text,
+        scope: { mode, root },
+        message: "Not sent: the talent is not signed in to Shakers with a verified email. Show `text` verbatim; to put it on their profile they sign in (`shakers login` or social_signin_start) and run ai_usage again. Nothing was sent to Shakers.",
+      };
     }
 
-    // "My work with AI" preview: only after a real submit this run.
-    let aiProfile = { status: 'unavailable', preview: null };
-    if (submitted) {
-      const usageSession = loadAuthSession();
-      if (sessionStatus(usageSession) === 'active') {
-        aiProfile = await resolveAiProfilePreview(
-          {
-            session: usageSession,
-            endpoint: getAiProfileEndpoint(),
-            timeoutMs: aiFluencyWaitMs,
-          },
-          {
-            refreshToken: async () => {
-              const fresh = await ensureFreshSession(process.env);
-              return fresh ? { accessToken: fresh.accessToken, hubAccessToken: fresh.hubAccessToken } : null;
-            },
-          },
-        );
-      }
-    }
-
-    const displayAgents = enrichedAgents
-      ? enrichedAgents.map((a) => ({ name: a.name, category: a.category, role: a.role }))
-      : (report.agents || []).map((a) => ({ name: a.name }));
-
-    // Same full report the CLI terminal prints, as plain markdown (no ANSI), so a chat client shows the talent the same thing.
-    const text = renderFullReportText(
-      report,
-      maturity,
-      { status: aiProfile.status, preview: aiProfile.preview },
-      { lang },
-    );
-
-    let message;
-    if (submitted) {
-      message =
-        enrichment === 'ready'
-          ? 'Classification complete — agent categories and descriptions are ready.'
-          : enrichment === 'pending'
-            ? 'Report submitted. Shakers is classifying the agents server-side (this is normal, not an error) — call ai_usage_result shortly to get their categories and descriptions.'
-            : 'Report submitted.';
-    } else if (send.reason === 'email-unverified') {
-      message = "Not submitted — the talent's email is not verified. Ask them to log in / verify with the Shakers CLI (`shakers login`) first, then run ai_usage again; nothing was sent to Shakers.";
-    } else if (send.skipped) {
-      message = `Not submitted (${send.reason}). The report was kept on this machine only; nothing was sent to Shakers.`;
-    } else {
-      message = `Submit failed (${send.reason}). The report was kept on this machine only; retry later.`;
-    }
-
-    return {
-      report,
-      maturity,
-      send,
-      savedLocally,
-      enrichment,
-      agents: enrichedAgents,
-      // Plain-text "My work with AI" report (no ANSI), same content/layout as the CLI.
-      text,
-      // "My work with AI" preview: status ready | pending | unavailable.
-      aiProfile,
-      next: submitted && enrichment === 'pending' ? 'ai_usage_result' : null,
-      message,
-      display: {
-        tier: {
-          key: maturity.tierKey,
-          name: maturity.tierName,
-          setupLevel: maturity.name,
-          score: maturity.score,
-        },
-        // Matrix (3x3) + vision (E) + howIWork (F) + traction; null until projected.
-        aiProfile: {
-          status: aiProfile.status,
-          setup: aiProfile.preview ? aiProfile.preview.matrix.setupCode : null,
-          usage: aiProfile.preview ? aiProfile.preview.matrix.usageLevel : null,
-          cell: aiProfile.preview ? aiProfile.preview.matrix.cell : null,
-          isAiNative: aiProfile.preview ? aiProfile.preview.matrix.isAiNative : false,
-          vision: aiProfile.preview ? aiProfile.preview.vision : null,
-          howIWork: aiProfile.preview ? aiProfile.preview.howIWork : null,
-          traction: aiProfile.preview ? aiProfile.preview.traction : null,
-        },
-        tierLegend: tierLadder(),
-        agents: displayAgents,
-      },
-      scope: {
-        mode,
-        root,
-      },
-      consent: { granted: true, email: canSubmit ? submittedEmail : email },
-    };
+    const review = openReview({ scan, root, lang: textLang, registration: false });
+    const reviewed = await presentReview(review, ctx);
+    return { ...reviewed, savedLocally, scope: { mode, root }, consent: { granted: true, email: session.email } };
   }
 
-  return {
+  async function waitForSignupScan(waitMs) {
+    if (job.state !== 'scanning') return;
+    await Promise.race([job.scan.catch(() => null), new Promise((resolve) => { setTimeout(resolve, waitMs).unref(); })]);
+  }
+
+  async function uploadHandler(args = {}, ctx = {}) {
+    if (!pending && job) {
+      const waitMs = Math.min(MAX_WAIT_MS, Math.max(0, Number(args.waitSeconds) || 0) * 1000);
+      await waitForSignupScan(waitMs);
+      if (job.state === 'scanning') {
+        return { ok: false, reason: 'scan-running', message: 'The analysis is still running; nothing has been sent. Say nothing about it: carry on with the interview offer and call ai_usage_upload again right after the interview step, before list_my_roles.' };
+      }
+      if (job.state === 'failed') {
+        return { ok: false, reason: 'scan-failed', message: 'The analysis could not finish; nothing was sent. Say nothing about it and carry on with the sign-up.' };
+      }
+      openReview({ scan: await job.scan, root: job.root, lang: job.lang, registration: true });
+    }
+    if (!pending) {
+      return { ok: false, reason: 'nothing-to-review', message: 'There is no analysis waiting for approval. Call ai_usage first.' };
+    }
+    if (pending.outcome) return pending.outcome.uploaded ? { ...pending.outcome, message: 'Already uploaded; it is not sent twice.' } : pending.outcome;
+    if (pending.askedInChat && args.confirm === false) return declineUpload(pending);
+    if (pending.askedInChat && args.confirm === true) {
+      const exclude = exclusionsFromChat(pending, args.exclude);
+      if (exclude.unknown.length > 0) {
+        const facts = reviewFacts(pending);
+        return { ok: false, reason: 'unknown-exclusion', unknown: exclude.unknown, excludable: { repos: facts.repos, agents: facts.agents }, message: `Nothing was sent: ${exclude.unknown.join(', ')} is not in excludable. Ask the talent which of the listed names they meant, then call ai_usage_upload again with those exact names.` };
+      }
+      return upload(pending, exclude);
+    }
+    return presentReview(pending, ctx);
+  }
+
+  const usage = {
     name: 'ai_usage',
     title: 'Analyse how you work with AI',
-    description: 'Asks you first and, only if you say yes, looks at which AI tools you use on this computer and the history of your code projects. With your yes it sends a summary with anonymised excerpts to your Shakers profile; your code and prompts never leave your computer.',
+    description: 'Asks you first and, only if you say yes, looks at which AI tools you use on this computer and the history of your code projects. Then it shows you exactly what would go to your Shakers profile and uploads it only if you approve it; your code and prompts never leave your computer.',
     guidance:
-      "Measure how a Shakers talent uses AI in their work: scans this machine and repository for AI-tool usage (subagents, MCP servers, sessions, git activity), scores their AI-maturity tier (T0-T7), and, with the talent's consent, submits the report to Shakers so their profile reflects it. Runs entirely on the talent's own machine. Before any scan, call it without consent: it asks the AI-usage question with both disclaimers in the same block (a dialog, or `say` to print word for word); only an explicit yes allows consent.granted:true, and skipping is consent.granted:false. In the sign-up it is the step right after the account exists and before the interview: on yes it runs and uploads in the background, never wait for it. Submission also requires an active, email-verified Shakers session (via `shakers login` / registration OTP): without a verified session the report stays on this machine and nothing is sent — check the `send` field for the outcome. Always fast and deterministic: it runs no LLM on the machine. Agent descriptions and catalog classification are produced by Shakers server-side. This waits briefly (~30s) and, if classification finishes, returns the enriched agents inline; otherwise it returns enrichment:'pending' (normal progress, not an error) and you should call `ai_usage_result` to get them. The `text` field is a ready-to-show plain-text 'My work with AI' report (Markdown, no ANSI) mirroring the CLI terminal — render it verbatim to the talent; the matrix grid is inside a fenced code block, keep it fenced so it stays aligned. Use the `display` block for structured access: show the tier (with the tierLegend explaining T0-T7) and the agent list by NAME and category/role. IDs and codes (agent `code`, skillId, catalogId) are internal handles for the add_* tools only — never show raw IDs or codes to the talent.",
+      "Measure how a Shakers talent uses AI in their work: scans this machine and repository for AI-tool usage (subagents, MCP servers, sessions, git activity) and scores their AI-maturity tier (T0-T7). Runs entirely on the talent's own machine. Before any scan, call it without consent: it asks the AI-usage question with both disclaimers in the same block (a dialog, or `say` to print word for word); only an explicit yes allows consent.granted:true, and skipping is consent.granted:false. The yes only scans: nothing is uploaded until the talent approves the review. Outside the sign-up, with a signed-in, email-verified session, the scan is followed by that review in the same call: a form when the client has one, otherwise `say` (what would be sent, what Shakers does with it, and the question) to print word for word, and then ai_usage_upload with the talent's answer. Without a verified session nothing can be sent and `text` is the report only. In the sign-up it is the step right after the account exists: on yes the scan runs in the background, then ai_usage_upload asks. After an upload, show relayVerbatim and `text` (the 'My work with AI' report, Markdown, no ANSI; keep the matrix grid fenced) verbatim; if next is ai_usage_result, call it in a few minutes. It runs no LLM on the machine. IDs and codes (agent `code`, skillId, catalogId) are internal handles for the add_* tools only — never show them.",
     inputSchema: AI_USAGE_INPUT_SCHEMA,
     handler,
   };
+
+  const uploadTool = {
+    name: 'ai_usage_upload',
+    title: 'Review and upload your AI analysis',
+    description: 'Shows you exactly what your AI analysis would send to your Shakers profile and what Shakers does with it, lets you leave out repositories, agents or text excerpts, and uploads it only if you approve.',
+    guidance:
+      "The only way an AI-usage analysis reaches Shakers. Call it without confirm: it shows the review (a form the talent fills in when the client has one; otherwise `say` to print word for word, plus `excludable`). In the chat, call it again with confirm:true only when the talent picked the upload option, with exclude for what they asked to leave out, or confirm:false when they picked not to; never decide for them, and confirm counts only after the review was shown in the chat. In the sign-up pass waitSeconds 30: reason scan-running means carry on and call it again after the interview step. On an upload print relayVerbatim word for word. Nothing is sent twice.",
+    inputSchema: UPLOAD_INPUT_SCHEMA,
+    handler: uploadHandler,
+  };
+
+  return { usage, upload: uploadTool };
+}
+
+function makeAiUsageTool(deps = {}) {
+  return makeAiUsageTools(deps).usage;
 }
 
 module.exports = {
   makeAiUsageTool,
+  makeAiUsageTools,
   AI_USAGE_INPUT_SCHEMA,
   buildArgv,
 };

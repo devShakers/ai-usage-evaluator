@@ -243,6 +243,7 @@ const LINKEDIN_IN = '<svg class="g" viewBox="0 0 24 24" aria-hidden="true">'
 
 // Each window offers these methods, in this order. The sign-up window has no LinkedIn: only Google carries the claim code there.
 const WINDOW_METHODS = { login: ['google', 'linkedin', 'email'], register: ['google', 'email'] };
+const FORM_MISTAKES = new Set(['legal-not-shown', 'missing-fields', 'password-mismatch', 'weak-password']);
 
 // The method-choice screen — the FIRST screen of the loopback form when more than one method is offered for this flow.
 function methodChoiceHtml(mode, lang, methods) {
@@ -364,12 +365,13 @@ function runLoopbackAuth(
   const showMethodScreen = !method && methods.length > 1;
   return new Promise((resolve) => {
     let settled = false;
+    let failedAttempts = 0;
     const finish = (result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       try { server.close(); } catch { /* already closing */ }
-      resolve(result);
+      resolve(result && result.ok && mode === 'register' ? { ...result, attempts: failedAttempts + 1 } : result);
     };
 
     // Any page in the talent's browser can reach a loopback port, and a rebound DNS name can read it: only this
@@ -426,6 +428,7 @@ function runLoopbackAuth(
       if (req.method === 'GET' && url.pathname === '/google' && methods.includes('google') && typeof onGoogle === 'function') {
         const target = await onGoogle();
         if (!target || !target.ok || !target.url) {
+          failedAttempts += 1;
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
           res.end(formHtml(mode, lang, { ...formOpts, error: (target && target.reason) || 'google-unavailable' }));
           return;
@@ -455,6 +458,7 @@ function runLoopbackAuth(
           res.end(successHtml(lang));
           finish(outcome);
         } else {
+          if (outcome.reason && !FORM_MISTAKES.has(outcome.reason)) failedAttempts += 1;
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
           res.end(outcome.existing
             ? existingAccountHtml(lang, { email: outcome.email, error: outcome.reason })
@@ -477,4 +481,4 @@ function runLoopbackAuth(
   });
 }
 
-module.exports = { runLoopbackAuth, doAuth, loginFormHtml, registerFormHtml, existingAccountHtml, methodChoiceHtml, socialHandoffHtml, DEFAULT_TIMEOUT_MS };
+module.exports = { runLoopbackAuth, WINDOW_METHODS, doAuth, loginFormHtml, registerFormHtml, existingAccountHtml, methodChoiceHtml, socialHandoffHtml, DEFAULT_TIMEOUT_MS };

@@ -15,10 +15,11 @@ const MAX_ATTEMPTS = 5;
 const YES_RE = /^(y|yes|s|si|sí)$/i;
 const NO_RE = /^(n|no)$/i;
 
-async function askYesNo(ask, question, catalog, { defaultNo = false } = {}) {
+async function askYesNo(ask, question, catalog, { defaultNo = false, defaultYes = false } = {}) {
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const raw = String(await ask(question)).trim();
     if (defaultNo && raw === '') return false;
+    if (defaultYes && raw === '') return true;
     if (YES_RE.test(raw)) return true;
     if (NO_RE.test(raw)) return false;
     process.stdout.write(`  ${catalog.consent.invalidAnswer}\n`);
@@ -112,4 +113,4 @@ async function runConsentPrompt({
   return null;
 }
 
-module.exports = { runConsentPrompt, defaultVerifyEmail };
+module.exports = { runConsentPrompt, defaultVerifyEmail, askYesNo };

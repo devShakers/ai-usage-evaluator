@@ -14,9 +14,9 @@ const PROMPTS = [
   {
     name: 'ai_usage',
     description: 'Evaluate and showcase how you work with AI (scans this machine, builds your "My work with AI").',
-    tools: ['ai_usage'],
+    tools: ['ai_usage', 'ai_usage_upload'],
     buildMessages: () => userText(
-      'Evaluate how I work with AI for my Shakers profile. First ask me for consent and the email to attribute it to, then call the `ai_usage` tool and show me the resulting report verbatim. Never show internal ids/codes.',
+      'Evaluate how I work with AI for my Shakers profile. First ask me for consent and the email to attribute it to, then call the `ai_usage` tool. Before anything is uploaded it shows me what would be sent and asks me: show that review verbatim, let me answer myself, and only then use `ai_usage_upload`. Show me the resulting report verbatim. Never show internal ids/codes.',
     ),
   },
   {

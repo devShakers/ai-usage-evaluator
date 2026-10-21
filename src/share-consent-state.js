@@ -19,9 +19,9 @@ const SEND_THROTTLE_MS = 60 * 60 * 1000;
 
 // consent state (~/.config/ai-footprint/consent.json) Replaces the old `credentials.json` (token model).
 
-function loadConsentState() {
+function loadConsentState(env = process.env) {
   try {
-    return JSON.parse(fs.readFileSync(consentPath(), 'utf8'));
+    return JSON.parse(fs.readFileSync(consentPath(env), 'utf8'));
   } catch {
     return null;
   }

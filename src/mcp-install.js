@@ -38,11 +38,57 @@ function stableNodePath(env, execPath) {
   return execPath;
 }
 
-function serverEntry({ nodePath, cliPath, env }) {
+const pathFor = (platform) => (platform === 'win32' ? path.win32 : path.posix);
+
+function realpathOr(dir) {
+  try {
+    return fs.realpathSync(dir);
+  } catch {
+    return dir;
+  }
+}
+
+function insideNpxCache(file, { env, platform, homedir }) {
+  const p = pathFor(platform);
+  const defaultCache = platform === 'win32'
+    ? p.join(env.LOCALAPPDATA || p.join(homedir, 'AppData', 'Local'), 'npm-cache')
+    : p.join(homedir, '.npm');
+  return [env.npm_config_cache, defaultCache].filter(Boolean).flatMap((dir) => [dir, realpathOr(dir)]).some((dir) => {
+    const rel = p.relative(p.join(dir, '_npx'), file);
+    return rel !== '' && !rel.startsWith('..') && !p.isAbsolute(rel);
+  });
+}
+
+function withoutNpxBins(value, where) {
+  const p = pathFor(where.platform);
+  return value.split(p.delimiter).filter((dir) => {
+    const parts = p.normalize(dir).split(p.sep);
+    const [last, parent] = [parts[parts.length - 1], parts[parts.length - 2]];
+    return !(last === 'node-gyp-bin' || (last === '.bin' && parent === 'node_modules') || insideNpxCache(dir, where));
+  }).join(p.delimiter);
+}
+
+function npxNextTo(nodePath) {
+  const candidate = path.join(path.dirname(nodePath), 'npx');
+  try {
+    fs.accessSync(candidate, fs.constants.X_OK);
+    return candidate;
+  } catch {
+    return 'npx';
+  }
+}
+
+function serverEntry({ nodePath, cliPath, env, platform = process.platform, homedir = os.homedir(), packageName }) {
+  const where = { env, platform, homedir };
+  const viaNpx = insideNpxCache(cliPath, where);
   const entryEnv = {};
-  if (env.PATH) entryEnv.PATH = env.PATH;
+  const pathValue = env.PATH && viaNpx ? withoutNpxBins(env.PATH, where) : env.PATH;
+  if (pathValue) entryEnv.PATH = pathValue;
   for (const key of FORWARDED_ENV) if (env[key]) entryEnv[key] = env[key];
-  return { command: nodePath, args: [cliPath, 'mcp'], env: entryEnv };
+  if (!viaNpx) return { command: nodePath, args: [cliPath, 'mcp'], env: entryEnv };
+  const npxArgs = ['-y', packageName, 'mcp'];
+  if (platform === 'win32') return { command: 'cmd', args: ['/c', 'npx', ...npxArgs], env: entryEnv };
+  return { command: npxNextTo(nodePath), args: npxArgs, env: entryEnv };
 }
 
 function claudeDesktopConfigPath({ platform, homedir, env }) {
@@ -51,11 +97,11 @@ function claudeDesktopConfigPath({ platform, homedir, env }) {
   return path.join(homedir, '.config', 'Claude', 'claude_desktop_config.json');
 }
 
-function writeJsonAtomic(file, value, mode) {
+function writeFileAtomic(file, text, mode) {
   const tmp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${Date.now()}.tmp`);
   const fd = fs.openSync(tmp, 'wx', mode);
   try {
-    fs.writeSync(fd, `${JSON.stringify(value, null, 2)}\n`);
+    fs.writeSync(fd, text);
     fs.fsyncSync(fd);
   } catch (e) {
     fs.closeSync(fd);
@@ -78,14 +124,14 @@ function installIntoJsonConfig(file, entry, key = 'mcpServers') {
     try {
       config = raw.trim() ? JSON.parse(raw) : {};
     } catch {
-      return { status: 'invalid-json' };
+      return { status: 'invalid-config' };
     }
-    if (!config || typeof config !== 'object' || Array.isArray(config)) return { status: 'invalid-json' };
+    if (!config || typeof config !== 'object' || Array.isArray(config)) return { status: 'invalid-config' };
     mode = fs.statSync(file).mode & 0o777;
   }
   const current = config[key];
   if (current !== undefined && (!current || typeof current !== 'object' || Array.isArray(current))) {
-    return { status: 'invalid-json' };
+    return { status: 'invalid-config' };
   }
   const servers = current || {};
   const legacy = Object.prototype.hasOwnProperty.call(servers, LEGACY_SERVER_NAME);
@@ -94,19 +140,156 @@ function installIntoJsonConfig(file, entry, key = 'mcpServers') {
   const next = { ...config, [key]: { ...servers, [SERVER_NAME]: entry } };
   delete next[key][LEGACY_SERVER_NAME];
   if (fs.existsSync(file)) fs.copyFileSync(file, `${file}.bak`);
-  writeJsonAtomic(file, next, mode);
+  writeFileAtomic(file, `${JSON.stringify(next, null, 2)}\n`, mode);
   return { status: 'configured', removedLegacy: legacy };
+}
+
+const TOML_ESCAPES = { '"': '\\"', '\\': '\\\\', '\b': '\\b', '\t': '\\t', '\n': '\\n', '\f': '\\f', '\r': '\\r' };
+const tomlString = (s) => `"${String(s).replace(/["\\\u0000-\u001f\u007f]/g, (ch) => TOML_ESCAPES[ch] || `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`)}"`;
+const tomlKey = (k) => (/^[A-Za-z0-9_-]+$/.test(k) ? k : tomlString(k));
+
+function tomlServerBlock(entry, eol = '\n') {
+  const env = Object.entries(entry.env || {});
+  return [
+    `[mcp_servers.${SERVER_NAME}]`,
+    `command = ${tomlString(entry.command)}`,
+    `args = [${entry.args.map(tomlString).join(', ')}]`,
+    ...(env.length ? [`env = { ${env.map(([k, v]) => `${tomlKey(k)} = ${tomlString(v)}`).join(', ')} }`] : []),
+    'startup_timeout_sec = 30',
+    '',
+  ].join(eol);
+}
+
+function parseTomlKeyPath(text) {
+  const keys = [];
+  let rest = text.trim();
+  while (rest) {
+    const m = rest.match(/^(?:([A-Za-z0-9_-]+)|"((?:[^"\\]|\\.)*)"|'([^']*)')\s*/);
+    if (!m) return null;
+    keys.push(m[1] ?? (m[2] !== undefined ? JSON.parse(`"${m[2]}"`) : m[3]));
+    rest = rest.slice(m[0].length);
+    if (!rest) break;
+    if (rest[0] !== '.') return null;
+    rest = rest.slice(1).trimStart();
+    if (!rest) return null;
+  }
+  return keys.length ? keys : null;
+}
+
+function scanTomlValue(line, state) {
+  let i = 0;
+  while (i < line.length) {
+    if (state.multiline) {
+      const end = line.indexOf(state.multiline, i);
+      if (end === -1) return;
+      i = end + 3;
+      state.multiline = null;
+      continue;
+    }
+    const ch = line[i];
+    if (ch === '#') return;
+    if (line.startsWith('"""', i) || line.startsWith("'''", i)) {
+      state.multiline = line.slice(i, i + 3);
+      i += 3;
+    } else if (ch === '"' || ch === "'") {
+      i += 1;
+      while (i < line.length && line[i] !== ch) i += ch === '"' && line[i] === '\\' ? 2 : 1;
+      i += 1;
+    } else {
+      if (ch === '[' || ch === '{') state.depth += 1;
+      if (ch === ']' || ch === '}') state.depth -= 1;
+      i += 1;
+    }
+  }
+}
+
+const OUR_TOML_NAMES = [SERVER_NAME, LEGACY_SERVER_NAME];
+const isOurs = (keys) => keys.length >= 2 && keys[0] === 'mcp_servers' && OUR_TOML_NAMES.includes(keys[1]);
+
+function removeTomlServers(text) {
+  const lines = text.match(/[^\n]*\n|[^\n]+$/g) || [];
+  const state = { multiline: null, depth: 0 };
+  const kept = [];
+  let table = [];
+  let ours = false;
+  let tail = [];
+  let removedLegacy = false;
+  const flushTail = () => {
+    const firstComment = tail.findIndex((l) => l.trim().startsWith('#'));
+    if (firstComment !== -1) kept.push(...tail.slice(firstComment));
+    tail = [];
+  };
+  for (const line of lines) {
+    const bare = line.replace(/\r?\n$/, '');
+    const trimmed = bare.trim();
+    if (!state.multiline && state.depth === 0 && trimmed.startsWith('[')) {
+      const header = trimmed.match(/^(\[\[?)\s*(.*?)\s*(\]\]?)\s*(#.*)?$/);
+      const keys = header && header[1].length === header[3].length ? parseTomlKeyPath(header[2]) : null;
+      if (!keys) return null;
+      if (header[1] === '[[' && keys[0] === 'mcp_servers' && (keys.length === 1 || isOurs(keys))) return null;
+      if (isOurs(keys)) {
+        if (keys[1] === LEGACY_SERVER_NAME) removedLegacy = true;
+        ours = true;
+        tail = [];
+        continue;
+      }
+      if (ours) flushTail();
+      ours = false;
+      table = keys;
+      kept.push(line);
+      continue;
+    }
+    if (!state.multiline && state.depth === 0 && trimmed && !trimmed.startsWith('#')) {
+      const eq = bare.match(/^\s*((?:[A-Za-z0-9_.\s-]|"(?:[^"\\]|\\.)*"|'[^']*')+?)\s*=/);
+      const keys = eq && parseTomlKeyPath(eq[1]);
+      if (!keys) return null;
+      const full = [...table, ...keys];
+      if (!ours && full[0] === 'mcp_servers' && (full.length === 1 || OUR_TOML_NAMES.includes(full[1]))) return null;
+      scanTomlValue(bare.slice(eq[0].length), state);
+    } else if (state.multiline || state.depth > 0) {
+      scanTomlValue(bare, state);
+    }
+    if (!ours) kept.push(line);
+    else if (!trimmed || trimmed.startsWith('#')) tail.push(line);
+    else tail = [];
+  }
+  if (state.multiline || state.depth !== 0) return null;
+  if (ours) flushTail();
+  return { text: kept.join(''), removedLegacy };
+}
+
+function installIntoTomlConfig(file, entry) {
+  if (!fs.existsSync(path.dirname(file))) return { status: 'not-found' };
+  const exists = fs.existsSync(file);
+  const raw = exists ? fs.readFileSync(file, 'utf8') : '';
+  const removed = removeTomlServers(raw);
+  if (!removed) return { status: 'invalid-config' };
+  const eol = raw.includes('\r\n') ? '\r\n' : '\n';
+  let base = removed.text;
+  if (base && !base.endsWith('\n')) base += eol;
+  if (base && !/\r?\n\r?\n$/.test(base)) base += eol;
+  const next = base + tomlServerBlock(entry, eol);
+  if (next === raw) return { status: 'unchanged' };
+  const mode = exists ? fs.statSync(file).mode & 0o777 : 0o600;
+  if (exists) fs.copyFileSync(file, `${file}.bak`);
+  writeFileAtomic(file, next, mode);
+  return { status: 'configured', removedLegacy: removed.removedLegacy };
+}
+
+function shellQuote(arg, platform) {
+  if (platform === 'win32') return /^[A-Za-z0-9_\-./=@\\:]+$/.test(arg) ? arg : `"${arg}"`;
+  return /^[A-Za-z0-9_\-./=@%+,]+$/.test(arg) ? arg : `'${arg.replace(/'/g, "'\\''")}'`;
+}
+
+function claudeCodeAddArgs(entry) {
+  const envFlags = Object.entries(entry.env).flatMap(([k, v]) => ['-e', `${k}=${v}`]);
+  // Name before `-e`: it swallows every value up to `--`.
+  return ['mcp', 'add', SERVER_NAME, '--scope', 'user', ...envFlags, '--', entry.command, ...entry.args];
 }
 
 function installIntoClaudeCode(entry, { spawn }) {
   spawn('claude', ['mcp', 'remove', '--scope', 'user', SERVER_NAME], { encoding: 'utf8' });
-  const envFlags = Object.entries(entry.env).flatMap(([k, v]) => ['-e', `${k}=${v}`]);
-  const added = spawn(
-    'claude',
-    // Name first: `-e` takes every value up to `--`, so a name after it is read as one more variable.
-    ['mcp', 'add', SERVER_NAME, '--scope', 'user', ...envFlags, '--', entry.command, ...entry.args],
-    { encoding: 'utf8' },
-  );
+  const added = spawn('claude', claudeCodeAddArgs(entry), { encoding: 'utf8' });
   if (added.error || added.status !== 0) return { status: 'failed' };
   return { status: 'configured' };
 }
@@ -133,18 +316,23 @@ function codexSkill() {
 }
 
 function installCodexSkill({ env, homedir }) {
-  const dir = path.join(env.CODEX_HOME || path.join(homedir, '.codex'), 'skills', SERVER_NAME);
+  const dir = path.join(codexHomeDir({ env, homedir }), 'skills', SERVER_NAME);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'SKILL.md'), codexSkill());
 }
 
-function installIntoCodex(entry, { spawn, env, homedir }) {
-  spawn('codex', ['mcp', 'remove', SERVER_NAME], { encoding: 'utf8' });
-  const envFlags = Object.entries(entry.env).flatMap(([k, v]) => ['--env', `${k}=${v}`]);
-  const added = spawn('codex', ['mcp', 'add', SERVER_NAME, ...envFlags, '--', entry.command, ...entry.args], { encoding: 'utf8' });
-  if (added.error || added.status !== 0) return { status: 'failed' };
-  installCodexSkill({ env, homedir });
-  return { status: 'configured' };
+const codexHomeDir = ({ env, homedir }) => env.CODEX_HOME || path.join(homedir, '.codex');
+
+function chatgptAppInstalled({ platform, homedir }) {
+  return platform === 'darwin' && fs.existsSync(path.join(homedir, 'Library', 'Application Support', 'com.openai.chat'));
+}
+
+function installIntoCodex(entry, { env, homedir }) {
+  const dir = codexHomeDir({ env, homedir });
+  fs.mkdirSync(dir, { recursive: true });
+  const result = installIntoTomlConfig(path.join(dir, 'config.toml'), entry);
+  if (result.status === 'configured' || result.status === 'unchanged') installCodexSkill({ env, homedir });
+  return result;
 }
 
 function vscodeUserDir({ platform, homedir, env }) {
@@ -165,10 +353,20 @@ function clientTable({ env, platform, homedir, spawn }) {
   });
   return [
     jsonClient('claudeDesktop', claudeDesktopConfigPath({ platform, homedir, env })),
-    { client: 'claudeCode', found: () => hasCli('claude'), install: (entry) => installIntoClaudeCode(entry, { spawn }) },
+    {
+      client: 'claudeCode',
+      found: () => hasCli('claude') || fs.existsSync(path.join(homedir, '.claude.json')),
+      install: (entry) => (hasCli('claude')
+        ? installIntoClaudeCode(entry, { spawn })
+        : { status: 'manual', command: ['claude', ...claudeCodeAddArgs(entry)].map((a) => shellQuote(a, platform)).join(' ') }),
+    },
     jsonClient('cursor', path.join(homedir, '.cursor', 'mcp.json')),
     jsonClient('geminiCli', path.join(homedir, '.gemini', 'settings.json')),
-    { client: 'codex', found: () => hasCli('codex'), install: (entry) => installIntoCodex(entry, { spawn, env, homedir }) },
+    {
+      client: 'codex',
+      found: () => fs.existsSync(codexHomeDir({ env, homedir })) || hasCli('codex') || chatgptAppInstalled({ platform, homedir }),
+      install: (entry) => installIntoCodex(entry, { env, homedir }),
+    },
     // VS Code keys servers under "servers" and wants the transport spelled out.
     jsonClient('vscode', path.join(vscodeUserDir({ platform, homedir, env }), 'mcp.json'), 'servers', (entry) => ({ type: 'stdio', ...entry })),
     jsonClient('windsurf', path.join(homedir, '.codeium', 'windsurf', 'mcp_config.json')),
@@ -196,9 +394,10 @@ function installMcpClients({
   homedir = os.homedir(),
   nodePath = stableNodePath(env, process.execPath),
   cliPath = fs.realpathSync(path.join(__dirname, '..', 'bin', 'shakers.js')),
+  packageName = require('../package.json').name,
   spawn = spawnSync,
 } = {}) {
-  const entry = serverEntry({ nodePath, cliPath, env });
+  const entry = serverEntry({ nodePath, cliPath, env, platform, homedir, packageName });
   return {
     entry,
     results: clientTable({ env, platform, homedir, spawn }).map((c) => ({
@@ -231,45 +430,81 @@ function askTerminal(question) {
   });
 }
 
-/**
- * Asks before touching the Talent's AI apps. SHAKERS_MCP_INSTALL=1 answers yes
- * without asking; with no terminal to ask on, nothing is touched.
- */
-async function runMcpInstall({ out = (s) => process.stdout.write(s), lang = null, ask = askTerminal, ...deps } = {}) {
-  const { getCatalog, detectFlowLang } = require('./i18n');
-  const c = getCatalog(lang || detectFlowLang()).mcpInstall;
+const NEEDS_RESTART = new Set(['configured', 'manual']);
+
+function parseInstallArgs(args) {
+  const flags = new Set(args);
+  return {
+    yes: flags.has('--yes') || flags.has('-y'),
+    json: flags.has('--json'),
+    help: flags.has('--help') || flags.has('-h'),
+  };
+}
+
+async function connectClients({ c, opts, out, ask, deps }) {
   const env = deps.env || process.env;
   const found = detectMcpClients(deps);
   out(`\n  ${c.title}\n\n`);
   if (found.length === 0) {
     out(`  ${c.noneFound}\n\n`);
-    return { ok: true, results: [] };
+    return { ok: true, found, results: [], reason: 'no-apps' };
   }
   out(`  ${c.found(found.map((client) => c.clients[client]).join(', '))}\n`);
-  let yes = env.SHAKERS_MCP_INSTALL === '1';
+  let yes = opts.yes || env.SHAKERS_MCP_INSTALL === '1';
   if (!yes) {
     const answer = await ask(`  ${c.confirm} `);
     if (answer === null) {
-      out(`\n  ${c.noTerminal}\n\n`);
-      return { ok: true, results: [], declined: true };
+      out(`\n  ${c.noTerminal}\n  ${c.yesHint}\n\n`);
+      return { ok: true, found, results: [], declined: true, reason: 'no-terminal' };
     }
     yes = !/^\s*(n|no)\s*$/i.test(answer);
   }
   if (!yes) {
     out(`\n  ${c.declined}\n\n`);
-    return { ok: true, results: [], declined: true };
+    return { ok: true, found, results: [], declined: true, reason: 'declined' };
   }
 
   const { results } = installMcpClients(deps);
   out('\n');
   for (const r of results.filter((x) => x.status !== 'not-found')) {
     out(`  ${c.clients[r.client]}: ${c.status[r.status]}\n`);
+    if (r.command) out(`    ${r.command}\n`);
     if (r.removedLegacy) out(`    ${c.removedLegacy}\n`);
   }
-  const touched = results.some((r) => r.status === 'configured' || r.status === 'unchanged');
-  out(`\n  ${touched ? c.restart : c.failedAll}\n\n`);
-  if (results.some((r) => r.status === 'failed' || r.status === 'invalid-json')) process.exitCode = 1;
-  return { ok: true, results };
+  const touched = results.some((r) => ['configured', 'unchanged', 'manual'].includes(r.status));
+  const restart = results.filter((r) => NEEDS_RESTART.has(r.status)).map((r) => c.clients[r.client]);
+  const closing = !touched ? c.failedAll : restart.length ? c.restart(restart.join(', ')) : c.alreadyConnected;
+  out(`\n  ${closing}\n\n`);
+  if (results.some((r) => r.status === 'failed' || r.status === 'invalid-config')) process.exitCode = 1;
+  return { ok: true, found, results, reason: null };
 }
 
-module.exports = { installCodexSkill, detectMcpClients, installMcpClients, stableNodePath, runMcpInstall, serverEntry, claudeDesktopConfigPath, SERVER_NAME, LEGACY_SERVER_NAME };
+function jsonReport({ found, results, reason }, c) {
+  const rows = reason
+    ? found.map((client) => ({ client, status: 'skipped' }))
+    : results.filter((r) => r.status !== 'not-found');
+  const clients = rows.map((r) => ({
+    client: r.client,
+    name: c.clients[r.client],
+    status: r.status,
+    restartRequired: NEEDS_RESTART.has(r.status),
+    manualCommand: r.command || null,
+  }));
+  return { reason, clients, restart: clients.filter((r) => r.restartRequired).map((r) => r.name) };
+}
+
+// SHAKERS_MCP_INSTALL=1 answers yes; with no terminal, nothing is touched.
+async function runMcpInstall({ args = [], out = (s) => process.stdout.write(s), lang = null, ask = askTerminal, ...deps } = {}) {
+  const { getCatalog, detectFlowLang } = require('./i18n');
+  const c = getCatalog(lang || detectFlowLang()).mcpInstall;
+  const opts = parseInstallArgs(args);
+  if (opts.help) {
+    out(`\n  ${c.help}\n\n`);
+    return { ok: true, results: [] };
+  }
+  const outcome = await connectClients({ c, opts, out: opts.json ? () => {} : out, ask, deps });
+  if (opts.json) out(`${JSON.stringify(jsonReport(outcome, c))}\n`);
+  return outcome;
+}
+
+module.exports = { installCodexSkill, removeTomlServers, tomlServerBlock, detectMcpClients, installMcpClients, stableNodePath, runMcpInstall, serverEntry, claudeDesktopConfigPath, SERVER_NAME, LEGACY_SERVER_NAME };

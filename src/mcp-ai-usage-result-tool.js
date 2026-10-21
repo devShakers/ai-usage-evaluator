@@ -52,6 +52,8 @@ async function pollClassifiedInventory({
   }
 }
 
+const RESULT_MESSAGE = 'Print relayVerbatim word for word: the result in "My work with AI", what it means and how to ask for a human review.';
+const PROFILE_PENDING_MESSAGE = 'The profile result is not ready yet: call ai_usage_result again in a few minutes.';
 const READY_MESSAGE = 'Shakers finished classifying the agents.';
 const PENDING_MESSAGE = 'Shakers is still classifying the agents — this is normal, call ai_usage_result again shortly to keep waiting.';
 
@@ -65,6 +67,12 @@ function makeAiUsageResultTool(deps = {}) {
     now = () => Date.now(),
     intervalMs = POLL_INTERVAL_MS,
     capMs = POLL_CAP_MS,
+    resolveAiProfilePreview = require('./ai-profile-preview').resolveAiProfilePreview,
+    getAiProfileEndpoint = require('./config').getAiProfileEndpoint,
+    ensureFreshSession = require('./session-refresh').ensureFreshSession,
+    aiProfileWaitMs = 30000,
+    resultText = require('./ai-usage-review').resultText,
+    lang = () => require('./signup-language').signupLanguage(require('./i18n').detectFlowLang()),
   } = deps;
 
   async function handler() {
@@ -77,27 +85,41 @@ function makeAiUsageResultTool(deps = {}) {
       throw new Error('discovered-inventory endpoint is not configured (set SHAKERS_CLI_INGEST_ENDPOINT).');
     }
 
-    const result = await pollClassifiedInventory({
-      accessToken: session.accessToken,
-      endpoint,
-      requestDiscoveredInventory,
-      sleep,
-      now,
-      intervalMs,
-      capMs,
-    });
+    const [result, aiProfile] = await Promise.all([
+      pollClassifiedInventory({
+        accessToken: session.accessToken,
+        endpoint,
+        requestDiscoveredInventory,
+        sleep,
+        now,
+        intervalMs,
+        capMs,
+      }),
+      resolveAiProfilePreview(
+        { session, endpoint: getAiProfileEndpoint(), timeoutMs: aiProfileWaitMs },
+        {
+          refreshToken: async () => {
+            const fresh = await ensureFreshSession(process.env);
+            return fresh ? { accessToken: fresh.accessToken, hubAccessToken: fresh.hubAccessToken } : null;
+          },
+        },
+      ).catch(() => ({ status: 'unavailable', preview: null })),
+    ]);
+    const profileReady = aiProfile.status === 'ready';
     return {
       ...result,
-      message: result.status === 'ready' ? READY_MESSAGE : PENDING_MESSAGE,
+      aiProfile,
+      relayVerbatim: resultText(lang(), profileReady ? aiProfile.preview : null),
+      message: `${RESULT_MESSAGE} ${result.status === 'ready' ? READY_MESSAGE : PENDING_MESSAGE}${profileReady ? '' : ` ${PROFILE_PENDING_MESSAGE}`}`,
     };
   }
 
   return {
     name: 'ai_usage_result',
     title: 'Results of your AI analysis',
-    description: 'Fetches from Shakers the description of each AI agent found in the analysis you approved. It reads nothing on this computer.',
+    description: 'Fetches from Shakers the result of the AI analysis you approved, what it means, and the description of each AI agent found. It reads nothing on this computer.',
     guidance:
-      "Retrieve the enriched Shakers classification for the talent's agents after ai_usage. Shakers classifies agents and writes their descriptions server-side (no client LLM), so this reads the result: per agent { name, tools, model, category, role, level, code, whatItDoes }. Session-keyed, no arguments. Server-side classification can take a few minutes, so this does a bounded internal poll (~90s max, never a long-held call): returns { status: 'ready', agents } once every agent has been classified, or { status: 'pending', agents } while Shakers is still processing (call it again to keep waiting — 'pending' is normal progress, not an error). Present agents to the talent by NAME and category/role only; the `code` field is an internal handle for add_agent, never show it. Requires an active session.",
+      "Retrieve the result after an approved upload: relayVerbatim is the 'My work with AI' result with its levels and explanation in plain words, and how to ask for a human review; print it word for word. It also returns the enriched Shakers classification for the talent's agents. Shakers classifies agents and writes their descriptions server-side (no client LLM), so this reads the result: per agent { name, tools, model, category, role, level, code, whatItDoes }. Session-keyed, no arguments. Server-side classification can take a few minutes, so this does a bounded internal poll (~90s max, never a long-held call): returns { status: 'ready', agents } once every agent has been classified, or { status: 'pending', agents } while Shakers is still processing (call it again to keep waiting — 'pending' is normal progress, not an error). Present agents to the talent by NAME and category/role only; the `code` field is an internal handle for add_agent, never show it. Requires an active session.",
     inputSchema: RESULT_INPUT_SCHEMA,
     handler,
   };

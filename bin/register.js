@@ -122,9 +122,10 @@ function makeIo({ ask, lang, out, acceptDisclaimer, stdinIsTTY = false }) {
       }
       return { fullTimeSelected: true, fullTimeAmount, fullTimeCurrency, partTimeSelected, partTimeAmount, partTimeCurrency };
     },
-    askAvailability: async (c) => {
+    askAvailability: async (c, { onLocation = () => {} } = {}) => {
       const available = isYes(await ask(`  ${c.availableAsk} `));
       const monthlyHours = await promptSelect({ ask, stdinIsTTY, out: selectOut, items: MONTHLY_HOURS, header: `  ${c.monthlyHoursAsk}` });
+      onLocation();
       const workModes = await promptMultiSelect({
         ask,
         stdinIsTTY,

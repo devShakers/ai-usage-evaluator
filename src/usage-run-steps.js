@@ -8,6 +8,7 @@ const {
   getConsentDecision,
   autoShare,
   consentPath,
+  isThrottled,
 } = require('./share');
 const { runConsentPrompt } = require('./consent-flow');
 const { createStdinAsk } = require('./stdin-ask');
@@ -22,8 +23,10 @@ const { withSpinner } = require('./terminal-progress');
 const { computeConsentSkip } = require('./consent-skip');
 const { collectIdentityAndUsage, storedAiConsent, reanchorReusedGrant } = require('./usage-scan');
 const { doBuildNextLevel } = require('./usage-oneshot-commands');
+const { uploadFacts, withoutExcluded, summaryText, explanationText } = require('./ai-usage-review');
+const { reviewCopy } = require('./signup-copy');
+const { askYesNo } = require('./consent-flow');
 
-// Automatic, silent PERSISTING once consent is `granted` (consent controls persistence only, never what's shown).
 async function maybeAutoShare(report, maturity, root, catalog, { bypassThrottle = false } = {}) {
   try {
     const result = await autoShare(report, maturity, { root, bypassThrottle });
@@ -103,7 +106,54 @@ async function resolveAiConsent({ opts, catalog, gate, injectedAsk }) {
   return aiConsentGranted;
 }
 
-async function renderAndFinalize({ report, maturity, lang, opts, root, gate, catalog, bypassThrottle = false }) {
+function matchNames(raw, known) {
+  const wanted = String(raw || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const byLower = new Map(known.map((name) => [name.toLowerCase(), name]));
+  return {
+    matched: wanted.map((w) => byLower.get(w.toLowerCase())).filter(Boolean),
+    unknown: wanted.filter((w) => !byLower.has(w.toLowerCase())),
+  };
+}
+
+async function askExcludedAgents(ask, c, known, out) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { matched, unknown } = matchNames(await ask(c.cliExcludeAgents), known);
+    if (unknown.length === 0) return matched;
+    out.write(`  ${c.cliUnknownAgents(unknown.join(', '), known.join(', '))}\n`);
+  }
+  return null;
+}
+
+async function reviewUpload({ report, maturity, repos = [], lang, catalog, injectedAsk = null, out = process.stdout, bypassThrottle = false }) {
+  const state = loadConsentState();
+  if (getConsentDecision(state) !== 'granted' || !state || state.emailVerified === false || !state.email || (!bypassThrottle && isThrottled(state))) {
+    return { approved: true, report, maturity };
+  }
+  const c = reviewCopy(lang);
+  const facts = uploadFacts({ report, maturity, repos });
+  out.write(`\n${summaryText(lang, facts)}\n\n${explanationText(lang)}\n\n`);
+  if (facts.repos.length > 1) out.write(`${c.cliRepoHint}\n\n`);
+  const ask = injectedAsk || createStdinAsk();
+  try {
+    const approved = await askYesNo(ask, c.cliQuestion, catalog, { defaultNo: true });
+    if (!approved) {
+      out.write(`  ${c.declined}\n`);
+      return { approved: false };
+    }
+    const agents = facts.agents.length > 0 ? await askExcludedAgents(ask, c, facts.agents, out) : [];
+    if (agents === null) {
+      out.write(`  ${c.declined}\n`);
+      return { approved: false };
+    }
+    const hasExcerpts = facts.conversationExcerpts + facts.commandExcerpts > 0;
+    const excerpts = hasExcerpts ? (await askYesNo(ask, c.cliIncludeExcerpts, catalog, { defaultYes: true })) === true : true;
+    return { approved: true, ...withoutExcluded(report, { agents, excerpts }) };
+  } finally {
+    if (!injectedAsk) ask.close();
+  }
+}
+
+async function renderAndFinalize({ report, maturity, lang, opts, root, gate, catalog, bypassThrottle = false, repos = [], injectedAsk = null }) {
   if (opts.json) {
     process.stdout.write(JSON.stringify({ report, maturity }, null, 2) + '\n');
     return;
@@ -133,8 +183,10 @@ async function renderAndFinalize({ report, maturity, lang, opts, root, gate, cat
     doBuildNextLevel(root, maturity, opts.force, catalog);
   }
 
-  // Auto-send at the end (bypassThrottle only true on the register path).
-  const shareResult = await maybeAutoShare(report, maturity, root, catalog, { bypassThrottle });
+  const reviewed = await reviewUpload({ report, maturity, repos, lang, catalog, injectedAsk, bypassThrottle });
+  if (!reviewed.approved) return;
+  const shareResult = await maybeAutoShare(reviewed.report, reviewed.maturity, root, catalog, { bypassThrottle });
+  if (shareResult && shareResult.ok) process.stdout.write(`\n  ${reviewCopy(lang).afterwards}\n`);
 
   // "My work with AI" preview, best-effort after the send; never blocks/breaks the run.
   await maybeRenderAiProfile({ report, maturity, lang, root, save: opts.save, submitOk: !!(shareResult && shareResult.ok), catalog });
@@ -194,6 +246,7 @@ async function maybeRenderAiProfile({ report, maturity, lang, root, save, submit
 }
 
 module.exports = {
+  reviewUpload,
   prepareIdentityAndUsage,
   resolveAiConsent,
   renderAndFinalize,
