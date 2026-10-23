@@ -10,15 +10,16 @@ function defaultSleep(ms) {
   return new Promise((resolve) => { setTimeout(resolve, ms); });
 }
 
-// The /cli-login page reads `provider` from the query to pick the social button.
-function appendProviderParam(url, provider) {
-  if (!url || !provider) return url;
+function withDeviceParams(url, params = {}) {
+  const entries = Object.entries(params).filter(([, v]) => typeof v === 'string' && v);
+  if (!url || !entries.length) return url;
   try {
     const u = new URL(url);
-    u.searchParams.set('provider', provider);
+    for (const [k, v] of entries) u.searchParams.set(k, v);
     return u.href;
   } catch {
-    return `${url}${url.includes('?') ? '&' : '?'}provider=${encodeURIComponent(provider)}`;
+    const query = entries.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+    return `${url}${url.includes('?') ? '&' : '?'}${query}`;
   }
 }
 
@@ -32,7 +33,7 @@ async function pollDeviceToken({ deviceCode, tokenEndpoint, clientId, timeoutMs 
 
 // ORDER: a NEW user needs complete-registration BEFORE GET /auth/token (else the Hub 500s: no domain user).
 async function finalizeDeviceSession(
-  { sessionToken, isNewUser, authTokenEndpoint, completeRegistrationEndpoint = null, registrationContext = null, claimCode = null, timeoutMs } = {},
+  { sessionToken, isNewUser, authTokenEndpoint, completeRegistrationEndpoint = null, registrationContext = null, consent = null, claimCode = null, timeoutMs } = {},
   {
     requestCompleteRegistration = require('./signup-client').requestCompleteRegistration,
     requestApiToken: apiToken = requestApiToken,
@@ -42,7 +43,7 @@ async function finalizeDeviceSession(
 
   let claimed = false;
   if (isNewUser && completeRegistrationEndpoint) {
-    const done = await requestCompleteRegistration(registrationContext || {}, { endpoint: completeRegistrationEndpoint, bearerToken: sessionToken, claimCode, timeoutMs });
+    const done = await requestCompleteRegistration(registrationContext || {}, { endpoint: completeRegistrationEndpoint, bearerToken: sessionToken, claimCode, consent, timeoutMs });
     if (!done.ok) return { ok: false, reason: done.reason || 'complete-registration-failed' };
     claimed = done.claimed === true;
   }
@@ -53,7 +54,7 @@ async function finalizeDeviceSession(
 }
 
 async function runDeviceLogin(
-  { authorizeEndpoint, tokenEndpoint, authTokenEndpoint, completeRegistrationEndpoint = null, registrationContext = null, clientId, scope, timeoutMs } = {},
+  { authorizeEndpoint, tokenEndpoint, authTokenEndpoint, completeRegistrationEndpoint = null, registrationContext = null, consent = null, clientId, scope, timeoutMs } = {},
   {
     onPrompt = null,
     onWaiting = null,
@@ -92,6 +93,7 @@ async function runDeviceLogin(
         authTokenEndpoint,
         completeRegistrationEndpoint,
         registrationContext,
+        consent,
         timeoutMs,
       });
       if (!fin.ok) return { ok: false, reason: fin.reason };
@@ -124,7 +126,7 @@ module.exports = {
   pollDeviceToken,
   finalizeDeviceSession,
   runDeviceLogin,
-  appendProviderParam,
+  withDeviceParams,
   defaultSleep,
   SLOW_DOWN_STEP_SECONDS,
   DEFAULT_MAX_WAIT_MS,

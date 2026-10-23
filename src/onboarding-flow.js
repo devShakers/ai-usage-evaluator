@@ -249,7 +249,6 @@ function makeDeps(overrides = {}) {
   const ai = require('./ai');
   const inventory = require('./inventory-client');
   const auth = require('./auth-session-store');
-  const authClient = require('./auth-client');
   const signup = require('./signup-client');
   const livekit = require('./onboarding-livekit-client');
   return {
@@ -257,17 +256,14 @@ function makeDeps(overrides = {}) {
     sessionStatus: auth.sessionStatus,
     saveAuthSession: auth.saveAuthSession,
     ensureFreshSession: require('./session-refresh').ensureFreshSession,
-    getSignUpEndpoint: config.getSignUpEndpoint,
     getCompleteRegistrationEndpoint: config.getCompleteRegistrationEndpoint,
-    getLoginEndpoint: config.getLoginEndpoint,
     getAuthTokenEndpoint: config.getAuthTokenEndpoint,
     getDeviceAuthorizeEndpoint: config.getDeviceAuthorizeEndpoint,
     getDeviceTokenEndpoint: config.getDeviceTokenEndpoint,
     runDeviceLogin: require('./device-login').runDeviceLogin,
     requestCompleteRegistration: signup.requestCompleteRegistration,
     buildRegistrationContext: signup.buildRegistrationContext,
-    requestSignUp: signup.requestSignUp,
-    requestLogin: authClient.requestLogin,
+    buildRegistrationConsent: signup.buildRegistrationConsent,
     getImportProfileEndpoint: config.getImportProfileEndpoint,
     getProfessionalDetailsEndpoint: config.getProfessionalDetailsEndpoint,
     getPricingRateEndpoint: config.getPricingRateEndpoint,
@@ -305,7 +301,6 @@ function makeDeps(overrides = {}) {
   };
 }
 
-// Refreshes the email session's hub JWT from its stored cookie when the cached one has lapsed (session-refresh.js), then gates on the durable session status.
 async function requireActiveSession(deps) {
   const session = typeof deps.ensureFreshSession === 'function'
     ? await deps.ensureFreshSession(process.env, { loadAuthSession: deps.loadAuthSession, saveAuthSession: deps.saveAuthSession })
@@ -316,79 +311,26 @@ async function requireActiveSession(deps) {
   return { ok: true, session };
 }
 
-function isAcceptablePassword(password) {
-  return typeof password === 'string' && password.length >= 8;
-}
-
-async function signUp(deps, fields = {}) {
-  // The CLI no longer asks freelanceType at signup → transient default (corrected later from the work situation via professional-details).
-  if (!isAcceptablePassword(fields.password)) return { ok: false, reason: 'weak-password' };
-  const signUpEndpoint = deps.getSignUpEndpoint();
-  if (!signUpEndpoint) return { ok: false, reason: 'no-endpoint' };
-  const completeRegistrationEndpoint = typeof deps.getCompleteRegistrationEndpoint === 'function'
-    ? deps.getCompleteRegistrationEndpoint()
-    : null;
-  return deps.requestSignUp(
-    {
-      name: fields.name,
-      lastName: fields.lastName,
-      email: fields.email,
-      password: fields.password,
-      preferredLanguage: fields.preferredLanguage,
-      newsletterConsent: fields.newsletterConsent === true,
-      freelanceType: normalizeFreelanceType(fields.freelanceType) || DEFAULT_SIGNUP_FREELANCE_TYPE,
-      freelanceIntent: fields.freelanceIntent,
-      claimCode: fields.claimCode || null,
-    },
-    { signUpEndpoint, completeRegistrationEndpoint },
-  );
-}
-
-async function establishSessionFromCredentials(deps, { email, password } = {}) {
-  const signInEndpoint = deps.getLoginEndpoint();
-  if (!signInEndpoint) return { ok: false, reason: 'no-endpoint' };
-  const tokenEndpoint = typeof deps.getAuthTokenEndpoint === 'function' ? deps.getAuthTokenEndpoint() : null;
-  const result = await deps.requestLogin({ email, password }, { signInEndpoint, tokenEndpoint });
-  if (!result.ok) return { ok: false, reason: result.reason || 'login-failed', status: result.status || null };
-  try {
-    // For an email session the durable credential is the cookie; `accessToken` is
-    // the fresh JWT and `expiresAt` its own exp (stored as the refresh horizon).
-    deps.saveAuthSession({
-      accessToken: result.accessToken,
-      expiresAt: result.expiresAt,
-      accessTokenExpiresAt: result.expiresAt,
-      cookie: result.cookie || null,
-      cookieExpiresAt: result.cookieExpiresAt || null,
-      email: result.email || email || null,
-      hubAccessToken: result.hubAccessToken || null,
-    });
-  } catch {
-    return { ok: false, reason: 'session-persist-failed' };
-  }
-  return { ok: true };
-}
-
-// Register a talent via a social provider (device flow, RFC 8628); a live session results either way.
-async function registerWithSocialAccount(deps, { provider = 'google', freelanceType, language } = {}, { openBrowser, onAuthUrl } = {}) {
-  const { appendProviderParam, deviceSessionRecord } = require('./device-login');
+async function registerWithDeviceFlow(deps, { provider = 'email', freelanceType, language, newsletterConsent = false } = {}, { openBrowser, onAuthUrl } = {}) {
+  const { withDeviceParams, deviceSessionRecord } = require('./device-login');
   const authorizeEndpoint = deps.getDeviceAuthorizeEndpoint();
   const tokenEndpoint = deps.getDeviceTokenEndpoint();
   const authTokenEndpoint = typeof deps.getAuthTokenEndpoint === 'function' ? deps.getAuthTokenEndpoint() : null;
   const completeRegistrationEndpoint = typeof deps.getCompleteRegistrationEndpoint === 'function' ? deps.getCompleteRegistrationEndpoint() : null;
   if (!authorizeEndpoint || !tokenEndpoint || !authTokenEndpoint) return { ok: false, reason: 'no-endpoint' };
 
-  // freelanceType is a transient default (corrected later); feeds complete-registration for a new account.
   const registrationContext = deps.buildRegistrationContext({
     preferredLanguage: language,
-    newsletterConsent: false,
+    newsletterConsent: newsletterConsent === true,
     freelanceType: normalizeFreelanceType(freelanceType) || DEFAULT_SIGNUP_FREELANCE_TYPE,
   });
+  const consent = deps.buildRegistrationConsent({ newsletterConsent: newsletterConsent === true });
 
   const result = await deps.runDeviceLogin(
-    { authorizeEndpoint, tokenEndpoint, authTokenEndpoint, completeRegistrationEndpoint, registrationContext },
+    { authorizeEndpoint, tokenEndpoint, authTokenEndpoint, completeRegistrationEndpoint, registrationContext, consent },
     {
       onPrompt: ({ verificationUriComplete, userCode }) => {
-        const url = appendProviderParam(verificationUriComplete, provider);
+        const url = withDeviceParams(verificationUriComplete, { provider, mode: 'register', surface: 'cli' });
         if (typeof onAuthUrl === 'function') onAuthUrl(url, userCode);
         if (typeof openBrowser === 'function') { try { openBrowser(url); } catch { /* printed URL covers it */ } }
       },
@@ -402,7 +344,6 @@ async function registerWithSocialAccount(deps, { provider = 'google', freelanceT
     return { ok: false, reason: 'session-persist-failed' };
   }
 
-  // isNewUser distinguishes a fresh registration from signing an existing account in.
   return { ok: true, kind: result.isNewUser ? 'registered' : 'account-already-exists', email: result.email || null };
 }
 
@@ -697,58 +638,27 @@ async function runOnboarding(io, deps = makeDeps(), { method = 'email', openBrow
     return { ok: false, reason, step: 'signup' };
   };
 
-  if (method === 'google' || method === 'linkedin') {
-    // The provider supplies name/email; freelanceType is derived later from work situation.
-    await io.askGoogleSignUp(c);
-    const reg = await registerWithSocialAccount(
-      deps,
-      { provider: method, language: io.lang },
-      { openBrowser, onAuthUrl },
-    );
-    if (!reg.ok) {
-      io.error(c.signupError);
-      return accountFailed(reg.reason);
-    }
-    funnel.completed('account_creation', { auth_method: method, auth_attempts: 1, is_returning_account: reg.kind === 'account-already-exists' });
-    funnel.identified({ newAccount: reg.kind !== 'account-already-exists' });
-    if (reg.kind === 'account-already-exists') {
-      // Existing account: already signed in — stop, no wizard re-run.
-      io.warn(c.accountExists);
-      return { ok: true, alreadyRegistered: true };
-    }
-    notifyOk(io, c.accountReady);
-  } else {
-    const account = await io.askSignUp(c);
-    if (!account || !account.email) return accountFailed('missing-fields');
-    if (!isAcceptablePassword(account.password)) {
-      io.error(c.weakPassword);
-      return accountFailed('weak-password');
-    }
-
-    const su = await signUp(deps, { ...account, preferredLanguage: account.preferredLanguage || io.lang });
-    if (!su.ok) {
-      io.error(su.message || c.signupError);
-      return accountFailed(su.reason);
-    }
-
-    if (su.accountExists) {
-      // Existing account: sign them in, then STOP — no wizard re-run.
-      io.warn(c.accountExists);
-      const logged = await io.login(account.email);
-      if (!logged) return accountFailed('login-failed');
-      funnel.completed('account_creation', { auth_method: 'email', auth_attempts: 1, is_returning_account: true });
-      funnel.identified({ newAccount: false });
-      return { ok: true, alreadyRegistered: true };
-    }
-    const sess = await establishSessionFromCredentials(deps, { email: account.email, password: account.password });
-    if (!sess.ok) {
-      io.error(c.sessionError);
-      return accountFailed(sess.reason);
-    }
-    funnel.completed('account_creation', { auth_method: 'email', auth_attempts: 1, is_returning_account: false });
-    funnel.identified();
-    notifyOk(io, c.accountReady);
+  const terms = await io.askTerms(c);
+  if (!terms.accepted) {
+    io.warn(c.termsDeclined);
+    return accountFailed('terms-declined');
   }
+  const reg = await registerWithDeviceFlow(
+    deps,
+    { provider: method, language: io.lang, newsletterConsent: terms.newsletterConsent },
+    { openBrowser, onAuthUrl },
+  );
+  if (!reg.ok) {
+    io.error(c.signupError);
+    return accountFailed(reg.reason);
+  }
+  funnel.completed('account_creation', { auth_method: method, auth_attempts: 1, is_returning_account: reg.kind === 'account-already-exists' });
+  funnel.identified({ newAccount: reg.kind !== 'account-already-exists' });
+  if (reg.kind === 'account-already-exists') {
+    io.warn(c.accountExists);
+    return { ok: true, alreadyRegistered: true };
+  }
+  notifyOk(io, c.accountReady);
 
   io.section(c.title);
   funnel.viewed('import_sources', { sources_offered: ['linkedin', 'cv', 'github', 'web_page'] });
@@ -1044,15 +954,13 @@ async function runMainRoleFinalStep(io, deps, { onRolesShown } = {}) {
   }
 }
 
-// Overwrite-repeat: PATCH /interviews/onboarding/restart. Per contract the Bearer is
-// the talent hub JWT (same token roles use); falls back to accessToken when equal.
+// Overwrite-repeat: PATCH /interviews/onboarding/restart. Candidate certs JWT, like its onboarding siblings.
 async function restartOnboarding(deps) {
   const gate = await requireActiveSession(deps);
   if (!gate.ok) return gate;
   const endpoint = deps.getOnboardingRestartEndpoint();
   if (!endpoint) return { ok: false, reason: 'no-endpoint' };
-  const token = gate.session.hubAccessToken || gate.session.accessToken;
-  return deps.requestRestartOnboardingInterview({ accessToken: token }, { endpoint });
+  return deps.requestRestartOnboardingInterview({ accessToken: gate.session.accessToken }, { endpoint });
 }
 
 // `shakers onboarding --repeat`: warn + explicit confirm, then overwrite the prior
@@ -1144,7 +1052,6 @@ module.exports = {
   validatePricing,
   validateAvailability,
   buildPricingUpsert,
-  isAcceptablePassword,
   deriveCurrentEmploymentStatus,
   showsFreelanceOpinion,
   deriveFreelanceIntent,
@@ -1153,9 +1060,7 @@ module.exports = {
   validateLanguageRows,
   validatePhone,
   makeDeps,
-  signUp,
-  establishSessionFromCredentials,
-  registerWithSocialAccount,
+  registerWithDeviceFlow,
   startProfileImport,
   reattachConsentIdentity,
   saveWorkSituation,

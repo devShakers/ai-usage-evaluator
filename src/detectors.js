@@ -116,6 +116,29 @@ const detectors = [
     ],
   },
   {
+    id: 'pi',
+    name: 'Pi',
+    vendor: 'Earendil Works',
+    category: CATEGORIES.AGENTIC_CLI,
+    signals: [
+      { type: 'projectPath', path: '.pi' },
+      { type: 'homePath', path: '.pi/agent' },
+    ],
+  },
+  {
+    id: 'opencode',
+    name: 'OpenCode',
+    vendor: 'OpenCode',
+    category: CATEGORIES.AGENTIC_CLI,
+    signals: [
+      { type: 'projectPath', path: 'opencode.json' },
+      { type: 'projectPath', path: '.opencode' },
+      { type: 'homePath', path: '.config/opencode' },
+      { type: 'homePath', path: '.local/share/opencode' },
+      { type: 'bin', name: 'opencode' },
+    ],
+  },
+  {
     id: 'cody',
     name: 'Cody',
     vendor: 'Sourcegraph',

@@ -26,7 +26,7 @@ function savePendingDevice(pending, env = process.env, { fs: fsImpl = fs } = {})
       interval: typeof pending.interval === 'number' && pending.interval > 0 ? Math.floor(pending.interval) : 5,
       expiresAt: typeof pending.expiresAt === 'string' && pending.expiresAt ? pending.expiresAt : null,
       mode: pending.mode === 'register' ? 'register' : 'login',
-      provider: pending.provider === 'linkedin' ? 'linkedin' : 'google',
+      provider: pending.provider === 'linkedin' || pending.provider === 'email' ? pending.provider : 'google',
       registerContext: pending.registerContext && typeof pending.registerContext === 'object' ? pending.registerContext : null,
       email: typeof pending.email === 'string' && pending.email ? pending.email : null,
       version: DEVICE_FILE_VERSION,
@@ -75,7 +75,7 @@ function loadPendingDevice(env = process.env, { fs: fsImpl = fs } = {}) {
     interval: typeof parsed.interval === 'number' && parsed.interval > 0 ? Math.floor(parsed.interval) : 5,
     expiresAt: typeof parsed.expiresAt === 'string' && parsed.expiresAt ? parsed.expiresAt : null,
     mode: parsed.mode === 'register' ? 'register' : 'login',
-    provider: parsed.provider === 'linkedin' ? 'linkedin' : 'google',
+    provider: parsed.provider === 'linkedin' || parsed.provider === 'email' ? parsed.provider : 'google',
     registerContext: parsed.registerContext && typeof parsed.registerContext === 'object' ? parsed.registerContext : null,
     email: typeof parsed.email === 'string' && parsed.email ? parsed.email : null,
   };

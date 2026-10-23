@@ -23,12 +23,19 @@ const { makeRoleTools } = require('../src/mcp-role-tools');
 const { makeDeviceLoginTools } = require('../src/mcp-device-login-tools');
 const { makeRegisterTools } = require('../src/mcp-register-tools');
 const { makeSignupTools } = require('../src/mcp-signup-tools');
+const { makeSignupTool, outsideSignup, narratedTool, narrationLanguage, ABSORBED_TOOLS } = require('../src/mcp-signup-flow');
 const { detectFlowLang } = require('../src/i18n');
 const { makeReportTools } = require('../src/mcp-report-tools');
 const { makePrompts } = require('../src/mcp-prompts');
 const { buildServerInstructions } = require('../src/mcp-instructions');
+const { mcpNarration } = require('../src/trust-narration');
 const { ensureFreshSession } = require('../src/session-refresh');
+const { emitCommandAudit } = require('../src/command-audit');
 const { createFunnel } = require('../src/onboarding-funnel');
+
+function narrateTool(lang) {
+  return (name, { failed = false, args } = {}) => mcpNarration(narratedTool(name, args), narrationLanguage(name, args, lang), { failed });
+}
 
 let VERSION = '';
 try {
@@ -43,19 +50,15 @@ const HELP = `\n  shakers mcp — local MCP server (stdio)\n\n`
   + `  Usage: shakers mcp\n\n`
   + `  This command speaks JSON-RPC on stdio; it is meant to be launched by an\n`
   + `  MCP client, not run by hand.\n`
-  + `  Tools: ai_usage, ai_usage_upload, ai_usage_result, logout, social_signin_start, social_signin_poll,\n`
-  + `         list_addable, add_skill, add_agent,\n`
-  + `         add_project, signup_start, signup_email, signup_draft, signup_create_account,\n`
-  + `         signup_status, update_existing_profile, import_profile, save_profile_details, open_web,\n`
-  + `         open_linkedin_profile,\n`
-  + `         suggest_register_context, read_cv, onboarding_interview_start,\n`
-  + `         onboarding_interview_turn, onboarding_interview_complete,\n`
-  + `         repeat_onboarding_interview, onboarding_finish,\n`
-  + `         list_available_roles, add_role, list_my_roles, set_main_role,\n`
-  + `         report, share,\n`
-  + `         list_certifiable_dimensions, find_projects, show_project,\n`
-  + `         save_project, unsave_project, list_invitations,\n`
-  + `         list_applications, get_availability,\n`
+  + `  Tools: signup (the whole sign-up, step by step), ai_usage, ai_usage_upload,\n`
+  + `         ai_usage_result, logout, social_signin_start, social_signin_poll,\n`
+  + `         list_addable, add_skill, add_agent, add_project, open_web,\n`
+  + `         onboarding_interview_start, onboarding_interview_turn,\n`
+  + `         onboarding_interview_complete, repeat_onboarding_interview,\n`
+  + `         onboarding_finish, list_available_roles, add_role, list_my_roles,\n`
+  + `         set_main_role, report, share, list_certifiable_dimensions,\n`
+  + `         find_projects, show_project, save_project, unsave_project,\n`
+  + `         list_invitations, list_applications, get_availability,\n`
   + `         list_certifications, get_profile, get_rate, get_languages,\n`
   + `         list_socials, list_experiences, list_portfolios, alma_chat, alma_decision.\n\n`;
 
@@ -68,8 +71,11 @@ const LOCAL_ONLY_TOOL_NAMES = new Set(['ai_usage', 'ai_usage_upload', 'ai_usage_
 function buildServer({ localOnly = false, funnel = createFunnel({ surface: 'mcp' }), makeInterviewClient = null } = {}) {
   const lang = detectFlowLang();
   const aiUsage = makeAiUsageTools();
-  const allTools = [aiUsage.usage, aiUsage.upload, makeAiUsageResultTool(), ...makeOnboardingTools(), ...makeRoleTools({ lang, funnel }), ...makeDeviceLoginTools(), ...makeSignupTools({ lang, funnel }), ...makeRegisterTools({ lang, funnel, flowDeps: { makeInterviewClient } }), ...makeReportTools(), ...makeCertifyDimensionTools(), ...makeFindProjectsTools(), ...makeShowProjectTools(), ...makeSavedPositionsTools(), ...makeInvitationsTools(), ...makeApplicationsTools(), ...makeAvailabilityTools(), ...makeCertificationsTools(), ...makeProfileTools(), ...makeRateTools(), ...makeLangTools(), ...makeSocialsTools(), ...makePortfolioTools(), ...makeAlmaTools()];
-  const tools = localOnly ? allTools.filter((t) => LOCAL_ONLY_TOOL_NAMES.has(t.name)) : allTools;
+  const allTools = [aiUsage.usage, aiUsage.upload, makeAiUsageResultTool(), ...makeOnboardingTools(), ...makeRoleTools({ lang, funnel }), ...makeDeviceLoginTools({ lang, funnel }), ...makeSignupTools({ lang, funnel }), ...makeRegisterTools({ lang, funnel, flowDeps: { makeInterviewClient } }), ...makeReportTools(), ...makeCertifyDimensionTools(), ...makeFindProjectsTools(), ...makeShowProjectTools(), ...makeSavedPositionsTools(), ...makeInvitationsTools(), ...makeApplicationsTools(), ...makeAvailabilityTools(), ...makeCertificationsTools(), ...makeProfileTools(), ...makeRateTools(), ...makeLangTools(), ...makeSocialsTools(), ...makePortfolioTools(), ...makeAlmaTools()];
+  // The sign-up runs through one tool (`signup`), so Claude Desktop asks the talent once instead of once per step.
+  const tools = localOnly
+    ? allTools.filter((t) => LOCAL_ONLY_TOOL_NAMES.has(t.name))
+    : [makeSignupTool(allTools), ...allTools.filter((t) => !ABSORBED_TOOLS.has(t.name)).map(outsideSignup)];
   // Slash-command prompts, kept to the tools actually registered in this mode.
   const prompts = makePrompts(new Set(tools.map((t) => t.name)), lang);
   return createMcpServer({
@@ -77,10 +83,14 @@ function buildServer({ localOnly = false, funnel = createFunnel({ surface: 'mcp'
     prompts,
     serverInfo: { name: localOnly ? 'Shakers (local scan)' : 'Shakers', version: VERSION || '0.0.0' },
     instructions: localOnly ? null : (client) => buildServerInstructions(client),
-    // Long-lived server: refresh the email session's hub JWT from the stored
-    // cookie before each tool call so a stale (~15-min) JWT never reaches a tool.
     beforeCall: () => ensureFreshSession(process.env),
-    afterCall: () => { funnel.flush(); },
+    afterCall: (name) => {
+      funnel.flush();
+      ensureFreshSession(process.env)
+        .catch(() => null)
+        .then(() => emitCommandAudit({ command: `mcp:${name}`, env: process.env }));
+    },
+    narrate: narrateTool(lang),
     onInitialize: ({ clientInfo }) => funnel.setMcpClient(clientInfo.name),
   });
 }
@@ -122,7 +132,7 @@ async function run(argv = process.argv.slice(2), { makeInterviewClient = null } 
   await funnel.settle();
 }
 
-module.exports = { run, buildServer, buildServerInstructions, prepareProcess };
+module.exports = { run, buildServer, buildServerInstructions, prepareProcess, narrateTool };
 
 if (require.main === module) {
   run();

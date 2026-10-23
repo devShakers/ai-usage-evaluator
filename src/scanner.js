@@ -12,7 +12,8 @@ const { detectMcpServers, buildMcpAggregate } = require('./mcp-detector');
 const { analyzeMemoryStructure } = require('./memory-structure-detector');
 const { detectAutomations } = require('./automations-detector');
 const { detectBrowserTools } = require('./browser-tools-detector');
-const { getHomeDir } = require('./env-paths');
+const { getHomeDir, codexHome, piAgentDir } = require('./env-paths');
+const { OWN_SKILL_NAMES } = require('./cli-skill');
 
 /* ---------- existence-check utilities (existence only, never content) ---------- */
 
@@ -85,12 +86,28 @@ function resolveSignalPath(sig, root) {
 
 /* ---------- DEPTH probes: return ONLY numbers ---------- */
 
-function countDirEntries(p) {
+function countSkillDirs(p) {
   try {
-    return fs.readdirSync(p, { withFileTypes: true }).filter((e) => e.isDirectory()).length;
+    return fs.readdirSync(p, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.') && !OWN_SKILL_NAMES.has(e.name)).length;
   } catch {
     return 0;
   }
+}
+
+function countFilesDeep(p, ext, depth = 3) {
+  let entries;
+  try {
+    entries = fs.readdirSync(p, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  let n = 0;
+  for (const e of entries) {
+    if (e.isFile() && e.name.endsWith(ext)) n += 1;
+    else if (e.isDirectory() && depth > 0) n += countFilesDeep(path.join(p, e.name), ext, depth - 1);
+  }
+  return n;
 }
 
 function countFiles(p, ext) {
@@ -108,6 +125,49 @@ function countJsonKeys(file, key) {
     const obj = JSON.parse(raw);
     const target = key ? obj[key] : obj;
     return target && typeof target === 'object' ? Object.keys(target).length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function claudeHooks(root) {
+  return (
+    countJsonKeys(path.join(root, '.claude', 'settings.json'), 'hooks') +
+    countJsonKeys(path.join(root, '.claude', 'settings.local.json'), 'hooks') +
+    countJsonKeys(path.join(getHomeDir(), '.claude', 'settings.json'), 'hooks')
+  );
+}
+
+const TOML_HOOK_TABLE = /^\s*\[\[?\s*hooks\.([A-Za-z]+)/;
+
+function countTomlHookEvents(file) {
+  let raw;
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch {
+    return 0;
+  }
+  const events = new Set();
+  for (const line of raw.split(/\r?\n/)) {
+    const m = TOML_HOOK_TABLE.exec(line);
+    if (m && m[1] !== 'state') events.add(m[1]);
+  }
+  return events.size;
+}
+
+function codexHooks(root) {
+  return [codexHome(), path.join(root, '.codex')].reduce(
+    (n, dir) => n + countJsonKeys(path.join(dir, 'hooks.json'), 'hooks') + countTomlHookEvents(path.join(dir, 'config.toml')),
+    0,
+  );
+}
+
+const CLINE_HOOK_TYPES = new Set(['TaskStart', 'TaskResume', 'TaskCancel', 'TaskComplete', 'PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'Notification', 'PreCompact']);
+
+function countClineHooks(dir) {
+  try {
+    return fs.readdirSync(dir, { withFileTypes: true })
+      .filter((e) => e.isFile() && CLINE_HOOK_TYPES.has(path.parse(e.name).name)).length;
   } catch {
     return 0;
   }
@@ -273,17 +333,20 @@ const probes = {
   'claude-code': (root, ctx) => ({
     mcpServers: mcpCount(ctx, 'claude-code'),
     skills:
-      countDirEntries(path.join(root, '.claude', 'skills')) +
-      countDirEntries(path.join(os.homedir(), '.claude', 'skills')),
+      countSkillDirs(path.join(root, '.claude', 'skills')) +
+      countSkillDirs(path.join(getHomeDir(), '.claude', 'skills')),
     commands: countFiles(path.join(root, '.claude', 'commands'), '.md'),
     instructions: exists(path.join(root, 'CLAUDE.md')) ? 1 : 0,
-    hooks: countJsonKeys(path.join(root, '.claude', 'settings.json'), 'hooks'),
+    hooks: claudeHooks(root),
   }),
   cursor: (root, ctx) => ({
     rules:
       countFiles(path.join(root, '.cursor', 'rules'), '.mdc') +
       (exists(path.join(root, '.cursorrules')) ? 1 : 0),
     mcpServers: mcpCount(ctx, 'cursor'),
+    hooks:
+      countJsonKeys(path.join(root, '.cursor', 'hooks.json'), 'hooks') +
+      countJsonKeys(path.join(getHomeDir(), '.cursor', 'hooks.json'), 'hooks'),
   }),
   'github-copilot': (root) => ({
     instructions: exists(path.join(root, '.github', 'copilot-instructions.md')) ? 1 : 0,
@@ -307,10 +370,41 @@ const probes = {
   'gemini-cli': (root, ctx) => ({
     instructions: exists(path.join(root, 'GEMINI.md')) ? 1 : 0,
     mcpServers: mcpCount(ctx, 'gemini-cli'),
+    commands:
+      countFilesDeep(path.join(root, '.gemini', 'commands'), '.toml') +
+      countFilesDeep(path.join(getHomeDir(), '.gemini', 'commands'), '.toml'),
+    hooks:
+      countJsonKeys(path.join(root, '.gemini', 'settings.json'), 'hooks') +
+      countJsonKeys(path.join(getHomeDir(), '.gemini', 'settings.json'), 'hooks'),
   }),
-  'codex-cli': (root) => ({
+  'codex-cli': (root, ctx) => ({
     instructions: exists(path.join(root, 'AGENTS.md')) ? 1 : 0,
+    mcpServers: mcpCount(ctx, 'codex-cli'),
+    skills: countSkillDirs(path.join(codexHome(), 'skills')),
+    commands: countFiles(path.join(codexHome(), 'prompts'), '.md'),
+    hooks: codexHooks(root),
   }),
+  cline: (root) => ({
+    hooks:
+      countClineHooks(path.join(root, '.clinerules', 'hooks')) +
+      countClineHooks(path.join(getHomeDir(), 'Documents', 'Cline', 'Hooks')),
+  }),
+  pi: (root, ctx) => ({
+    instructions: exists(path.join(root, 'AGENTS.md')) ? 1 : 0,
+    mcpServers: mcpCount(ctx, 'pi'),
+    skills: countSkillDirs(path.join(root, '.pi', 'skills')) + countSkillDirs(path.join(piAgentDir(), 'skills')),
+    commands: countFiles(path.join(root, '.pi', 'prompts'), '.md') + countFiles(path.join(piAgentDir(), 'prompts'), '.md'),
+  }),
+  opencode: (root, ctx) => {
+    const home = path.join(getHomeDir(), '.config', 'opencode');
+    const dirs = [path.join(root, '.opencode'), home];
+    return {
+      instructions: exists(path.join(root, 'AGENTS.md')) ? 1 : 0,
+      mcpServers: mcpCount(ctx, 'opencode'),
+      skills: dirs.reduce((n, d) => n + countSkillDirs(path.join(d, 'skills')) + countSkillDirs(path.join(d, 'skill')), 0),
+      commands: dirs.reduce((n, d) => n + countFiles(path.join(d, 'commands'), '.md') + countFiles(path.join(d, 'command'), '.md'), 0),
+    };
+  },
   trae: (root) => ({
     // Low confidence: `.trae/rules` structure not verified (see detectors.js).
     rules: countFiles(path.join(root, '.trae', 'rules')),
@@ -325,16 +419,14 @@ function agentOrgChartCounts(root, agentsCount, mcp) {
   return {
     agents: agentsCount,
     skills:
-      countDirEntries(path.join(root, '.claude', 'skills')) +
-      countDirEntries(path.join(home, '.claude', 'skills')),
+      countSkillDirs(path.join(root, '.claude', 'skills')) +
+      countSkillDirs(path.join(home, '.claude', 'skills')),
     commands:
       countFiles(path.join(root, '.claude', 'commands'), '.md') +
       countFiles(path.join(home, '.claude', 'commands'), '.md'),
     // The third copy of the MCP paths lived here.
     mcpServers: (mcp && typeof mcp.total === 'number' ? mcp.total : 0),
-    hooks:
-      countJsonKeys(path.join(root, '.claude', 'settings.json'), 'hooks') +
-      countJsonKeys(path.join(home, '.claude', 'settings.json'), 'hooks'),
+    hooks: claudeHooks(root),
   };
 }
 

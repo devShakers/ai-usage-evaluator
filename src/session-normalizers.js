@@ -26,8 +26,6 @@ function textFromParts(parts) {
 }
 
 // --- Codex (~/.codex/sessions/**/rollout-*.jsonl) ---
-// Reads timestamp, cwd (session_meta), user text, and shell commands; a record matching none
-// of those passes through only its own real timestamp/cwd, else is dropped.
 function codexCommand(args) {
   let a = args;
   if (typeof a === 'string') {
@@ -60,7 +58,15 @@ function normalizeCodexRecord(raw) {
   }
 
   const type = str(raw.type) || str(item.type);
+  if (type === 'turn_context' && item.collaboration_mode && item.collaboration_mode.mode === 'plan') {
+    out.planMode = true;
+    return out;
+  }
   const name = str(item.name) || (type === 'function_call' ? 'shell' : null);
+  if (name === 'update_plan') {
+    out.message = { content: [{ type: 'tool_use', name }] };
+    return out;
+  }
   if (name && /shell|exec|bash|terminal|command/i.test(name)) {
     const command = codexCommand(item.arguments ?? item.input ?? item.args);
     if (command) {
@@ -73,11 +79,16 @@ function normalizeCodexRecord(raw) {
 }
 
 // --- Gemini CLI (~/.gemini/tmp/<project-hash>/chats/logs.json | session-*.jsonl) ---
-// logs.json = JSON array of { type:'user'|'model', message, timestamp }; session-*.jsonl =
-// per-line { role, parts }. No cwd is recorded (the dir is a one-way SHA-256 hash), so cwd
-// stays null — global session/time metrics still count; per-repo scoping can't.
 function normalizeGeminiRecord(raw) {
   if (!raw || typeof raw !== 'object') return null;
+  if (Array.isArray(raw.messages)) {
+    const out = [];
+    for (const m of raw.messages) {
+      const o = normalizeGeminiRecord(m);
+      if (o) out.push(o);
+    }
+    return out;
+  }
   const out = {};
   const ts = str(raw.timestamp) || str(raw.time);
   if (ts) out.timestamp = ts;
@@ -90,6 +101,11 @@ function normalizeGeminiRecord(raw) {
       out.message = { role: 'user', content: [{ type: 'text', text }] };
       return out;
     }
+  }
+  const calls = Array.isArray(raw.toolCalls) ? raw.toolCalls.map((c) => toolUse(c && c.name)).filter(Boolean) : [];
+  if (calls.length) {
+    out.message = { role: 'assistant', content: calls };
+    return out;
   }
   return out.timestamp ? out : null;
 }
@@ -111,7 +127,7 @@ function normalizeContinueRecord(raw) {
     }
     return null;
   }
-  const out = [];
+  const out = str(raw.mode) === 'plan' ? [cwd ? { cwd, planMode: true } : { planMode: true }] : [];
   for (const entry of history) {
     const msg = entry && entry.message && typeof entry.message === 'object' ? entry.message : entry;
     if (!msg || typeof msg !== 'object') continue;
@@ -127,13 +143,28 @@ function normalizeContinueRecord(raw) {
 }
 
 // --- Cline / Roo Code: VS Code globalStorage .../tasks/<id>/api_conversation_history.json ---
-// One JSON array of Anthropic messages (role/content); no cwd and no timestamp in this file
-// (ui_messages.json has ts) → cwd/time attribution absent. Emits only real user turns.
 function normalizeClineRecord(raw) {
   if (!raw || typeof raw !== 'object') return null;
+  if (str(raw.role) === 'assistant') return clinePlanningTurn(raw.content);
   if (str(raw.role) !== 'user') return null;
   const text = typeof raw.content === 'string' ? raw.content.trim() : textFromParts(raw.content);
   return text ? oneUser(text, null, null) : null;
+}
+
+const CLINE_PLANNING_TAG = /<(plan_mode_respond|update_todo_list)>/g;
+
+function clinePlanningTurn(content) {
+  const blocks = typeof content === 'string' ? [{ type: 'text', text: content }] : (Array.isArray(content) ? content : []);
+  const calls = [];
+  for (const b of blocks) {
+    if (!b || typeof b !== 'object') continue;
+    if (b.type === 'tool_use') calls.push(toolUse(b.name));
+    else if (b.type === 'text' && typeof b.text === 'string') {
+      for (const m of b.text.matchAll(CLINE_PLANNING_TAG)) calls.push(toolUse(m[1]));
+    }
+  }
+  const uses = calls.filter(Boolean);
+  return uses.length ? { message: { role: 'assistant', content: uses } } : null;
 }
 
 // --- Aider: per-repo .aider.chat.history.md (markdown) ---
@@ -158,6 +189,78 @@ function parseAiderHistory(text, cwd) {
   return out;
 }
 
+function normalizeClineSessionRecord(raw) {
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.messages)) return null;
+  const out = [];
+  for (const m of raw.messages) {
+    if (!m || typeof m !== 'object') continue;
+    const ts = Number.isFinite(m.ts) ? new Date(m.ts).toISOString() : null;
+    if (str(m.role) === 'user') {
+      const text = textFromParts((Array.isArray(m.content) ? m.content : []).filter((b) => b && b.type === 'text'));
+      if (text) out.push(oneUser(text, null, ts));
+      continue;
+    }
+    if (str(m.role) !== 'assistant') continue;
+    const uses = (Array.isArray(m.content) ? m.content : []).filter((b) => b && b.type === 'tool_use').map((b) => toolUse(b.name)).filter(Boolean);
+    const o = ts ? { timestamp: ts } : {};
+    if (uses.length) o.message = { role: 'assistant', content: uses };
+    if (o.timestamp || o.message) out.push(o);
+  }
+  return out;
+}
+
+const CURSOR_QUERY = /^\s*<user_query>([\s\S]*?)<\/user_query>\s*$/;
+
+function normalizeCursorRecord(raw) {
+  if (!raw || typeof raw !== 'object' || !raw.message || !Array.isArray(raw.message.content)) return null;
+  const role = str(raw.role);
+  if (role === 'user') {
+    const text = textFromParts(raw.message.content.filter((b) => b && b.type === 'text').map((b) => {
+      const m = CURSOR_QUERY.exec(b.text || '');
+      return m ? m[1] : b.text;
+    }));
+    return text ? oneUser(text, null, null) : null;
+  }
+  if (role !== 'assistant') return null;
+  const uses = raw.message.content.filter((b) => b && b.type === 'tool_use' && str(b.name));
+  return uses.length ? { message: { role: 'assistant', content: uses } } : null;
+}
+
+function normalizePiRecord(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const ts = str(raw.timestamp);
+  const type = str(raw.type);
+  if (type === 'session') {
+    const cwd = str(raw.cwd);
+    if (!cwd && !ts) return null;
+    const o = {};
+    if (cwd) o.cwd = cwd;
+    if (ts) o.timestamp = ts;
+    return o;
+  }
+  if (type === 'custom' && raw.customType === 'plan-mode' && raw.data && raw.data.enabled === true) {
+    return ts ? { timestamp: ts, planMode: true } : { planMode: true };
+  }
+  if (type !== 'message' || !raw.message || typeof raw.message !== 'object') return null;
+  const role = str(raw.message.role);
+  if (role === 'user') {
+    const text = textFromParts(raw.message.content);
+    return text ? oneUser(text, null, ts) : null;
+  }
+  if (role !== 'assistant') return ts ? { timestamp: ts } : null;
+  const uses = (Array.isArray(raw.message.content) ? raw.message.content : [])
+    .filter((b) => b && b.type === 'toolCall')
+    .map((b) => toolUse(b.name))
+    .filter(Boolean);
+  const o = ts ? { timestamp: ts } : {};
+  if (uses.length) o.message = { role: 'assistant', content: uses };
+  return o.timestamp || o.message ? o : null;
+}
+
+function toolUse(name) {
+  return typeof name === 'string' && name ? { type: 'tool_use', name } : null;
+}
+
 function oneUser(text, cwd, ts) {
   const o = { type: 'user', message: { role: 'user', content: [{ type: 'text', text }] } };
   if (cwd) o.cwd = cwd;
@@ -170,5 +273,8 @@ module.exports = {
   normalizeGeminiRecord,
   normalizeContinueRecord,
   normalizeClineRecord,
+  normalizeClineSessionRecord,
+  normalizeCursorRecord,
+  normalizePiRecord,
   parseAiderHistory,
 };

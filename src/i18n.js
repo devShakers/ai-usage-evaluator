@@ -15,13 +15,10 @@ const catalogs = {
       askCv: 'Ruta a tu CV en PDF (opcional, Enter para omitir):',
       askGithub: 'Tu URL de GitHub (opcional, Enter para omitir):',
       askWebsite: 'Tu web personal (opcional, Enter para omitir):',
-      importStarted: 'Importando tu perfil en segundo plano mientras continuamos…',
-      importError: 'No se pudo iniciar la importacion de tu perfil.',
       importUnavailable: 'No pudimos importar tu perfil ahora (servicio no disponible); seguimos con el registro, puedes reintentar el import mas tarde.',
       importChecking: 'Importando tu perfil…',
       importDone: 'Perfil importado correctamente.',
       importFailed: 'No se pudo completar la importacion de tu perfil. Puedes reintentarla mas tarde desde tu perfil.',
-      importStillRunning: 'Tu perfil se sigue importando en segundo plano; estara listo en unos minutos.',
       professionalTitle: 'Tu situacion laboral',
       askWorkSituation: 'Cual es tu situacion laboral actual? Elige una opcion:',
       workSituationLabels: {
@@ -54,27 +51,13 @@ const catalogs = {
       professionalSaved: 'Situación laboral guardada.',
       chooseMethodHeading: '¿Cómo quieres crear tu cuenta?',
       signupTitle: 'Crea tu cuenta de Shakers',
-      askName: 'Nombre:',
-      askLastName: 'Apellidos:',
-      askEmail: 'Email (usa uno NUEVO; si ya existe te ofrecere iniciar sesion):',
-      askPassword: 'Contrasena (minimo 8 caracteres):',
-      askPasswordConfirm: 'Repite la contrasena:',
-      passwordMismatch: 'Las contrasenas no coinciden. Intentalo de nuevo.',
-      askFreelanceTypeSelect: 'Como trabajas? Elige una opcion:',
-      freelanceTypeLabels: {
-        FREELANCE: 'Freelance',
-        EMPLOYEE: 'Empleado/a',
-        AGENCY: 'Agencia o empresa',
-        POTENTIAL_FREELANCE: 'Me planteo ser freelance',
-      },
-      invalidChoice: 'Opcion no valida.',
-      askNewsletter: 'Quieres recibir la newsletter? (s/n):',
-      weakPassword: 'La contrasena no cumple los requisitos (minimo 8 caracteres).',
+      termsAsk: '¿Aceptas, para crear tu cuenta? [s/N]',
+      termsDeclined: 'Sin aceptar los Términos y la Política de Privacidad no se puede crear tu cuenta. No se ha creado nada ni se ha enviado nada a Shakers.',
+      newsletterAsk: (label) => `Opcional: ${label} [s/N]`,
       signupError: 'No se pudo crear la cuenta.',
       freelanceIntentRequired: 'Tu intencion freelance es obligatoria para ese tipo.',
-      accountExists: 'Ya existe una cuenta con ese email. Vamos a iniciar sesion.',
-      accountReady: 'Cuenta creada. Sesion iniciada.',
-      sessionError: 'La cuenta se creo pero no se pudo iniciar sesion. Ejecuta `shakers login`.',
+      accountExists: 'Ya tenías una cuenta en Shakers: has iniciado sesión con ella en este equipo.',
+      accountReady: 'Cuenta creada. Sesión iniciada solo en este equipo (~/.config/shakers); para cerrarla: `shakers logout`.',
       pricingTitle: 'Tu precio por proyecto',
       pricingSaved: 'Precio guardado.',
       askPricingFullAmount: (cur) => `Precio por proyecto a jornada completa en ${cur} (numero, sin separadores de miles, p.ej. 60000):`,
@@ -149,7 +132,6 @@ const catalogs = {
       repeatNotFound: 'No tienes un onboarding todavía. Haz `shakers onboarding` primero.',
       repeatAuthError: 'Tu sesión no permite esta acción. Inicia sesión de nuevo: shakers login',
       repeatFailed: (reason) => `No se pudo reiniciar el onboarding (${reason}). Inténtalo de nuevo.`,
-      interviewAnswer: 'Tu respuesta:',
       questionHeading: (n) => `Pregunta ${n}`,
       interviewTurnError: 'No se pudo continuar la entrevista.',
       thinking: 'Alma esta pensando…',
@@ -207,7 +189,7 @@ const catalogs = {
         t2Met: (n) => `Dispones de al menos un fichero de contexto persistente — instrucciones, configuración o reglas — para alguna herramienta (tienes ${n}).`,
         t3Met: (n) => `Tienes al menos un servidor MCP conectado, dando a la IA acceso a datos o herramientas externas (tienes ${n}).`,
         t4Met: (n) => `Has creado activos propios — skills, comandos o reglas personalizadas — más allá de la configuración por defecto (tienes ${n}).`,
-        t5Met: (hasAgentic, mcp, custom) => `Operas con una CLI agéntica (Claude Code, Aider, Gemini CLI, Codex CLI o Amazon Q Developer) combinada con MCP y activos propios (${mcp} servidores MCP y ${custom} activos propios).`,
+        t5Met: (hasAgentic, mcp, custom) => `Operas con una CLI agéntica (Claude Code, Aider, Gemini CLI, Codex CLI, Pi, OpenCode o Amazon Q Developer) combinada con MCP y activos propios (${mcp} servidores MCP y ${custom} activos propios).`,
         t6Met: (n) => `Tienes un equipo de al menos 2 agentes especializados definidos (tienes ${n}).`,
         t7Met: (n) => `Tienes automatización basada en hooks configurada (tienes ${n}).`,
         t1Blocking: (n) => `Para subir a T1 (Primera herramienta) necesitas al menos una herramienta de IA detectada — ahora tienes ${n}.`,
@@ -216,7 +198,7 @@ const catalogs = {
         t4Blocking: (n) => `Para subir a T4 (Herramienta propia) necesitas crear al menos un activo propio — skill, comando o regla — más allá de la configuración por defecto — ahora tienes ${n}.`,
         t5Blocking: (hasAgentic, mcp, custom) => {
           const missing = [];
-          if (!hasAgentic) missing.push('una CLI agéntica (Claude Code, Aider, Gemini CLI, Codex CLI o Amazon Q Developer)');
+          if (!hasAgentic) missing.push('una CLI agéntica (Claude Code, Aider, Gemini CLI, Codex CLI, Pi, OpenCode o Amazon Q Developer)');
           if (mcp < 1) missing.push('al menos 1 servidor MCP');
           if (custom < 1) missing.push('al menos 1 activo propio (skill, comando o regla)');
           return `Para subir a T5 (Operador agéntico) te falta: ${missing.join('; ')}.`;
@@ -536,9 +518,9 @@ const catalogs = {
         'Esto mide tu fluidez con IA en dos ejes: Setup (madurez de tu tooling, T0–T7, determinista) y Usage (cómo lo usas, evaluado en entrevista + código). Te sitúa en el mapa 3×3 (Explorer → AI Native). Completarlo posiciona tu perfil agéntico para los proyectos que valoran cómo trabajas con IA. Por defecto leo el uso de IA de todo este equipo y asumo que es tuyo (un equipo = tú).',
       // Terminal progress feedback: stderr-only status
       // during the two slow phases (see src/terminal-progress.js).
-      scanningLabel: 'Escaneando entorno y detectores…',
+      scanningLabel: 'Leyendo en este equipo la configuración de tus herramientas de IA y tus proyectos (todavía no sale nada de tu equipo)…',
       // Loader de la fase de agregación por repo seleccionado (git + sesiones + steering/decisiones + evidencia + org-chart de agentes).
-      aggregatingLabel: 'Agregando señales de los repos seleccionados…',
+      aggregatingLabel: 'Leyendo el historial de git y de sesiones de IA de los repos elegidos para sacar señales (todavía no sale nada de tu equipo)…',
       reposScopePromptHeader: '¿Qué quieres evaluar?',
       reposScopePromptHint: 'Flechas para moverte · enter para elegir',
       reposScopeOptionMachine: 'Toda la máquina (todos los repos con actividad de IA)',
@@ -621,10 +603,20 @@ const catalogs = {
       persistIntro:
         'Este informe se ha generado y mostrado en tu equipo, siempre. '
         + 'Guardarlo en Shakers es opcional y revocable en cualquier momento '
-        + '(usage --consent-revoke): guarda tu nivel/tier y señales '
+        + '(usage --consent-revoke). Se envían tu nivel/tier, señales '
         + 'estructuradas derivadas (herramientas, MCP, memoria, '
-        + 'automatizaciones, agentes, tecnologías) — nunca el contenido de '
-        + 'tus ficheros, prompts, rutas ni credenciales. '
+        + 'automatizaciones, agentes, tecnologías) y texto literal: '
+        + 'fragmentos de tus conversaciones con asistentes de IA (las de los '
+        + 'repositorios analizados, o todas las de este equipo si lo analizas '
+        + 'entero), comandos de muestra y las definiciones de tus agentes, '
+        + 'tras quitar lo que parezca un secreto. Antes de cada subida verás '
+        + 'qué se envía. Un '
+        + 'modelo de IA de un proveedor externo (OpenAI, Google o Anthropic) '
+        + 'lo analiza por encargo de Shakers para calcular tu evaluación y '
+        + 'lo descarta: solo se guarda el resultado (niveles, puntuaciones, '
+        + 'recuentos y los nombres de tus herramientas y agentes). No lo uses '
+        + 'en equipos o conversaciones con datos que no puedas compartir (de clientes, '
+        + 'de tu empresa o de terceros). '
         + 'Esta misma decisión también autoriza, solo si aceptas, que un '
         + 'proveedor externo de observabilidad (Datadog) capture el contenido '
         + 'que envían las llamadas de IA opcionales de este CLI (código '
@@ -657,6 +649,9 @@ const catalogs = {
       nonInteractiveWarning:
         'Entrada no interactiva (no-TTY) detectada: si no llega ninguna respuesta por stdin, '
         + 'el consentimiento no se guardará esta vez y se te volverá a preguntar la próxima vez.',
+      nonInteractiveUnanswered:
+        'No ha llegado ninguna respuesta, así que tu consentimiento sigue sin decidir y no se ha guardado ni enviado nada a Shakers. '
+        + 'Ejecuta `shakers ai-usage` en tu propia terminal para responder.',
       status: {
         heading: 'Estado del consentimiento (guardado en Shakers)',
         decisionGranted: 'Decisión: concedido (granted)',
@@ -994,6 +989,20 @@ const catalogs = {
       noneFound: 'No he encontrado ninguna app de IA compatible en esta máquina.',
       failedAll: 'No he podido conectar Shakers a tus apps de IA. Vuelve a ejecutar el instalador para reintentarlo.',
     },
+    skillInstall: {
+      title: 'Instalando la skill shakers-cli para tus agentes de IA',
+      agents: { claudeCode: 'Claude Code', codex: 'Codex' },
+      status: { installed: 'instalada', failed: 'no se pudo instalar' },
+      found: (agents) => `He encontrado: ${agents}.`,
+      confirm: '¿Instalo la skill para que tu agente sepa usar el CLI de Shakers? [S/n]',
+      declined: 'No he tocado nada. Para instalarla más tarde: shakers skill install',
+      noTerminal: 'No hay una terminal donde preguntarte, así que no he tocado nada.',
+      yesHint: 'Para instalarla sin preguntar (por ejemplo, desde un asistente de IA): shakers skill install --yes',
+      noneFound: 'No he encontrado Claude Code ni Codex en esta máquina; no he tocado nada.',
+      done: (agents) => `Listo. Si ${agents} no ve la skill, abre una sesión nueva.`,
+      failedAll: 'No he podido instalar la skill. Vuelve a ejecutar shakers skill install para reintentarlo.',
+      help: 'skill install — instala la skill shakers-cli, que enseña a tu agente de IA (Claude Code, Codex) a usar este CLI.\n\nUso:\n  shakers skill install            pregunta en la terminal e instala en los agentes encontrados\n  shakers skill install --yes      instala sin preguntar (-y; para asistentes de IA y scripts)\n  shakers skill install --json     imprime el resultado como un único objeto JSON\n\nSin --yes y sin terminal no toca nada. Solo escribe ~/.claude/skills/shakers-cli/SKILL.md y <CODEX_HOME>/skills/shakers-cli/SKILL.md.',
+    },
     rate: {
       help: 'rate — ver o fijar tu tarifa por proyecto.\n\nUso:\n  rate [--lang es|en] [--json]      ver tu tarifa\n  rate --set [--lang es|en]         fijarla (interactivo, con confirmación)\n\nRequiere una sesión activa (shakers login).',
       loginRequired: '"rate" requiere una sesión activa.\n  Falta: iniciar sesión. Ejecuta primero: shakers login',
@@ -1218,6 +1227,46 @@ const catalogs = {
         remediationCopiedLabel: 'Copiado ✓',
       },
     },
+    trust: {
+      uploadWarning: 'Antes de aprobar: se enviarían hasta 40 extractos literales de tus mensajes (correcciones y decisiones) y 20 comandos, de 200 caracteres como máximo cada uno, la configuración y la definición de tus agentes y recuentos de actividad. Se quita lo que parece un secreto, un email o una ruta, pero el filtro es aproximado: no lo apruebes si hay datos que no puedes compartir (de clientes, de tu empresa o de terceros).',
+      cli: {
+        'ai-usage': { before: 'Voy a analizar en este ordenador tus herramientas de IA, el historial de tus proyectos de código y tus conversaciones con asistentes de programación con IA (Claude Code, Codex, Gemini, Cursor, Continue, Cline/Roo, Aider, Pi, OpenCode). Si analizas un repo, solo cubre las conversaciones de ese repo; si eliges toda la máquina o es tu alta, todas las de este equipo. Antes de enviar nada a Shakers te enseño qué se enviaría y te pregunto. No lo uses en un equipo ni con conversaciones que tengan datos que no puedes compartir (de clientes, de tu empresa o de terceros).', after: 'Hecho. Si aprobaste la subida, un modelo de IA de un proveedor externo (OpenAI, Google o Anthropic) analiza lo enviado por encargo de Shakers para calcular tu evaluación y después se descarta; solo se guarda el resultado (niveles, puntuaciones, recuentos y los nombres de tus herramientas y agentes). Si no la aprobaste, no se ha subido nada a tu perfil. Revisión humana: «Solicitar revisión humana» en la web o talent@shakersworks.com; para pedir que se borre lo enviado, el mismo correo. Para dejar de enviar desde este equipo: `shakers ai-usage --consent-revoke`.' },
+        certify: { before: 'Voy a preparar la certificación de tu rol principal con Shakers: te explico cada paso y te pregunto antes de enviar nada.', after: 'Hecho. Lo enviado queda en tu cuenta de Shakers.' },
+        share: { before: 'Voy a crear en este ordenador una tarjeta con tu informe de IA para compartir. No envío nada.', after: 'Hecho. La tarjeta está en este ordenador; no se ha enviado nada.' },
+        report: { before: 'Voy a leer tu informe de IA (de Shakers o de tu último análisis en este ordenador) y a guardarlo como archivo en este ordenador. No cambio tu perfil.' },
+        'add-skill': { before: 'Voy a leer las skills de tu último análisis en Shakers y a añadir a tu perfil las que elijas.', after: 'Hecho. Tu perfil de Shakers tiene las skills que elegiste.' },
+        'add-agent': { before: 'Voy a leer los agentes de tu último análisis en Shakers y a añadir a tu perfil el que elijas, con la descripción que apruebes.', after: 'Hecho. Tu perfil de Shakers tiene el agente que elegiste.' },
+        'add-project': { before: 'Voy a leer el nombre de esta carpeta, la dirección web de su código y las fechas de su primer y último cambio, y te pregunto antes de enviarlos a tu portfolio de Shakers. No envío tu código.', after: 'Hecho. El proyecto está en tu portfolio de Shakers.' },
+        'add-role': { before: 'Voy a leer los roles de Shakers y a añadir a tu perfil el que elijas.', after: 'Hecho. Tu perfil de Shakers tiene el rol que elegiste.' },
+        'change-role': { before: 'Voy a leer tus roles de Shakers y a guardar como principal el que elijas.', after: 'Hecho. Tu rol principal está guardado en Shakers.' },
+        'find-projects': { before: 'Solo leo de Shakers los proyectos que encajan contigo; no cambio nada.' },
+        'show-project': { before: 'Solo leo de Shakers el detalle del proyecto; no cambio nada.' },
+        'save-project': { before: 'Voy a guardar este proyecto en tus proyectos guardados de Shakers.', after: 'Hecho. El proyecto está en tus guardados.' },
+        'unsave-project': { before: 'Voy a quitar este proyecto de tus proyectos guardados de Shakers.', after: 'Hecho. El proyecto ya no está en tus guardados.' },
+        invitations: { before: 'Solo leo tus invitaciones de Shakers; no cambio nada.' },
+        applications: { before: 'Solo leo tus candidaturas de Shakers; no cambio nada.' },
+        availability: { before: 'Solo leo tu disponibilidad de tu perfil de Shakers; no cambio nada.' },
+        'availability:set': { before: 'Voy a cambiar tu disponibilidad en tu perfil de Shakers.', after: 'Hecho. Tu disponibilidad está guardada en Shakers.' },
+        certifications: { before: 'Solo leo tus certificaciones de Shakers; no cambio nada.' },
+        me: { before: 'Solo leo tu perfil de Shakers; no cambio nada.' },
+        rate: { before: 'Solo leo tu tarifa de tu perfil de Shakers; no cambio nada.' },
+        'rate:set': { before: 'Voy a cambiar tu tarifa en tu perfil de Shakers.', after: 'Hecho. Tu tarifa está guardada en Shakers.' },
+        lang: { before: 'Solo leo tus idiomas de tu perfil de Shakers; no cambio nada.' },
+        'lang:set': { before: 'Voy a cambiar tus idiomas en tu perfil de Shakers.', after: 'Hecho. Tus idiomas están guardados en Shakers.' },
+        socials: { before: 'Solo leo tus redes de tu perfil de Shakers; no cambio nada.' },
+        'socials:set': { before: 'Voy a cambiar tus redes en tu perfil de Shakers.', after: 'Hecho. Tus redes están guardadas en Shakers.' },
+        experiences: { before: 'Solo leo tus experiencias de tu perfil de Shakers; no cambio nada.' },
+        portfolios: { before: 'Solo leo tu portfolio de tu perfil de Shakers; no cambio nada.' },
+        alma: { before: 'Voy a enviar tus mensajes a Alma, la asistente de Shakers. Si propone un cambio en tu perfil, te pregunto antes de hacerlo.' },
+        register: { before: 'Voy a crear tu cuenta de Shakers: te pido aquí que aceptes los Términos y te abro una página de Shakers (shakersworks.com) con un código; tu contraseña solo se escribe allí. Cada paso que envíe datos te lo digo antes.' },
+        onboarding: { before: 'Voy a hacer contigo la entrevista de onboarding: tus respuestas se envían a Shakers para conocer tu perfil. No leo nada de tu ordenador.', after: 'Hecho. Tu entrevista está guardada en Shakers.' },
+        config: { before: 'Trabajo solo con la configuración del CLI en este ordenador (~/.config/shakers); no envío nada a Shakers.' },
+        update: { before: 'Voy a comprobar si hay una versión nueva del CLI y, si la hay, a reemplazar sus archivos instalados en este ordenador. No toco tus proyectos ni tu sesión.' },
+        logout: { before: 'Voy a cerrar tu sesión: aviso a Shakers y borro la sesión y el consentimiento guardados en este ordenador (~/.config/shakers). No cambio tu perfil.' },
+        mcp: { before: 'Voy a añadir el servidor MCP de Shakers a la configuración de tus apps de IA en este ordenador (por ejemplo ~/.cursor/mcp.json o ~/.codex/config.toml). No envío nada a Shakers.', after: 'Hecho. Solo han cambiado los archivos de configuración que se listan arriba.' },
+        skill: { before: 'Voy a escribir la skill del CLI de Shakers en las carpetas de skills de tus agentes en este ordenador (~/.claude/skills o ~/.codex/skills). No envío nada a Shakers.', after: 'Hecho. Solo han cambiado los archivos que se listan arriba.' },
+      },
+    },
     // Branded mini-shell chrome.
     login: {
       intro: 'Inicia sesión con tu email y contraseña de Shakers.',
@@ -1231,26 +1280,12 @@ const catalogs = {
       expiresAt: (iso) => `La sesión caduca: ${iso}. Cuando expire te lo diré y podrás volver a entrar con \`login\`.`,
       loggedOut: 'Sesión cerrada. Vuelves a ver las sugerencias de mejora en tu informe.',
       notLoggedIn: 'No había ninguna sesión iniciada. No hay nada que cerrar.',
-      errorInvalidCredentials: 'Credenciales incorrectas: revisa tu email y contraseña e inténtalo otra vez.',
-      errorNoEmailPassword: 'Esta cuenta existe pero no tiene contraseña de email: la registraste con Google o LinkedIn. Si fue con Google, usa `login --google`. Si fue con LinkedIn, entra desde la web para añadir una contraseña por ahora.',
       errorUpstream: 'El servidor de identidad de Shakers no responde ahora mismo. No es tu contraseña; inténtalo de nuevo en un rato.',
       errorUnreachable: 'No se pudo conectar con Shakers. Comprueba tu conexión y vuelve a ejecutar `login`.',
       errorConfig: 'La dirección del servidor no es válida. Revisa la configuración del endpoint (`usage --show-endpoint`).',
       errorNoEndpoint: 'No hay endpoint configurado. login usa la misma base que usage: define SHAKERS_CLI_INGEST_ENDPOINT o usa `usage --set-endpoint <url>`.',
       errorPersist: 'El inicio de sesión funcionó, pero no se pudo guardar la sesión en disco. Revisa los permisos de ~/.config/shakers y vuelve a intentarlo.',
       errorGeneric: 'No se pudo iniciar sesión. Inténtalo de nuevo.',
-      // Login con Google por loopback (`login --google`).
-      googleIntro: 'Inicia sesión con Google. Se abrirá tu navegador para autorizar; al terminar, vuelve aquí.',
-      googleOpening: 'Abriendo el navegador para iniciar sesión con Google…',
-      googlePasteUrl: 'Si el navegador no se abre solo, pega esta URL en él:',
-      googleWaiting: 'Esperando a que completes el acceso en el navegador…',
-      googleErrorConfigFailed: 'No se pudo obtener la configuración de login de Google desde Shakers. Comprueba tu conexión y el endpoint (`usage --show-endpoint`) e inténtalo de nuevo.',
-      googleErrorConfigInvalid: 'La configuración de Google que devolvió Shakers está incompleta. Es un problema del servidor, no tuyo; inténtalo más tarde.',
-      googleErrorPortInUse: 'El puerto local que usa el login de Google está ocupado por otro proceso. Ciérralo y vuelve a ejecutar `login --google`.',
-      googleErrorTimeout: 'Se agotó el tiempo esperando a que completaras el acceso en el navegador. Vuelve a ejecutar `login --google` cuando estés listo.',
-      googleErrorState: 'La respuesta del navegador no coincidió con lo esperado (posible interferencia). Por seguridad no se inició sesión; inténtalo de nuevo.',
-      googleErrorDenied: 'Cancelaste el acceso en Google (o no se concedió). No se inició sesión.',
-      googleErrorGeneric: 'No se pudo iniciar sesión con Google. Inténtalo de nuevo.',
       // Device flow (RFC 8628) para TODO método (Google, LinkedIn, email): el Hub tiene la config; abres una URL y, si hace falta, escribes un código.
       deviceIntro: (name) => `Inicia sesión con ${name}. Abre el enlace de abajo e introduce el código para autorizar; luego vuelve aquí.`,
       // Email por device flow: se abre la web de Shakers; reutiliza tu sesión abierta o entra con tu email ahí. Nunca pide contraseña en la terminal.
@@ -1259,6 +1294,8 @@ const catalogs = {
       deviceCodeLabel: (code) => `e introduce este código: ${code}`,
       deviceWaiting: 'Esperando a que autorices en el navegador…',
       deviceApproveHint: 'Abrimos tu navegador: apruébalo ahí para terminar (o entra con tu email si aún no has iniciado sesión). No hace falta contraseña.',
+      deviceTrust: 'Qué va a pasar: se abre una página de Shakers en shakersworks.com. Comprueba que el código de esa página es el mismo que ves aquí y pulsa Aprobar. Tu contraseña solo se escribe en la web de Shakers, nunca en esta terminal. Si no has pedido tú este acceso, deniégalo.',
+      deviceGranted: 'Qué puede hacer ahora el CLI: usar tu cuenta de Shakers desde este equipo para leer tu perfil y, solo cuando ejecutes un comando que lo haga, guardar cambios en él o enviar el análisis de uso de IA que apruebes. La sesión se guarda solo en este equipo (~/.config/shakers). Para cerrarla: `shakers logout`.',
       deviceErrorExpired: 'La solicitud de acceso caducó antes de autorizarse. Vuelve a ejecutar `login` cuando estés listo.',
       deviceErrorDenied: 'Se canceló el acceso (o no se concedió). No se inició sesión.',
       deviceErrorGeneric: 'No se pudo iniciar sesión. Inténtalo de nuevo.',
@@ -1665,13 +1702,10 @@ const catalogs = {
       askCv: 'Path to your CV PDF (optional, Enter to skip):',
       askGithub: 'Your GitHub URL (optional, Enter to skip):',
       askWebsite: 'Your personal website (optional, Enter to skip):',
-      importStarted: 'Importing your profile in the background while we continue…',
-      importError: 'Could not start your profile import.',
       importUnavailable: 'We could not import your profile right now (service unavailable); we are continuing with your registration, you can retry the import later.',
       importChecking: 'Importing your profile…',
       importDone: 'Profile imported successfully.',
       importFailed: 'We could not finish importing your profile. You can retry it later from your profile.',
-      importStillRunning: 'Your profile is still importing in the background; it will be ready in a few minutes.',
       professionalTitle: 'Your work situation',
       askWorkSituation: "What's your current work situation? Choose one:",
       workSituationLabels: {
@@ -1704,27 +1738,13 @@ const catalogs = {
       professionalSaved: 'Work situation saved.',
       chooseMethodHeading: 'How do you want to create your account?',
       signupTitle: 'Create your Shakers account',
-      askName: 'First name:',
-      askLastName: 'Last name:',
-      askEmail: 'Email (use a NEW one; if it already exists I will offer to sign in):',
-      askPassword: 'Password (at least 8 characters):',
-      askPasswordConfirm: 'Repeat the password:',
-      passwordMismatch: 'The passwords do not match. Try again.',
-      askFreelanceTypeSelect: 'How do you work? Choose one:',
-      freelanceTypeLabels: {
-        FREELANCE: 'Freelance',
-        EMPLOYEE: 'Employed',
-        AGENCY: 'Agency or company',
-        POTENTIAL_FREELANCE: 'Considering freelancing',
-      },
-      invalidChoice: 'Invalid option.',
-      askNewsletter: 'Do you want the newsletter? (y/n):',
-      weakPassword: 'The password does not meet the requirements (at least 8 characters).',
+      termsAsk: 'Do you accept, to create your account? [y/N]',
+      termsDeclined: 'Without accepting the Terms and the Privacy Policy your account cannot be created. Nothing was created and nothing was sent to Shakers.',
+      newsletterAsk: (label) => `Optional: ${label} [y/N]`,
       signupError: 'Could not create the account.',
       freelanceIntentRequired: 'Your freelance intent is required for that type.',
-      accountExists: 'An account with that email already exists. Signing you in.',
-      accountReady: 'Account created. Signed in.',
-      sessionError: 'The account was created but sign-in failed. Run `shakers login`.',
+      accountExists: 'You already had a Shakers account: you are now signed in with it on this computer.',
+      accountReady: 'Account created. Signed in only on this computer (~/.config/shakers); to end it: `shakers logout`.',
       pricingTitle: 'Your per-project price',
       pricingSaved: 'Price saved.',
       askPricingFullAmount: (cur) => `Full-time project price in ${cur} (number, no thousands separators, e.g. 60000):`,
@@ -1799,7 +1819,6 @@ const catalogs = {
       repeatNotFound: 'You have no onboarding yet. Run `shakers onboarding` first.',
       repeatAuthError: 'Your session does not allow this action. Sign in again: shakers login',
       repeatFailed: (reason) => `Could not reset the onboarding (${reason}). Try again.`,
-      interviewAnswer: 'Your answer:',
       questionHeading: (n) => `Question ${n}`,
       interviewTurnError: 'Could not continue the interview.',
       thinking: 'Alma is thinking…',
@@ -1856,7 +1875,7 @@ const catalogs = {
         t2Met: (n) => `You have at least one persistent context file — instructions, config or rules — for some tool (you have ${n}).`,
         t3Met: (n) => `You have at least one connected MCP server, giving the AI access to external data or tools (you have ${n}).`,
         t4Met: (n) => `You've created your own assets — skills, commands or custom rules — beyond the default configuration (you have ${n}).`,
-        t5Met: (hasAgentic, mcp, custom) => `You operate an agentic CLI (Claude Code, Aider, Gemini CLI, Codex CLI or Amazon Q Developer) combined with MCP and your own assets (${mcp} MCP servers and ${custom} assets of your own).`,
+        t5Met: (hasAgentic, mcp, custom) => `You operate an agentic CLI (Claude Code, Aider, Gemini CLI, Codex CLI, Pi, OpenCode or Amazon Q Developer) combined with MCP and your own assets (${mcp} MCP servers and ${custom} assets of your own).`,
         t6Met: (n) => `You have a team of at least 2 specialized agents defined (you have ${n}).`,
         t7Met: (n) => `You have hook-based automation configured (you have ${n}).`,
         t1Blocking: (n) => `To reach T1 (First tool) you need at least one detected AI tool — you have ${n} now.`,
@@ -1865,7 +1884,7 @@ const catalogs = {
         t4Blocking: (n) => `To reach T4 (Own tooling) you need to create at least one asset of your own — skill, command or rule — you have ${n} now.`,
         t5Blocking: (hasAgentic, mcp, custom) => {
           const missing = [];
-          if (!hasAgentic) missing.push('an agentic CLI (Claude Code, Aider, Gemini CLI, Codex CLI or Amazon Q Developer)');
+          if (!hasAgentic) missing.push('an agentic CLI (Claude Code, Aider, Gemini CLI, Codex CLI, Pi, OpenCode or Amazon Q Developer)');
           if (mcp < 1) missing.push('at least 1 MCP server');
           if (custom < 1) missing.push('at least 1 asset of your own (skill, command or rule)');
           return `To reach T5 (Agentic operator) you're missing: ${missing.join('; ')}.`;
@@ -2183,9 +2202,9 @@ const catalogs = {
       },
       frameworkIntroUsage:
         'This measures your AI fluency across two axes: Setup (your tooling\'s maturity, T0–T7, deterministic) and Usage (how you use it, assessed via interview + code). It places you on the 3×3 map (Explorer → AI Native). Completing it positions your agentic profile for projects that value how you work with AI. By default it reads the AI usage across this whole machine and assumes it is yours (one machine = you).',
-      scanningLabel: 'Scanning environment and detectors…',
+      scanningLabel: 'Reading the setup of your AI tools and your projects on this computer (nothing has left your computer yet)…',
       // Loader for the per-selected-repo aggregation phase (git + sessions + steering/decisions + evidence + agent org chart).
-      aggregatingLabel: 'Aggregating signals across the selected repos…',
+      aggregatingLabel: 'Reading the git and AI-session history of the chosen repos to extract signals (nothing has left your computer yet)…',
       reposScopePromptHeader: 'What do you want to evaluate?',
       reposScopePromptHint: 'Arrows to move · enter to choose',
       reposScopeOptionMachine: 'Whole machine (every repo with AI activity)',
@@ -2267,10 +2286,20 @@ const catalogs = {
       persistIntro:
         'This report has already been generated and shown on your machine, '
         + 'always. Saving it in Shakers is optional and revocable at any '
-        + "time (usage --consent-revoke): it saves your level/tier and "
+        + 'time (usage --consent-revoke). It sends your level/tier, '
         + 'structured signals derived across categories (tools, MCP, memory, '
-        + 'automations, agents, technologies) — never the content of your '
-        + 'files, prompts, paths or credentials. '
+        + 'automations, agents, technologies) and literal text: fragments of '
+        + 'your conversations with AI assistants (those in the analysed '
+        + 'repositories, or all of them on this machine if you analyse the '
+        + "whole machine), sample commands and your agents' definitions, "
+        + 'after removing anything that looks like a '
+        + 'secret. Before each upload you see what is sent. An AI model from '
+        + 'an external provider (OpenAI, Google or Anthropic) analyses it on '
+        + "Shakers' behalf to compute your evaluation and discards it: "
+        + 'only the result is kept (levels, scores, counts and the names of '
+        + 'your tools and agents). Do not use it on machines or '
+        + 'conversations holding data you are not allowed to share (client, '
+        + 'employer or third-party data). '
         + 'This same decision also authorizes, only if you accept, a '
         + 'third-party observability provider (Datadog) to capture the '
         + "content these optional AI calls send (sampled code, agent "
@@ -2302,6 +2331,9 @@ const catalogs = {
       nonInteractiveWarning:
         'Non-interactive input (no TTY) detected: if no answer arrives via stdin, consent will not be '
         + 'saved this run and you will be asked again next time.',
+      nonInteractiveUnanswered:
+        'No answer arrived, so your consent is still undecided and nothing was saved in or sent to Shakers. '
+        + 'Run `shakers ai-usage` in your own terminal to answer.',
       status: {
         heading: 'Consent status (saved in Shakers)',
         decisionGranted: 'Decision: granted',
@@ -2636,6 +2668,20 @@ const catalogs = {
       noneFound: 'Found no supported AI app on this machine.',
       failedAll: 'Could not connect Shakers to your AI apps. Re-run this installer to retry.',
     },
+    skillInstall: {
+      title: 'Installing the shakers-cli skill for your AI agents',
+      agents: { claudeCode: 'Claude Code', codex: 'Codex' },
+      status: { installed: 'installed', failed: 'could not install' },
+      found: (agents) => `Found: ${agents}.`,
+      confirm: 'Install the skill so your agent knows how to use the Shakers CLI? [Y/n]',
+      declined: 'Nothing touched. To install it later: shakers skill install',
+      noTerminal: 'There is no terminal to ask you on, so nothing was touched.',
+      yesHint: 'To install it without being asked (for example from an AI assistant): shakers skill install --yes',
+      noneFound: 'Found neither Claude Code nor Codex on this machine; nothing touched.',
+      done: (agents) => `Done. If ${agents} does not see the skill, start a new session.`,
+      failedAll: 'Could not install the skill. Run shakers skill install again to retry.',
+      help: 'skill install — install the shakers-cli skill, which teaches your AI agent (Claude Code, Codex) to use this CLI.\n\nUsage:\n  shakers skill install            ask on the terminal, then install for every agent found\n  shakers skill install --yes      install without asking (-y; for AI assistants and scripts)\n  shakers skill install --json     print the result as one JSON object\n\nWithout --yes and without a terminal, nothing is touched. It writes only ~/.claude/skills/shakers-cli/SKILL.md and <CODEX_HOME>/skills/shakers-cli/SKILL.md.',
+    },
     rate: {
       help: 'rate — view or set your per-project rate.\n\nUsage:\n  rate [--lang es|en] [--json]      view your rate\n  rate --set [--lang es|en]         set it (interactive, with confirmation)\n\nRequires an active session (shakers login).',
       loginRequired: '"rate" requires an active session.\n  Missing: sign-in. Run `shakers login` first.',
@@ -2856,6 +2902,46 @@ const catalogs = {
         remediationCopiedLabel: 'Copied ✓',
       },
     },
+    trust: {
+      uploadWarning: "Before you approve: up to 40 literal excerpts of your messages (corrections and decisions) and 20 commands, 200 characters max each, your agents' configuration and definitions, and activity counts would be sent. Anything that looks like a secret, an email or a path is removed, but the filter is approximate: do not approve it if there is data you are not allowed to share (client, employer or third-party data).",
+      cli: {
+        'ai-usage': { before: "I am going to analyse on this computer your AI tools, the history of your code projects and your conversations with AI coding assistants (Claude Code, Codex, Gemini, Cursor, Continue, Cline/Roo, Aider, Pi, OpenCode). Analysing a repo covers only that repo's conversations; choosing the whole machine, or signing up, covers every conversation on this computer. Before sending anything to Shakers I show you what would be sent and ask you. Do not use it on a computer or with conversations holding data you are not allowed to share (client, employer or third-party data).", after: 'Done. If you approved the upload, an AI model from an external provider (OpenAI, Google or Anthropic) analyses what was sent on behalf of Shakers to compute your evaluation and then it is discarded; only the result is kept (levels, scores, counts and the names of your tools and agents). If you did not approve it, nothing went to your profile. Human review: "Request human review" on the web or talent@shakersworks.com; to ask for deletion of what was sent, the same email. To stop sending from this computer: `shakers ai-usage --consent-revoke`.' },
+        certify: { before: 'I am going to prepare the certification of your main role with Shakers: I explain each step and ask before sending anything.', after: 'Done. What was sent stays in your Shakers account.' },
+        share: { before: 'I am going to create on this computer a card with your AI report to share. I send nothing.', after: 'Done. The card is on this computer; nothing was sent.' },
+        report: { before: 'I am going to read your AI report (from Shakers or from your last analysis on this computer) and save it as a file on this computer. I do not change your profile.' },
+        'add-skill': { before: 'I am going to read the skills from your last analysis on Shakers and add the ones you pick to your profile.', after: 'Done. Your Shakers profile has the skills you picked.' },
+        'add-agent': { before: 'I am going to read the agents from your last analysis on Shakers and add the one you pick to your profile, with the description you approve.', after: 'Done. Your Shakers profile has the agent you picked.' },
+        'add-project': { before: 'I am going to read this folder\'s name, the web address of its code and the dates of its first and last change, and ask you before sending them to your Shakers portfolio. I do not send your code.', after: 'Done. The project is in your Shakers portfolio.' },
+        'add-role': { before: 'I am going to read the Shakers roles and add the one you pick to your profile.', after: 'Done. Your Shakers profile has the role you picked.' },
+        'change-role': { before: 'I am going to read your Shakers roles and save the one you pick as your main role.', after: 'Done. Your main role is saved on Shakers.' },
+        'find-projects': { before: 'I only read from Shakers the projects that fit you; I change nothing.' },
+        'show-project': { before: 'I only read the project details from Shakers; I change nothing.' },
+        'save-project': { before: 'I am going to save this project to your saved projects on Shakers.', after: 'Done. The project is in your saved projects.' },
+        'unsave-project': { before: 'I am going to remove this project from your saved projects on Shakers.', after: 'Done. The project is no longer in your saved projects.' },
+        invitations: { before: 'I only read your Shakers invitations; I change nothing.' },
+        applications: { before: 'I only read your Shakers applications; I change nothing.' },
+        availability: { before: 'I only read your availability from your Shakers profile; I change nothing.' },
+        'availability:set': { before: 'I am going to change your availability on your Shakers profile.', after: 'Done. Your availability is saved on Shakers.' },
+        certifications: { before: 'I only read your Shakers certifications; I change nothing.' },
+        me: { before: 'I only read your Shakers profile; I change nothing.' },
+        rate: { before: 'I only read your rate from your Shakers profile; I change nothing.' },
+        'rate:set': { before: 'I am going to change your rate on your Shakers profile.', after: 'Done. Your rate is saved on Shakers.' },
+        lang: { before: 'I only read your languages from your Shakers profile; I change nothing.' },
+        'lang:set': { before: 'I am going to change your languages on your Shakers profile.', after: 'Done. Your languages are saved on Shakers.' },
+        socials: { before: 'I only read your social links from your Shakers profile; I change nothing.' },
+        'socials:set': { before: 'I am going to change your social links on your Shakers profile.', after: 'Done. Your social links are saved on Shakers.' },
+        experiences: { before: 'I only read your experiences from your Shakers profile; I change nothing.' },
+        portfolios: { before: 'I only read your portfolio from your Shakers profile; I change nothing.' },
+        alma: { before: 'I am going to send your messages to Alma, the Shakers assistant. If she proposes a change to your profile, I ask you before making it.' },
+        register: { before: 'I am going to create your Shakers account: I ask you here to accept the Terms and open a Shakers page (shakersworks.com) with a code; your password is typed only there. I tell you before every step that sends data.' },
+        onboarding: { before: 'I am going to run the onboarding interview with you: your answers are sent to Shakers to get to know your profile. I read nothing on your computer.', after: 'Done. Your interview is saved on Shakers.' },
+        config: { before: 'I only work with the CLI configuration on this computer (~/.config/shakers); I send nothing to Shakers.' },
+        update: { before: 'I am going to check for a new CLI version and, if there is one, replace its installed files on this computer. I do not touch your projects or your session.' },
+        logout: { before: 'I am going to sign you out: I tell Shakers and delete the session and consent saved on this computer (~/.config/shakers). I do not change your profile.' },
+        mcp: { before: 'I am going to add the Shakers MCP server to the configuration of your AI apps on this computer (for example ~/.cursor/mcp.json or ~/.codex/config.toml). I send nothing to Shakers.', after: 'Done. Only the configuration files listed above changed.' },
+        skill: { before: 'I am going to write the Shakers CLI skill into your agents\' skill folders on this computer (~/.claude/skills or ~/.codex/skills). I send nothing to Shakers.', after: 'Done. Only the files listed above changed.' },
+      },
+    },
     // Branded mini-shell chrome.
     login: {
       intro: 'Log in with your Shakers email and password.',
@@ -2869,26 +2955,12 @@ const catalogs = {
       expiresAt: (iso) => `The session expires: ${iso}. When it does I will tell you, and you can log in again with \`login\`.`,
       loggedOut: 'Logged out. Your report shows the improvement suggestions again.',
       notLoggedIn: 'No session was active. Nothing to log out of.',
-      errorInvalidCredentials: 'Wrong credentials: check your email and password and try again.',
-      errorNoEmailPassword: 'This account exists but has no email password: you registered with Google or LinkedIn. If it was Google, use `login --google`. If it was LinkedIn, sign in on the web to add a password for now.',
       errorUpstream: "Shakers' identity server is not responding right now. It is not your password; try again in a while.",
       errorUnreachable: 'Could not reach Shakers. Check your connection and run `login` again.',
       errorConfig: 'The server address is invalid. Check the endpoint configuration (`usage --show-endpoint`).',
       errorNoEndpoint: 'No endpoint configured. login uses the same base as usage: set SHAKERS_CLI_INGEST_ENDPOINT or use `usage --set-endpoint <url>`.',
       errorPersist: 'Login succeeded, but the session could not be saved to disk. Check the permissions of ~/.config/shakers and try again.',
       errorGeneric: 'Could not log in. Try again.',
-      // Google login by loopback (`login --google`).
-      googleIntro: 'Log in with Google. Your browser will open to authorize; when you are done, come back here.',
-      googleOpening: 'Opening your browser to log in with Google…',
-      googlePasteUrl: 'If your browser does not open on its own, paste this URL into it:',
-      googleWaiting: 'Waiting for you to finish signing in in the browser…',
-      googleErrorConfigFailed: "Could not fetch the Google login configuration from Shakers. Check your connection and the endpoint (`usage --show-endpoint`) and try again.",
-      googleErrorConfigInvalid: 'The Google configuration Shakers returned is incomplete. This is a server-side problem, not yours; try again later.',
-      googleErrorPortInUse: 'The local port the Google login uses is busy with another process. Close it and run `login --google` again.',
-      googleErrorTimeout: 'Timed out waiting for you to finish signing in in the browser. Run `login --google` again when you are ready.',
-      googleErrorState: 'The browser response did not match what was expected (possible interference). For safety no session was started; try again.',
-      googleErrorDenied: 'You cancelled access in Google (or it was not granted). No session was started.',
-      googleErrorGeneric: 'Could not log in with Google. Try again.',
       // Device flow (RFC 8628) for EVERY method (Google, LinkedIn, email): the Hub owns the config; you open a URL and, if needed, type a code.
       deviceIntro: (name) => `Sign in with ${name}. Open the link below and enter the code to authorize; then come back here.`,
       // Email via device flow: the Shakers web opens; reuse your open session or sign in with your email there. It never asks for a password in the terminal.
@@ -2897,6 +2969,8 @@ const catalogs = {
       deviceCodeLabel: (code) => `and enter this code: ${code}`,
       deviceWaiting: 'Waiting for you to authorize in the browser…',
       deviceApproveHint: 'We opened your browser: approve there to finish (or sign in with your email if you are not signed in yet). No password needed.',
+      deviceTrust: 'What happens next: a Shakers page opens on shakersworks.com. Check that the code on that page matches the one shown here and click Approve. Your password is typed only on the Shakers website, never in this terminal. If you did not ask for this access, deny it.',
+      deviceGranted: 'What the CLI can do now: use your Shakers account from this computer to read your profile and, only when you run a command that does so, save changes to it or send the AI-usage analysis you approve. The session is stored only on this computer (~/.config/shakers). To end it: `shakers logout`.',
       deviceErrorExpired: 'The sign-in request expired before it was authorized. Run `login` again when you are ready.',
       deviceErrorDenied: 'The sign-in was cancelled or not granted. No session was started.',
       deviceErrorGeneric: 'Could not sign in. Try again.',

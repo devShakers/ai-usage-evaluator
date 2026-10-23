@@ -2,15 +2,19 @@
 
 const fs = require('fs');
 const path = require('path');
-const { getHomeDir } = require('./env-paths');
+const { getHomeDir, codexHome, piAgentDir, expandHome } = require('./env-paths');
 const { scrubSecrets } = require('./agent-synthesis');
 const {
   normalizeCodexRecord,
   normalizeGeminiRecord,
   normalizeContinueRecord,
   normalizeClineRecord,
+  normalizeClineSessionRecord,
+  normalizeCursorRecord,
+  normalizePiRecord,
   parseAiderHistory,
 } = require('./session-normalizers');
+const { readOpencodeSessions } = require('./opencode-sessions');
 
 // GLOBAL, machine-wide inventory of AI coding-tool SESSIONS.
 
@@ -78,11 +82,130 @@ const FILE_TOOL_NAMES = new Set([
   'Write',
   'NotebookEdit',
 ]);
-const PLANNING_TOOL_NAMES = new Set(['ExitPlanMode', 'TodoWrite']);
+const PLANNING_TOOL_NAMES = new Set([
+  'ExitPlanMode',
+  'TodoWrite',
+  'update_plan',
+  'write_todos',
+  'enter_plan_mode',
+  'exit_plan_mode',
+  'tracker_create_task',
+  'tracker_update_task',
+  'update_todo_list',
+  'plan_mode_respond',
+  'todowrite',
+  'todo',
+]);
 
 // Only logs.json + session-*.jsonl under ~/.gemini/tmp are transcripts (skip checkpoints/config).
 function isGeminiTranscriptFile(name) {
-  return name === 'logs.json' || (name.startsWith('session-') && name.endsWith('.jsonl'));
+  return name === 'logs.json' || (name.startsWith('session-') && (name.endsWith('.jsonl') || name.endsWith('.json')));
+}
+
+function isCursorTranscriptFile(name, full) {
+  return name.endsWith('.jsonl') && full.split(path.sep).includes('agent-transcripts');
+}
+
+function isClineSessionFile(name) {
+  return name.endsWith('.messages.json');
+}
+
+function readJsonFile(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function geminiContext(geminiDir) {
+  let slugs = null;
+  return (file) => {
+    if (slugs === null) {
+      slugs = new Map();
+      const registry = readJsonFile(path.join(geminiDir, 'projects.json'));
+      const projects = registry && registry.projects && typeof registry.projects === 'object' ? registry.projects : {};
+      for (const [dir, slug] of Object.entries(projects)) {
+        if (typeof slug === 'string') slugs.set(slug, dir);
+      }
+    }
+    const slug = path.relative(path.join(geminiDir, 'tmp'), file).split(path.sep)[0];
+    const cwd = slugs.get(slug);
+    return cwd ? { cwd } : null;
+  };
+}
+
+function slugOf(name) {
+  return name.replace(/[^A-Za-z0-9]/g, '-');
+}
+
+function resolveSlugPath(slug, dir = path.parse(process.cwd()).root, depth = 0) {
+  if (!slug) return dir;
+  if (depth > 24) return null;
+  let entries;
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  for (const e of entries) {
+    if (!e.isDirectory()) continue;
+    const part = slugOf(e.name);
+    if (slug === part) return path.join(dir, e.name);
+    if (part && slug.startsWith(`${part}-`)) {
+      const hit = resolveSlugPath(slug.slice(part.length + 1), path.join(dir, e.name), depth + 1);
+      if (hit) return hit;
+    }
+  }
+  return null;
+}
+
+function cursorContext(projectsDir) {
+  const cwds = new Map();
+  return (file) => {
+    const slug = path.relative(projectsDir, file).split(path.sep)[0];
+    if (!cwds.has(slug)) cwds.set(slug, resolveSlugPath(slug));
+    const out = {};
+    const cwd = cwds.get(slug);
+    if (cwd) out.cwd = cwd;
+    try {
+      out.timestamp = fs.statSync(file).mtime.toISOString();
+    } catch {
+      return cwd ? out : null;
+    }
+    return out;
+  };
+}
+
+function clineSessionStem(file) {
+  return path.basename(file).slice(0, -'.messages.json'.length);
+}
+
+function isClineSubagentFile(file) {
+  return clineSessionStem(file) !== path.basename(path.dirname(file));
+}
+
+function clineContext(file) {
+  if (isClineSubagentFile(file)) return null;
+  const manifest = readJsonFile(path.join(path.dirname(file), `${clineSessionStem(file)}.json`));
+  if (!manifest || typeof manifest !== 'object') return null;
+  const out = {};
+  const cwd = manifest.cwd || manifest.workspace_root;
+  if (typeof cwd === 'string' && cwd) out.cwd = cwd;
+  if (typeof manifest.started_at === 'string') out.timestamp = manifest.started_at;
+  if (manifest.metadata && manifest.metadata.mode === 'plan') out.planMode = true;
+  return Object.keys(out).length ? out : null;
+}
+
+function clineSessionsDir(env, home) {
+  if (env.CLINE_SESSION_DATA_DIR) return env.CLINE_SESSION_DATA_DIR;
+  const dataDir = env.CLINE_DATA_DIR || path.join(env.CLINE_DIR || path.join(home, '.cline'), 'data');
+  return path.join(dataDir, 'sessions');
+}
+
+function piSessionsDir(env) {
+  if (env.PI_CODING_AGENT_SESSION_DIR) return expandHome(env.PI_CODING_AGENT_SESSION_DIR, env);
+  return path.join(piAgentDir(env), 'sessions');
 }
 
 // Cline / Roo Code conversation file (both forks use this filename under tasks/<id>/).
@@ -99,14 +222,18 @@ function vscodeGlobalStorageDir(home) {
 
 function toolSources(env = process.env) {
   const home = getHomeDir(env);
+  const codex = codexHome(env);
+  const gemini = path.join(home, '.gemini');
+  const cursorProjects = path.join(home, '.cursor', 'projects');
   return [
-    { tool: 'claude', dir: path.join(home, '.claude', 'projects') },
-    { tool: 'codex', dir: path.join(home, '.codex', 'sessions'), normalize: normalizeCodexRecord },
-    { tool: 'gemini', dir: path.join(home, '.gemini', 'tmp'), fileFilter: isGeminiTranscriptFile, normalize: normalizeGeminiRecord },
-    // Kept by decision: ~/.cursor/chats is OBSOLETE (real Cursor chat is SQLite in App Support); awaiting a future SQLite extractor, no tool removed.
-    { tool: 'cursor', dir: path.join(home, '.cursor', 'chats') },
-    { tool: 'continue', dir: path.join(home, '.continue', 'sessions'), normalize: normalizeContinueRecord },
-    { tool: 'cline', dir: vscodeGlobalStorageDir(home), fileFilter: isClineHistoryFile, normalize: normalizeClineRecord },
+    { tool: 'claude', dirs: [path.join(home, '.claude', 'projects')] },
+    { tool: 'codex', dirs: [path.join(codex, 'sessions'), path.join(codex, 'archived_sessions')], normalize: normalizeCodexRecord },
+    { tool: 'gemini', dirs: [path.join(gemini, 'tmp')], fileFilter: isGeminiTranscriptFile, normalize: normalizeGeminiRecord, context: geminiContext(gemini) },
+    { tool: 'cursor', dirs: [cursorProjects], fileFilter: isCursorTranscriptFile, normalize: normalizeCursorRecord, context: cursorContext(cursorProjects) },
+    { tool: 'continue', dirs: [path.join(home, '.continue', 'sessions')], normalize: normalizeContinueRecord },
+    { tool: 'cline', dirs: [vscodeGlobalStorageDir(home), clineSessionsDir(env, home)], fileFilter: (name) => isClineHistoryFile(name) || isClineSessionFile(name), normalize: (r) => normalizeClineSessionRecord(r) || normalizeClineRecord(r), context: (file) => (isClineSessionFile(path.basename(file)) ? clineContext(file) : null), subagent: (file) => isSubagentFile(file) || (isClineSessionFile(path.basename(file)) && isClineSubagentFile(file)) },
+    { tool: 'pi', dirs: [piSessionsDir(env)], normalize: normalizePiRecord },
+    { tool: 'opencode', sessions: () => readOpencodeSessions(env, MAX_FILES_PER_TOOL) },
     // Repo-level: .aider.chat.history.md lives INSIDE each git repo, so cwd = the repo toplevel.
     { tool: 'aider', repoLevel: true, file: '.aider.chat.history.md', parseText: parseAiderHistory },
   ];
@@ -127,7 +254,7 @@ function listSessionFiles(root, fileFilter = isTranscriptFile) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         stack.push(full);
-      } else if (entry.isFile() && fileFilter(entry.name)) {
+      } else if (entry.isFile() && fileFilter(entry.name, full)) {
         out.push(full);
         if (out.length >= MAX_FILES_PER_TOOL) return out;
       }
@@ -169,13 +296,34 @@ function parseRawRecords(file) {
 function readSourceObjects(source, file) {
   const raw = parseRawRecords(file);
   if (typeof source.normalize !== 'function') return raw;
-  const out = [];
+  const context = typeof source.context === 'function' ? source.context(file) : null;
+  const out = context ? [context] : [];
   for (const r of raw) {
     const o = source.normalize(r);
     if (Array.isArray(o)) out.push(...o);
     else if (o) out.push(o);
   }
   return out;
+}
+
+function listSourceFiles(source) {
+  const out = [];
+  for (const dir of source.dirs) {
+    out.push(...listSessionFiles(dir, source.fileFilter || isTranscriptFile));
+    if (out.length >= MAX_FILES_PER_TOOL) return out.slice(0, MAX_FILES_PER_TOOL);
+  }
+  return out;
+}
+
+function* sourceSessions(source) {
+  if (typeof source.sessions === 'function') {
+    yield* source.sessions();
+    return;
+  }
+  const subagent = source.subagent || isSubagentFile;
+  for (const file of listSourceFiles(source)) {
+    yield { file, objects: readSourceObjects(source, file), subagent: subagent(file) };
+  }
 }
 
 // Bounded whole-file text read (for repo-level markdown sources, e.g. Aider).
@@ -304,9 +452,7 @@ function* iterateSessionObjects(env = process.env) {
   const seenCwds = new Set();
   for (const source of sources) {
     if (source.repoLevel) continue;
-    const files = listSessionFiles(source.dir, source.fileFilter || isTranscriptFile);
-    for (const file of files) {
-      const objects = readSourceObjects(source, file);
+    for (const { file, objects } of sourceSessions(source)) {
       const cwd = resolveFileCwd(objects);
       if (cwd) seenCwds.add(cwd);
       for (const obj of objects) {
@@ -360,9 +506,10 @@ function makeSessionsAccumulator() {
         },
       };
     },
-    addFile(file, objects) {
+    addFile(file, objects, subagent = isSubagentFile(file)) {
       for (const o of objects) harvestObject(o, cur.acc);
-      if (isSubagentFile(file)) {
+      if (objects.some((o) => o && o.planMode === true)) cur.acc.planningSignalCount += 1;
+      if (subagent) {
         cur.subagentRuns += 1;
       } else {
         cur.rootSessions += 1;
@@ -424,15 +571,12 @@ function walkSessionSignals(env = process.env, selectedCwds = null, onHumanObjec
   // Phase 1: home-dir sources; remember the repo toplevels (cwds) they reveal.
   for (const source of sources) {
     if (source.repoLevel) continue;
-    const files = listSessionFiles(source.dir, source.fileFilter || isTranscriptFile);
-    if (files.length === 0) continue;
     sessions.startTool(source.tool);
-    for (const f of files) {
-      const objects = readSourceObjects(source, f);
+    for (const { file, objects, subagent } of sourceSessions(source)) {
       const cwd = resolveFileCwd(objects);
       if (cwd) seenCwds.add(cwd);
       if (!fileInScope(cwd, selectedCwds)) continue;
-      sessions.addFile(f, objects);
+      sessions.addFile(file, objects, subagent);
       if (onHumanObject) {
         for (const o of objects) onHumanObject(o);
       }
@@ -468,6 +612,7 @@ module.exports = {
   makeSessionsAccumulator,
   walkSessionSignals,
   toolSources,
+  sourceSessions,
   listSessionFiles,
   readSessionObjects,
   resolveFileCwd,

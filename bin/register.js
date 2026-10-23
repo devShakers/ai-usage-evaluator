@@ -2,9 +2,7 @@
 'use strict';
 
 const { detectFlowLang, getCatalog } = require('../src/i18n');
-const { loadAuthSession, sessionStatus } = require('../src/auth-session-store');
 const { createStdinAsk } = require('../src/stdin-ask');
-const { run: runLogin } = require('./login');
 const { run: runAiUsage } = require('./ai-usage');
 const {
   runOnboarding, makeDeps, CURRENCIES, MONTHLY_HOURS, normalizeAmount,
@@ -20,6 +18,7 @@ const { BRAND_ANSI } = require('../src/brand-ansi');
 const { typeOut } = require('../src/typewriter');
 const { withSpinner } = require('../src/terminal-progress');
 const { openPath } = require('../src/open-file');
+const { termsText, legalCopy } = require('../src/signup-copy');
 const { c: fmt } = require('../src/terminal-format');
 const { createFunnel } = require('../src/onboarding-funnel');
 const red = (s) => `${fmt.danger}${s}${fmt.reset}`;
@@ -151,26 +150,11 @@ function makeIo({ ask, lang, out, acceptDisclaimer, stdinIsTTY = false }) {
       const telephoneNumber = (await ask(`  ${c.phoneNumberAsk} `)).trim();
       return { available, monthlyHours, workModes, country, subdivision, timezone, longFullTimeProjects, telephoneCode, telephoneNumber };
     },
-    askSignUp: async (c) => {
-      const name = (await ask(`  ${c.askName} `)).trim();
-      const lastName = (await ask(`  ${c.askLastName} `)).trim();
-      const email = (await ask(`  ${c.askEmail} `)).trim();
-      const askSecret = (prompt) => (typeof ask.secret === 'function' ? ask.secret(`  ${prompt} `) : ask(`  ${prompt} `).then((v) => v.trim()));
-      let password;
-      for (;;) {
-        password = await askSecret(c.askPassword);
-        const again = await askSecret(c.askPasswordConfirm);
-        if (password === again) break;
-        writeErr(c.passwordMismatch);
-      }
-      const newsletterConsent = isYes(await ask(`  ${c.askNewsletter} `));
-      // freelanceType is NOT asked here anymore: it is derived from the work
-      // situation (asked once, after the sources) and sent via professional-details.
-      return { name, lastName, email, password, newsletterConsent };
-    },
-    askGoogleSignUp: async () => {
-      // Nothing to ask: Google supplies name/email; freelanceType is derived later.
-      return {};
+    askTerms: async (c) => {
+      out(`\n  ${termsText(lang, (label, url) => `${label} (${url})`)}\n`);
+      if (!isYes(await ask(`  ${c.termsAsk} `))) return { accepted: false };
+      const newsletterConsent = isYes(await ask(`  ${c.newsletterAsk(legalCopy(lang).newsletter)} `));
+      return { accepted: true, newsletterConsent };
     },
     askWorkSituation: async (c) => {
       const situation = await promptSelect({
@@ -242,13 +226,9 @@ function makeIo({ ask, lang, out, acceptDisclaimer, stdinIsTTY = false }) {
       }
       return rows;
     },
-    onGoogleAuthUrl: (url, userCode) => {
+    onAuthUrl: (url, userCode) => {
       const g = getCatalog(lang).login;
-      out(`\n  ${g.deviceVisit}\n  ${url}\n\n  ${g.deviceCodeLabel(userCode)}\n\n  ${g.deviceWaiting}\n`);
-    },
-    login: async () => {
-      await runLogin(['--lang', lang], { ask });
-      return sessionStatus(loadAuthSession()) === 'active';
+      out(`\n  ${g.deviceTrust}\n\n  ${g.deviceVisit}\n  ${url}\n\n  ${g.deviceCodeLabel(userCode)}\n\n  ${g.deviceWaiting}\n`);
     },
     // Registration always measures the whole machine (--all-repos).
     runUsage: async () => { await runAiUsage(['--lang', lang, '--all-repos'], { ask, bypassThrottle: true, inRegistration: true }); },
@@ -332,7 +312,8 @@ async function run(
     const io = makeIo({ ask, lang, out: write, acceptDisclaimer: o.acceptDisclaimer, stdinIsTTY });
     // At a terminal the profile opens in the browser at the end; piped runs, tests and --no-open only print it.
     const openProfile = stdinIsTTY && !o.noOpen ? (openBrowser || openPath) : undefined;
-    const result = await runOnboarding(io, deps || makeDeps({ makeInterviewClient: createInterviewClient }), { method, openBrowser, onAuthUrl: io.onGoogleAuthUrl, openProfile, funnel: registrationFunnel });
+    const openAuth = openBrowser || (deps || o.noOpen ? undefined : openPath);
+    const result = await runOnboarding(io, deps || makeDeps({ makeInterviewClient: createInterviewClient }), { method, openBrowser: openAuth, onAuthUrl: io.onAuthUrl, openProfile, funnel: registrationFunnel });
     if (!result.ok) {
       process.stderr.write(`\n  ${red(`register: ${result.reason}${result.step ? ` (${result.step})` : ''}`)}\n\n`);
       process.exitCode = 1;

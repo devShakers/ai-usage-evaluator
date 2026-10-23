@@ -89,12 +89,11 @@ function saveAuthSession(session, env = process.env, { fs: fsImpl = fs } = {}) {
   const explicitHubToken = typeof session.hubAccessToken === 'string' && session.hubAccessToken ? session.hubAccessToken : null;
   const hubAccessToken = explicitHubToken || (typeof session.accessToken === 'string' && session.accessToken ? session.accessToken : null);
 
-  const cookie = typeof session.cookie === 'string' && session.cookie ? session.cookie : null;
   const sessionToken = typeof session.sessionToken === 'string' && session.sessionToken ? session.sessionToken : null;
   let expiresAt;
   let accessTokenExpiresAt;
-  if (cookie || sessionToken) {
-    expiresAt = [session.cookieExpiresAt, session.sessionExpiresAt, session.expiresAt]
+  if (sessionToken) {
+    expiresAt = [session.sessionExpiresAt, session.expiresAt]
       .find((v) => typeof v === 'string' && v) || expiresAtFromToken(session.accessToken);
     accessTokenExpiresAt = (typeof session.accessTokenExpiresAt === 'string' && session.accessTokenExpiresAt)
       ? session.accessTokenExpiresAt
@@ -109,7 +108,6 @@ function saveAuthSession(session, env = process.env, { fs: fsImpl = fs } = {}) {
       accessToken: typeof session.accessToken === 'string' && session.accessToken ? session.accessToken : null,
       expiresAt: expiresAt ?? null,
       accessTokenExpiresAt: accessTokenExpiresAt ?? null,
-      cookie,
       sessionToken,
       email: (typeof session.email === 'string' && session.email ? session.email : null)
         || emailFromHubToken(hubAccessToken),
@@ -142,7 +140,7 @@ function saveAuthSession(session, env = process.env, { fs: fsImpl = fs } = {}) {
     try { fsImpl.unlinkSync(tmp); } catch { /* never existed */ }
     throw e;
   }
-  recordAccountMarker(cookie ? 'email' : sessionToken ? 'device' : 'token', env, { fs: fsImpl });
+  recordAccountMarker(sessionToken ? 'device' : 'token', env, { fs: fsImpl });
   return target;
 }
 
@@ -156,19 +154,16 @@ function loadAuthSession(env = process.env, { fs: fsImpl = fs } = {}) {
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
   if (parsed.version !== SESSION_FILE_VERSION) return null;
-  // A usable session needs at least ONE credential: the durable cookie (email/
-  // better-auth) or a JWT (Google/legacy, or an email session whose JWT is cached).
-  const hasCookie = typeof parsed.cookie === 'string' && parsed.cookie;
   const hasToken = typeof parsed.accessToken === 'string' && parsed.accessToken;
   const sessionToken = typeof parsed.sessionToken === 'string' && parsed.sessionToken ? parsed.sessionToken : null;
-  if (!hasCookie && !hasToken && !sessionToken) return null;
+  if (typeof parsed.cookie === 'string' && parsed.cookie && !sessionToken) return null;
+  if (!hasToken && !sessionToken) return null;
   const hubAccessToken = typeof parsed.hubAccessToken === 'string' && parsed.hubAccessToken ? parsed.hubAccessToken : null;
   const email = (typeof parsed.email === 'string' && parsed.email ? parsed.email : null) || emailFromHubToken(hubAccessToken);
   return {
     accessToken: hasToken ? parsed.accessToken : null,
     expiresAt: typeof parsed.expiresAt === 'string' ? parsed.expiresAt : null,
     accessTokenExpiresAt: typeof parsed.accessTokenExpiresAt === 'string' ? parsed.accessTokenExpiresAt : null,
-    cookie: hasCookie ? parsed.cookie : null,
     sessionToken,
     email,
     hubAccessToken,
@@ -193,8 +188,7 @@ function clearAuthSession(env = process.env, { fs: fsImpl = fs } = {}) {
 
 // `none | active | expired`, the three states the caller needs to give the Talent a true message.
 function sessionStatus(session, now = Date.now()) {
-  // A credential is a durable cookie or session token, or a JWT (Google/legacy).
-  const hasCred = !!(session && [session.accessToken, session.cookie, session.sessionToken].some((v) => typeof v === 'string' && v));
+  const hasCred = !!(session && [session.accessToken, session.sessionToken].some((v) => typeof v === 'string' && v));
   if (!hasCred) return 'none';
   const expiry = Date.parse(String(session.expiresAt || ''));
   if (!Number.isFinite(expiry)) return 'expired';

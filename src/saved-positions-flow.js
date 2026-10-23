@@ -27,10 +27,10 @@ async function runToggleSave({ io, rawOut, session, catalog, mode, opts = {}, de
   }
   const positionId = resolved.id;
 
-  const label = mode === 'save' ? fp.saving : fp.unsaving;
-  const res = await io.withProgress(label, () => (mode === 'save'
+  const toggle = () => (mode === 'save'
     ? deps.savePosition({ hubAccessToken, positionId })
-    : deps.unsavePosition({ hubAccessToken, positionId })));
+    : deps.unsavePosition({ hubAccessToken, positionId }));
+  const res = opts.json ? await toggle() : await io.withProgress(mode === 'save' ? fp.saving : fp.unsaving, toggle);
   if (!res.ok) {
     io.error(res.reason === 'not-found' ? fp.notFound : fp.failed(res.reason));
     return { ok: false, reason: res.reason };

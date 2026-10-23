@@ -37,9 +37,10 @@ const { run: runOnboarding } = require('./onboarding');
 const { run: runConfig } = require('./config');
 const { run: runUpdate } = require('./update');
 const { checkOnboardingCompleted } = require('../src/onboarding-availability');
-const { emitCommandAudit } = require('../src/command-audit');
+const { startCommandAudit } = require('../src/command-audit');
 const { readPackageInfo } = require('../src/update-flow');
 const { isSuppressed, maybeNotify, triggerBackgroundCheck } = require('../src/update-notifier');
+const { cliNarration, changedNothing } = require('../src/trust-narration');
 
 let VERSION = '';
 try {
@@ -93,9 +94,10 @@ const HANDLERS = {
   logout: runLogout,
   superadmin: runSuperadmin,
   mcp: (args) => require('../src/mcp-install').runMcpInstall({ args }),
+  skill: (args) => require('../src/skill-install').runSkillInstall({ args }),
 };
 
-const SESSION_EXEMPT = new Set(['ai-usage', 'register', 'config', 'login', 'logout', 'superadmin', 'mcp', 'share', 'alma', 'update']);
+const SESSION_EXEMPT = new Set(['ai-usage', 'register', 'config', 'login', 'logout', 'superadmin', 'mcp', 'skill', 'share', 'alma', 'update']);
 
 // Command FAMILIES — a navigation layer over the flat commands (which all stay
 // valid as aliases). `shakers <family> <sub>` resolves to the flat handler; every
@@ -178,7 +180,8 @@ function usageText(lang, { hideOnboarding = false } = {}) {
       + `  Público (sin sesión):\n`
       + `    ai-usage     Escanea este proyecto + tu máquina y puntúa tu setup de IA\n`
       + `    register     Registro completo: perfil, precio, uso de IA y entrevista\n`
-      + `    mcp          Servidor MCP local (stdio) para apps de IA de escritorio\n\n`
+      + `    mcp          Servidor MCP local (stdio) para apps de IA de escritorio\n`
+      + `    skill install Instala la skill shakers-cli en Claude Code y Codex\n\n`
       + `  Requieren sesión (ejecuta antes: shakers login):\n`
       + onboardingLine
       + `    certify      Certifica una dimensión de tu rol (entrevista por LiveKit)\n`
@@ -222,7 +225,8 @@ function usageText(lang, { hideOnboarding = false } = {}) {
     + `  Public (no session):\n`
     + `    ai-usage     Scan this project + machine and score your AI setup\n`
     + `    register     Full registration: profile, pricing, AI usage and interview\n`
-    + `    mcp          Local MCP server (stdio) for desktop AI apps\n\n`
+    + `    mcp          Local MCP server (stdio) for desktop AI apps\n`
+    + `    skill install Install the shakers-cli skill into Claude Code and Codex\n\n`
     + `  Require a session (run \`shakers login\` first):\n`
     + onboardingLine
     + `    certify      Certify a dimension of your role (LiveKit interview)\n`
@@ -287,15 +291,13 @@ async function main() {
 
   migrateLegacyConfigDir(process.env);
   sanitizeStaleBakedEndpoints(process.env);
-  // Mint a fresh hub JWT from the stored cookie once per command (email sessions only; a no-op for Google/legacy or when no session exists).
   try { await ensureFreshSession(process.env); } catch { /* never blocks a command */ }
 
   const token = argv.find((a) => !a.startsWith('-'));
 
-  // Single dispatch choke-point: audit EXACTLY once before branching, fire-and-forget (never awaited). MCP tool calls run in-process and never reach here.
   const auditCommand =
     !token || token.toLowerCase() === 'help' ? 'help' : token.toLowerCase();
-  emitCommandAudit({ command: auditCommand, argv, env: process.env });
+  startCommandAudit({ command: auditCommand, argv, env: process.env });
 
   // Non-blocking update notice: reads a cached version synchronously, registry check runs in a detached worker; stderr-only, suppressed for --json/non-TTY/CI/update/opt-out.
   if (!isSuppressed({ argv, command: auditCommand, env: process.env })) {
@@ -346,7 +348,10 @@ async function main() {
     await remindAccountForAiUsage(lang, args);
   }
 
-  await handler(args);
+  const narration = wantsHelp || args.includes('--json') ? { before: null, after: null } : cliNarration(command, args, lang);
+  if (narration.before) process.stderr.write(`\n  ${narration.before}\n`);
+  const outcome = await handler(args);
+  if (narration.after && !process.exitCode && !changedNothing(outcome)) process.stderr.write(`\n  ${narration.after}\n\n`);
 }
 
-module.exports = { main };
+module.exports = { main, HANDLERS };

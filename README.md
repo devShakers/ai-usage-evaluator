@@ -69,11 +69,21 @@ Run `shakers` with no command to see every command.
   can leave out agents and text excerpts there. `--consent-revoke` stops future uploads
   from this computer; it does not delete what was already uploaded. To ask for that, write
   to talent@shakersworks.com.
-- What is saved is mostly derived data (counts, categories, tier, detected technologies).
-  Two kinds of text travel too, and the review shows how many: the definition text of your
-  AI agents and short excerpts of what you ask the AI (200 characters at most), both with
-  secrets, paths and emails removed. Never your code, your full conversations, the names of
-  your repositories, environment variables or credentials.
+- What is sent is mostly derived data (counts, categories, tier, detected technologies,
+  sessions, active days, commits and lines changed). Literal text travels too, and the review
+  shows how much: up to 40 fragments of your messages to AI assistants and 20 commands they
+  ran (200 characters at most each), and the definition (up to 2,000 characters) and short
+  description of each of your AI agents, all after removing anything that looks like a
+  secret, a path or an email. The fragments come from the conversations in the repositories
+  analysed, or from every conversation on this computer when you analyse the whole machine
+  (registration always does). Never your code, your full conversations, the names of your
+  repositories, environment variables or credentials.
+- An AI model from an external provider (OpenAI, Google or Anthropic) analyses that text
+  automatically for Shakers to compute your evaluation, and then it is discarded. Only the result is stored: levels, scores, counts and the names
+  of your tools and agents.
+- Do not run it on a machine or with conversations that hold information you are not
+  allowed to share: client, employer or third-party data. Secret removal is automatic and
+  best effort; names or business details you wrote can remain in the fragments.
 - Certification sends secret-scrubbed samples of your code and your interview answers to
   Shakers to assess them.
 - Read the full policy at <https://www.shakersworks.com/en/politica-de-privacidad>.

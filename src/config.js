@@ -300,14 +300,6 @@ function getAgentEvaluationEndpoint(env = process.env) {
   return deriveFromIngest(env, 'agent-evaluation');
 }
 
-// Login endpoint — better-auth email sign-in: `POST {hubBase}/auth/sign-in/email` with `{email,password}`.
-function getLoginEndpoint(env = process.env) {
-  const explicit = readEnv(env, 'LOGIN_ENDPOINT');
-  if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromHub(env, 'auth/sign-in/email');
-}
-
-// better-auth JWT endpoint: `GET {hubBase}/auth/token` with the session cookie → `{token}` (ES256/JWKS, ~15-min TTL).
 function getSignOutEndpoint(env = process.env) {
   return deriveFromHub(env, 'auth/sign-out');
 }
@@ -589,12 +581,6 @@ function deriveFromHub(env, relativePath) {
   return `${base}/${relativePath}`;
 }
 
-function getSignUpEndpoint(env = process.env) {
-  const explicit = readEnv(env, 'SIGNUP_ENDPOINT');
-  if (explicit && explicit.trim()) return explicit.trim();
-  return deriveFromHub(env, 'auth/sign-up/email');
-}
-
 function getImportProfileEndpoint(env = process.env) {
   const explicit = readEnv(env, 'IMPORT_PROFILE_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
@@ -832,7 +818,6 @@ module.exports = {
   getSynthesisEndpoint,
   getRoadmapEndpoint,
   getAgentEvaluationEndpoint,
-  getLoginEndpoint,
   getAuthTokenEndpoint,
   getSignOutEndpoint,
   getCompleteRegistrationEndpoint,
@@ -884,7 +869,6 @@ module.exports = {
   getCertsBase,
   getHubBase,
   sanitizeStaleBakedEndpoints,
-  getSignUpEndpoint,
   getImportProfileEndpoint,
   getMcpSignupEndpoint,
   getMyImportStatusEndpoint,

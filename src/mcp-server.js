@@ -34,7 +34,28 @@ function errorResponse(id, code, message, data) {
   return { jsonrpc: JSONRPC, id: id === undefined ? null : id, error };
 }
 
-function createMcpServer({ tools = [], prompts = [], serverInfo = {}, protocolVersion, beforeCall = null, afterCall = null, onInitialize = null, instructions = null, elicitationTimeoutMs = ELICITATION_TIMEOUT_MS } = {}) {
+// Cowork advertises elicitation, drops the request and leaves the call hanging ~180 s (anthropics/claude-ai-mcp#1046);
+// it names itself in clientInfo ('claude-code', version '... (remote_cowork)'). Claude Desktop ('claude-ai') does not
+// advertise it today and is matched so that advertising it later cannot lead to the same hang. Both ask in the chat.
+// Matched on clientInfo only, the one thing the handshake says about the client.
+function dropsElicitation(clientInfo = {}) {
+  const name = typeof clientInfo.name === 'string' ? clientInfo.name.toLowerCase() : '';
+  const version = typeof clientInfo.version === 'string' ? clientInfo.version.toLowerCase() : '';
+  return name === 'claude-ai' || name.includes('cowork') || version.includes('cowork');
+}
+
+// The tool's narration opens every result. A reply with `say` (text the talent must read) follows it in the same
+// plain-text block, so the model writes both as one message, and the rest goes as JSON after it: a model writes a
+// readable text before it reasons over a JSON field, and the talent never sees tool results.
+function contentOf(value, narration = null) {
+  if (value && typeof value === 'object' && typeof value.say === 'string' && value.say) {
+    const { say, ...rest } = value;
+    return [{ type: 'text', text: [narration, say].filter(Boolean).join('\n\n') }, { type: 'text', text: JSON.stringify(rest, null, 2) }];
+  }
+  return [...(narration ? [{ type: 'text', text: narration }] : []), { type: 'text', text: JSON.stringify(value, null, 2) }];
+}
+
+function createMcpServer({ tools = [], prompts = [], serverInfo = {}, protocolVersion, beforeCall = null, afterCall = null, narrate = null, onInitialize = null, instructions = null, elicitationTimeoutMs = ELICITATION_TIMEOUT_MS } = {}) {
   const registry = new Map();
   for (const t of tools) {
     if (!t || !t.name || typeof t.handler !== 'function') {
@@ -54,6 +75,7 @@ function createMcpServer({ tools = [], prompts = [], serverInfo = {}, protocolVe
   const advertisedVersion = protocolVersion || DEFAULT_PROTOCOL_VERSION;
 
   let clientCapabilities = {};
+  let clientInfo = {};
   let send = null;
   let lastRequestId = 0;
   const pending = new Map();
@@ -91,7 +113,7 @@ function createMcpServer({ tools = [], prompts = [], serverInfo = {}, protocolVe
   // (`{ url }` without `{ form }`), which only opens links and falls back to the chat.
   function canElicitForm() {
     const e = clientCapabilities.elicitation;
-    if (!e) return false;
+    if (!e || dropsElicitation(clientInfo)) return false;
     if (typeof e === 'object' && e.url !== undefined && e.form === undefined) return false;
     return true;
   }
@@ -174,15 +196,20 @@ function createMcpServer({ tools = [], prompts = [], serverInfo = {}, protocolVe
     if (typeof beforeCall === 'function') {
       try { await beforeCall(name); } catch { /* hook must never break a tool call */ }
     }
+    const narration = (failed) => {
+      const text = typeof narrate === 'function' ? narrate(name, { failed, args }) : null;
+      return text ? [{ type: 'text', text }] : [];
+    };
     try {
-      const value = await tool.handler(args, { elicit, elicitation: !!send && canElicitForm() });
+      const asking = narration(false);
+      const value = await tool.handler(args, { elicit, elicitation: !!send && canElicitForm(), narration: asking.length ? asking[0].text : null });
       return {
-        content: [{ type: 'text', text: JSON.stringify(value, null, 2) }],
+        content: contentOf(value, asking.length ? asking[0].text : null),
         isError: false,
       };
     } catch (e) {
       return {
-        content: [{ type: 'text', text: `${name} tool error: ${e && e.message ? e.message : String(e)}` }],
+        content: [...narration(true), { type: 'text', text: `${name} tool error: ${e && e.message ? e.message : String(e)}` }],
         isError: true,
       };
     } finally {
@@ -213,8 +240,9 @@ function createMcpServer({ tools = [], prompts = [], serverInfo = {}, protocolVe
         case 'initialize': {
           const requested = msg.params && msg.params.protocolVersion;
           clientCapabilities = (msg.params && msg.params.capabilities) || {};
+          clientInfo = (msg.params && msg.params.clientInfo) || {};
           if (typeof onInitialize === 'function') {
-            try { onInitialize({ clientInfo: (msg.params && msg.params.clientInfo) || {} }); } catch { /* never breaks the handshake */ }
+            try { onInitialize({ clientInfo }); } catch { /* never breaks the handshake */ }
           }
           // One line per connection on stderr (never stdout: it carries JSON-RPC), so the host's
           // declared elicitation shape and the resulting decision are visible in the MCP log.
@@ -292,4 +320,4 @@ function createMcpServer({ tools = [], prompts = [], serverInfo = {}, protocolVe
   return { handleMessage, listTools, listAvailableTools, callTool, start };
 }
 
-module.exports = { createMcpServer, ERROR, DEFAULT_PROTOCOL_VERSION };
+module.exports = { createMcpServer, dropsElicitation, ERROR, DEFAULT_PROTOCOL_VERSION };

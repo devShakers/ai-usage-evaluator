@@ -10,9 +10,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { buildServerInstructions } = require('./mcp-instructions');
 
-const SERVER_NAME = 'shakers';
-// The name the first published setup guide used.
-const LEGACY_SERVER_NAME = 'shakers-ai-usage';
+const { SERVER_NAME, LEGACY_SERVER_NAME } = require('./mcp-server-name');
 const FORWARDED_ENV = [
   'SHAKERS_PROFILE',
   'SHAKERS_CLI_CERTS_BASE',
@@ -306,7 +304,7 @@ function codexSkill() {
     '',
     '# Shakers',
     '',
-    'Every Shakers action is a tool of the `shakers` MCP server. They are deferred: they are not in your tool list, but `exec` has them as `tools.mcp__shakers__<name>` and lists them in `ALL_TOOLS` (filter by `name.startsWith(\'mcp__shakers__\')`). Never say you have no Shakers tools without checking `ALL_TOOLS`. The tool names below are those `<name>`s: to sign the talent up, call `tools.mcp__shakers__signup_start` first.',
+    'Every Shakers action is a tool of the `shakers` MCP server. They are deferred: they are not in your tool list, but `exec` has them as `tools.mcp__shakers__<name>` and lists them in `ALL_TOOLS` (filter by `name.startsWith(\'mcp__shakers__\')`). Never say you have no Shakers tools without checking `ALL_TOOLS`. The tool names below are those `<name>`s: to sign the talent up, call `tools.mcp__shakers__signup` with step "start" first, and every later sign-up step through it.',
     '',
     '## Server instructions',
     '',
@@ -318,7 +316,7 @@ function codexSkill() {
 function installCodexSkill({ env, homedir }) {
   const dir = path.join(codexHomeDir({ env, homedir }), 'skills', SERVER_NAME);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'SKILL.md'), codexSkill());
+  writeFileAtomic(path.join(dir, 'SKILL.md'), codexSkill(), 0o600);
 }
 
 const codexHomeDir = ({ env, homedir }) => env.CODEX_HOME || path.join(homedir, '.codex');
@@ -341,11 +339,17 @@ function vscodeUserDir({ platform, homedir, env }) {
   return path.join(homedir, '.config', 'Code', 'User');
 }
 
+function cliOnPath(spawn, bin) {
+  const probe = spawn(bin, ['--version'], { encoding: 'utf8' });
+  return !probe.error && probe.status === 0;
+}
+
+function codexDetected({ env, platform, homedir, spawn }) {
+  return fs.existsSync(codexHomeDir({ env, homedir })) || cliOnPath(spawn, 'codex') || chatgptAppInstalled({ platform, homedir });
+}
+
 function clientTable({ env, platform, homedir, spawn }) {
-  const hasCli = (bin) => {
-    const probe = spawn(bin, ['--version'], { encoding: 'utf8' });
-    return !probe.error && probe.status === 0;
-  };
+  const hasCli = (bin) => cliOnPath(spawn, bin);
   const jsonClient = (client, file, key, shape = (entry) => entry) => ({
     client,
     found: () => fs.existsSync(path.dirname(file)),
@@ -364,7 +368,7 @@ function clientTable({ env, platform, homedir, spawn }) {
     jsonClient('geminiCli', path.join(homedir, '.gemini', 'settings.json')),
     {
       client: 'codex',
-      found: () => fs.existsSync(codexHomeDir({ env, homedir })) || hasCli('codex') || chatgptAppInstalled({ platform, homedir }),
+      found: () => codexDetected({ env, platform, homedir, spawn }),
       install: (entry) => installIntoCodex(entry, { env, homedir }),
     },
     // VS Code keys servers under "servers" and wants the transport spelled out.
@@ -507,4 +511,4 @@ async function runMcpInstall({ args = [], out = (s) => process.stdout.write(s), 
   return outcome;
 }
 
-module.exports = { installCodexSkill, removeTomlServers, tomlServerBlock, detectMcpClients, installMcpClients, stableNodePath, runMcpInstall, serverEntry, claudeDesktopConfigPath, SERVER_NAME, LEGACY_SERVER_NAME };
+module.exports = { askTerminal, cliOnPath, codexDetected, codexHomeDir, writeFileAtomic, installCodexSkill, removeTomlServers, tomlServerBlock, detectMcpClients, installMcpClients, stableNodePath, runMcpInstall, serverEntry, claudeDesktopConfigPath, SERVER_NAME, LEGACY_SERVER_NAME };

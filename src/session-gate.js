@@ -1,8 +1,5 @@
 'use strict';
 
-// Whether a non-exempt command may run: an active session, or a durable cookie
-// that can mint a fresh hub JWT right now. Reject only when neither holds.
-
 const { loadAuthSession, sessionStatus } = require('./auth-session-store');
 const { ensureFreshSession } = require('./session-refresh');
 
@@ -20,7 +17,7 @@ async function hasUsableSession(env = process.env, deps = {}) {
 
   const session = load(env);
   if (sessionStatus(session, now) === 'active') return true;
-  if (!session || (!session.cookie && !session.sessionToken)) return false;
+  if (!session || !session.sessionToken) return false;
 
   let refreshed = null;
   try { refreshed = await refresh(env, { now }); } catch { refreshed = null; }

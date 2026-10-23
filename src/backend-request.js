@@ -80,8 +80,7 @@ function postJsonWithTimeout(url, body, timeoutMs, method = 'POST', idempotencyK
           raw += chunk;
           if (raw.length > MAX_RESPONSE_BYTES) req.destroy();
         });
-        // `headers` is exposed so the better-auth email flow can read `Set-Cookie` (the session cookie it captures and replays); every other caller reads only `{status, raw}` and ignores it.
-        res.on('end', () => resolve({ status: res.statusCode, raw, headers: res.headers }));
+        res.on('end', () => resolve({ status: res.statusCode, raw }));
       },
     );
     req.on('timeout', () => req.destroy(Object.assign(new Error('request timed out'), { kind: 'timeout' })));
@@ -89,27 +88,6 @@ function postJsonWithTimeout(url, body, timeoutMs, method = 'POST', idempotencyK
     if (data) req.write(data);
     req.end();
   });
-}
-
-// Pulls one `name=value` cookie pair out of a response's `Set-Cookie` header (Node exposes it as an array, or a single string).
-// Accepts the base cookie name with or without the RFC6265 `__Secure-`/`__Host-`
-// prefixes that better-auth applies over HTTPS, and returns the EXACT server-set
-// name (prefix included) so it can be forwarded back verbatim in a `Cookie:` header.
-function extractSetCookie(headers, name) {
-  if (!headers) return null;
-  const raw = headers['set-cookie'];
-  const list = Array.isArray(raw) ? raw : (typeof raw === 'string' && raw ? [raw] : []);
-  const candidates = [name, `__Secure-${name}`, `__Host-${name}`];
-  for (const candidate of candidates) {
-    const prefix = `${candidate}=`;
-    for (const entry of list) {
-      if (typeof entry === 'string' && entry.startsWith(prefix)) {
-        const value = entry.slice(prefix.length).split(';')[0];
-        if (value) return `${candidate}=${value}`;
-      }
-    }
-  }
-  return null;
 }
 
 function postMultipartWithTimeout(url, fields, timeoutMs, method = 'POST', extraHeaders = null) {
@@ -204,7 +182,6 @@ module.exports = {
   MAX_RESPONSE_BYTES,
   postJsonWithTimeout,
   postMultipartWithTimeout,
-  extractSetCookie,
   requestBackend,
   setClientIdentity,
 };

@@ -1,5 +1,10 @@
 'use strict';
 
+const { askRegistrationTerms } = require('./mcp-choice');
+const { signupCopy } = require('./signup-copy');
+const { signupLanguage } = require('./signup-language');
+const { NOOP_FUNNEL } = require('./onboarding-funnel');
+
 // MCP: two provider-agnostic tools (start returns URL+user_code to relay VERBATIM; poll finishes). device_code stays in the local store, never in a result.
 
 const START_SCHEMA = {
@@ -9,6 +14,8 @@ const START_SCHEMA = {
     mode: { type: 'string', enum: ['login', 'register'], description: "Optional. 'login' signs an existing talent in; 'register' creates the account if new (the profile steps come from the register/onboarding tools afterwards). Defaults to 'login'." },
     freelanceType: { type: 'string', description: 'Optional, register only: FREELANCE | EMPLOYEE | AGENCY | POTENTIAL_FREELANCE. Used to complete a new account.' },
     preferredLanguage: { type: 'string', description: 'Optional, register only: es | en | it | pt | fr.' },
+    termsAnswer: { type: 'string', description: 'Register only: the option the talent picked when you printed the terms question this tool returned. Never set it yourself.' },
+    newsletterAnswer: { type: 'string', description: 'Register only: the option the talent picked when you printed the newsletter question this tool returned. Never set it yourself.' },
   },
 };
 
@@ -23,18 +30,30 @@ function makeDeviceLoginTools(deps = {}) {
     startDeviceLogin = require('./device-login').startDeviceLogin,
     pollDeviceToken = require('./device-login').pollDeviceToken,
     finalizeDeviceSession = require('./device-login').finalizeDeviceSession,
-    appendProviderParam = require('./device-login').appendProviderParam,
+    withDeviceParams = require('./device-login').withDeviceParams,
     deviceSessionRecord = require('./device-login').deviceSessionRecord,
     savePendingDevice = require('./device-auth-store').savePendingDevice,
     loadPendingDevice = require('./device-auth-store').loadPendingDevice,
     clearPendingDevice = require('./device-auth-store').clearPendingDevice,
     saveAuthSession = require('./auth-session-store').saveAuthSession,
     buildRegistrationContext = require('./signup-client').buildRegistrationContext,
+    buildRegistrationConsent = require('./signup-client').buildRegistrationConsent,
+    funnel = NOOP_FUNNEL,
   } = deps;
+  const lang = () => signupLanguage(deps.lang || 'en');
 
-  async function start(args = {}) {
+  async function start(args = {}, ctx = {}) {
     const mode = args.mode === 'register' ? 'register' : 'login';
     const provider = args.provider === 'linkedin' ? 'linkedin' : args.provider === 'email' ? 'email' : 'google';
+    let newsletterConsent = false;
+    if (mode === 'register') {
+      const terms = await askRegistrationTerms(ctx, { tool: 'social_signin_start', lang: lang(), termsAnswer: args.termsAnswer, newsletterAnswer: args.newsletterAnswer });
+      if (terms.reply) return terms.reply;
+      if (terms.declined) {
+        return { ok: false, status: 'terms-declined', relayVerbatim: signupCopy(lang()).termsDeclined, message: 'Print relayVerbatim word for word. No account was created and nothing was sent.' };
+      }
+      newsletterConsent = terms.newsletterConsent;
+    }
     const authorizeEndpoint = getDeviceAuthorizeEndpoint();
     const tokenEndpoint = getDeviceTokenEndpoint();
     const authTokenEndpoint = getAuthTokenEndpoint();
@@ -42,10 +61,15 @@ function makeDeviceLoginTools(deps = {}) {
       return { ok: false, reason: 'no-endpoint', message: 'No sign-in endpoint configured — set SHAKERS_CLI_HUB_BASE.' };
     }
 
+    if (mode === 'register') funnel.begin();
+    funnel.viewed('account_creation', { auth_methods_offered: [provider] });
     const authz = await startDeviceLogin({ authorizeEndpoint });
-    if (!authz.ok) return { ok: false, reason: authz.reason || 'authorize-failed' };
+    if (!authz.ok) {
+      funnel.errored('account_creation', authz.reason || 'authorize-failed');
+      return { ok: false, reason: authz.reason || 'authorize-failed' };
+    }
 
-    const verificationUrl = appendProviderParam(authz.verificationUriComplete, provider);
+    const verificationUrl = withDeviceParams(authz.verificationUriComplete, { provider, mode, surface: 'mcp' });
     const expiresAt = new Date(Date.now() + authz.expiresIn * 1000).toISOString();
     try {
       savePendingDevice({
@@ -59,7 +83,7 @@ function makeDeviceLoginTools(deps = {}) {
         mode,
         provider,
         registerContext: mode === 'register'
-          ? { freelanceType: args.freelanceType || null, preferredLanguage: args.preferredLanguage || null }
+          ? { freelanceType: args.freelanceType || null, preferredLanguage: args.preferredLanguage || null, newsletterConsent }
           : null,
       });
     } catch {
@@ -75,7 +99,8 @@ function makeDeviceLoginTools(deps = {}) {
       userCode: authz.userCode,
       expiresInSeconds: authz.expiresIn,
       pollIntervalSeconds: authz.interval,
-      message: `Show the talent this link and code so they can authorize in their own browser — relay both verbatim, do not invent or complete the code:\n\n${verificationUrl}\n\nCode: ${authz.userCode}\n\nThen call social_signin_poll; if it returns status "pending", wait pollIntervalSeconds and call it again.`,
+      relayVerbatim: signupCopy(lang()).windowLink(verificationUrl, authz.userCode),
+      message: 'Print relayVerbatim word for word (it holds the link and the code) — never invent or complete the code. Then call social_signin_poll; if it returns status "pending", wait pollIntervalSeconds and call it again.',
     };
   }
 
@@ -115,13 +140,16 @@ function makeDeviceLoginTools(deps = {}) {
     }
     if (res.status === 'denied') {
       clearPendingDevice();
+      funnel.errored('account_creation', 'device-denied');
       return { ok: false, status: 'denied', message: 'The talent cancelled or did not grant access. No session was started.' };
     }
     if (res.status === 'expired') {
       clearPendingDevice();
+      funnel.errored('account_creation', 'device-expired');
       return { ok: false, status: 'expired', message: 'The sign-in request expired. Call social_signin_start to try again.' };
     }
     if (res.status !== 'authorized') {
+      funnel.errored('account_creation', res.reason || 'poll-failed');
       return { ok: false, status: 'error', reason: res.reason || 'poll-failed' };
     }
 
@@ -129,7 +157,7 @@ function makeDeviceLoginTools(deps = {}) {
     const rc = pending.registerContext || {};
     const registrationContext = buildRegistrationContext({
       preferredLanguage: rc.preferredLanguage || undefined,
-      newsletterConsent: false,
+      newsletterConsent: rc.newsletterConsent === true,
       freelanceType: rc.freelanceType || 'POTENTIAL_FREELANCE',
     });
     const fin = await finalizeDeviceSession({
@@ -138,8 +166,10 @@ function makeDeviceLoginTools(deps = {}) {
       authTokenEndpoint: pending.authTokenEndpoint,
       completeRegistrationEndpoint: getCompleteRegistrationEndpoint(),
       registrationContext,
+      consent: pending.mode === 'register' ? buildRegistrationConsent({ newsletterConsent: rc.newsletterConsent === true }) : null,
     });
     if (!fin.ok) {
+      funnel.errored('account_creation', fin.reason);
       // The authorization was consumed; a re-poll can't recover — never treat this as logged in.
       clearPendingDevice();
       return { ok: false, status: 'error', reason: fin.reason };
@@ -152,6 +182,8 @@ function makeDeviceLoginTools(deps = {}) {
     }
 
     clearPendingDevice();
+    funnel.completed('account_creation', { auth_method: pending.provider || 'google', auth_attempts: 1, is_returning_account: !res.isNewUser });
+    if (funnel.active) funnel.identified({ newAccount: !!res.isNewUser });
     return { ok: true, status: 'authorized', method: pending.provider || 'google', email: res.email || null, isNewUser: !!res.isNewUser };
   }
 
@@ -160,7 +192,7 @@ function makeDeviceLoginTools(deps = {}) {
       name: 'social_signin_start',
       title: 'Sign in to Shakers',
       description: 'Opens a Shakers page in your browser where you sign in with Google, LinkedIn or your email. Your password never goes through the chat.',
-      guidance: "Begin sign-in (or registration) via the device flow — provider 'google' (default), 'linkedin' or 'email'. Email goes through the SAME web flow: the talent reuses their open Shakers session or signs in with their email on the page, never a password in the chat. Returns a verificationUrl and a userCode: show BOTH to the talent verbatim — they open the URL and enter the code in their own browser (they never type anything in the chat, and you never invent or fill the code). Pass mode 'register' to create the account if it is new. After showing them, call social_signin_poll. Returns { ok, status, provider, verificationUrl, userCode, pollIntervalSeconds, ... }.",
+      guidance: "Begin sign-in (or registration) via the device flow — provider 'google' (default), 'linkedin' or 'email'. Email goes through the SAME web flow: the talent reuses their open Shakers session or signs in with their email on the page, never a password in the chat. With mode 'register' it first asks the talent to accept the Terms and Privacy Policy and whether they want the newsletter (a dialog, or `say` to print word for word; pass their picks back as termsAnswer and newsletterAnswer, never your own); a decline creates nothing. Returns relayVerbatim with the Shakers link and the code: print it word for word — they open the link, check the code matches and approve in their own browser (you never invent or fill the code). After showing them, call social_signin_poll. Returns { ok, status, provider, verificationUrl, userCode, pollIntervalSeconds, relayVerbatim, ... }.",
       inputSchema: START_SCHEMA,
       handler: start,
     },

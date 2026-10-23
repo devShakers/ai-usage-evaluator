@@ -44,6 +44,7 @@ const { GIT_ACTIVITY_LOG_ARGS } = require('./git-activity');
 const { WORK_STREAMS_LOG_ARGS } = require('./work-streams');
 const { AUTHORSHIP_LOG_ARGS } = require('./authorship');
 const { resolveRepoScope } = require('./repo-scope');
+const { fetchProfileAgentNames } = require('./profile-agents');
 
 function performScan({ opts, catalog }) {
   const root = opts.root;
@@ -180,6 +181,7 @@ async function computeUsage({
   prepareIdentity = collectIdentityAndUsage,
   resolveConsent = storedAiConsent,
   resolveScope = resolveRepoScope,
+  listProfileAgents = fetchProfileAgentNames,
 }) {
   // 1. Local scan + classify (always computed and shown).
   const { report, root, rootDir } = performScan({ opts, catalog });
@@ -201,6 +203,7 @@ async function computeUsage({
   // 5. Aggregate scoped signals + rebuild scan/org-chart over the selection, re-classify.
   await prefetchGitLogs(agentRoots, [GIT_ACTIVITY_LOG_ARGS, WORK_STREAMS_LOG_ARGS, AUTHORSHIP_LOG_ARGS]);
   runAggregation({ report, scope, consentEmail, agentRoots, root, catalog });
+  report.profileAgentNames = await listProfileAgents(process.env);
   const maturity = classify(report);
   const hasAgents = Array.isArray(report.agents) && report.agents.length > 0;
   report.analyzedRepos =

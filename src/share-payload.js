@@ -48,7 +48,9 @@ function agentDefinitionsByName(report) {
   return byName;
 }
 
-function derivePayload(report, maturity) {
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function derivePayload(report, maturity, { cliCommandId = null } = {}) {
   const agents = Array.isArray(report.agents) ? report.agents : [];
   const catalogIdsByName = agentCatalogIdsByName(report);
   const definitionsByName = agentDefinitionsByName(report);
@@ -141,6 +143,7 @@ function derivePayload(report, maturity) {
     decisions: whitelistDecisions(report.decisions),
     // PER-CANDIDATE authorship + depth (per detected skill, per detected agent).
     detectionEvidence: whitelistDetectionEvidence(report.detectionEvidence),
+    ...(typeof cliCommandId === 'string' && UUID_RE.test(cliCommandId) ? { cliCommandId } : {}),
   };
 }
 

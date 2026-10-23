@@ -83,9 +83,11 @@ function explanationText(lang) {
   return [c.explanationTitle, ...c.explanation, c.afterwards].join('\n\n');
 }
 
-function resultText(lang, preview) {
+// `explained`: the talent already read what the two axes mean and how to disagree (the review in the sign-up), so they are not repeated.
+function resultText(lang, preview, { explained = false } = {}) {
   const c = reviewCopy(lang);
-  if (!preview) return [c.resultPending, c.afterwards].join('\n\n');
+  const after = explained ? [] : [c.afterwards];
+  if (!preview) return [c.resultPending, ...after].join('\n\n');
   const m = preview.matrix || {};
   const lines = [
     c.resultTitle,
@@ -95,7 +97,7 @@ function resultText(lang, preview) {
     preview.usage && preview.usage.explanation,
     m.cell ? c.cell(m.cell) : null,
   ].filter(Boolean).map(sanitizeRenderText);
-  return [lines.join('\n'), c.explanation[0], c.afterwards].join('\n\n');
+  return [lines.join('\n'), ...(explained ? [] : [c.explanation[0]]), ...after].join('\n\n');
 }
 
 module.exports = { uploadFacts, withoutExcluded, repoName, summaryText, explanationText, resultText };

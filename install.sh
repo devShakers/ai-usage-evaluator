@@ -509,7 +509,7 @@ fi
 
 # ─── Verification ───────────────────────────────────────────────────────────
 # Drive the REPL non-interactively (pipe `exit`) so verification never hangs.
-printf 'exit\n' | node "$INSTALL_DIR/bin/shakers.js" >/dev/null 2>&1 \
+printf 'exit\n' | SHAKERS_CLI_NO_AUDIT=1 node "$INSTALL_DIR/bin/shakers.js" >/dev/null 2>&1 \
   && say "  ${G}+${N} Verification OK (shakers)" \
   || die "Verification failed while running shakers."
 
@@ -547,8 +547,15 @@ printf "\n"
 # not leave Shakers infrastructure" claim, no longer true once
 # Datadog is in the loop).
 say "  ${B}${Y}Before you use these tools:${N}"
-say "  ${Y}These tools run locally inside the shakers shell. usage sends only derived${N}"
-say "  ${Y}signals (never file contents) and only if you opt in. certify sends sampled,${N}"
+say "  ${Y}These tools run locally. Only if you opt in and approve the upload, usage${N}"
+say "  ${Y}sends derived signals plus literal text with anything that looks like a secret${N}"
+say "  ${Y}removed: fragments of your conversations with AI assistants, sample commands${N}"
+say "  ${Y}and your agents' definitions. An AI model from an external provider${N}"
+say "  ${Y}(OpenAI, Google or Anthropic) analyses that text for Shakers to${N}"
+say "  ${Y}compute your evaluation and discards it; only the result is kept (levels,${N}"
+say "  ${Y}scores, counts and the names of your tools and agents). Do not run${N}"
+say "  ${Y}it on machines or conversations holding data you are not allowed to share${N}"
+say "  ${Y}(client, employer or third-party data). certify sends sampled,${N}"
 say "  ${Y}secret-scrubbed source code to a server-side model to assess your skills. If${N}"
 say "  ${Y}you consented to saving (usage/certify), that code and the model's output${N}"
 say "  ${Y}are ALSO captured and retained for up to three months by a THIRD-PARTY${N}"

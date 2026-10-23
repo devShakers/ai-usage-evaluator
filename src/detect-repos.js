@@ -2,12 +2,7 @@
 
 const { execFileSync } = require('child_process');
 const path = require('path');
-const {
-  toolSources,
-  listSessionFiles,
-  readSessionObjects,
-  resolveFileCwd,
-} = require('./session-scan');
+const { toolSources, sourceSessions, resolveFileCwd } = require('./session-scan');
 const { normalizeRemote } = require('./authorship');
 
 const GIT_TIMEOUT_MS = 15000;
@@ -37,8 +32,9 @@ function sessionCwdCounts(env = process.env) {
   const counts = new Map();
   let unassigned = 0;
   for (const source of toolSources(env)) {
-    for (const file of listSessionFiles(source.dir)) {
-      const cwd = resolveFileCwd(readSessionObjects(file));
+    if (source.repoLevel) continue;
+    for (const { objects } of sourceSessions(source)) {
+      const cwd = resolveFileCwd(objects);
       if (cwd === null) {
         unassigned += 1;
         continue;

@@ -3,7 +3,7 @@
 const fs = require('fs');
 const { execFileSync } = require('child_process');
 const { isRefusedWalkRoot } = require('./scan-exclusions');
-const { askChoice, chatChoice, queueNotice } = require('./mcp-choice');
+const { askChoice, chatChoice, forChat, handOver, narrationOf, queueNotice, settle, withNextSay } = require('./mcp-choice');
 
 function isExistingDir(p) {
   try {
@@ -76,6 +76,7 @@ function buildArgv({ root, repoScope, lang }) {
 }
 
 const VERBATIM = 'Print relayVerbatim word for word now, as its own block, with nothing of your own added to it.';
+const CONSENT_QUESTION = 'ai_usage:consent';
 
 const UPLOAD_INPUT_SCHEMA = {
   type: 'object',
@@ -103,6 +104,7 @@ function makeAiUsageTools(deps = {}) {
   const {
     scanUsage = (argv) => require('./usage-scan').scanUsage(argv),
     autoShare = require('./share').autoShare,
+    logCommandRun = require('./command-audit').logCommandRun,
     recordConsent = require('./share').recordConsent,
     sendThrottled = () => require('./share').isThrottled(require('./share').loadConsentState()),
     isValidEmail = require('./share').isValidEmail,
@@ -121,6 +123,8 @@ function makeAiUsageTools(deps = {}) {
     renderFullReportText = require('./render-report-text').renderFullReportText,
     detectFlowLang = require('./i18n').detectFlowLang,
     aiFluencyWaitMs = 30000,
+    signupInventoryWaitMs = 20000,
+    signupProfileWaitMs = 25000,
     signupPhase = () => require('./mcp-signup-tools').signupPhase(),
     usageDisclaimers = (lang) => require('./onboarding-flow').usageDisclaimers(lang),
     signupCopy = require('./signup-copy').signupCopy,
@@ -132,6 +136,8 @@ function makeAiUsageTools(deps = {}) {
   let job = null;
   // The talent's answer in the consent dialog, so a later call cannot contradict it.
   let dialogConsent = null;
+  // In the sign-up a consent counts only after its question and the two disclaimers went to the chat.
+  let consentAsked = false;
   let pending = null;
 
   function startSignupScan(argv, root, lang) {
@@ -206,20 +212,19 @@ function makeAiUsageTools(deps = {}) {
     const facts = reviewFacts(review);
     const texts = [reviewTexts.summaryText(review.lang, facts), reviewTexts.explanationText(review.lang)];
     if (ctx && ctx.elicitation && typeof ctx.elicit === 'function') {
-      const reply = await ctx.elicit({ message: [...texts, c.question].join('\n\n'), requestedSchema: reviewSchema(c, facts) });
+      const reply = await ctx.elicit({ message: [...narrationOf(ctx), ...texts, c.question].join('\n\n'), requestedSchema: reviewSchema(c, facts) });
       const content = reply && reply.action === 'accept' && reply.content ? reply.content : null;
       if (content && content.decision === c.yes) return upload(review, exclusionsFromForm(review, facts, content));
       if ((content && content.decision === c.no) || (reply && reply.action === 'decline')) return declineUpload(review);
     }
     review.askedInChat = true;
-    const chat = chatChoice(c.question, [c.yes, c.no], [...texts, c.excludeHint]);
+    const { choiceMessage, ...shown } = chatChoice(c.question, [c.yes, c.no], [...texts, c.excludeHint]);
     return {
       ok: false,
       reason: 'upload-approval-required',
-      say: chat.say,
-      options: chat.options,
+      ...shown,
       excludable: { repos: facts.repos, agents: facts.agents, excerpts: facts.conversationExcerpts + facts.commandExcerpts > 0 },
-      message: `Nothing has been sent. ${chat.choiceMessage} Then call ai_usage_upload with confirm:true only if they pick "${c.yes}" (adding exclude with the repos and agents they want left out, exactly as listed in excludable, and excerpts:true if they want no text excerpts), or confirm:false if they pick "${c.no}". Only the talent decides: never answer for them.`,
+      message: `Nothing has been sent. ${choiceMessage} Then call ai_usage_upload with confirm:true only if they pick "${c.yes}" (adding exclude with the repos and agents they want left out, exactly as listed in excludable, and excerpts:true if they want no text excerpts), or confirm:false if they pick "${c.no}". Only the talent decides: never answer for them.`,
     };
   }
 
@@ -246,7 +251,8 @@ function makeAiUsageTools(deps = {}) {
     let send;
     try {
       recordConsent('granted', session.email, { verified: true });
-      send = await autoShare(trimmed.report, trimmed.maturity, { root: review.root, bypassThrottle: review.registration });
+      const cliCommandId = await logCommandRun({ command: 'mcp:ai_usage_upload:send' });
+      send = await autoShare(trimmed.report, trimmed.maturity, { root: review.root, bypassThrottle: review.registration, cliCommandId });
     } catch (error) {
       send = { ok: false, reason: 'upload-failed', message: error && error.message ? error.message : String(error) };
     }
@@ -257,36 +263,32 @@ function makeAiUsageTools(deps = {}) {
     const excluded = exclude.repos.length > 0 || exclude.agents.length > 0 || !exclude.excerpts;
     const confirmation = excluded ? [c.uploaded, sent] : [c.uploaded];
     review.outcome = { ok: true, uploaded: true, send, sentReport: trimmed, sent };
-    if (review.registration) {
-      review.outcome.relayVerbatim = [...confirmation, c.afterwards].join('\n\n');
-      review.outcome.next = 'ai_usage_result';
-      review.outcome.message = `${VERBATIM} Then carry on with the sign-up; do not wait for the result.`;
-      return review.outcome;
-    }
-    return Object.assign(review.outcome, await afterUpload(review, trimmed, confirmation));
+    if (!review.registration) return Object.assign(review.outcome, await afterUpload(review, trimmed, confirmation));
+    // The sign-up shows the same result as outside it, at the same moment, on the next question: the review already
+    // explained the two axes and how to disagree, so the result does not repeat them.
+    const result = await afterUpload(review, trimmed, confirmation, { inventoryMs: signupInventoryWaitMs, profileMs: signupProfileWaitMs, explained: true });
+    queueNotice([result.relayVerbatim, result.text].filter(Boolean).join('\n\n'));
+    const { relayVerbatim: _shown, message: _rule, ...rest } = result;
+    return Object.assign(review.outcome, rest, {
+      message: `Uploaded. Say nothing about it: the result of the analysis, which the talent reads word for word, comes with the next question.${result.next ? ' Shakers is still evaluating part of it (normal, not an error): do not wait for it.' : ''}`,
+    });
   }
 
-  async function afterUpload(review, { report, maturity }, confirmation) {
-    const c = reviewCopy(review.lang);
+  // The classified agents and the profile result are awaited together, so the answer stays under the client's cut.
+  async function afterUpload(review, { report, maturity }, confirmation, { inventoryMs = inlineWaitMs, profileMs = aiFluencyWaitMs, explained = false } = {}) {
     const hasAgents = Array.isArray(report.agents) && report.agents.length > 0;
-    let enrichment = hasAgents ? 'pending' : 'none';
-    let enrichedAgents = null;
-    if (hasAgents) {
+    const classify = async () => {
+      if (!hasAgents) return null;
       const session = loadAuthSession();
       const endpoint = getUsageDiscoveredInventoryEndpoint();
-      if (sessionStatus(session) === 'active' && endpoint) {
-        const polled = await pollClassifiedInventory({ accessToken: session.accessToken, endpoint, requestDiscoveredInventory, capMs: inlineWaitMs });
-        if (polled.status === 'ready') {
-          enrichment = 'ready';
-          enrichedAgents = polled.agents;
-        }
-      }
-    }
-    let aiProfile = { status: 'unavailable', preview: null };
-    const usageSession = loadAuthSession();
-    if (sessionStatus(usageSession) === 'active') {
-      aiProfile = await resolveAiProfilePreview(
-        { session: usageSession, endpoint: getAiProfileEndpoint(), timeoutMs: aiFluencyWaitMs },
+      if (sessionStatus(session) !== 'active' || !endpoint) return null;
+      return pollClassifiedInventory({ accessToken: session.accessToken, endpoint, requestDiscoveredInventory, capMs: inventoryMs });
+    };
+    const profile = async () => {
+      const usageSession = loadAuthSession();
+      if (sessionStatus(usageSession) !== 'active') return { status: 'unavailable', preview: null };
+      return resolveAiProfilePreview(
+        { session: usageSession, endpoint: getAiProfileEndpoint(), timeoutMs: profileMs },
         {
           refreshToken: async () => {
             const fresh = await ensureFreshSession(process.env);
@@ -294,7 +296,10 @@ function makeAiUsageTools(deps = {}) {
           },
         },
       );
-    }
+    };
+    const [polled, aiProfile] = await Promise.all([classify(), profile()]);
+    const enrichedAgents = polled && polled.status === 'ready' ? polled.agents : null;
+    const enrichment = !hasAgents ? 'none' : enrichedAgents ? 'ready' : 'pending';
     const displayAgents = enrichedAgents
       ? enrichedAgents.map((a) => ({ name: a.name, category: a.category, role: a.role }))
       : (report.agents || []).map((a) => ({ name: a.name }));
@@ -306,7 +311,7 @@ function makeAiUsageTools(deps = {}) {
       agents: enrichedAgents,
       text,
       aiProfile,
-      relayVerbatim: [...confirmation, reviewTexts.resultText(review.lang, aiProfile.status === 'ready' ? aiProfile.preview : null)].join('\n\n'),
+      relayVerbatim: [...confirmation, reviewTexts.resultText(review.lang, aiProfile.status === 'ready' ? aiProfile.preview : null, { explained })].join('\n\n'),
       next: enrichment === 'pending' || aiProfile.status !== 'ready' ? 'ai_usage_result' : null,
       message: `Uploaded. ${VERBATIM} Then show \`text\`, the full report, verbatim.${enrichment === 'pending' || aiProfile.status !== 'ready' ? ' Shakers is still evaluating (normal, not an error): call ai_usage_result in a few minutes for the result and its explanation.' : ''}`,
       display: {
@@ -336,27 +341,47 @@ function makeAiUsageTools(deps = {}) {
     return { ok: false, reason: 'consent-declined', relayVerbatim: signupCopy(lang).aiUsageSkipped, message: 'Nothing was scanned. Show relayVerbatim once, word for word.' };
   }
 
+  // The yes of a dialog in the sign-up: the disclaimers come in a second dialog, so they are read before anything is scanned.
+  async function confirmInDialog(ctx, c, texts) {
+    const again = await askChoice(ctx, { texts, question: c.aiUsageStart, options: [c.aiUsageYes, c.aiUsageSkip] });
+    return again.answer || null;
+  }
+
   async function askConsent(lang, ctx) {
     const c = signupCopy(lang);
-    const texts = Object.values(usageDisclaimers(lang));
+    const disclaimers = Object.values(usageDisclaimers(lang));
+    // In the sign-up the question goes first and short; its disclaimers are read only after a yes, before any scan.
+    const signup = signupPhase() === 'account';
+    const question = signup ? c.aiUsageAsk : c.aiUsageQuestion;
+    const texts = signup ? [] : disclaimers;
+    const options = [c.aiUsageYes, c.aiUsageSkip];
     const asked = ctx && ctx.elicitation
-      ? await askChoice(ctx, { texts, question: c.aiUsageQuestion, options: [c.aiUsageYes, c.aiUsageSkip] })
-      : { chat: chatChoice(c.aiUsageQuestion, [c.aiUsageYes, c.aiUsageSkip], texts) };
-    if (asked.answer === c.aiUsageSkip) {
+      ? await askChoice(ctx, { texts, question, options })
+      : { chat: chatChoice(question, options, texts) };
+    const answer = signup && asked.answer === c.aiUsageYes ? await confirmInDialog(ctx, c, disclaimers) : asked.answer;
+    if (answer === c.aiUsageSkip) {
       dialogConsent = 'denied';
       return declined(lang);
     }
-    if (asked.answer === c.aiUsageYes) {
+    if (answer === c.aiUsageYes) {
       dialogConsent = 'granted';
       return { ok: true, reason: 'consent-granted', consent: { granted: true }, message: 'The talent said yes in the dialog: do not ask again. Call ai_usage with consent.granted:true (and their email) to run it.' };
     }
-    return {
+    consentAsked = true;
+    const chat = asked.chat || chatChoice(question, options, texts);
+    const reply = {
       ok: false,
       reason: 'consent-required',
       ...(asked.dismissed ? { dismissed: asked.dismissed } : {}),
-      ...asked.chat,
-      message: `Nothing was scanned. ${asked.chat.choiceMessage} Then call ai_usage again with consent.granted:true only after they pick the first option, or consent.granted:false if they skip it.`,
+      ...forChat(chat),
+      message: `Nothing was scanned. ${chat.choiceMessage} Then call ai_usage again with consent.granted:true only after they pick the first option, or consent.granted:false if they skip it.`,
     };
+    if (!signup) return reply;
+    // A yes hands over the disclaimers, written before the scan starts; a skip hands over its fixed line, which the next question would carry.
+    return withNextSay(reply, [
+      handOver(CONSENT_QUESTION, { step: 'ai_usage', ifAnswer: [c.aiUsageYes], texts: disclaimers }),
+      handOver(CONSENT_QUESTION, { step: 'interview', ifAnswer: [c.aiUsageSkip], texts: [c.aiUsageSkipped] }),
+    ]);
   }
 
   async function handler(args = {}, ctx = {}) {
@@ -369,7 +394,8 @@ function makeAiUsageTools(deps = {}) {
     if (phase === 'waiting') {
       return { ok: false, reason: 'account-pending', message: 'Nothing was scanned. Ask about AI usage only once signup_status says the account exists.' };
     }
-    const consent = args.consent || {};
+    const consent = phase === 'account' && !consentAsked && dialogConsent === null ? {} : args.consent || {};
+    if (typeof consent.granted === 'boolean') settle(CONSENT_QUESTION, consent.granted ? signupCopy(textLang).aiUsageYes : signupCopy(textLang).aiUsageSkip);
     if (consent.granted === false) return declined(textLang);
     if (consent.granted === true && dialogConsent === 'denied') {
       return { ok: false, reason: 'consent-declined', message: 'The talent skipped the AI-usage step in the dialog: nothing is scanned. Carry on without it. If they later ask for the scan themselves, call ai_usage without consent to ask them again.' };
@@ -488,9 +514,9 @@ function makeAiUsageTools(deps = {}) {
   const usage = {
     name: 'ai_usage',
     title: 'Analyse how you work with AI',
-    description: 'Asks you first and, only if you say yes, looks at which AI tools you use on this computer and the history of your code projects. Then it shows you exactly what would go to your Shakers profile and uploads it only if you approve it; your code and prompts never leave your computer.',
+    description: "Asks you first and, only if you say yes, looks at which AI tools you use on this computer, your conversations with AI assistants and the history of your code projects. It shows you exactly what would go to your Shakers profile (fragments of those conversations, sample commands and your agents' definitions, with anything that looks like a secret removed) and uploads it only if you approve it; an AI model from an external provider (OpenAI, Google or Anthropic) analyses that text for Shakers to compute your evaluation and then discards it, keeping only the result (levels, scores, counts and the names of your tools and agents).",
     guidance:
-      "Measure how a Shakers talent uses AI in their work: scans this machine and repository for AI-tool usage (subagents, MCP servers, sessions, git activity) and scores their AI-maturity tier (T0-T7). Runs entirely on the talent's own machine. Before any scan, call it without consent: it asks the AI-usage question with both disclaimers in the same block (a dialog, or `say` to print word for word); only an explicit yes allows consent.granted:true, and skipping is consent.granted:false. The yes only scans: nothing is uploaded until the talent approves the review. Outside the sign-up, with a signed-in, email-verified session, the scan is followed by that review in the same call: a form when the client has one, otherwise `say` (what would be sent, what Shakers does with it, and the question) to print word for word, and then ai_usage_upload with the talent's answer. Without a verified session nothing can be sent and `text` is the report only. In the sign-up it is the step right after the account exists: on yes the scan runs in the background, then ai_usage_upload asks. After an upload, show relayVerbatim and `text` (the 'My work with AI' report, Markdown, no ANSI; keep the matrix grid fenced) verbatim; if next is ai_usage_result, call it in a few minutes. It runs no LLM on the machine. IDs and codes (agent `code`, skillId, catalogId) are internal handles for the add_* tools only — never show them.",
+      "Measure how a Shakers talent uses AI in their work: scans this machine and repository for AI-tool usage (subagents, MCP servers, sessions, git activity) and scores their AI-maturity tier (T0-T7). The scan runs on the talent's own machine; an approved upload sends derived signals plus secret-scrubbed text (conversation fragments, sample commands, agent definitions), which an AI model from an external provider (OpenAI, Google or Anthropic) analyses for Shakers and discards, keeping only the result. Before any scan, call it without consent: it asks the AI-usage question with both disclaimers in the same block (a dialog, or `say` to print word for word); only an explicit yes allows consent.granted:true, and skipping is consent.granted:false. The yes only scans: nothing is uploaded until the talent approves the review. Outside the sign-up, with a signed-in, email-verified session, the scan is followed by that review in the same call: a form when the client has one, otherwise `say` (what would be sent, what Shakers does with it, and the question) to print word for word, and then ai_usage_upload with the talent's answer. Without a verified session nothing can be sent and `text` is the report only. In the sign-up it is the step right after the account exists: on yes the scan runs in the background, then ai_usage_upload asks. After an upload, show relayVerbatim and `text` (the 'My work with AI' report, Markdown, no ANSI; keep the matrix grid fenced) verbatim; if next is ai_usage_result, call it in a few minutes. It runs no LLM on the machine. IDs and codes (agent `code`, skillId, catalogId) are internal handles for the add_* tools only — never show them.",
     inputSchema: AI_USAGE_INPUT_SCHEMA,
     handler,
   };
@@ -500,7 +526,7 @@ function makeAiUsageTools(deps = {}) {
     title: 'Review and upload your AI analysis',
     description: 'Shows you exactly what your AI analysis would send to your Shakers profile and what Shakers does with it, lets you leave out repositories, agents or text excerpts, and uploads it only if you approve.',
     guidance:
-      "The only way an AI-usage analysis reaches Shakers. Call it without confirm: it shows the review (a form the talent fills in when the client has one; otherwise `say` to print word for word, plus `excludable`). In the chat, call it again with confirm:true only when the talent picked the upload option, with exclude for what they asked to leave out, or confirm:false when they picked not to; never decide for them, and confirm counts only after the review was shown in the chat. In the sign-up pass waitSeconds 30: reason scan-running means carry on and call it again after the interview step. On an upload print relayVerbatim word for word. Nothing is sent twice.",
+      "The only way an AI-usage analysis reaches Shakers. Call it without confirm: it shows the review (a form the talent fills in when the client has one; otherwise a question to ask as its message says, plus `excludable`). In the chat, call it again with confirm:true only when the talent picked the upload option, with exclude for what they asked to leave out, or confirm:false when they picked not to; never decide for them, and confirm counts only after the review was shown in the chat. In the sign-up pass waitSeconds 30: reason scan-running means carry on and call it again after the interview step. On an upload print relayVerbatim word for word. Nothing is sent twice.",
     inputSchema: UPLOAD_INPUT_SCHEMA,
     handler: uploadHandler,
   };

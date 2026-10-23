@@ -5,4 +5,4 @@ disable-model-invocation: true
 allowed-tools: mcp__plugin_shakers_shakers__ai_usage, mcp__plugin_shakers_shakers__ai_usage_upload
 ---
 
-Evaluate how I work with AI for my Shakers profile. First ask me for consent and the email to attribute it to, then call the `ai_usage` tool. Before anything is uploaded it shows me what would be sent and asks me: show that review verbatim, let me answer myself, and only then use `ai_usage_upload`. Show me the resulting report verbatim. Never show internal ids/codes.
+Evaluate how I work with AI for my Shakers profile. First ask me for consent and the email to attribute it to, then call the `ai_usage` tool. Before anything is uploaded it shows me what would be sent and asks me: show that review verbatim, let me answer myself, and only then use `ai_usage_upload`. Show me the resulting report verbatim. Never show internal ids/codes. Every Shakers tool result starts with a "What Shakers does in this step" block (in Spanish: "Qué hace Shakers en este paso"): show it to me word for word and first, every time, never summarized or skipped, and tell me in one short sentence before each Shakers tool call what you are about to do.

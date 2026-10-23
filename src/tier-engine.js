@@ -15,7 +15,7 @@ function tierLadder() {
   return TIERS.map((t) => ({ key: t.key, name: t.name, means: t.means }));
 }
 
-const AGENTIC_IDS = ['claude-code', 'aider', 'gemini-cli', 'codex-cli', 'amazon-q-developer'];
+const AGENTIC_IDS = ['claude-code', 'aider', 'gemini-cli', 'codex-cli', 'amazon-q-developer', 'pi', 'opencode'];
 
 // Band 0-4 derived from tier (level-model.md, single source of truth): index = tier -> band.
 const BAND_BY_TIER = [0, 1, 2, 3, 3, 4, 4, 4];
@@ -55,16 +55,27 @@ function aggregateTierSignals(report) {
   }
 
   const hasAgentic = detected.some((t) => AGENTIC_IDS.includes(t.id));
-  const agentCount =
+  const localAgentCount =
     report && report.agentCounts && typeof report.agentCounts.agents === 'number'
       ? report.agentCounts.agents
       : 0;
+  const agentCount = localAgentCount + profileOnlyAgentCount(report);
 
   // THE MCP SIGNAL IS THE DEDUPED SET THE REPORT SHOWS.
   const mcpTotal =
     report && report.mcp && typeof report.mcp.total === 'number' ? report.mcp.total : mcp;
 
   return { totalDetected: detected.length, context, mcp: mcpTotal, custom, hooks, hasAgentic, agentCount };
+}
+
+function normalizeAgentName(name) {
+  return typeof name === 'string' ? name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim() : '';
+}
+
+function profileOnlyAgentCount(report) {
+  const profile = report && Array.isArray(report.profileAgentNames) ? report.profileAgentNames : [];
+  const local = new Set((report && Array.isArray(report.agents) ? report.agents : []).map((a) => normalizeAgentName(a && a.name)));
+  return new Set(profile.map(normalizeAgentName).filter((n) => n && !local.has(n))).size;
 }
 
 function computeTier(signals) {
@@ -105,6 +116,7 @@ module.exports = {
   tierLadder,
   computeTier,
   aggregateTierSignals,
+  normalizeAgentName,
   bandForTier,
   setupLevelForTier,
   SETUP_LEVELS,

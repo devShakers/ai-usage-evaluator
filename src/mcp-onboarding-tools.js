@@ -59,7 +59,6 @@ const ADD_PROJECT_SCHEMA = {
 
 function makeOnboardingTools(deps = {}) {
   const {
-    getLoginEndpoint = require('./config').getLoginEndpoint,
     clearAuthSession = require('./auth-session-store').clearAuthSession,
     getUsageDiscoveredInventoryEndpoint = require('./config').getUsageDiscoveredInventoryEndpoint,
     getSkillsDeclareEndpoint = require('./config').getSkillsDeclareEndpoint,
@@ -69,7 +68,6 @@ function makeOnboardingTools(deps = {}) {
     getPortfoliosListEndpoint = require('./config').getPortfoliosListEndpoint,
     getPortfolioUpdateEndpoint = require('./config').getPortfolioUpdateEndpoint,
     getAgentPortfoliosEndpoint = require('./config').getAgentPortfoliosEndpoint,
-    requestLogin = require('./auth-client').requestLogin,
     saveAuthSession = require('./auth-session-store').saveAuthSession,
     loadAuthSession = require('./auth-session-store').loadAuthSession,
     sessionStatus = require('./auth-session-store').sessionStatus,
@@ -362,7 +360,7 @@ function makeOnboardingTools(deps = {}) {
       name: 'add_project',
       title: 'Add this project to your portfolio',
       description: 'Reads the name of the project folder open here, the web address of its code and the dates of its first and last change. It asks you first, naming all of them, and only then sends them to Shakers as a new portfolio project.',
-      guidance: "Add the current repository to the talent's Shakers portfolio as a project. Name and URL default to the repo directory and its git remote, and the start/end dates are derived from the repo's git history. Optionally pass clientName and clientDomain (the client's website/domain, e.g. 'acme.com' — Shakers fetches the client logo from it). The tool asks the talent first, naming the folder, web address, dates and client it will send (a dialog when the client has one, otherwise it returns `say` to print word for word as your whole reply); nothing is sent until they answer yes. After a `say`, call it again with the same arguments and answer set to the option they pick. Never answer for them. Requires an active session. Any ids/codes in the result are internal handles for tools only — never show or mention them to the talent.",
+      guidance: "Add the current repository to the talent's Shakers portfolio as a project. Name and URL default to the repo directory and its git remote, and the start/end dates are derived from the repo's git history. Optionally pass clientName and clientDomain (the client's website/domain, e.g. 'acme.com' — Shakers fetches the client logo from it). The tool asks the talent first, naming the folder, web address, dates and client it will send (a dialog when the client has one, otherwise it returns the question to ask as its message says); nothing is sent until they answer yes. After asking it in the chat, call it again with the same arguments and answer set to the option they pick. Never answer for them. Requires an active session. Any ids/codes in the result are internal handles for tools only — never show or mention them to the talent.",
       inputSchema: ADD_PROJECT_SCHEMA,
       handler: addProject,
     },

@@ -15,9 +15,12 @@ const MAX_ATTEMPTS = 5;
 const YES_RE = /^(y|yes|s|si|sí)$/i;
 const NO_RE = /^(n|no)$/i;
 
-async function askYesNo(ask, question, catalog, { defaultNo = false, defaultYes = false } = {}) {
+const UNANSWERED = Symbol('unanswered');
+
+async function askYesNo(ask, question, catalog, { defaultNo = false, defaultYes = false, blankUnanswered = false } = {}) {
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const raw = String(await ask(question)).trim();
+    if (blankUnanswered && raw === '') return UNANSWERED;
     if (defaultNo && raw === '') return false;
     if (defaultYes && raw === '') return true;
     if (YES_RE.test(raw)) return true;
@@ -56,6 +59,7 @@ async function runConsentPrompt({
   sessionEmail = null,
   drainBeforeAsk = false,
   profile = 'talent',
+  requireExplicitAnswer = false,
 }) {
   const c = catalog.consent;
   // Presentation only: framed by src/legal-notice.js on a
@@ -69,7 +73,8 @@ async function runConsentPrompt({
   }
 
   // defaultNo: a blank Enter means "do not save" (legal requirement).
-  const accepted = await askYesNo(ask, c.persistQuestion, catalog, { defaultNo: true });
+  const accepted = await askYesNo(ask, c.persistQuestion, catalog, { defaultNo: !requireExplicitAnswer, blankUnanswered: requireExplicitAnswer });
+  if (accepted === UNANSWERED) return 'unanswered';
   if (accepted === null) {
     process.stdout.write(`  ${c.notObtained}\n\n`);
     return null;

@@ -96,13 +96,10 @@ async function requestMyImportStatus({ hubAccessToken } = {}, { endpoint, timeou
   return { ok: true, ...importStateOf(data) };
 }
 
-// better-auth reads the session from the cookie (email sign-in) or the Bearer session token (device flow).
-async function requestOneTimeToken({ cookie = null, sessionToken = null } = {}, { endpoint, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+async function requestOneTimeToken({ sessionToken = null } = {}, { endpoint, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   if (!endpoint) return { ok: false, reason: 'no-endpoint' };
-  const headers = {};
-  if (cookie) headers.Cookie = cookie;
-  else if (sessionToken) headers.Authorization = `Bearer ${sessionToken}`;
-  else return { ok: false, reason: 'no-session' };
+  if (!sessionToken) return { ok: false, reason: 'no-session' };
+  const headers = { Authorization: `Bearer ${sessionToken}` };
   let res;
   try {
     res = await postJsonWithTimeout(endpoint, null, timeoutMs, 'GET', null, headers);

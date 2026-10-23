@@ -2,7 +2,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const { getHomeDir } = require('./env-paths');
+const { getHomeDir, codexHome, piAgentDir } = require('./env-paths');
+const { OWN_MCP_SERVER_NAMES } = require('./mcp-server-name');
 
 // KEYWORD -> { SERVICE LABEL, CATEGORY }.
 const SERVICE_CATALOG = [
@@ -100,6 +101,11 @@ const MCP_CONFIG_LOCATIONS = [
   // --- Gemini CLI: home was read; the project-level settings file was not ---
   { tool: 'gemini-cli', scope: 'home', keys: ['mcpServers'], confidence: 'medium', file: (root, home) => path.join(home, '.gemini', 'settings.json') },
   { tool: 'gemini-cli', scope: 'project', keys: ['mcpServers'], confidence: 'medium', file: (root) => path.join(root, '.gemini', 'settings.json') },
+  { tool: 'codex-cli', scope: 'home', read: readTomlMcpServerNames, confidence: 'high', file: () => path.join(codexHome(), 'config.toml') },
+  { tool: 'pi', scope: 'home', keys: ['mcpServers'], confidence: 'high', file: () => path.join(piAgentDir(), 'mcp.json') },
+  { tool: 'pi', scope: 'project', keys: ['mcpServers'], confidence: 'high', file: (root) => path.join(root, '.pi', 'mcp.json') },
+  { tool: 'opencode', scope: 'home', keys: ['mcp'], confidence: 'medium', file: (root, home) => path.join(home, '.config', 'opencode', 'opencode.json') },
+  { tool: 'opencode', scope: 'project', keys: ['mcp'], confidence: 'medium', file: (root) => path.join(root, 'opencode.json') },
   // VS Code: `servers`, not `mcpServers`, and three OS-specific user paths.
   { tool: null, scope: 'project', keys: ['servers', 'mcpServers'], confidence: 'medium', file: (root) => path.join(root, '.vscode', 'mcp.json') },
   { tool: null, scope: 'home', keys: ['servers', 'mcpServers'], confidence: 'medium', file: (root, home) => path.join(home, 'Library', 'Application Support', 'Code', 'User', 'mcp.json') },
@@ -134,6 +140,23 @@ function readMcpServerNames(file, keys = ['mcpServers']) {
   return [];
 }
 
+const TOML_MCP_TABLE = /^\s*\[\s*mcp_servers\.(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))/;
+
+function readTomlMcpServerNames(file) {
+  let raw;
+  try {
+    raw = fs.readFileSync(file, 'utf8');
+  } catch {
+    return [];
+  }
+  const names = new Set();
+  for (const line of raw.split(/\r?\n/)) {
+    const m = TOML_MCP_TABLE.exec(line);
+    if (m) names.add(m[1] || m[2] || m[3]);
+  }
+  return [...names];
+}
+
 // Deterministic (no-LLM) MCP-by-name detection over every location in `MCP_CONFIG_LOCATIONS` (project ∪ home).
 function detectMcpServers(root) {
   const home = getHomeDir();
@@ -148,7 +171,7 @@ function detectMcpServers(root) {
     } catch {
       continue; // an unresolvable home never breaks the other locations
     }
-    const names = readMcpServerNames(file, loc.keys);
+    const names = (loc.read ? loc.read(file) : readMcpServerNames(file, loc.keys)).filter((n) => !OWN_MCP_SERVER_NAMES.has(n));
     if (loc.tool && names.length) {
       // Per-tool count is the union across THAT tool's own locations, so a
       // server configured both in the project and globally counts once for it.
@@ -220,4 +243,5 @@ module.exports = {
   serviceForMcpServerName,
   MCP_CONFIG_LOCATIONS,
   SERVICE_CATALOG,
+  readTomlMcpServerNames,
 };

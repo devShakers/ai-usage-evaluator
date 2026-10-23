@@ -25,11 +25,13 @@ const { collectIdentityAndUsage, storedAiConsent, reanchorReusedGrant } = requir
 const { doBuildNextLevel } = require('./usage-oneshot-commands');
 const { uploadFacts, withoutExcluded, summaryText, explanationText } = require('./ai-usage-review');
 const { reviewCopy } = require('./signup-copy');
+const { getCatalog } = require('./i18n');
 const { askYesNo } = require('./consent-flow');
+const { currentRunId } = require('./command-audit');
 
 async function maybeAutoShare(report, maturity, root, catalog, { bypassThrottle = false } = {}) {
   try {
-    const result = await autoShare(report, maturity, { root, bypassThrottle });
+    const result = await autoShare(report, maturity, { root, bypassThrottle, cliCommandId: currentRunId() });
     if (result && result.ok && result.backend) {
       process.stdout.write(`  ${catalog.backendChain.saved(result.backend)}\n`);
       return result;
@@ -67,10 +69,11 @@ async function resolveAiConsent({ opts, catalog, gate, injectedAsk }) {
   if (opts.json) return storedAiConsent({ gate });
   const state = loadConsentState();
   const decision = getConsentDecision(state);
+  const stdinIsTTY = !!process.stdin.isTTY;
   const consentSkip = computeConsentSkip({
     decision,
     emailVerified: state ? state.emailVerified : undefined,
-    stdinIsTTY: !!process.stdin.isTTY,
+    stdinIsTTY,
     consentFilePath: consentPath(),
     catalog,
   });
@@ -92,9 +95,14 @@ async function resolveAiConsent({ opts, catalog, gate, injectedAsk }) {
     try {
       result = await runConsentPrompt({
         ask, catalog, loggedIn: gate.loggedIn, sessionEmail: gate.email, profile: gate.profile,
+        requireExplicitAnswer: !stdinIsTTY,
       });
     } finally {
       if (!injectedAsk) ask.close();
+    }
+    if (result === 'unanswered') {
+      process.stderr.write(`\n  ${termColors.warning}${catalog.consent.nonInteractiveUnanswered}${termColors.reset}\n`);
+      process.exitCode = 1;
     }
     aiConsentGranted = result === 'granted';
   }
@@ -131,7 +139,7 @@ async function reviewUpload({ report, maturity, repos = [], lang, catalog, injec
   }
   const c = reviewCopy(lang);
   const facts = uploadFacts({ report, maturity, repos });
-  out.write(`\n${summaryText(lang, facts)}\n\n${explanationText(lang)}\n\n`);
+  out.write(`\n${summaryText(lang, facts)}\n\n${explanationText(lang)}\n\n  ${getCatalog(lang).trust.uploadWarning}\n\n`);
   if (facts.repos.length > 1) out.write(`${c.cliRepoHint}\n\n`);
   const ask = injectedAsk || createStdinAsk();
   try {
@@ -246,6 +254,7 @@ async function maybeRenderAiProfile({ report, maturity, lang, root, save, submit
 }
 
 module.exports = {
+  maybeAutoShare,
   reviewUpload,
   prepareIdentityAndUsage,
   resolveAiConsent,

@@ -54,6 +54,7 @@ async function requestListAgents({ accessToken, hubAccessToken } = {}, { endpoin
     .map((entry) => ({
       name: entry && typeof entry.name === 'string' ? entry.name : null,
       id: entry && (typeof entry.id === 'string' || typeof entry.id === 'number') ? String(entry.id) : null,
+      source: entry && typeof entry.source === 'string' ? entry.source : null,
     }))
     .filter((a) => a.name !== null);
   return { ok: true, agents };

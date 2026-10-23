@@ -2,7 +2,7 @@
 
 // MCP role tools: list, add and recommend roles, and set the main role (the sign-up's last step before open_web).
 
-const { askChoice, askAfterTexts, chatChoice, optionFor, SAY_MESSAGE } = require('./mcp-choice');
+const { askChoice, askAfterTexts, chatChoice, forChat, optionFor, OPEN_MESSAGE } = require('./mcp-choice');
 const { signupCopy, renderRole } = require('./signup-copy');
 const { signupLanguage } = require('./signup-language');
 
@@ -17,8 +17,10 @@ const MAX_WAIT_SECONDS = 45;
 const PENDING_FINALIZATION = new Set(['COLLECTING', 'PROCESSING']);
 // Alma's signal from the interview first, then the CV import, as the web stacks them.
 const SOURCE_ORDER = { ONBOARDING_INTERVIEW: 0, IMPORT: 1 };
-// A catalogue this short is offered whole; a longer one only by the roles that match what the talent says.
-const MAX_ROLE_OPTIONS = 5;
+// The chat's question tool takes two to four options: at most four roles are offered and the talent types any other one;
+// a single role gets the "other role" button as its second option.
+const MAX_ROLE_OPTIONS = 4;
+const withOther = (names, other) => (names.length === 1 ? [...names, other] : names);
 
 const fold = (text) => String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
@@ -77,7 +79,7 @@ const SET_MAIN_ROLE_SCHEMA = {
       description: 'In the sign-up, for each recommended role (by clusterId from list_my_roles): ONE short concrete fact from the CV, the interview or the AI-usage analysis that shows why it fits (e.g. "6 years with Spark and Airflow"), in the talent\'s language. It is shown under the role.',
     },
     answer: { type: 'string', description: 'The option the talent picked when you asked the question in the chat.' },
-    clusterId: { type: 'string', description: 'The role the talent already picked, by clusterId from list_my_roles or from the roles this tool returned. Omit it in the sign-up: the tool asks the talent which recommended role is their main one (a dialog, or options it returns), with the catalogue as the last option.' },
+    clusterId: { type: 'string', description: 'The role the talent already picked, by clusterId from list_my_roles or from the roles this tool returned. Omit it in the sign-up: the tool asks the talent which recommended role is their main one (a dialog, or options it returns); a role they type instead is looked up in the catalogue.' },
     catalogue: { type: 'boolean', description: 'true when the role comes from the catalogue: with clusterId it adds the role before setting it; without clusterId it asks from the catalogue.' },
   },
 };
@@ -120,6 +122,8 @@ function makeRoleTools(deps = {}) {
   } = deps;
   let clustersCount;
   let onboardingCompleted = false;
+  // The recommended roles were offered in the chat, so an answer that names none of them is a role the talent typed.
+  let recommendedAsked = false;
 
   async function finishSignup(session) {
     if (onboardingCompleted || !inSignup()) return;
@@ -226,7 +230,7 @@ function makeRoleTools(deps = {}) {
       ok: false,
       reason: 'main-role-choice-required',
       ...(asked.dismissed ? { dismissed: asked.dismissed } : {}),
-      ...asked.chat,
+      ...forChat(asked.chat),
       roles: roles.map((r) => ({ clusterId: r.clusterId, name: r.name })),
       message: `${asked.chat.choiceMessage} Then call set_main_role with the clusterId (from roles) of the one they pick. ${extra}`,
     };
@@ -244,10 +248,10 @@ function makeRoleTools(deps = {}) {
     }));
   }
 
-  // The main-role step: why each recommended role fits and how many projects want it, then the question; the catalogue is the last option.
+  // The main-role step: why each of the best recommended roles fits and how many projects want it, then the question; any other role the talent types is looked up in the catalogue.
   async function chooseMainRole(session, args, ctx) {
     const read = await readRoles(session.hubAccessToken);
-    const recommended = byName(read.recommended);
+    const recommended = byName(read.recommended).slice(0, MAX_ROLE_OPTIONS);
     if (!recommended.length && read.mainClusterId) {
       await finishSignup(session);
       return { reply: { ok: true, alreadySet: true, clusterId: read.mainClusterId, message: 'The talent already has a main role and nothing new was recommended: nothing to ask. Go on to open_web; only if they ask to change it, call set_main_role with catalogue:true.' } };
@@ -257,17 +261,29 @@ function makeRoleTools(deps = {}) {
     const counts = await openCounts(session.hubAccessToken, recommended);
     trackSuggestions(recommended);
     const evidence = args.evidence && typeof args.evidence === 'object' ? args.evidence : {};
-    const blocks = recommended.map((r, i) => renderRole(lang(), { name: r.name, source: r.source, evidence: evidence[r.clusterId], openProjects: counts[i], recommended: i === 0 }));
+    const options = withOther(recommended.map((r) => r.name), c.mainRoleOther);
+    // Each option numbered with why it fits; "another role" is its own label.
+    const blocks = options.map((name, i) => (recommended[i] ? renderRole(lang(), { name, source: recommended[i].source, evidence: evidence[recommended[i].clusterId], openProjects: counts[i], recommended: i === 0 }) : name));
+    const typed = typeof args.answer === 'string' ? args.answer.trim() : '';
+    if (recommendedAsked && typed && !optionFor(typed, options)) {
+      recommendedAsked = false;
+      return chooseFromCatalogue({ answer: typed, skills: args.skills }, ctx);
+    }
     const asked = await askAfterTexts(ctx, {
       tool: 'set_main_role',
-      texts: [[c.rolesIntro, ...blocks, c.rolesOutro].join('\n\n')],
+      texts: [c.rolesIntro],
+      listed: { blocks, after: [c.rolesOutro] },
       question: c.mainRoleQuestion,
-      options: [...recommended.map((r) => r.name), c.mainRoleOther],
+      options,
       answer: args.answer,
+      about: options,
     });
     if (asked.reply) {
-      return { reply: { ...asked.reply, roles: recommended.map((r) => ({ clusterId: r.clusterId, name: r.name })), message: `${asked.reply.message} Pass the same evidence again. If they pick the last option, call set_main_role with catalogue:true and no clusterId.` } };
+      recommendedAsked = true;
+      const other = options.includes(c.mainRoleOther) ? ' If they pick the last option, call set_main_role with catalogue:true and no clusterId.' : '';
+      return { reply: { ...asked.reply, roles: recommended.map((r) => ({ clusterId: r.clusterId, name: r.name })), message: `${asked.reply.message} Pass the same evidence again.${other} If they type another role instead of picking one, pass what they typed as answer: the closest catalogue roles are offered.` } };
     }
+    recommendedAsked = false;
     if (asked.answer === c.mainRoleOther) return chooseFromCatalogue({}, ctx);
     return { role: recommended.find((r) => r.name === asked.answer) };
   }
@@ -282,7 +298,7 @@ function makeRoleTools(deps = {}) {
         ok: false,
         reason: 'main-role-ask',
         say: copy().mainRoleAsk,
-        message: `${SAY_MESSAGE} Then call set_main_role with catalogue:true and answer = what they say: it offers the closest catalogue roles.`,
+        message: `${OPEN_MESSAGE} Then call set_main_role with catalogue:true and answer = what they say: it offers the closest catalogue roles.`,
       },
     };
   }
@@ -291,7 +307,7 @@ function makeRoleTools(deps = {}) {
     const c = copy();
     const said = typeof args.answer === 'string' ? args.answer.trim() : '';
     if (offered) {
-      const picked = optionFor(said, [...offered.map((r) => r.name), c.mainRoleNotListed]);
+      const picked = optionFor(said, withOther(offered.map((r) => r.name), c.mainRoleNotListed));
       if (picked === c.mainRoleNotListed) return askOwnRole();
       const role = picked && offered.find((r) => r.name === picked);
       if (role) { offered = null; return { role, add: true }; }
@@ -318,7 +334,8 @@ function makeRoleTools(deps = {}) {
     ].filter(Boolean).join('\n'));
     const texts = [[...(blocks.length ? [c.rolesIntro, ...blocks] : []), c.rolesOutro].join('\n\n')];
     trackSuggestions([]);
-    const asked = await askChoice(ctx, { texts, question: c.mainRoleQuestion, options: [...options.map((r) => r.name), c.mainRoleNotListed] });
+    const names = withOther(options.map((r) => r.name), c.mainRoleNotListed);
+    const asked = await askChoice(ctx, { texts, question: c.mainRoleQuestion, options: names });
     if (asked.answer === c.mainRoleNotListed) return askOwnRole();
     const role = asked.answer && options.find((r) => r.name === asked.answer);
     if (role) {
@@ -326,7 +343,8 @@ function makeRoleTools(deps = {}) {
       return { role, add: true };
     }
     offered = options;
-    return { reply: roleChoice(asked.chat ? asked : { chat: chatChoice(c.mainRoleQuestion, [...options.map((r) => r.name), c.mainRoleNotListed], texts) }, options, `Pass catalogue:true too: it adds the role first. If they pick the last option, call set_main_role with catalogue:true and answer = that option.`) };
+    const other = names.includes(c.mainRoleNotListed) ? ' If they pick the last option, call set_main_role with catalogue:true and answer = that option.' : '';
+    return { reply: roleChoice(asked.chat ? asked : { chat: chatChoice(c.mainRoleQuestion, names, texts) }, options, `Pass catalogue:true too: it adds the role first.${other} If they type another role instead, call set_main_role with catalogue:true and answer = what they typed.`) };
   }
 
   async function setMainRole(args = {}, ctx = {}) {
@@ -379,7 +397,7 @@ function makeRoleTools(deps = {}) {
       name: 'list_my_roles',
       title: 'Your roles',
       description: 'Shows your roles on Shakers and the ones suggested by your interview and your CV.',
-      guidance: "List the roles the talent already holds, plus mainClusterId (their current main role) and `recommended`: the roles the onboarding interview and the CV import suggest, interview first. Use it before set_main_role. In the sign-up pass waitSeconds (20): it waits for the interview evaluation to recommend roles and says when to call again (`pending`) or to fall back to list_available_roles. Follow `message`. clusterId is an internal handle — refer to roles by name to the talent. Requires an active session.",
+      guidance: "List the roles the talent already holds, plus mainClusterId (their current main role) and `recommended`: the roles the onboarding interview and the CV import suggest, interview first. Use it before set_main_role. In the sign-up pass waitSeconds (45): it waits for the interview evaluation to recommend roles and says when to call again (`pending`) or to fall back to list_available_roles. Follow `message`. clusterId is an internal handle — refer to roles by name to the talent. Requires an active session.",
       inputSchema: LIST_MY_ROLES_SCHEMA,
       handler: listMyRoles,
     },
@@ -387,7 +405,7 @@ function makeRoleTools(deps = {}) {
       name: 'set_main_role',
       title: 'Choose your main role',
       description: 'Asks you which role is your main one and saves it on your Shakers profile.',
-      guidance: "Set the talent's MAIN role. In the sign-up it is the last step before open_web: after onboarding_interview_complete (or when the talent skipped the interview) and once list_my_roles is no longer pending, call it without clusterId: it asks the talent which of the recommended roles is their main one, with the catalogue as the last option (or straight from the catalogue when nothing is recommended), in a dialog when the client has one; otherwise it returns `say` to print word for word and the roles, to call it again with the clusterId they pick. Then it sets that role (adding a catalogue role first). Also usable standalone with clusterId to change the main role later; catalogue:true adds a catalogue role first. Requires an active session.",
+      guidance: "Set the talent's MAIN role. In the sign-up it is the last step before open_web: after onboarding_interview_complete (or when the talent skipped the interview) and once list_my_roles is no longer pending, call it without clusterId: it asks the talent which of the (at most four) recommended roles is their main one (or straight from the catalogue when nothing is recommended), in a dialog when the client has one; otherwise it returns the question and the roles, to call it again with the clusterId they pick, or with answer = another role they type, which it looks up in the catalogue. Then it sets that role (adding a catalogue role first). Also usable standalone with clusterId to change the main role later; catalogue:true adds a catalogue role first. Requires an active session.",
       inputSchema: SET_MAIN_ROLE_SCHEMA,
       handler: setMainRole,
     },

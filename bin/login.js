@@ -5,7 +5,7 @@
 
 const { detectReportLang, getCatalog } = require('../src/i18n');
 const { getAuthTokenEndpoint, getDeviceAuthorizeEndpoint, getDeviceTokenEndpoint, getCompleteRegistrationEndpoint } = require('../src/config');
-const { runDeviceLogin, appendProviderParam, deviceSessionRecord } = require('../src/device-login');
+const { runDeviceLogin, withDeviceParams, deviceSessionRecord } = require('../src/device-login');
 const { buildRegistrationContext } = require('../src/signup-client');
 const { openPath } = require('../src/open-file');
 const { endSession } = require('../src/session-refresh');
@@ -100,14 +100,10 @@ function persistAndReport(result, c, email = null, output = process.stdout) {
     }
   }
   try {
-    // `cookie`/`cookieExpiresAt` are present for the email (better-auth) flow and
-    // absent for Google (auth-works JWT) — saveAuthSession picks the right model.
     saveAuthSession({
       accessToken: result.accessToken,
       expiresAt: result.expiresAt,
       accessTokenExpiresAt: result.expiresAt,
-      cookie: result.cookie || null,
-      cookieExpiresAt: result.cookieExpiresAt || null,
       sessionToken: result.sessionToken || null,
       sessionExpiresAt: result.sessionExpiresAt || null,
       email,
@@ -120,7 +116,7 @@ function persistAndReport(result, c, email = null, output = process.stdout) {
   }
   output.write(`\n  ${c.success}\n`);
   if (result.expiresAt) output.write(`  ${c.expiresAt(result.expiresAt)}\n`);
-  output.write('\n');
+  output.write(`\n  ${c.deviceGranted}\n\n`);
   return true;
 }
 
@@ -157,8 +153,8 @@ async function runDeviceFlow(provider, c, { openBrowser = openPath, sleep = unde
     {
       ...(sleep ? { sleep } : {}),
       onPrompt: ({ verificationUriComplete, userCode }) => {
-        const url = appendProviderParam(verificationUriComplete, provider);
-        output.write(`\n  ${c.deviceVisit}\n  ${url}\n\n  ${c.deviceCodeLabel(userCode)}\n\n  ${c.deviceWaiting}\n`);
+        const url = withDeviceParams(verificationUriComplete, { provider, mode: 'login', surface: 'cli' });
+        output.write(`\n  ${c.deviceTrust}\n\n  ${c.deviceVisit}\n  ${url}\n\n  ${c.deviceCodeLabel(userCode)}\n\n  ${c.deviceWaiting}\n`);
         if (provider === 'email') output.write(`  ${c.deviceApproveHint}\n`);
         try { openBrowser(url); } catch { /* the printed URL covers it */ }
       },

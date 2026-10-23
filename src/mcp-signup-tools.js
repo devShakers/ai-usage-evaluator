@@ -8,14 +8,13 @@ const { signupCopy, legalCopy, renderDraft, amount } = require('./signup-copy');
 const { fixSignupLanguage, signupLanguage } = require('./signup-language');
 const path = require('path');
 const { readLocalCv } = require('./cv-file');
+const { extractLinks, mentionsName, MAX_CHARS: MAX_CV_CHARS } = require('./cv-text');
 const { emailFromHubToken } = require('./auth-session-store');
-const { askAfterTexts, askConsent, optionFor, queueNotice, takeNotices } = require('./mcp-choice');
+const { askAfterTexts, askConsent, askRegistrationTerms, registrationTermsText, openQuestion, optionFor, queueNotice, takeNotices, resetQuestions, written } = require('./mcp-choice');
+const { DRAFT_RULE } = require('./mcp-instructions');
 const { expandHome, tildify } = require('./env-paths');
 const { NOOP_FUNNEL, weeklyHours, rateTypes, workSituationValue } = require('./onboarding-funnel');
 
-// MCP sign-up: hub imports into an UNREGISTERED profile that the local window claims with a code kept only in memory.
-
-const SIGNUP_WINDOW_TIMEOUT_MS = 15 * 60 * 1000;
 // The browser opens this long after the tool answers, so the AI's reply is on screen first.
 const BROWSER_OPEN_DELAY_MS = 4000;
 // Each signup_status call holds up to this long waiting for a change, so a higher value means fewer calls
@@ -23,6 +22,7 @@ const BROWSER_OPEN_DELAY_MS = 4000;
 // Claude Desktop puts on a tool call (progress notifications do not extend it there), with margin for the
 // round-trip.
 const MAX_WAIT_SECONDS = 45;
+const MAX_USER_QUERY_CHARS = 20000;
 const IMPORT_POLL_MS = 3000;
 // Languages the profile importer writes in.
 const IMPORT_LANGUAGES = new Set(['es', 'en', 'it', 'pt', 'fr']);
@@ -35,6 +35,10 @@ const LINKEDIN_PROFILE_RE = /^(?:https?:\/\/)?(?:[a-z]{2,3}\.)?linkedin\.com\/in
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // Personal mailbox providers; any other domain may be the talent's employer, so the email question adds the work-email hint.
 const PERSONAL_EMAIL_DOMAINS = new Set(['gmail.com', 'googlemail.com', 'outlook.com', 'outlook.es', 'hotmail.com', 'hotmail.es', 'hotmail.it', 'live.com', 'msn.com', 'yahoo.com', 'yahoo.es', 'yahoo.it', 'ymail.com', 'icloud.com', 'me.com', 'mac.com', 'proton.me', 'protonmail.com', 'pm.me', 'gmx.com', 'gmx.es', 'gmx.de', 'aol.com', 'zoho.com', 'tutanota.com', 'libero.it', 'virgilio.it', 'tiscali.it', 'sapo.pt', 'mail.com', 'yandex.com', 'fastmail.com', 'hey.com', 'uol.com.br', 'bol.com.br']);
+// How the model passes the talent's free answer to the welcome.
+const WELCOME_ANSWER = 'Then call signup_start again with answer = what the talent wrote, word for word, and, as it applies: cvText with the text of a CV they attached or pasted in the chat, cvPath when they give their CV as a path on this computer, linkedinUrl when they give their LinkedIn, search:true when they ask you to look for their CV here (it asks them before searching).';
+// A CV attached in the chat reaches the model as its text, or as a path that exists only where the chat keeps its files.
+const CV_TEXT_RULE = 'Never run commands, code or any other tool to read an attached file: pass the text of the CV you see in the chat as cvText.';
 const INVALID_LINKEDIN_MESSAGE = 'That is not a LinkedIn profile URL (linkedin.com/in/<slug>; /in/me only redirects to it). Ask the talent once more to copy the address bar of their profile page, or continue with the CV only.';
 // What the model must send instead when a work-situation section is refused.
 const SECTION_HELP = {
@@ -69,6 +73,12 @@ function isPersonalEmail(email) {
 // Only an address that looks like a company one gets the hint to prefer a personal email.
 function looksLikeWorkEmail(email) {
   return !isPersonalEmail(email) && !RESERVED_EMAIL_DOMAIN_RE.test(emailDomain(email));
+}
+
+// The first LinkedIn address in what the talent wrote, if any.
+function linkedinIn(text) {
+  const m = typeof text === 'string' ? /(?:https?:\/\/)?(?:[a-z]{2,3}\.)?linkedin\.com\/in\/[^\s<>()"']+/i.exec(text) : null;
+  return m ? m[0].replace(/[.,;:!?]+$/, '') : null;
 }
 
 function isLinkedinProfileUrl(url) {
@@ -162,20 +172,15 @@ const WELCOME_SCHEMA = {
   properties: {
     language: { type: 'string', description: "ISO code of the language the talent wrote their first message in (es, en, it, pt...). It fixes the language of every sign-up text from here on." },
     firstName: { type: 'string', description: 'Only if you already know it: the welcome greets them by name.' },
-    answer: { type: 'string', description: 'The option the talent picked when you asked the question in the chat.' },
-    cvPath: { type: 'string', description: 'When the talent\'s first message or answer already gives their CV as a path on this machine: that exact file is read, with no CV question, no search and no request for the file.' },
+    answer: { type: 'string', description: 'What the talent wrote in answer to the welcome, word for word.' },
+    cvPath: { type: 'string', description: 'When the talent\'s first message or answer already gives their CV as a path on this machine: that exact file is read, with no CV question, no search and no request for the file. A file attached to the chat is not on this machine: send its text as cvText instead.' },
+    cvText: { type: 'string', description: `When the talent attached or pasted their CV in this chat: its text as you see it, word for word (at most ${MAX_CV_CHARS} characters). It is used as their CV with no question and no file read; never run commands or other tools to get it.` },
+    talentName: { type: 'string', description: "With cvText: the talent's full name as you know it (memory, chat), so a CV that names someone else is not used." },
+    linkedinUrl: { type: 'string', description: 'Their LinkedIn profile URL, when their first message or their answer gives it: it is never asked again.' },
+    search: { type: 'boolean', description: 'With answer: true when they ask you to look for their CV on this computer. It asks them before searching.' },
     linkedinMissing: { type: 'boolean', description: 'true only after read_cv, when the CV has no LinkedIn URL: returns the LinkedIn question to print as your whole reply.' },
   },
   required: ['language'],
-};
-
-const EMAIL_SCHEMA = {
-  type: 'object',
-  properties: {
-    email: { type: 'string', description: 'The best email you know for the talent (CV first, then what they told you). Omit it when you know none.' },
-    typed: { type: 'boolean', description: 'true when `email` is the one the talent just wrote in answer to the email question: it is taken as is.' },
-    answer: { type: 'string', description: 'The option the talent picked when you asked the question in the chat.' },
-  },
 };
 
 // In the order the data notice names them.
@@ -214,6 +219,22 @@ const DRAFT_SCHEMA = {
   required: ['name', 'role', 'hourlyRate', 'annualRate', 'sources'],
 };
 
+const { answer: _draftAnswer, ...DRAFT_PREVIEW_FIELDS } = DRAFT_SCHEMA.properties;
+
+const EMAIL_SCHEMA = {
+  type: 'object',
+  properties: {
+    email: { type: 'string', description: 'The best email you know for the talent (CV first, then what they told you). Omit it when you know none.' },
+    typed: { type: 'boolean', description: 'true when `email` is the one the talent just wrote in answer to the email question: it is taken as is.' },
+    answer: { type: 'string', description: 'The option the talent picked when you asked the question in the chat.' },
+    preview: {
+      type: 'object',
+      description: 'Your draft of the profile (the fields of signup_draft), passed with the email question so that its answer hands over the whole draft for the talent\'s next turn. Nothing is sent to Shakers.',
+      properties: DRAFT_PREVIEW_FIELDS,
+    },
+  },
+};
+
 const CREATE_SCHEMA = {
   type: 'object',
   properties: {
@@ -222,6 +243,8 @@ const CREATE_SCHEMA = {
     firstName: { type: 'string' },
     lastName: { type: 'string' },
     userQuery: { type: 'string', description: 'EVERYTHING you know about the talent as free text (max 20000 chars): roles, projects, stack, education, languages, location, what they want next, and the CV text when the CV was only attached in the chat.' },
+    termsAnswer: { type: 'string', description: 'The option the talent picked when you printed the terms question this tool returned. Never set it yourself.' },
+    newsletterAnswer: { type: 'string', description: 'The option the talent picked when you printed the newsletter question this tool returned. Never set it yourself.' },
   },
 };
 
@@ -229,7 +252,7 @@ const STATUS_SCHEMA = {
   type: 'object',
   properties: {
     waitSeconds: { type: 'number', description: `Wait up to this many seconds (max ${MAX_WAIT_SECONDS}) for the account or the import to change before answering.` },
-    windowLink: { type: 'boolean', description: 'true only when the talent says the sign-up window did not open: returns the text with its link.' },
+    windowLink: { type: 'boolean', description: 'true only when the talent says the Shakers page did not open or lost the link: returns the text with the link and the code again.' },
   },
 };
 
@@ -301,10 +324,10 @@ function makeSignupTools(deps = {}) {
     startDeviceLogin = require('./device-login').startDeviceLogin,
     pollDeviceToken = require('./device-login').pollDeviceToken,
     finalizeDeviceSession = require('./device-login').finalizeDeviceSession,
-    appendProviderParam = require('./device-login').appendProviderParam,
+    withDeviceParams = require('./device-login').withDeviceParams,
     deviceSessionRecord = require('./device-login').deviceSessionRecord,
     buildRegistrationContext = require('./signup-client').buildRegistrationContext,
-    runLoopbackAuth = require('./mcp-auth-form').runLoopbackAuth,
+    buildRegistrationConsent = require('./signup-client').buildRegistrationConsent,
     checkOnboardingCompleted = require('./onboarding-availability').checkOnboardingCompleted,
     fetchPricingRate = (opts) => require('./rate-client').fetchPricingRate({}, opts),
     fetchAvailability = (opts) => require('./availability-client').fetchAvailability({}, opts),
@@ -319,7 +342,11 @@ function makeSignupTools(deps = {}) {
   const state = {
     claimCode: null,
     windowUrl: null,
+    userCode: null,
     windowOpenFailed: false,
+    consent: null,
+    newsletterConsent: false,
+    toldReady: false,
     sessionToken: null,
     email: null,
     draft: null,
@@ -335,10 +362,15 @@ function makeSignupTools(deps = {}) {
     reported: { account: null, import: null },
     failedSources: new Set(),
     cvPath: null,
+    // The text of a CV attached in the chat, sent with the account as part of what Shakers knows of the talent.
+    cvText: null,
+    linkedinUrl: null,
+    welcomed: false,
+    // What the talent can do on the web is said once, when it first opens.
+    toldWeb: false,
     wake: null,
     importStartedAt: null,
     importReported: new Set(),
-    authAttempts: undefined,
   };
   currentSignup = state;
 
@@ -346,7 +378,7 @@ function makeSignupTools(deps = {}) {
     const before = state.account.state;
     state.account = next;
     if ((next.state === 'created' || next.state === 'existing') && before !== next.state) {
-      funnel.completed('account_creation', { auth_method: next.via, auth_attempts: state.authAttempts, is_returning_account: next.state === 'existing' });
+      funnel.completed('account_creation', { auth_attempts: 1, is_returning_account: next.state === 'existing' });
       funnel.identified({ newAccount: next.state === 'created' });
     }
     if (next.state === 'failed' && before !== 'failed') {
@@ -364,8 +396,7 @@ function makeSignupTools(deps = {}) {
     sleep(BROWSER_OPEN_DELAY_MS).then(() => { if (openBrowser(url) === false) onFailed(); }).catch(onFailed);
   }
 
-  // Background device flow behind the window's Google button; the claim code is read when it finalizes.
-  async function finishGoogle(authz, tokenEndpoint, authTokenEndpoint) {
+  async function finishDevice(authz, tokenEndpoint, authTokenEndpoint) {
     let interval = authz.interval;
     const deadline = now() + authz.expiresIn * 1000;
     while (now() < deadline) {
@@ -374,7 +405,7 @@ function makeSignupTools(deps = {}) {
       if (res.status === 'pending') continue;
       if (res.status === 'slow_down') { interval += 5; continue; }
       if (res.status !== 'authorized') {
-        setAccount({ state: 'failed', reason: res.status === 'denied' || res.status === 'expired' ? `google-${res.status}` : (res.reason || 'google-failed') });
+        setAccount({ state: 'failed', reason: res.status === 'denied' || res.status === 'expired' ? `device-${res.status}` : (res.reason || 'device-failed') });
         return;
       }
       const fin = await finalizeDeviceSession({
@@ -382,7 +413,12 @@ function makeSignupTools(deps = {}) {
         isNewUser: res.isNewUser,
         authTokenEndpoint,
         completeRegistrationEndpoint: getCompleteRegistrationEndpoint(),
-        registrationContext: buildRegistrationContext({ preferredLanguage: lang(), newsletterConsent: false, freelanceType: 'POTENTIAL_FREELANCE' }),
+        registrationContext: buildRegistrationContext({
+          preferredLanguage: lang(),
+          newsletterConsent: state.newsletterConsent,
+          freelanceType: flow.deriveFreelanceTypeFromSituation((state.draft && state.draft.situation) || '') || 'POTENTIAL_FREELANCE',
+        }),
+        consent: state.consent,
         claimCode: res.isNewUser ? state.claimCode : null,
       });
       if (!fin.ok) {
@@ -398,75 +434,67 @@ function makeSignupTools(deps = {}) {
       }
       state.sessionToken = res.accessToken;
       setAccount(res.isNewUser
-        ? { state: 'created', via: 'google', email, claimed: fin.claimed === true }
-        : { state: 'existing', via: 'google', email });
+        ? { state: 'created', email, claimed: fin.claimed === true }
+        : { state: 'existing', email });
       return;
     }
-    setAccount({ state: 'failed', reason: 'google-expired' });
+    setAccount({ state: 'failed', reason: 'device-expired' });
   }
 
-  async function onGoogle() {
+  async function startDevice() {
     const authorizeEndpoint = getDeviceAuthorizeEndpoint();
     const tokenEndpoint = getDeviceTokenEndpoint();
     const authTokenEndpoint = getAuthTokenEndpoint();
     if (!authorizeEndpoint || !tokenEndpoint || !authTokenEndpoint) return { ok: false, reason: 'no-endpoint' };
     const authz = await startDeviceLogin({ authorizeEndpoint });
     if (!authz.ok) return { ok: false, reason: authz.reason || 'authorize-failed' };
-    finishGoogle(authz, tokenEndpoint, authTokenEndpoint).catch(() => setAccount({ state: 'failed', reason: 'google-failed' }));
-    return { ok: true, url: appendProviderParam(authz.verificationUriComplete, 'google') };
-  }
-
-  function openWindow(identity) {
+    state.windowUrl = withDeviceParams(authz.verificationUriComplete, { mode: 'register', surface: 'mcp' });
+    state.userCode = authz.userCode;
+    state.windowOpenFailed = false;
     setAccount({ state: 'waiting' });
-    let announce;
-    const announced = new Promise((resolve) => { announce = resolve; });
-    runLoopbackAuth(
-      {
-        mode: 'register',
-        deps: resolved,
-        lang: lang(),
-        registerFields: {
-          email: identity.email,
-          name: identity.firstName,
-          lastName: identity.lastName,
-          preferredLanguage: lang(),
-          claimCode: () => state.claimCode,
-        },
-      },
-      {
-        timeoutMs: SIGNUP_WINDOW_TIMEOUT_MS,
-        openBrowser: (url) => openSoon(url, () => { state.windowOpenFailed = true; }),
-        onGoogle,
-        onUrl: (url) => { state.windowUrl = url; announce(url); },
-      },
-    ).then((outcome) => {
-      if (outcome && outcome.ok) state.authAttempts = outcome.attempts;
-      if (outcome && outcome.viaSocial) return;
-      if (!outcome || !outcome.ok) {
-        setAccount({ state: 'failed', reason: (outcome && outcome.reason) || 'window-failed' });
-        return;
-      }
-      setAccount(outcome.accountExists
-        ? { state: 'existing', via: 'email', email: outcome.email }
-        : { state: 'created', via: 'email', email: outcome.email, claimed: outcome.claimed === true });
-    }, () => setAccount({ state: 'failed', reason: 'window-failed' }));
-    return Promise.race([announced, sleep(2000).then(() => state.windowUrl)]);
+    finishDevice(authz, tokenEndpoint, authTokenEndpoint).catch(() => setAccount({ state: 'failed', reason: 'device-failed' }));
+    openSoon(state.windowUrl, () => { state.windowOpenFailed = true; });
+    return { ok: true };
   }
 
-  // Step 1: welcome, value proposal, the three steps and one question (send me your CV, or shall I look for it here?).
+  // A CV the talent attached or pasted in the chat: its text is their CV, unless it names someone else.
+  function takeCvText(args) {
+    const text = nonEmpty(args.cvText);
+    if (!text) return null;
+    if (mentionsName(text, nonEmpty(args.talentName)) === false) {
+      return { ok: false, reason: 'cv-not-talent', message: 'This CV does not name the talent: it belongs to someone else. Do not use, quote or describe it; ask them for their own CV.' };
+    }
+    state.cvText = text.slice(0, MAX_CV_CHARS);
+    const linkedin = extractLinks(state.cvText).linkedin.find(isLinkedinProfileUrl);
+    if (linkedin && !state.linkedinUrl) state.linkedinUrl = linkedin;
+    return { ok: true };
+  }
+
+  function cvInChat() {
+    return {
+      ok: true,
+      step: 'cv-text',
+      message: `The CV the talent attached is in hand: build the draft from it with sources ['cv'] (and 'linkedin' too when you have their LinkedIn), and never read the file in any other way; its text also goes to Shakers with the account, after they confirm. ${linkedinLine()}`,
+    };
+  }
+
+  // Step 1: welcome, value proposal, the three steps and an open line (send me your CV and LinkedIn, or I look for the CV).
   async function signupStart(args = {}, ctx = {}) {
     // The LinkedIn question is a tool block, so a welcome still pending is read before it and the AI words nothing.
     if (args.linkedinMissing === true && !nonEmpty(args.answer)) {
+      if (state.linkedinUrl) return { ok: true, step: 'linkedin-given', linkedinUrl: state.linkedinUrl, message: `The talent already gave their LinkedIn: pass ${state.linkedinUrl} as linkedinUrl when the account is created, never ask for it, and call signup_email now.` };
       const c = copy();
+      const linkedin = openQuestion(c.linkedinAsk);
       return {
         ok: true,
         step: 'linkedin-ask',
-        say: [...takeNotices(), c.linkedinAsk].join('\n\n'),
+        ...linkedin,
         linkedinOpening: c.linkedinOpening,
-        message: 'Print `say` word for word as your whole reply, with nothing of your own before or after it, and call no tool until the talent answers. With their URL, call signup_email. Only if they say they do not know where to find it, say `linkedinOpening` word for word and call open_linkedin_profile.',
+        message: `${linkedin.message} With their URL, call signup_email. Only if they say they do not know where to find it, say \`linkedinOpening\` word for word and call open_linkedin_profile.`,
       };
     }
-    if (!nonEmpty(args.answer)) {
+    const answering = nonEmpty(args.answer);
+    if (!answering) {
       fixSignupLanguage(args.language);
       funnel.begin();
       funnel.viewed('start');
@@ -480,14 +508,31 @@ function makeSignupTools(deps = {}) {
       state.toldKept = new Set();
       state.toldExisting = false;
       state.cvPath = null;
-      takeNotices();
+      state.cvText = null;
+      state.linkedinUrl = null;
+      state.welcomed = false;
+      state.toldWeb = false;
+      resetQuestions();
     }
-    if (nonEmpty(args.cvPath)) state.cvPath = nonEmpty(args.cvPath);
+    const cvGiven = takeCvText(args);
+    if (cvGiven && !cvGiven.ok) return cvGiven;
+    if (nonEmpty(args.cvPath) && !cvGiven) state.cvPath = nonEmpty(args.cvPath);
+    // A LinkedIn in the first message or in the answer is kept, so the LinkedIn question is never asked.
+    const linkedinGiven = nonEmpty(args.linkedinUrl) || linkedinIn(args.answer);
+    const badLinkedin = linkedinGiven && !isLinkedinProfileUrl(linkedinGiven) ? `${INVALID_LINKEDIN_MESSAGE} ` : '';
+    if (linkedinGiven && !badLinkedin) state.linkedinUrl = linkedinGiven;
     const c = copy();
-    const linkedin = 'LinkedIn: use the URL in the CV (read_cv returns links.linkedin) and call signup_email. Only if the CV has none, call signup_start with linkedinMissing:true: it returns the LinkedIn question to print. Never ask for LinkedIn in your own words.';
-    // A CV path in the first message already answers the CV question: that CV is read, and the welcome
+    // A CV attached to the first message already answers the welcome, which rides on the next question block.
+    if (!answering && cvGiven) {
+      state.welcomed = true;
+      funnel.completed('start');
+      funnel.viewed('import_sources', { sources_offered: DRAFT_SOURCES });
+      queueNotice(c.welcome(nonEmpty(args.firstName)));
+      return { ...cvInChat(), language: lang() };
+    }
+    // A CV path in the first message already answers the welcome: that CV is read, and the welcome
     // rides on the next question block, because models skip a relay that comes before another tool call.
-    if (!nonEmpty(args.answer) && state.cvPath) {
+    if (!answering && state.cvPath) {
       funnel.completed('start');
       funnel.viewed('import_sources', { sources_offered: DRAFT_SOURCES });
       queueNotice(c.welcome(nonEmpty(args.firstName)));
@@ -496,43 +541,56 @@ function makeSignupTools(deps = {}) {
         step: 'cv-given',
         cvPath: state.cvPath,
         language: lang(),
-        message: `Never explain to the talent what you are doing or what the CV holds: every text they read in this step comes from the tools, the welcome included. Now call read_cv with cvPath: it asks the talent itself before reading the file, so ask nothing about the CV in your own words. ${linkedin}`,
+        message: `Never explain to the talent what you are doing or what the CV holds: every text they read in this step comes from the tools, the welcome included. Now call read_cv with cvPath: it asks the talent itself before reading the file, so ask nothing about the CV in your own words. ${linkedinLine()}`,
       };
     }
-    const asked = await askAfterTexts(ctx, {
-      tool: 'signup_start',
-      texts: [c.welcome(nonEmpty(args.firstName))],
-      question: c.welcomeQuestion,
-      options: [c.cvAttach, c.cvSearch],
-      answer: args.answer,
-    });
-    if (asked.reply) return { ...asked.reply, language: lang() };
+    // The tools load lazily, so the model reads this tool only after a first call: the welcome cannot be written before
+    // any call. It comes whole as `say` and ends with an open line, which the talent answers in their own words.
+    if (!answering || !state.welcomed) {
+      state.welcomed = true;
+      const open = openQuestion([c.welcome(nonEmpty(args.firstName)), c.welcomeQuestion].join('\n\n'));
+      return { ok: false, reason: 'answer-required', ...open, language: lang(), message: `${open.message} ${WELCOME_ANSWER}` };
+    }
     funnel.completed('start');
     funnel.viewed('import_sources', { sources_offered: DRAFT_SOURCES });
-    // A CV path the talent gave wins over both answers: searching could read another candidate.
+    if (cvGiven) return { ...cvInChat(), ...(badLinkedin ? { message: `${badLinkedin}${cvInChat().message}` } : {}) };
+    // A CV path the talent gave wins over a search: searching could read another candidate.
     const cvPath = state.cvPath;
     if (cvPath) {
       return {
         ok: true,
         step: 'cv-given',
         cvPath,
-        message: `The talent already gave their CV: call read_cv with cvPath now (it asks the talent itself before reading the file), saying nothing about attaching it. ${linkedin}`,
+        message: `${badLinkedin}The talent already gave their CV: call read_cv with cvPath now (it asks the talent itself before reading the file), saying nothing about attaching it. ${linkedinLine()}`,
       };
     }
-    if (asked.answer === c.cvSearch) {
+    if (args.search === true) {
       return {
         ok: true,
         step: 'cv-search',
         cvNotFound: c.cvNotFound,
-        message: `The talent chose to look for their CV on this computer: call suggest_register_context, then read_cv on its first candidate, even when nameMatch is null (their name is just unknown). Each of them asks the talent itself before searching or reading, so ask nothing in your own words. Only if there is no candidate, or every one comes back mentionsTalent:false, show \`cvNotFound\` word for word and wait for the file. ${linkedin}`,
+        message: `${badLinkedin}The talent chose to look for their CV on this computer: call suggest_register_context, then read_cv on its first candidate, even when nameMatch is null (their name is just unknown). Each of them asks the talent itself before searching or reading, so ask nothing in your own words. Only if there is no candidate, or every one comes back mentionsTalent:false, show \`cvNotFound\` word for word and wait for the file. ${linkedinLine()}`,
+      };
+    }
+    if (state.linkedinUrl) {
+      return {
+        ok: true,
+        step: 'linkedin-given',
+        linkedinUrl: state.linkedinUrl,
+        message: `The talent gave their LinkedIn: pass ${state.linkedinUrl} as linkedinUrl when the account is created, never ask for it again. If their message also holds their CV (attached or pasted), call signup_start again with the same answer and cvText = its text; otherwise the draft comes from LinkedIn and what you know, with sources ['linkedin']. Ask nothing about the CV and call signup_email now.`,
       };
     }
     return {
       ok: true,
       step: 'cv-attach',
       relayVerbatim: c.cvAttachAsk,
-      message: `If their message already holds the CV (attached, pasted or as a path), do not print relayVerbatim: use that CV. Otherwise ${VERBATIM} Then wait for the CV in the chat. ${linkedin}`,
+      message: `${badLinkedin}If their message already holds the CV (attached or pasted), do not print relayVerbatim: call signup_start again with the same answer and cvText = its text. ${CV_TEXT_RULE} Otherwise ${VERBATIM} Then wait for the CV in the chat. ${linkedinLine()}`,
     };
+  }
+
+  function linkedinLine() {
+    if (state.linkedinUrl) return `LinkedIn: the talent gave ${state.linkedinUrl}; pass it as linkedinUrl when the account is created, never ask for it, and call signup_email once you have the CV.`;
+    return 'LinkedIn: use the URL in the CV (read_cv returns links.linkedin) and call signup_email. Only if the CV has none, call signup_start with linkedinMissing:true: it returns the LinkedIn question to print. Never ask for LinkedIn in your own words.';
   }
 
   // Step 2: which email the account is created with, the one they read most; a company domain gets the work-email hint.
@@ -548,24 +606,29 @@ function makeSignupTools(deps = {}) {
       return { ok: false, reason: 'email-required', relayVerbatim: c.emailUnknown, message: `${VERBATIM} It is the whole question. Then call signup_email with email set to what they write and typed:true.` };
     }
     const question = looksLikeWorkEmail(email) ? `${c.emailKnown(email)} ${c.emailWorkHint}` : c.emailKnown(email);
-    const asked = await askAfterTexts(ctx, { tool: 'signup_email', texts: [], question, options: [c.emailYes, c.emailOther], answer: args.answer });
+    // With the draft at hand, a yes hands it over, so the talent reads it at the start of the turn that asks to confirm it.
+    const draft = args.preview && typeof args.preview === 'object' ? draftFrom(args.preview) : null;
+    const draftText = draft && draft.ok ? draftTexts(draft.draft, draft.sources, email) : null;
+    const nextSay = draftText ? { step: 'local_preview', ifAnswer: [c.emailYes], texts: draftText } : null;
+    const asked = await askAfterTexts(ctx, { tool: 'signup_email', texts: [], question, options: [c.emailYes, c.emailOther], answer: args.answer, nextSay });
     if (asked.reply) return asked.reply;
     if (asked.answer === c.emailYes) {
       state.email = email;
-      return { ok: true, email, next: 'signup_draft', message: 'Email set. Now show the profile draft with signup_draft.' };
+      const handed = draftText && written(draftText.join('\n\n')) ? ' with the same draft and no answer: the talent read it at the start of your message, so it only returns the question to end your message with' : '';
+      return { ok: true, email, next: 'signup_draft', message: `Email set. Now show the profile draft with signup_draft${handed}.` };
     }
     return { ok: false, reason: 'email-required', relayVerbatim: c.emailUnknown, message: `${VERBATIM} Then call signup_email with email set to what they write and typed:true.` };
   }
 
   // A session this machine kept for the same email means the account exists, so the window will ask to sign in.
-  function knownAccount() {
+  function knownAccount(email = state.email) {
     const stored = resolved.loadAuthSession();
-    const email = stored && typeof stored.email === 'string' ? stored.email.toLowerCase() : null;
-    return !!email && !!state.email && email === state.email.toLowerCase();
+    const kept = stored && typeof stored.email === 'string' ? stored.email.toLowerCase() : null;
+    return !!kept && !!email && kept === email.toLowerCase();
   }
 
-  // Step 3: the draft, the data notice and how the window works; confirming it is what opens the window.
-  async function signupDraft(args = {}, ctx = {}) {
+  // The draft as it will be shown and sent, or why it cannot be shown yet.
+  function draftFrom(args, answer) {
     const c = copy();
     const pricing = pricingFromRates(args);
     if (!pricing.ok) return pricing;
@@ -581,19 +644,38 @@ function makeSignupTools(deps = {}) {
     if (args.ratesFromTalent === true) draft.ratesFromTalent = true;
     const sources = Array.isArray(args.sources) ? DRAFT_SOURCES.filter((s) => args.sources.includes(s)) : [];
     // A confirmation of the printed block stands even if the model drops sources on the answer call.
-    if (!sources.length && !optionFor(args.answer, [c.draftOk, c.draftChange])) {
+    if (!sources.length && !optionFor(answer, [c.draftOk, c.draftChange])) {
       return { ok: false, reason: 'draft-sources-required', message: "The draft needs sources: 'cv' if you read their CV, 'linkedin' only if you have their LinkedIn URL. Then call signup_draft again." };
     }
+    return { ok: true, draft, sources };
+  }
+
+  // The draft and the data notice: what the talent reads before confirming. How the account is created comes after.
+  function draftTexts(draft, sources, email) {
+    return [renderDraft(lang(), { ...draft, email }), legalCopy(lang()).signupNotice(sources)];
+  }
+
+  // Step 3: the draft and the data notice; confirming it leads to the terms and then to the Shakers page.
+  async function signupDraft(args = {}, ctx = {}) {
+    const c = copy();
+    const built = draftFrom(args, args.answer);
+    if (!built.ok) return built;
+    const { draft, sources } = built;
     if (!state.firstDraft) state.firstDraft = draft;
     trackDraftShown(draft);
+    // A confirmation leads to the terms question, whose text goes first in that turn; signing in to an account this machine already knows asks no terms.
+    const terms = knownAccount() ? null : { step: 'create_account', ifAnswer: [c.draftOk], texts: [registrationTermsText(lang())] };
     const asked = await askAfterTexts(ctx, {
       tool: 'signup_draft',
-      texts: [renderDraft(lang(), draft), legalCopy(lang()).signupNotice(sources), knownAccount() ? c.windowNoticeSignIn : c.windowNotice],
+      texts: draftTexts(draft, sources, state.email),
       question: c.draftQuestion,
       options: [c.draftOk, c.draftChange],
       answer: args.answer,
+      // What the confirmation is about: the draft the talent read, even if the model drops sources on the answer call.
+      about: { ...draft, email: state.email },
+      nextSay: terms,
     });
-    if (asked.reply) return { ...asked.reply, message: `${asked.reply.message} Pass the same draft fields again.` };
+    if (asked.reply) return { ...asked.reply, message: `${asked.reply.message} ${DRAFT_RULE} Pass the same draft fields again.` };
     if (asked.answer === c.draftChange) {
       state.draftConfirmed = false;
       return { ok: false, reason: 'draft-change', message: 'Ask what they want to change in one short question, then call signup_draft again with the corrected fields.' };
@@ -604,7 +686,7 @@ function makeSignupTools(deps = {}) {
     return {
       ok: true,
       next: 'signup_create_account',
-      message: 'Confirmed. Call signup_create_account now: the talent already read how the window works, so say nothing before it.',
+      message: 'Confirmed. Call signup_create_account now: it asks the terms and then explains how the account is created on the Shakers page, so say nothing about it before.',
     };
   }
 
@@ -623,8 +705,14 @@ function makeSignupTools(deps = {}) {
     }
   }
 
+  // A CV attached in the chat has no file to upload: its text travels in userQuery, within the field's limit.
+  function withCvText(userQuery) {
+    if (!state.cvText || (userQuery && userQuery.includes(state.cvText.slice(0, 200)))) return userQuery;
+    return [userQuery, state.cvText].filter(Boolean).join('\n\n').slice(0, MAX_USER_QUERY_CHARS);
+  }
+
   // Step 4: hub starts the import into an UNREGISTERED profile and the window opens to create the account (or sign in).
-  async function signupCreateAccount(args = {}) {
+  async function signupCreateAccount(args = {}, ctx = {}) {
     const c = copy();
     if (!state.draftConfirmed) {
       return { ok: false, reason: 'draft-not-confirmed', message: 'Show the draft with signup_draft and get the talent\'s confirmation first.' };
@@ -639,7 +727,7 @@ function makeSignupTools(deps = {}) {
       };
     }
 
-    const sources = { linkedinUrl: nonEmpty(args.linkedinUrl), cvPath: nonEmpty(args.cvPath), userQuery: nonEmpty(args.userQuery) };
+    const sources = { linkedinUrl: nonEmpty(args.linkedinUrl), cvPath: nonEmpty(args.cvPath), userQuery: withCvText(nonEmpty(args.userQuery)) };
     if (sources.linkedinUrl && !isLinkedinProfileUrl(sources.linkedinUrl)) return { ok: false, reason: 'invalid-linkedin-url', message: INVALID_LINKEDIN_MESSAGE };
     let cv = null;
     let cvNote = null;
@@ -651,6 +739,16 @@ function makeSignupTools(deps = {}) {
     }
     if (!sources.linkedinUrl && !cv) {
       return { ok: false, reason: 'missing-source', linkedinAsk: c.linkedinAsk, message: 'Sign-up needs the LinkedIn URL or a PDF CV: ask `linkedinAsk` word for word.' };
+    }
+
+    if (!state.consent && !state.toldExisting) {
+      const terms = await askRegistrationTerms(ctx, { tool: 'signup_create_account', lang: lang(), termsAnswer: args.termsAnswer, newsletterAnswer: args.newsletterAnswer });
+      if (terms.reply) return terms.reply;
+      if (terms.declined) {
+        return { ok: false, reason: 'terms-declined', relayVerbatim: c.termsDeclined, message: `${VERBATIM} No account was created and nothing was sent. Only if the talent later says they accept, call signup_create_account again.` };
+      }
+      state.newsletterConsent = terms.newsletterConsent;
+      state.consent = buildRegistrationConsent({ newsletterConsent: terms.newsletterConsent });
     }
 
     const identity = { email: state.email, firstName: nonEmpty(args.firstName), lastName: nonEmpty(args.lastName) };
@@ -672,16 +770,22 @@ function makeSignupTools(deps = {}) {
       funnel.completed('import_sources', { sources_attempted: attempted, sources_connected: attempted, sources_connected_count: attempted.length });
     }
     if (!reused) {
-      funnel.viewed('account_creation', { auth_methods_offered: require('./mcp-auth-form').WINDOW_METHODS.register });
-      await openWindow(identity);
+      funnel.viewed('account_creation', { auth_methods_offered: require('./auth-methods').methodIdsForFlow('register') });
+      const started = await startDevice();
+      if (!started.ok) {
+        setAccount({ state: 'failed', reason: started.reason });
+        return { ok: false, reason: started.reason, message: 'The Shakers sign-up page could not be prepared right now. Tell the talent plainly and offer to try again in a moment.' };
+      }
     }
+    // Only exists now (the link and the code), so it ends the turn; the talent comes back once the account is created.
+    const opening = openQuestion([state.toldExisting ? c.windowNoticeSignIn : c.windowNotice, c.windowLink(state.windowUrl, state.userCode), c.windowBack].join('\n\n'));
     return {
       ok: true,
       status: 'window-open',
       ...(cvNote ? { cvNote } : {}),
+      say: opening.say,
       next: 'signup_status',
-      message: (reused ? 'The sign-up window was already open; it now uses the new data. ' : 'The window opens in the talent\'s browser in a few seconds; they read how it works in the draft they confirmed. ')
-        + 'Say nothing about the window. Only if they say it did not open, call signup_status with windowLink:true. Now call signup_status (waitSeconds 45) until the account exists.',
+      message: `${opening.message} ${reused ? 'The Shakers page was already open; it now uses the new data. ' : 'The page opens in the talent\'s browser in a few seconds. '}Never invent or complete the code. When the talent comes back, call signup_status (waitSeconds 45) until the account exists.`,
     };
   }
 
@@ -718,7 +822,7 @@ function makeSignupTools(deps = {}) {
 
   function nextSteps(account) {
     const interview = 'Then the onboarding interview: if onboardingInterview.completed is true, skip it without mentioning it; otherwise call onboarding_interview_start without disclaimerAcknowledged (it asks here now or later on the web). Then, also if they skip it, the main role: list_my_roles (waitSeconds 45), then set_main_role without clusterId only when its next says so. Finally open_web.';
-    const aiUsage = 'Then ai_usage without consent: it returns the two AI-usage disclaimers and the question (show them right before asking; no scan happens before a yes). After a yes, ai_usage_upload (waitSeconds 30) shows the talent what would be sent and asks; nothing is uploaded without their pick.';
+    const aiUsage = 'Then ai_usage without consent: it returns one short question; its disclaimers come only after a yes, before any scan. After a yes, ai_usage_upload (waitSeconds 30) shows the talent what would be sent and asks; nothing is uploaded without their pick. That the account is ready comes with the next question: say nothing about it yourself.';
     if (account.state === 'existing') {
       return `This talent already had an account and signed in. Call update_existing_profile: it shows what would change and asks whether to update, and its text tells the talent about the account, so say nothing about it yourself. ${aiUsage} ${interview}`;
     }
@@ -742,8 +846,8 @@ function makeSignupTools(deps = {}) {
       noticeFailed(['linkedin']);
       lines.push('The LinkedIn import failed. Its fixed line for the talent comes with the next question: do not add your own, never with codes; retry once with import_profile; if it fails again, ask for their website or GitHub and send them with import_profile.');
     }
-    if (account.state === 'waiting') lines.push('The talent is still in the sign-up window. Call signup_status again.');
-    if (account.state === 'failed') lines.push('The sign-up window ended without an account. Ask the talent whether to try again; signup_create_account reopens it.');
+    if (account.state === 'waiting') lines.push('The talent is still on the Shakers sign-up page. Call signup_status again.');
+    if (account.state === 'failed') lines.push('The Shakers sign-up page ended without an account (denied, expired or failed). Ask the talent whether to try again; signup_create_account starts it again.');
     if (account.state === 'created' || account.state === 'existing') lines.push(nextSteps(account));
     return lines.join(' ');
   }
@@ -765,7 +869,11 @@ function makeSignupTools(deps = {}) {
     const account = { ...state.account };
     const out = { ok: true, account, import: imp };
     if (account.state === 'waiting' && (args.windowLink === true || state.windowOpenFailed) && state.windowUrl) {
-      out.relayVerbatim = copy().windowLink(state.windowUrl);
+      out.relayVerbatim = copy().windowLink(state.windowUrl, state.userCode);
+    }
+    if ((account.state === 'created' || account.state === 'existing') && !state.toldReady) {
+      state.toldReady = true;
+      queueNotice(copy().accountReady(account.state === 'created'));
     }
     if (account.state === 'created' || account.state === 'existing') {
       let completed = null;
@@ -781,7 +889,7 @@ function makeSignupTools(deps = {}) {
     if (nonEmpty(args.cvPath)) {
       const file = path.resolve(expandHome(nonEmpty(args.cvPath)));
       const c = copy().consent;
-      const asked = await askConsent(ctx, { tool: 'import_profile', key: `import_profile:${file}`, question: c.cvSend(tildify(file)), yes: c.yes, no: c.no, answer: args.answer });
+      const asked = await askConsent(ctx, { tool: 'import_profile', key: `import_profile:${file}`, question: c.cvSend(tildify(file)), yes: c.cvSendYes(path.basename(file)), no: c.no, answer: args.answer });
       if (asked.reply) return asked.reply;
       if (!asked.granted) return { ok: false, reason: 'consent-declined', message: 'The talent said no: nothing was sent. Do not send that file; call import_profile again without cvPath if the other sources still need importing.' };
       return importProfile({ ...args, cvPath: file });
@@ -865,7 +973,8 @@ function makeSignupTools(deps = {}) {
     state.toldKept = kept;
     const given = state.sources ? [state.sources.linkedinUrl && 'linkedin', state.sources.cvPath && 'cv'].filter(Boolean) : [];
     if (given.length) lines.push(c.existingLists(given));
-    return `${state.toldExisting ? c.existingUpdateQuestion : c.existingTitle}\n\n${lines.map((l) => `· ${l}`).join('\n')}`;
+    // The question goes last, after what would change: one question at the end of the message.
+    return { changes: lines.map((l) => `· ${l}`).join('\n'), question: state.toldExisting ? c.existingUpdateQuestion : c.existingTitle };
   }
 
   // The sections of save_profile_details an existing profile can take (only fields it leaves empty), and what it keeps instead.
@@ -929,8 +1038,9 @@ function makeSignupTools(deps = {}) {
     const c = copy();
     const session = resolved.loadAuthSession();
     if (resolved.sessionStatus(session) !== 'active') return { ok: false, reason: 'no-session', message: 'The talent is not signed in yet: wait for signup_status.' };
-    const question = await existingDiff();
-    const asked = await askAfterTexts(ctx, { tool: 'update_existing_profile', texts: [], question, options: [c.existingYes, c.existingNo], answer: args.answer });
+    const { changes, question } = await existingDiff();
+    // The AI-usage question that follows is short; its disclaimers are handed over only with its yes.
+    const asked = await askAfterTexts(ctx, { tool: 'update_existing_profile', texts: [changes], question, options: [c.existingYes, c.existingNo], answer: args.answer });
     if (asked.reply) return asked.reply;
     if (asked.answer === c.existingNo) {
       state.keepProfile = true;
@@ -1068,10 +1178,10 @@ function makeSignupTools(deps = {}) {
 
   async function openWeb(args = {}) {
     const session = resolved.loadAuthSession();
-    const cookie = session && resolved.sessionStatus(session) === 'active' ? session.cookie || null : null;
+    const sessionToken = state.sessionToken || (session && resolved.sessionStatus(session) === 'active' ? session.sessionToken || null : null);
     let url = null;
-    if (cookie || state.sessionToken) {
-      const minted = await requestOneTimeToken({ cookie, sessionToken: state.sessionToken }, { endpoint: getOneTimeTokenEndpoint() });
+    if (sessionToken) {
+      const minted = await requestOneTimeToken({ sessionToken }, { endpoint: getOneTimeTokenEndpoint() });
       if (minted.ok) url = getOneTimeLoginUrl(minted.token);
     }
     const loggedIn = !!url;
@@ -1084,8 +1194,9 @@ function makeSignupTools(deps = {}) {
     // A source that failed after the last signup_status gets its fixed line here, as there is no question left.
     const failed = DRAFT_SOURCES.filter((s) => imp.sources && imp.sources[s] && imp.sources[s].state === 'failed');
     noticeFailed(failed);
-    // The flow ends here, so a fixed line no question carried is printed now.
-    const unseen = takeNotices();
+    // The flow ends here, so a fixed line no question carried is printed now, and what the talent can do on the web.
+    const unseen = [...takeNotices(), ...(state.toldWeb ? [] : [copy().webNext])];
+    state.toldWeb = true;
     const relay = unseen.length ? { relayVerbatim: unseen.join('\n\n') } : {};
     const importLine = failed.length
       ? `The import of ${failed.join(' and ')} failed and its fixed line is the only thing to say about it: never say or imply it was imported; if you mention the import, name only what did import.`
@@ -1122,8 +1233,8 @@ function makeSignupTools(deps = {}) {
     {
       name: 'signup_start',
       title: 'Start your Shakers sign-up',
-      description: 'Starts your sign-up here in the chat and asks whether you send your CV or want it looked for on this computer.',
-      guidance: "FIRST call when the talent asks to sign up or register on Shakers, before you write anything: pass `language` = the language of their message. It returns the welcome to show word for word and its one question (send me your CV, or shall I look for it on this computer?). Then follow its message: CV, LinkedIn, signup_email, signup_draft, signup_create_account, signup_status. Every text it and the next sign-up tools return in `say` or relayVerbatim is printed word for word, in that language.",
+      description: 'Starts your sign-up here in the chat and asks for your CV and LinkedIn, or to look for your CV on this computer.',
+      guidance: "FIRST call when the talent asks to sign up or register on Shakers, before you write anything: pass `language` = the language of their message, and cvText when they attached or pasted their CV in the chat (its text as you see it; never run commands or other tools to read an attached file). It returns the welcome to show word for word, ending with an open line (send me your CV and your LinkedIn, or I look for your CV on this computer) that the talent answers in their own words, with no options. Then follow its message: CV, LinkedIn, signup_email, signup_draft, signup_create_account, signup_status. Every text it and the next sign-up tools return in `say`, nextSay or relayVerbatim is written word for word, in that language.",
       inputSchema: WELCOME_SCHEMA,
       handler: signupStart,
     },
@@ -1131,7 +1242,7 @@ function makeSignupTools(deps = {}) {
       name: 'signup_email',
       title: 'Choose your account email',
       description: 'Asks which email your Shakers account will use.',
-      guidance: 'Sign-up step after the CV and LinkedIn: asks which email to create the account with (the one they read most). Pass the best email you know, or none. Never comment on the email yourself.',
+      guidance: 'Sign-up step after the CV and LinkedIn: asks which email to create the account with (the one they read most). Pass the best email you know, or none, and your draft of the profile in `preview`: a yes then hands the whole draft over as nextSay, to write at the start of the next turn. Never comment on the email yourself.',
       inputSchema: EMAIL_SCHEMA,
       handler: signupEmail,
     },
@@ -1139,15 +1250,15 @@ function makeSignupTools(deps = {}) {
       name: 'signup_draft',
       title: 'Review your profile draft',
       description: 'Shows the profile draft prepared from your CV and LinkedIn, explains how your data is used and asks you to confirm it. Your account is not created until you confirm.',
-      guidance: 'Sign-up step before the account: shows the talent the profile draft you prepared from their CV, LinkedIn and what you know, with the data notice and how the account window works, and asks them to confirm it. The window to create the account opens only after they confirm.',
+      guidance: 'Sign-up step before the account: shows the talent, here in the chat, the profile draft you prepared from their CV, LinkedIn and what you know, every field that will be sent (estimated rates marked as such), with the data notice, and asks them to confirm it: that text comes as the nextSay of the email question, or as its own `say` when the email was typed or the draft changed. Never ask them to confirm without having written that whole draft in the same message. It is a local preview: nothing leaves this computer in this step, and nothing is created or sent until they confirm. How the account is created on the Shakers website comes after the confirmation and the terms.',
       inputSchema: DRAFT_SCHEMA,
       handler: signupDraft,
     },
     {
       name: 'signup_create_account',
       title: 'Create your account',
-      description: 'Once you confirm the draft, sends your CV, LinkedIn and draft to Shakers and opens a browser window where you create your account with Google or a password. Your password never goes through the chat.',
-      guidance: "After the talent confirmed the draft: starts the profile import on Shakers and, a few seconds later, opens a window in the talent's browser where they create the account with Google or a password, or sign in if they already have one. No password ever goes through the chat. Returns next: signup_status.",
+      description: 'Once you confirm the draft and accept the Terms, sends your CV, LinkedIn and draft to Shakers and opens a Shakers page (shakersworks.com) with a code, where you create your account with Google, LinkedIn or email. Your password never goes through the chat.',
+      guidance: "After the talent confirmed the draft: first asks the talent to accept the Terms and Privacy Policy, whose text came as the nextSay of the confirmation, and whether they want the newsletter (a dialog when the client has one, otherwise a question; pass each pick back as answer, or as termsAnswer and newsletterAnswer, never your own). If they decline the terms nothing is created or sent. Then starts the profile import on Shakers and opens the Shakers sign-in page with a code in the talent's browser, returning as `say` how the account is created there, the link and the code: write it as your whole message and end your turn. They create the account there (Google, LinkedIn or email) or sign in if they already have one, check the code and approve. No password ever goes through the chat. Returns next: signup_status.",
       inputSchema: CREATE_SCHEMA,
       handler: signupCreateAccount,
     },
@@ -1172,7 +1283,7 @@ function makeSignupTools(deps = {}) {
       name: 'import_profile',
       title: 'Import into your profile',
       description: 'Sends your LinkedIn, GitHub or website to Shakers to fill the empty parts of your profile, and a CV file from this computer only after asking you first. What you already wrote is kept.',
-      guidance: "Import LinkedIn, CV, GitHub or website into the SIGNED-IN talent's profile, filling only what is empty: existing texts and languages are kept, lists are added without duplicates. Use it when the sign-up import failed for a source, or for a non-PDF CV. With cvPath the tool first asks the talent, naming the file (a dialog when the client has one, otherwise it returns `say` to print word for word as your whole reply); nothing is sent until they answer yes. After a `say`, call it again with the same arguments and answer set to the option they pick. Never answer for them. Takes up to ~90 s.",
+      guidance: "Import LinkedIn, CV, GitHub or website into the SIGNED-IN talent's profile, filling only what is empty: existing texts and languages are kept, lists are added without duplicates. Use it when the sign-up import failed for a source, or for a non-PDF CV. With cvPath the tool first asks the talent, naming the file (a dialog when the client has one, otherwise it returns the question to ask as its message says); nothing is sent until they answer yes. After asking it in the chat, call it again with the same arguments and answer set to the option they pick. Never answer for them. Takes up to ~90 s.",
       inputSchema: IMPORT_SCHEMA,
       handler: importProfileAsked,
     },
@@ -1203,4 +1314,4 @@ function makeSignupTools(deps = {}) {
   ];
 }
 
-module.exports = { makeSignupTools, isSignupPending, signupPhase, readSignupCv, isPersonalEmail, looksLikeWorkEmail, WELCOME_SCHEMA, EMAIL_SCHEMA, DRAFT_SCHEMA, CREATE_SCHEMA, STATUS_SCHEMA, IMPORT_SCHEMA };
+module.exports = { makeSignupTools, isSignupPending, signupPhase, readSignupCv, isPersonalEmail, looksLikeWorkEmail, WELCOME_ANSWER, WELCOME_SCHEMA, EMAIL_SCHEMA, DRAFT_SCHEMA, CREATE_SCHEMA, STATUS_SCHEMA, IMPORT_SCHEMA };
