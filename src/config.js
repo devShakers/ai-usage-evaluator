@@ -413,6 +413,19 @@ function getUnsavePositionEndpoint(positionId, env = process.env) {
   return deriveFromHub(env, `works/talent/saved-positions/${encodeURIComponent(positionId)}`);
 }
 
+function getPositionApplicationEndpoint(positionId, env = process.env) {
+  const explicit = readEnv(env, 'POSITION_APPLICATION_ENDPOINT');
+  if (explicit && explicit.trim()) return explicit.trim();
+  if (positionId == null || typeof positionId === 'object') return null;
+  return deriveFromHub(env, `works/talent/positions/${encodeURIComponent(positionId)}/application`);
+}
+
+function getCandidaturesEndpoint(env = process.env) {
+  const explicit = readEnv(env, 'CANDIDATURES_ENDPOINT');
+  if (explicit && explicit.trim()) return explicit.trim();
+  return deriveFromHub(env, 'works/talent/candidatures');
+}
+
 function getReceivedInvitationsEndpoint(env = process.env) {
   const explicit = readEnv(env, 'RECEIVED_INVITATIONS_ENDPOINT');
   if (explicit && explicit.trim()) return explicit.trim();
@@ -837,6 +850,8 @@ module.exports = {
   // Marketplace (show-project / save-project / unsave-project / invitations).
   getPositionDetailEndpoint,
   getSavePositionEndpoint,
+  getPositionApplicationEndpoint,
+  getCandidaturesEndpoint,
   getUnsavePositionEndpoint,
   getReceivedInvitationsEndpoint,
   getMyCandidaturesEndpoint,

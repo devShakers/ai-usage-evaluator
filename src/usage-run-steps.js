@@ -28,6 +28,7 @@ const { reviewCopy } = require('./signup-copy');
 const { getCatalog } = require('./i18n');
 const { askYesNo } = require('./consent-flow');
 const { currentRunId } = require('./command-audit');
+const { offerDetectedAgentsAfterUsage } = require('./start-add-agents');
 
 async function maybeAutoShare(report, maturity, root, catalog, { bypassThrottle = false } = {}) {
   try {
@@ -161,7 +162,7 @@ async function reviewUpload({ report, maturity, repos = [], lang, catalog, injec
   }
 }
 
-async function renderAndFinalize({ report, maturity, lang, opts, root, gate, catalog, bypassThrottle = false, repos = [], injectedAsk = null }) {
+async function renderAndFinalize({ report, maturity, lang, opts, root, gate, catalog, bypassThrottle = false, repos = [], injectedAsk = null, offerAgents = null }) {
   if (opts.json) {
     process.stdout.write(JSON.stringify({ report, maturity }, null, 2) + '\n');
     return;
@@ -198,6 +199,8 @@ async function renderAndFinalize({ report, maturity, lang, opts, root, gate, cat
 
   // "My work with AI" preview, best-effort after the send; never blocks/breaks the run.
   await maybeRenderAiProfile({ report, maturity, lang, root, save: opts.save, submitOk: !!(shareResult && shareResult.ok), catalog });
+
+  if (offerAgents && injectedAsk) await offerDetectedAgentsAfterUsage({ report: reviewed.report, catalog, ask: injectedAsk, deps: offerAgents });
 }
 
 // A `ready` profile always shows; otherwise the "being evaluated"/setup-only note only shows when this run's submit succeeded.

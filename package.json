@@ -1,7 +1,7 @@
 {
   "name": "shakers-cli",
   "private": true,
-  "version": "0.18.0",
+  "version": "0.19.0",
   "description": "Shakers AI usage & skills evaluator: a local-first CLI (`shakers` binary) plus a local MCP server. Commands: ai-usage (scan + classify your AI-tool setup, T0-T7), certify (certify Skills from your code), share (branded LinkedIn card).",
   "type": "commonjs",
   "bin": {

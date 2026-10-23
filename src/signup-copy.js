@@ -56,6 +56,7 @@ const TRUST = {
       list_addable: 'lee de tu cuenta de Shakers las skills y agentes de IA encontrados en el análisis que enviaste. No cambia nada.',
       add_skill: 'añade a tu perfil de Shakers la skill que elijas. No lee nada de este ordenador.',
       add_agent: 'añade a tu perfil de Shakers el agente de IA que elijas, con la descripción que acordéis. No lee nada más de este ordenador.',
+      add_detected_agents: 'añade a tu perfil de Shakers los agentes de IA detectados que elijas, solo su nombre y su descripción, y los clientes los verán en tu perfil. No lee ni sube nada más de este ordenador. Puedes quitarlos cuando quieras desde tu perfil en la web de Shakers.',
       add_project: 'te pregunta antes y, si dices que sí, lee el nombre de la carpeta del proyecto, la dirección web de su código y las fechas de su primer y último cambio, y los envía a tu portfolio de Shakers. No envía tu código.',
       suggest_register_context: 'te pregunta antes y, si dices que sí, mira los nombres de los PDF y Word de Escritorio, Documentos, Descargas e iCloud Drive que parezcan un CV, tu zona horaria y el nombre, email y usuario de GitHub de tus herramientas de programación. No abre esos archivos ni envía nada.',
       read_cv: 'te pregunta antes y, si dices que sí, lee el texto del archivo de CV que permitas para preparar el borrador de tu perfil. No envía nada a Shakers.',
@@ -86,6 +87,8 @@ const TRUST = {
       list_certifiable_dimensions: 'lee de Shakers qué áreas de tu rol principal puedes certificar. No cambia nada.',
       find_projects: 'lee de Shakers los proyectos abiertos que mejor encajan contigo. No cambia nada.',
       show_project: 'lee de Shakers el detalle de un proyecto. No cambia nada.',
+      prepare_application: 'lee de Shakers las preguntas de la candidatura a un proyecto. No envía ni cambia nada.',
+      apply_to_project: 'envía a Shakers tu mensaje y tus respuestas para el proyecto que elijas, solo después de enseñarte el resumen y de que digas que sí: el cliente verá tu perfil de Shakers y se abre un chat con el equipo. Si el proyecto lo pide, Shakers revisa tu candidatura antes de que la vea el cliente. No cambia tu perfil.',
       save_project: 'guarda ese proyecto en tus proyectos guardados de Shakers.',
       unsave_project: 'quita ese proyecto de tus proyectos guardados de Shakers.',
       list_invitations: 'lee tus invitaciones a proyectos en Shakers. No cambia nada.',
@@ -113,6 +116,7 @@ const TRUST = {
       list_addable: 'reads from your Shakers account the skills and AI agents found in the analysis you sent. It changes nothing.',
       add_skill: 'adds the skill you pick to your Shakers profile. It reads nothing on this computer.',
       add_agent: 'adds the AI agent you pick, with the description you agree on, to your Shakers profile. It reads nothing else on this computer.',
+      add_detected_agents: 'adds the detected AI agents you pick to your Shakers profile, only their name and description, and clients will see them on your profile. It reads or uploads nothing else from this computer. You can remove them any time from your profile on the Shakers website.',
       add_project: 'asks you first and, if you say yes, reads the project folder name, the web address of its code and the dates of its first and last change, and sends them to your Shakers portfolio. It does not send your code.',
       suggest_register_context: 'asks you first and, if you say yes, looks at the names of PDF and Word files in Desktop, Documents, Downloads and iCloud Drive that look like a CV, your time zone and the name, email and GitHub user saved by your coding tools. It does not open those files or send anything.',
       read_cv: 'asks you first and, if you say yes, reads the text of the CV file you allow to prepare your profile draft. It sends nothing to Shakers.',
@@ -143,6 +147,8 @@ const TRUST = {
       list_certifiable_dimensions: 'reads from Shakers which areas of your main role you can certify. It changes nothing.',
       find_projects: 'reads from Shakers the open projects that fit you best. It changes nothing.',
       show_project: "reads a project's details from Shakers. It changes nothing.",
+      prepare_application: "reads the application questions of a project from Shakers. It sends or changes nothing.",
+      apply_to_project: 'sends your message and your answers for the project you pick to Shakers, only after showing you the summary and you saying yes: the client will see your Shakers profile and a chat with the team opens. If the project asks for it, Shakers reviews your application before the client sees it. It does not change your profile.',
       save_project: 'saves that project to your saved projects on Shakers.',
       unsave_project: 'removes that project from your saved projects on Shakers.',
       list_invitations: 'reads your project invitations on Shakers. It changes nothing.',
@@ -170,6 +176,7 @@ const TRUST = {
       list_addable: "legge dal tuo account Shakers le skill e gli agenti di IA trovati nell'analisi che hai inviato. Non cambia nulla.",
       add_skill: 'aggiunge al tuo profilo Shakers la skill che scegli. Non legge nulla di questo computer.',
       add_agent: "aggiunge al tuo profilo Shakers l'agente di IA che scegli, con la descrizione concordata. Non legge nient'altro di questo computer.",
+      add_detected_agents: "aggiunge al tuo profilo Shakers gli agenti di IA rilevati che scegli, solo il nome e la descrizione, e i clienti li vedranno nel tuo profilo. Non legge né carica nient'altro da questo computer. Puoi toglierli quando vuoi dal tuo profilo sul sito di Shakers.",
       add_project: "ti chiede prima e, se dici di sì, legge il nome della cartella del progetto, l'indirizzo web del suo codice e le date della prima e dell'ultima modifica, e li invia al tuo portfolio Shakers. Non invia il tuo codice.",
       suggest_register_context: "ti chiede prima e, se dici di sì, guarda i nomi dei PDF e Word in Scrivania, Documenti, Download e iCloud Drive che sembrano un CV, il tuo fuso orario e il nome, l'email e l'utente GitHub dei tuoi strumenti di programmazione. Non apre quei file e non invia nulla.",
       read_cv: 'ti chiede prima e, se dici di sì, legge il testo del CV che permetti per preparare la bozza del tuo profilo. Non invia nulla a Shakers.',
@@ -200,6 +207,8 @@ const TRUST = {
       list_certifiable_dimensions: 'legge da Shakers quali aree del tuo ruolo principale puoi certificare. Non cambia nulla.',
       find_projects: 'legge da Shakers i progetti aperti più adatti a te. Non cambia nulla.',
       show_project: 'legge da Shakers il dettaglio di un progetto. Non cambia nulla.',
+      prepare_application: 'legge da Shakers le domande della candidatura a un progetto. Non invia né cambia nulla.',
+      apply_to_project: "invia a Shakers il tuo messaggio e le tue risposte per il progetto che scegli, solo dopo averti mostrato il riepilogo e che tu abbia detto sì: il cliente vedrà il tuo profilo Shakers e si apre una chat con il team. Se il progetto lo richiede, Shakers rivede la tua candidatura prima che la veda il cliente. Non cambia il tuo profilo.",
       save_project: 'salva quel progetto tra i tuoi progetti salvati su Shakers.',
       unsave_project: 'toglie quel progetto dai tuoi progetti salvati su Shakers.',
       list_invitations: 'legge i tuoi inviti a progetti su Shakers. Non cambia nulla.',
@@ -227,6 +236,7 @@ const TRUST = {
       list_addable: 'lê da sua conta Shakers as skills e os agentes de IA encontrados na análise que enviou. Não altera nada.',
       add_skill: 'adiciona ao seu perfil Shakers a skill que escolher. Não lê nada deste computador.',
       add_agent: 'adiciona ao seu perfil Shakers o agente de IA que escolher, com a descrição combinada. Não lê mais nada deste computador.',
+      add_detected_agents: 'adiciona ao seu perfil Shakers os agentes de IA detetados que escolher, apenas o nome e a descrição, e os clientes vão vê-los no seu perfil. Não lê nem envia mais nada deste computador. Pode removê-los quando quiser a partir do seu perfil na web da Shakers.',
       add_project: 'pergunta-lhe antes e, se disser que sim, lê o nome da pasta do projeto, o endereço web do código e as datas da primeira e da última alteração, e envia-os para o seu portfolio Shakers. Não envia o seu código.',
       suggest_register_context: 'pergunta-lhe antes e, se disser que sim, vê os nomes dos PDF e Word em Secretária, Documentos, Transferências e iCloud Drive que pareçam um CV, o seu fuso horário e o nome, email e utilizador GitHub das suas ferramentas de programação. Não abre esses ficheiros nem envia nada.',
       read_cv: 'pergunta-lhe antes e, se disser que sim, lê o texto do CV que autorizar para preparar o rascunho do seu perfil. Não envia nada para a Shakers.',
@@ -257,6 +267,8 @@ const TRUST = {
       list_certifiable_dimensions: 'lê da Shakers que áreas da sua função principal pode certificar. Não altera nada.',
       find_projects: 'lê da Shakers os projetos abertos que mais se ajustam a si. Não altera nada.',
       show_project: 'lê da Shakers o detalhe de um projeto. Não altera nada.',
+      prepare_application: 'lê da Shakers as perguntas da candidatura a um projeto. Não envia nem altera nada.',
+      apply_to_project: 'envia à Shakers a sua mensagem e as suas respostas para o projeto que escolher, só depois de lhe mostrar o resumo e de dizer que sim: o cliente verá o seu perfil Shakers e abre-se um chat com a equipa. Se o projeto o pedir, a Shakers revê a sua candidatura antes de o cliente a ver. Não altera o seu perfil.',
       save_project: 'guarda esse projeto nos seus projetos guardados na Shakers.',
       unsave_project: 'retira esse projeto dos seus projetos guardados na Shakers.',
       list_invitations: 'lê os seus convites para projetos na Shakers. Não altera nada.',
@@ -888,6 +900,112 @@ function toSignupLanguage(code) {
   return SIGNUP_LANGUAGES.includes(base) ? base : null;
 }
 
+const DETECTED_AGENTS = {
+  es: {
+    intro: 'Estos agentes se detectaron en tu análisis y aún no están en tu perfil de Shakers. Los que elijas se añaden con su nombre y su descripción, y los clientes los verán.',
+    question: 'Responde con los números de los que quieres añadir (por ejemplo «1 3»), «todos» o «ninguno».',
+    allOnProfile: 'Todos los agentes detectados ya están en tu perfil.',
+    noneChosen: 'No se ha añadido ningún agente a tu perfil.',
+    added: (names) => `Añadidos a tu perfil: ${names}. Puedes quitarlos cuando quieras desde tu perfil en la web de Shakers.`,
+    failed: (names) => `No se pudieron añadir: ${names}.`,
+  },
+  en: {
+    intro: 'These agents were detected in your analysis and are not on your Shakers profile yet. The ones you pick are added with their name and description, and clients will see them.',
+    question: 'Reply with the numbers of the ones you want to add (for example "1 3"), "all" or "none".',
+    allOnProfile: 'Every detected agent is already on your profile.',
+    noneChosen: 'No agent was added to your profile.',
+    added: (names) => `Added to your profile: ${names}. You can remove them any time from your profile on the Shakers website.`,
+    failed: (names) => `Could not be added: ${names}.`,
+  },
+  it: {
+    intro: 'Questi agenti sono stati rilevati nella tua analisi e non sono ancora nel tuo profilo Shakers. Quelli che scegli vengono aggiunti con nome e descrizione, e i clienti li vedranno.',
+    question: 'Rispondi con i numeri di quelli che vuoi aggiungere (per esempio «1 3»), «tutti» o «nessuno».',
+    allOnProfile: 'Tutti gli agenti rilevati sono già nel tuo profilo.',
+    noneChosen: 'Nessun agente è stato aggiunto al tuo profilo.',
+    added: (names) => `Aggiunti al tuo profilo: ${names}. Puoi toglierli quando vuoi dal tuo profilo sul sito di Shakers.`,
+    failed: (names) => `Non è stato possibile aggiungere: ${names}.`,
+  },
+  pt: {
+    intro: 'Estes agentes foram detetados na sua análise e ainda não estão no seu perfil Shakers. Os que escolher são adicionados com o nome e a descrição, e os clientes vão vê-los.',
+    question: 'Responda com os números dos que quer adicionar (por exemplo «1 3»), «todos» ou «nenhum».',
+    allOnProfile: 'Todos os agentes detetados já estão no seu perfil.',
+    noneChosen: 'Nenhum agente foi adicionado ao seu perfil.',
+    added: (names) => `Adicionados ao seu perfil: ${names}. Pode removê-los quando quiser a partir do seu perfil na web da Shakers.`,
+    failed: (names) => `Não foi possível adicionar: ${names}.`,
+  },
+};
+
+const APPLY = {
+  es: {
+    untitled: 'Sin título',
+    mainMotivationFallback: '¿Cuál es tu principal motivación para aplicar?',
+    notOpen: 'Este proyecto no admite tu candidatura ahora mismo: ya aplicaste, está cerrado o no está disponible para ti.',
+    summaryTitle: 'Esto es lo que se enviará:',
+    titleLine: (title) => `Proyecto: ${title}`,
+    companyLine: (name) => `Empresa: ${name}`,
+    messageLine: (message) => `Mensaje: ${message}`,
+    empty: '(vacío)',
+    answerLine: (question, answer) => `${question}: ${answer}`,
+    sendNotice: (title) => `Se envían tu mensaje y tus respuestas para «${title}»: el cliente verá tu perfil de Shakers y se abre un chat con el equipo. Tu perfil no cambia.`,
+    reviewNotice: 'En este proyecto Shakers revisa tu candidatura antes de que la vea el cliente.',
+    confirmQuestion: '¿La envío? Responde sí o no.',
+    sent: 'Candidatura enviada. Puedes seguirla en tus candidaturas.',
+    sentPending: 'Candidatura enviada. Shakers la revisa antes de que la vea el cliente.',
+    alreadyApplied: (status) => (status ? `Ya aplicaste a este proyecto (estado: ${status}).` : 'Ya aplicaste a este proyecto.'),
+  },
+  en: {
+    untitled: 'Untitled',
+    mainMotivationFallback: "What's your main motivation to apply?",
+    notOpen: 'This project does not take your application right now: you already applied, it is closed or it is not available to you.',
+    summaryTitle: 'This is what will be sent:',
+    titleLine: (title) => `Project: ${title}`,
+    companyLine: (name) => `Company: ${name}`,
+    messageLine: (message) => `Message: ${message}`,
+    empty: '(empty)',
+    answerLine: (question, answer) => `${question}: ${answer}`,
+    sendNotice: (title) => `Your message and your answers for "${title}" are sent: the client will see your Shakers profile and a chat with the team opens. Your profile does not change.`,
+    reviewNotice: 'On this project Shakers reviews your application before the client sees it.',
+    confirmQuestion: 'Shall I send it? Answer yes or no.',
+    sent: 'Application sent. You can follow it in your applications.',
+    sentPending: 'Application sent. Shakers reviews it before the client sees it.',
+    alreadyApplied: (status) => (status ? `You already applied to this project (status: ${status}).` : 'You already applied to this project.'),
+  },
+  it: {
+    untitled: 'Senza titolo',
+    mainMotivationFallback: 'Qual è la tua principale motivazione per candidarti?',
+    notOpen: 'Questo progetto non accetta la tua candidatura in questo momento: ti sei già candidato, è chiuso o non è disponibile per te.',
+    summaryTitle: 'Ecco cosa verrà inviato:',
+    titleLine: (title) => `Progetto: ${title}`,
+    companyLine: (name) => `Azienda: ${name}`,
+    messageLine: (message) => `Messaggio: ${message}`,
+    empty: '(vuoto)',
+    answerLine: (question, answer) => `${question}: ${answer}`,
+    sendNotice: (title) => `Vengono inviati il tuo messaggio e le tue risposte per «${title}»: il cliente vedrà il tuo profilo Shakers e si apre una chat con il team. Il tuo profilo non cambia.`,
+    reviewNotice: 'In questo progetto Shakers rivede la tua candidatura prima che la veda il cliente.',
+    confirmQuestion: 'La invio? Rispondi sì o no.',
+    sent: 'Candidatura inviata. Puoi seguirla tra le tue candidature.',
+    sentPending: 'Candidatura inviata. Shakers la rivede prima che la veda il cliente.',
+    alreadyApplied: (status) => (status ? `Ti sei già candidato a questo progetto (stato: ${status}).` : 'Ti sei già candidato a questo progetto.'),
+  },
+  pt: {
+    untitled: 'Sem título',
+    mainMotivationFallback: 'Qual é a sua principal motivação para se candidatar?',
+    notOpen: 'Este projeto não aceita a sua candidatura neste momento: já se candidatou, está fechado ou não está disponível para si.',
+    summaryTitle: 'Isto é o que será enviado:',
+    titleLine: (title) => `Projeto: ${title}`,
+    companyLine: (name) => `Empresa: ${name}`,
+    messageLine: (message) => `Mensagem: ${message}`,
+    empty: '(vazio)',
+    answerLine: (question, answer) => `${question}: ${answer}`,
+    sendNotice: (title) => `São enviadas a sua mensagem e as suas respostas para «${title}»: o cliente verá o seu perfil Shakers e abre-se um chat com a equipa. O seu perfil não muda.`,
+    reviewNotice: 'Neste projeto a Shakers revê a sua candidatura antes de o cliente a ver.',
+    confirmQuestion: 'Envio-a? Responda sim ou não.',
+    sent: 'Candidatura enviada. Pode acompanhá-la nas suas candidaturas.',
+    sentPending: 'Candidatura enviada. A Shakers revê-a antes de o cliente a ver.',
+    alreadyApplied: (status) => (status ? `Já se candidatou a este projeto (estado: ${status}).` : 'Já se candidatou a este projeto.'),
+  },
+};
+
 function signupCopy(lang) {
   return COPY[toSignupLanguage(lang) || 'en'];
 }
@@ -902,6 +1020,14 @@ function legalCopy(lang) {
 
 function reviewCopy(lang) {
   return REVIEW[toSignupLanguage(lang) || 'en'];
+}
+
+function applyCopy(lang) {
+  return APPLY[toSignupLanguage(lang) || 'en'];
+}
+
+function detectedAgentsCopy(lang) {
+  return DETECTED_AGENTS[toSignupLanguage(lang) || 'en'];
 }
 
 // The profile draft the talent confirms before the account exists, with every field the account is created with: one line per group, empty parts left out.
@@ -934,4 +1060,4 @@ function renderRole(lang, { name, source, evidence, openProjects, recommended })
   ].filter(Boolean).join('\n');
 }
 
-module.exports = { SIGNUP_LANGUAGES, LEGAL, REVIEW, signupCopy, legalCopy, trustCopy, termsText, reviewCopy, toSignupLanguage, renderDraft, renderRole, amount };
+module.exports = { SIGNUP_LANGUAGES, LEGAL, REVIEW, signupCopy, legalCopy, trustCopy, termsText, reviewCopy, detectedAgentsCopy, applyCopy, toSignupLanguage, renderDraft, renderRole, amount };

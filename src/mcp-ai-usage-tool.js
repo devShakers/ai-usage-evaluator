@@ -313,7 +313,7 @@ function makeAiUsageTools(deps = {}) {
       aiProfile,
       relayVerbatim: [...confirmation, reviewTexts.resultText(review.lang, aiProfile.status === 'ready' ? aiProfile.preview : null, { explained })].join('\n\n'),
       next: enrichment === 'pending' || aiProfile.status !== 'ready' ? 'ai_usage_result' : null,
-      message: `Uploaded. ${VERBATIM} Then show \`text\`, the full report, verbatim.${enrichment === 'pending' || aiProfile.status !== 'ready' ? ' Shakers is still evaluating (normal, not an error): call ai_usage_result in a few minutes for the result and its explanation.' : ''}`,
+      message: `Uploaded. ${VERBATIM} Then show \`text\`, the full report, verbatim.${enrichment === 'pending' || aiProfile.status !== 'ready' ? ' Shakers is still evaluating (normal, not an error): call ai_usage_result in a few minutes for the result and its explanation.' : ''}${hasAgents && !explained ? ' Then call add_detected_agents to offer adding the detected agents to the profile.' : ''}`,
       display: {
         tier: { key: maturity.tierKey, name: maturity.tierName, setupLevel: maturity.name, score: maturity.score },
         aiProfile: {

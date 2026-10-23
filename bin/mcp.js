@@ -8,6 +8,7 @@ const { makeCertifyDimensionTools } = require('../src/mcp-certify-dimension-tool
 const { makeFindProjectsTools } = require('../src/mcp-find-projects-tools');
 const { makeShowProjectTools } = require('../src/mcp-show-project-tools');
 const { makeSavedPositionsTools } = require('../src/mcp-saved-positions-tools');
+const { makeApplyTools } = require('../src/mcp-apply-tools');
 const { makeInvitationsTools } = require('../src/mcp-invitations-tools');
 const { makeApplicationsTools } = require('../src/mcp-applications-tools');
 const { makeAvailabilityTools } = require('../src/mcp-availability-tools');
@@ -52,12 +53,14 @@ const HELP = `\n  shakers mcp — local MCP server (stdio)\n\n`
   + `  MCP client, not run by hand.\n`
   + `  Tools: signup (the whole sign-up, step by step), ai_usage, ai_usage_upload,\n`
   + `         ai_usage_result, logout, social_signin_start, social_signin_poll,\n`
-  + `         list_addable, add_skill, add_agent, add_project, open_web,\n`
+  + `         list_addable, add_skill, add_agent, add_detected_agents,\n`
+  + `         add_project, open_web,\n`
   + `         onboarding_interview_start, onboarding_interview_turn,\n`
   + `         onboarding_interview_complete, repeat_onboarding_interview,\n`
   + `         onboarding_finish, list_available_roles, add_role, list_my_roles,\n`
   + `         set_main_role, report, share, list_certifiable_dimensions,\n`
   + `         find_projects, show_project, save_project, unsave_project,\n`
+  + `         prepare_application, apply_to_project,\n`
   + `         list_invitations, list_applications, get_availability,\n`
   + `         list_certifications, get_profile, get_rate, get_languages,\n`
   + `         list_socials, list_experiences, list_portfolios, alma_chat, alma_decision.\n\n`;
@@ -71,7 +74,7 @@ const LOCAL_ONLY_TOOL_NAMES = new Set(['ai_usage', 'ai_usage_upload', 'ai_usage_
 function buildServer({ localOnly = false, funnel = createFunnel({ surface: 'mcp' }), makeInterviewClient = null } = {}) {
   const lang = detectFlowLang();
   const aiUsage = makeAiUsageTools();
-  const allTools = [aiUsage.usage, aiUsage.upload, makeAiUsageResultTool(), ...makeOnboardingTools(), ...makeRoleTools({ lang, funnel }), ...makeDeviceLoginTools({ lang, funnel }), ...makeSignupTools({ lang, funnel }), ...makeRegisterTools({ lang, funnel, flowDeps: { makeInterviewClient } }), ...makeReportTools(), ...makeCertifyDimensionTools(), ...makeFindProjectsTools(), ...makeShowProjectTools(), ...makeSavedPositionsTools(), ...makeInvitationsTools(), ...makeApplicationsTools(), ...makeAvailabilityTools(), ...makeCertificationsTools(), ...makeProfileTools(), ...makeRateTools(), ...makeLangTools(), ...makeSocialsTools(), ...makePortfolioTools(), ...makeAlmaTools()];
+  const allTools = [aiUsage.usage, aiUsage.upload, makeAiUsageResultTool(), ...makeOnboardingTools(), ...makeRoleTools({ lang, funnel }), ...makeDeviceLoginTools({ lang, funnel }), ...makeSignupTools({ lang, funnel }), ...makeRegisterTools({ lang, funnel, flowDeps: { makeInterviewClient } }), ...makeReportTools(), ...makeCertifyDimensionTools(), ...makeFindProjectsTools(), ...makeShowProjectTools(), ...makeSavedPositionsTools(), ...makeApplyTools(), ...makeInvitationsTools(), ...makeApplicationsTools(), ...makeAvailabilityTools(), ...makeCertificationsTools(), ...makeProfileTools(), ...makeRateTools(), ...makeLangTools(), ...makeSocialsTools(), ...makePortfolioTools(), ...makeAlmaTools()];
   // The sign-up runs through one tool (`signup`), so Claude Desktop asks the talent once instead of once per step.
   const tools = localOnly
     ? allTools.filter((t) => LOCAL_ONLY_TOOL_NAMES.has(t.name))

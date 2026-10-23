@@ -21,6 +21,7 @@ const { run: runChangeRole } = require('./change-role');
 const { run: runFindProjects } = require('./find-projects');
 const { run: runShowProject } = require('./show-project');
 const { run: runSave, runUnsave } = require('./save');
+const { run: runApply } = require('./apply');
 const { run: runInvitations } = require('./invitations');
 const { run: runApplications } = require('./applications');
 const { run: runAvailability } = require('./availability');
@@ -74,6 +75,7 @@ const HANDLERS = {
   'show-project': runShowProject,
   'save-project': runSave,
   'unsave-project': runUnsave,
+  apply: runApply,
   invitations: runInvitations,
   applications: runApplications,
   availability: runAvailability,
@@ -111,7 +113,7 @@ const FAMILIES = {
     certifications: 'certifications',
   },
   projects: {
-    find: 'find-projects', show: 'show-project', save: 'save-project', unsave: 'unsave-project',
+    find: 'find-projects', show: 'show-project', save: 'save-project', unsave: 'unsave-project', apply: 'apply',
     invitations: 'invitations', applications: 'applications',
   },
   usage: { run: 'ai-usage', report: 'report', share: 'share' },
@@ -193,6 +195,7 @@ function usageText(lang, { hideOnboarding = false } = {}) {
       + `    find-projects Lista los proyectos/posiciones disponibles para ti\n`
       + `    show-project Detalle de un proyecto/posición por id\n`
       + `    save-project/unsave-project  Guarda o quita un proyecto de tus guardados\n`
+      + `    apply        Aplica a un proyecto/posición con tu mensaje y respuestas\n`
       + `    invitations  Tus invitaciones a proyectos\n`
       + `    applications Proyectos a los que has aplicado + estado\n`
       + `    availability Ver o fijar tu disponibilidad\n`
@@ -214,7 +217,7 @@ function usageText(lang, { hideOnboarding = false } = {}) {
       + `  Familias (agrupan los comandos de arriba; los nombres planos siguen valiendo como alias):\n`
       + `    add <skill|agent|project|role>     ·  role <add|change>\n`
       + `    profile <show|rate|languages|socials|experiences|portfolios|availability|certifications>\n`
-      + `    projects <find|show|save|unsave|invitations|applications>\n`
+      + `    projects <find|show|save|unsave|apply|invitations|applications>\n`
       + `    usage <run|report|share>  ·  certs <list|certify>  ·  account <login|logout|register|config|update>\n`
       + `    Ejecuta \`shakers <familia>\` (sin subcomando) para ver sus subcomandos.\n\n`
       + `  Ejecuta shakers <comando> --help para las opciones de cada comando.\n\n`;
@@ -238,6 +241,7 @@ function usageText(lang, { hideOnboarding = false } = {}) {
     + `    find-projects List the Projects/Positions available to you\n`
     + `    show-project Detail of a project/position by id\n`
     + `    save-project/unsave-project  Save or remove a project from your saved list\n`
+    + `    apply        Apply to a project/position with your message and answers\n`
     + `    invitations  Your project invitations\n`
     + `    applications Projects you applied to + status\n`
     + `    availability View or set your availability\n`
@@ -259,7 +263,7 @@ function usageText(lang, { hideOnboarding = false } = {}) {
     + `  Families (group the commands above; the flat names still work as aliases):\n`
     + `    add <skill|agent|project|role>     ·  role <add|change>\n`
     + `    profile <show|rate|languages|socials|experiences|portfolios|availability|certifications>\n`
-    + `    projects <find|show|save|unsave|invitations|applications>\n`
+    + `    projects <find|show|save|unsave|apply|invitations|applications>\n`
     + `    usage <run|report|share>  ·  certs <list|certify>  ·  account <login|logout|register|config|update>\n`
     + `    Run \`shakers <family>\` (no subcommand) to list its subcommands.\n\n`
     + `  Run \`shakers <command> --help\` for a command's options.\n\n`;

@@ -42,6 +42,31 @@ const ADD_AGENT_SCHEMA = {
   required: ['agentName'],
 };
 
+const ADD_DETECTED_AGENTS_SCHEMA = {
+  type: 'object',
+  properties: {
+    selection: { type: 'string', description: 'Exactly what the talent typed in reply to the numbered list this tool returned: numbers such as "1 3", "all" or "none", in their words. Never set it yourself.' },
+  },
+};
+
+const ALL_WORDS = new Set(['all', 'todos', 'todas', 'tutti', 'tutte', 'tudo']);
+const NONE_WORDS = new Set(['none', 'ninguno', 'ninguna', 'nada', 'nessuno', 'nessuna', 'nenhum', 'nenhuma', '0']);
+
+function parseSelection(raw, agents) {
+  const said = typeof raw === 'string' ? raw.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[«»"'.]/g, ' ').trim() : '';
+  if (!said) return null;
+  if (ALL_WORDS.has(said)) return agents;
+  if (NONE_WORDS.has(said)) return [];
+  const tokens = said.split(/[\s,;]+|\b(?:y|and|e)\b/).map((t) => t.trim()).filter(Boolean);
+  const picked = new Set();
+  for (const token of tokens) {
+    const n = /^\d+$/.test(token) ? Number(token) : NaN;
+    if (!Number.isInteger(n) || n < 1 || n > agents.length) return null;
+    picked.add(n - 1);
+  }
+  return picked.size ? agents.filter((_, i) => picked.has(i)) : null;
+}
+
 const ADD_PROJECT_SCHEMA = {
   type: 'object',
   properties: {
@@ -79,6 +104,9 @@ function makeOnboardingTools(deps = {}) {
     requestDeclareAgent = require('./agents-client').requestDeclareAgent,
     requestListAgents = require('./agents-client').requestListAgents,
     requestRelateAgentPortfolios = require('./agents-client').requestRelateAgentPortfolios,
+    newDetectedAgents = require('./detected-agents').newDetectedAgents,
+    declareDetectedAgents = require('./detected-agents').declareDetectedAgents,
+    detectedAgentsCopy = () => require('./signup-copy').detectedAgentsCopy(require('./signup-language').signupLanguage(require('./i18n').detectFlowLang())),
     requestDeclarePortfolio = require('./portfolio-client').requestDeclarePortfolio,
     requestListPortfolios = require('./portfolio-client').requestListPortfolios,
     requestUpdatePortfolioSkills = require('./portfolio-client').requestUpdatePortfolioSkills,
@@ -275,6 +303,57 @@ function makeOnboardingTools(deps = {}) {
     return { ...base, portfolios, related, relateFailures };
   }
 
+  // The detected agents offered last, so a selection counts only for the list the talent was shown.
+  let offeredAgents = null;
+
+  async function addDetectedAgents(args = {}) {
+    const session = requireSession();
+    const inventoryEndpoint = requireEndpoint(getUsageDiscoveredInventoryEndpoint, 'discovered-inventory');
+    const listEndpoint = requireEndpoint(getAgentsListEndpoint, 'agents-list');
+    const declareEndpoint = requireEndpoint(getAgentsDeclareEndpoint, 'agents-declare');
+    const c = detectedAgentsCopy();
+    const inv = await requestDiscoveredInventoryWithRefresh(
+      { accessToken: session.accessToken, refreshToken: refreshTokenFor },
+      { endpoint: inventoryEndpoint, request: requestDiscoveredInventory },
+    );
+    if (!inv.ok) return { ok: false, reason: inv.reason || 'inventory-failed', message: 'Nothing was added: the detected agents could not be read.' };
+    const listed = await requestListAgents(
+      { accessToken: session.accessToken, hubAccessToken: session.hubAccessToken },
+      { endpoint: listEndpoint },
+    );
+    if (!listed.ok) return { ok: false, reason: listed.reason, message: 'Nothing was added: the agents already on the profile could not be checked, so none are added to avoid duplicates.' };
+    const agents = newDetectedAgents(inv.agents, listed.agents);
+    if (agents.length === 0) {
+      offeredAgents = null;
+      return { ok: true, added: [], relayVerbatim: c.allOnProfile, message: 'Nothing to add. Print relayVerbatim word for word.' };
+    }
+    const offered = offeredAgents && JSON.stringify(offeredAgents.map((a) => a.name)) === JSON.stringify(agents.map((a) => a.name));
+    const chosen = offered ? parseSelection(args.selection, agents) : null;
+    if (!chosen) {
+      offeredAgents = agents;
+      return {
+        ok: false,
+        reason: 'selection-required',
+        say: [c.intro, agents.map((a, i) => `${i + 1}. ${a.name}`).join('\n'), c.question].join('\n\n'),
+        message: 'Nothing has been added. Print say word for word and stop: the talent replies with numbers (such as "1 3"), "all" or "none". Then call add_detected_agents again with selection = exactly what the talent typed. Only the talent decides: never choose, confirm or fill in selection for them, and never call it with a selection they did not type.',
+      };
+    }
+    offeredAgents = null;
+    if (chosen.length === 0) return { ok: true, added: [], relayVerbatim: c.noneChosen, message: 'Nothing was added. Print relayVerbatim word for word.' };
+    const { added, failed } = await declareDetectedAgents(chosen, session, { endpoint: declareEndpoint, declare: requestDeclareAgent });
+    const expired = failed.some((f) => f.reason === 'hub-session-expired');
+    return {
+      ok: added.length > 0,
+      added: added.map((a) => a.name),
+      failed: failed.map((f) => ({ name: f.agent.name, reason: f.reason })),
+      relayVerbatim: [
+        added.length ? c.added(added.map((a) => a.name).join(', ')) : null,
+        failed.length ? c.failed(failed.map((f) => f.agent.name).join(', ')) : null,
+      ].filter(Boolean).join('\n'),
+      message: `Print relayVerbatim word for word.${expired ? ' The Shakers session expired: ask the talent to sign in again (social_signin_start), then call add_detected_agents again to offer the ones still missing.' : ''}`,
+    };
+  }
+
   // Sends the project only after the talent says yes to exactly what goes: name, web address, dates, client.
   async function addProject(args = {}, ctx = {}) {
     const session = requireSession();
@@ -357,6 +436,14 @@ function makeOnboardingTools(deps = {}) {
       handler: addAgent,
     },
     {
+      name: 'add_detected_agents',
+      title: 'Add your detected agents',
+      description: 'Lists the AI agents found in your analysis that are not on your Shakers profile yet and adds the ones you choose, only their name and description.',
+      guidance: "Offer the talent to add, in one step, the AI agents detected by their submitted ai_usage report that are not on their Shakers profile yet (agents already there are skipped by name). No experience or portfolio is needed or related. Call it without selection: it returns `say`, a numbered list and the question, to print word for word; the talent replies with numbers, all or none. Then call it again with selection set to exactly what the talent typed. The talent's reply is the only confirmation: never pick, confirm or fill in selection on their behalf, and a selection counts only after the list was shown. Print relayVerbatim word for word. Offer it after an ai_usage_upload that sent agents. Requires an active session.",
+      inputSchema: ADD_DETECTED_AGENTS_SCHEMA,
+      handler: addDetectedAgents,
+    },
+    {
       name: 'add_project',
       title: 'Add this project to your portfolio',
       description: 'Reads the name of the project folder open here, the web address of its code and the dates of its first and last change. It asks you first, naming all of them, and only then sends them to Shakers as a new portfolio project.',
@@ -373,5 +460,7 @@ module.exports = {
   LIST_ADDABLE_SCHEMA,
   ADD_SKILL_SCHEMA,
   ADD_AGENT_SCHEMA,
+  ADD_DETECTED_AGENTS_SCHEMA,
   ADD_PROJECT_SCHEMA,
+  parseSelection,
 };

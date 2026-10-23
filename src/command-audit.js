@@ -37,6 +37,16 @@ function redactArgs(argv) {
   return scrubbed || null;
 }
 
+// `apply` takes only the position ref: anything typed after it could be the talent's message, so it never reaches the log.
+function withoutFreeText(argv) {
+  if (!Array.isArray(argv)) return argv;
+  const words = argv.filter((a) => typeof a === 'string' && !a.startsWith('-')).map((w) => w.toLowerCase());
+  const at = words[0] === 'apply' ? 0 : words[0] === 'projects' && words[1] === 'apply' ? 1 : -1;
+  if (at === -1) return argv;
+  const kept = argv.filter((a) => typeof a === 'string' && !a.startsWith('-'));
+  return kept.slice(0, at + 2);
+}
+
 // Anonymous runs carry only a best-effort machine hint; authenticated runs identify via the Bearer instead.
 function machineHint() {
   let osUser = null;
@@ -77,7 +87,7 @@ function buildAudit(command, argv, env, id = null) {
   const body = {
     ...(id ? { id } : {}),
     command: String(command || 'unknown').slice(0, 100),
-    args: redactArgs(argv),
+    args: redactArgs(withoutFreeText(argv)),
     cliVersion: cliVersion(),
     clientTimestamp: new Date().toISOString(),
   };
@@ -133,7 +143,7 @@ function startCommandAudit({ command, argv = [], env = process.env } = {}) {
       detached: true,
       stdio: 'ignore',
       windowsHide: true,
-      env: { ...env, [PAYLOAD_VAR]: JSON.stringify({ id, command, args: redactArgs(argv) }) },
+      env: { ...env, [PAYLOAD_VAR]: JSON.stringify({ id, command, args: redactArgs(withoutFreeText(argv)) }) },
     });
     child.on('error', () => {});
     child.unref();
@@ -148,4 +158,4 @@ function currentRunId() {
   return runId;
 }
 
-module.exports = { emitCommandAudit, startCommandAudit, logCommandRun, currentRunId, redactArgs, buildAudit, PAYLOAD_VAR };
+module.exports = { emitCommandAudit, startCommandAudit, logCommandRun, currentRunId, redactArgs, withoutFreeText, buildAudit, PAYLOAD_VAR };

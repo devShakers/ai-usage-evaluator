@@ -17,6 +17,7 @@ const {
   resolveAiConsent,
   renderAndFinalize,
 } = require('../src/usage-run-steps');
+const { run: runLogin } = require('./login');
 
 // Shared by the dispatcher and register flow: an injected `ask` is caller-owned, `bypassThrottle` is register-only.
 async function run(argv = process.argv.slice(2), { ask: injectedAsk = null, bypassThrottle = false, inRegistration = false } = {}) {
@@ -59,7 +60,7 @@ async function run(argv = process.argv.slice(2), { ask: injectedAsk = null, bypa
       },
     });
 
-    await renderAndFinalize({ report, maturity, lang, opts, root, gate, catalog, bypassThrottle, repos, injectedAsk: ask });
+    await renderAndFinalize({ report, maturity, lang, opts, root, gate, catalog, bypassThrottle, repos, injectedAsk: ask, offerAgents: inRegistration ? null : { runLogin } });
   } finally {
     if (!injectedAsk) ask.close();
   }

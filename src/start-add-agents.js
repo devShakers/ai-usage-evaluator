@@ -16,6 +16,9 @@ const { requestDiscoveredInventory } = require('./inventory-client');
 const { ensureFreshSession } = require('./session-refresh');
 const { confirmDisclaimerAcceptance } = require('./certify-disclaimer');
 const { runInteractiveMultiSelect } = require('./interactive-select');
+const { promptMultiSelect } = require('./prompt-select');
+const { detectedAgentsFromReport, newDetectedAgents, declareDetectedAgents } = require('./detected-agents');
+const { sanitizeRenderText } = require('./sanitize-network-text');
 const { loadAuthSession, sessionStatus } = require('./auth-session-store');
 const { withSpinner } = require('./terminal-progress');
 const { reasonCopy, pickPortfolios } = require('./start-add-skills');
@@ -162,8 +165,88 @@ async function offerRelateAgentToPortfolios({
   }
 }
 
+async function confirmDetectedAgents({ ask, agents, c, input, output }) {
+  const chosen = await promptMultiSelect({
+    ask,
+    stdinIsTTY: true,
+    out: (line) => process.stdout.write(`  ${line}\n`),
+    items: agents,
+    labelFor: (a) => sanitizeRenderText(a.name),
+    header: c.detectedAgentsHeading,
+    hint: c.detectedAgentsHint,
+    initialMarked: agents.map((_, i) => i),
+    ...(input ? { input } : {}),
+    ...(output ? { output } : {}),
+  });
+  if (typeof ask.drain === 'function') ask.drain();
+  return chosen;
+}
+
+async function addDetectedAgents({
+  ask, catalog, session, stdinIsTTY, yes = false, agents, input, output, deps = {},
+}) {
+  const c = catalog.start;
+  if (!stdinIsTTY && !yes) {
+    process.stdout.write(`\n  ${c.detectedAgentsNeedsYes(agents.length)}\n`);
+    return { ok: false, reason: 'non-interactive' };
+  }
+  const endpoint = getAgentsDeclareEndpoint();
+  if (!endpoint) {
+    process.stderr.write(`\n  ${c.agentErrorNoEndpoint}\n\n`);
+    return { ok: false, reason: 'no-endpoint' };
+  }
+  process.stdout.write(`\n  ${catalog.trust.detectedAgents}\n\n`);
+  const chosen = stdinIsTTY ? await confirmDetectedAgents({ ask, agents, c, input, output }) : agents;
+  if (chosen.length === 0) {
+    process.stdout.write(`\n  ${c.agentCancelled}\n\n`);
+    return { ok: true, cancelled: true };
+  }
+
+  const declareAll = (list, s) => withSpinner(c.detectedAgentsDeclaring, () => declareDetectedAgents(list, s, { endpoint }));
+  let { added, failed } = await declareAll(chosen, session);
+  const expired = failed.filter((f) => f.reason === 'hub-session-expired');
+  if (expired.length > 0 && stdinIsTTY) {
+    process.stdout.write(`\n  ${c.detectedAgentsHubSessionExpired}\n`);
+    const relogged = await offerRelogin({ ask, c, runLogin: deps.runLogin });
+    if (relogged) {
+      const retried = await declareAll(expired.map((f) => f.agent), relogged);
+      added = [...added, ...retried.added];
+      failed = [...failed.filter((f) => f.reason !== 'hub-session-expired'), ...retried.failed];
+    }
+  }
+
+  process.stdout.write('\n');
+  for (const agent of added) process.stdout.write(`  ${styleSuccess(c.agentDeclaredSuccess(sanitizeRenderText(agent.name)))}\n`);
+  for (const f of failed) process.stdout.write(`  ${c.detectedAgentFailed(sanitizeRenderText(f.agent.name), reasonCopy(f.reason, c))}\n`);
+  process.stdout.write(`\n  ${c.detectedAgentsSummary(added.length, chosen.length)}\n\n`);
+  return {
+    ok: added.length > 0,
+    added: added.map((a) => a.name),
+    failed: failed.map((f) => ({ name: f.agent.name, reason: f.reason })),
+  };
+}
+
+async function offerDetectedAgentsAfterUsage({
+  report, catalog, ask, stdinIsTTY = !!process.stdin.isTTY, deps = {},
+}) {
+  const { loadSession = loadAuthSession, listAgents = requestListAgents } = deps;
+  const session = loadSession();
+  if (sessionStatus(session) !== 'active' || !session.hubAccessToken) return null;
+  const candidates = detectedAgentsFromReport(report);
+  const listEndpoint = getAgentsListEndpoint();
+  if (candidates.length === 0 || !listEndpoint) return null;
+  const listed = await listAgents({ accessToken: session.accessToken, hubAccessToken: session.hubAccessToken }, { endpoint: listEndpoint });
+  if (!listed.ok) {
+    process.stdout.write(`\n  ${catalog.start.detectedAgentsCheckFailed(reasonCopy(listed.reason, catalog.start))}\n`);
+    return { ok: false, reason: listed.reason };
+  }
+  const agents = newDetectedAgents(candidates, listed.agents);
+  if (agents.length === 0) return null;
+  return addDetectedAgents({ ask, catalog, session, stdinIsTTY, agents, deps });
+}
+
 async function runAddAgents({
-  ask, catalog, root, session, stdinIsTTY, input, output, preAccepted = false, deps = {},
+  ask, catalog, root, session, stdinIsTTY, input, output, preAccepted = false, all = false, yes = false, deps = {},
 } = {}) {
   const c = catalog.start;
   const runLogin = deps.runLogin;
@@ -219,12 +302,30 @@ async function runAddAgents({
     () => requestListAgents({ accessToken: session.accessToken, hubAccessToken }, { endpoint: listEndpoint }),
   );
   const existingNames = listed.ok ? listed.agents.map((a) => a.name.toLowerCase()) : null;
+  const fresh = listed.ok ? newDetectedAgents(agents, listed.agents) : [];
+  const bulk = () => addDetectedAgents({
+    ask, catalog, session: { ...session, hubAccessToken }, stdinIsTTY, yes, agents: fresh, input, output, deps,
+  });
+  if (all) {
+    if (!listed.ok) {
+      process.stderr.write(`\n  ${c.detectedAgentsCheckFailed(reasonCopy(listed.reason, c))}\n\n`);
+      return { ok: false, reason: listed.reason };
+    }
+    if (fresh.length === 0) {
+      process.stdout.write(`\n  ${c.detectedAgentsAllOnProfile}\n\n`);
+      return { ok: true, cancelled: true };
+    }
+    return bulk();
+  }
   if (!listed.ok) process.stdout.write(`\n  ${c.agentDedupCheckFailed(reasonCopy(listed.reason, c))}\n`);
 
   process.stdout.write(`\n  ${c.agentIntro}\n`);
 
-  // (1) Pick a detected agent.
-  const agent = await chooseAgent({ ask, stdinIsTTY, agents, c, input, output });
+  // (1) Pick a detected agent, or all the new ones at once.
+  const addAll = { name: null, pickerLabel: c.addAllDetectedEntry(fresh.length) };
+  const choices = stdinIsTTY && typeof ask.suspend === 'function' && fresh.length > 0 ? [addAll, ...agents] : agents;
+  const agent = await chooseAgent({ ask, stdinIsTTY, agents: choices, c, input, output });
+  if (agent === addAll) return bulk();
   if (!agent) {
     process.stdout.write(`\n  ${c.agentCancelled}\n\n`);
     return;
@@ -300,6 +401,8 @@ async function runAddAgents({
 
 module.exports = {
   runAddAgents,
+  addDetectedAgents,
+  offerDetectedAgentsAfterUsage,
   chooseAgent,
   resolveAgentFields,
   offerRelateAgentToPortfolios,
