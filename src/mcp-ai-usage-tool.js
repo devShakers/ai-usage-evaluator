@@ -252,7 +252,7 @@ function makeAiUsageTools(deps = {}) {
     try {
       recordConsent('granted', session.email, { verified: true });
       const cliCommandId = await logCommandRun({ command: 'mcp:ai_usage_upload:send' });
-      send = await autoShare(trimmed.report, trimmed.maturity, { root: review.root, bypassThrottle: review.registration, cliCommandId });
+      send = await autoShare(trimmed.report, trimmed.maturity, { root: review.root, bypassThrottle: review.registration, cliCommandId, client: 'mcp' });
     } catch (error) {
       send = { ok: false, reason: 'upload-failed', message: error && error.message ? error.message : String(error) };
     }

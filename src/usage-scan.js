@@ -27,15 +27,12 @@ const { detectAuthorshipMismatch } = require('./authorship-mismatch');
 const { MODEL_CALL, REASON, skipped, attachModelCall } = require('./model-call-record');
 const {
   getSynthesisEndpoint,
-  getRoadmapEndpoint,
   getAgentEvaluationEndpoint,
 } = require('./config');
 const { withStaticStatus, withSpinner } = require('./terminal-progress');
-const { getRoadmapEntry } = require('./roadmap-content');
 const {
   maybeSynthesizeAgents,
   maybeEvaluateAgents,
-  maybePersonalizeRoadmap,
 } = require('./usage-model-calls');
 const { parseArgs } = require('./cli-args');
 const { detectReportLang, getCatalog } = require('./i18n');
@@ -119,26 +116,18 @@ function runAggregation({ report, scope, consentEmail, agentRoots, root, catalog
 }
 
 async function runModelCalls({
-  report, maturity, aiConsentGranted, opts, gate, hasAgents, agentRoots, rootDir, lang, catalog,
+  report, aiConsentGranted, opts, hasAgents, agentRoots, rootDir, lang, catalog,
 }) {
-  // Which of the three will genuinely be ATTEMPTED.
+  // Which of the two will genuinely be ATTEMPTED.
   const willAttemptSynthesis = aiConsentGranted && hasAgents && !!getSynthesisEndpoint();
   const willAttemptEvaluation = aiConsentGranted && hasAgents && !!getAgentEvaluationEndpoint();
-  const roadmapEntryForTier = maturity.tierKey ? getRoadmapEntry(maturity.tierKey, lang) : null;
-  const roadmapRequested = opts.roadmap === true && gate.showRoadmap;
-  const willAttemptRoadmapPersonalization =
-    aiConsentGranted
-    && roadmapRequested
-    && !!roadmapEntryForTier && !roadmapEntryForTier.maxTier
-    && !!getRoadmapEndpoint();
 
-  // THE THREE MODEL CALLS RUN ONE AFTER ANOTHER, NOT IN PARALLEL.
+  // THE TWO MODEL CALLS RUN ONE AFTER ANOTHER, NOT IN PARALLEL.
   const runPhase = (willAttempt, label, call) => (willAttempt ? withSpinner(label, call) : call());
 
   // `aiConsentGranted` is `false` whenever consent for this run was declined, denied in the past, or (on `--json`) simply never granted.
   let synthesis = null;
   let evaluation = null;
-  let roadmapPersonalization = null;
   if (aiConsentGranted && !opts.noAi) {
     synthesis = await runPhase(
       willAttemptSynthesis,
@@ -152,24 +141,14 @@ async function runModelCalls({
         () => maybeEvaluateAgents(report, agentRoots, lang),
       )
       : null;
-    // `runPhase` runs `call()` whether or not a spinner is shown, so gating the roadmap CANNOT be done by flipping `willAttempt` — that only hides the spinner.
-    roadmapPersonalization = roadmapRequested
-      ? await runPhase(
-        willAttemptRoadmapPersonalization,
-        catalog.cli.personalizingRoadmapLabel,
-        () => maybePersonalizeRoadmap(report, maturity, lang),
-      )
-      : null;
   } else {
     const skipReason = aiConsentGranted ? REASON.NOT_APPLICABLE : REASON.NO_CONSENT;
     attachModelCall(report, MODEL_CALL.SYNTHESIS, skipped(skipReason));
     attachModelCall(report, MODEL_CALL.EVALUATION, skipped(skipReason));
-    attachModelCall(report, MODEL_CALL.ROADMAP, skipped(skipReason));
   }
 
   if (synthesis) report.agentSynthesis = synthesis;
   if (evaluation) report.agentEvaluation = evaluation;
-  if (roadmapPersonalization) report.roadmapPersonalization = roadmapPersonalization;
 }
 
 // Steps 1-6 of a run: scan, scope, aggregate, classify; nothing is rendered or sent.
@@ -177,7 +156,6 @@ async function computeUsage({
   opts,
   catalog,
   lang,
-  inRegistration = false,
   prepareIdentity = collectIdentityAndUsage,
   resolveConsent = storedAiConsent,
   resolveScope = resolveRepoScope,
@@ -187,10 +165,7 @@ async function computeUsage({
   const { report, root, rootDir } = performScan({ opts, catalog });
 
   // 2. Identity gate + local agent-usage signal.
-  const { gate: identityGate } = prepareIdentity({ report, catalog, quiet: opts.json === true });
-  const gate = (inRegistration && identityGate.showRoadmap)
-    ? { ...identityGate, showRoadmap: false }
-    : identityGate;
+  const { gate } = prepareIdentity({ report, catalog, quiet: opts.json === true });
 
   // 3. Consent gate before any AI/egress call; a decline still renders.
   const aiConsentGranted = await resolveConsent({ opts, catalog, gate });
@@ -211,16 +186,16 @@ async function computeUsage({
       ? null
       : scope.toplevels.map((tl) => tl.split(/[/\\]/).pop() || tl);
 
-  // 6. The three ephemeral model calls, serialized and gated by consent.
+  // 6. The two ephemeral model calls, serialized and gated by consent.
   await runModelCalls({
-    report, maturity, aiConsentGranted, opts, gate, hasAgents, agentRoots, rootDir, lang, catalog,
+    report, aiConsentGranted, opts, hasAgents, agentRoots, rootDir, lang, catalog,
   });
   return { report, maturity, root, gate, repos: scope.toplevels };
 }
 
 // The MCP's scan: same steps, returned instead of printed, since stdout is its JSON-RPC channel.
 async function scanUsage(argv) {
-  const opts = { ...parseArgs(argv), roadmap: false };
+  const opts = parseArgs(argv);
   const lang = opts.lang || detectReportLang();
   const { report, maturity, repos } = await computeUsage({ opts, catalog: getCatalog(lang), lang });
   return { report, maturity, repos };

@@ -4,6 +4,7 @@
 
 const { scrubSecrets } = require('./agent-synthesis');
 const { MAX_DEFINITION_CHARS } = require('./agent-evaluation');
+const { cliVersion } = require('./command-audit');
 
 // Only these fields leave the machine.
 function whitelistSchedulerProbe(probe) {
@@ -49,8 +50,11 @@ function agentDefinitionsByName(report) {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MAX_CLI_VERSION_CHARS = 40;
+const CLIENTS = ['cli', 'mcp'];
 
-function derivePayload(report, maturity, { cliCommandId = null } = {}) {
+function derivePayload(report, maturity, { cliCommandId = null, client = null } = {}) {
+  const version = cliVersion();
   const agents = Array.isArray(report.agents) ? report.agents : [];
   const catalogIdsByName = agentCatalogIdsByName(report);
   const definitionsByName = agentDefinitionsByName(report);
@@ -144,6 +148,8 @@ function derivePayload(report, maturity, { cliCommandId = null } = {}) {
     // PER-CANDIDATE authorship + depth (per detected skill, per detected agent).
     detectionEvidence: whitelistDetectionEvidence(report.detectionEvidence),
     ...(typeof cliCommandId === 'string' && UUID_RE.test(cliCommandId) ? { cliCommandId } : {}),
+    ...(typeof version === 'string' && version ? { cliVersion: version.slice(0, MAX_CLI_VERSION_CHARS) } : {}),
+    ...(CLIENTS.includes(client) ? { client } : {}),
   };
 }
 

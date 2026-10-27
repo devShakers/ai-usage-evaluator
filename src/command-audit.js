@@ -158,4 +158,4 @@ function currentRunId() {
   return runId;
 }
 
-module.exports = { emitCommandAudit, startCommandAudit, logCommandRun, currentRunId, redactArgs, withoutFreeText, buildAudit, PAYLOAD_VAR };
+module.exports = { emitCommandAudit, startCommandAudit, logCommandRun, currentRunId, cliVersion, redactArgs, withoutFreeText, buildAudit, PAYLOAD_VAR };

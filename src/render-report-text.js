@@ -14,7 +14,7 @@ function renderFullReportText(report, maturity, aiProfile, { lang = 'en', gate }
   );
   let terminal = '';
   try {
-    terminal = stripAnsi(renderTerminal(report, maturity, lang, { gate: { ...(gate || reportGateForIdentity()), showRoadmap: false } }))
+    terminal = stripAnsi(renderTerminal(report, maturity, lang, { gate: gate || reportGateForIdentity() }))
       .replace(/[ \t]+$/gm, '')
       .replace(/\n{3,}/g, '\n\n')
       .trim();

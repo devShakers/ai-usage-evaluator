@@ -15,7 +15,6 @@ const {
   hasRetiredFallbackConfig,
   isTalentProfile,
 } = require('./config');
-const { buildNextLevelStarter } = require('./build-next-level');
 
 // One-shot consent management commands. Mirror the retired
 // `--enroll` pattern: they act immediately and do NOT scan.
@@ -109,31 +108,6 @@ function doShowEndpoint(catalog) {
 
 }
 
-// "Construir el siguiente nivel ahora": optional, explicit phase — never runs unless the talent asks for it via --build-next-level.
-function doBuildNextLevel(root, maturity, force, catalog) {
-  const b = catalog.buildNextLevel;
-  const result = buildNextLevelStarter(root || process.cwd(), maturity.tierKey, { force });
-
-  if (!result.ok) {
-    const message =
-      result.reason === 'max-tier' ? b.maxTier
-      : result.reason === 'no-file-target' ? b.noFileTarget
-      : b.unrecognizedTier;
-    process.stdout.write(`\n  ${message}\n\n`);
-    return;
-  }
-
-  process.stdout.write(`\n  ${b.heading(result.targetTierKey)}\n`);
-  for (const f of result.files) {
-    const line =
-      f.status === 'created' ? b.created(f.filename)
-      : f.status === 'overwritten' ? b.overwritten(f.filename)
-      : b.skippedExists(f.filename);
-    process.stdout.write(`    ${line}\n`);
-  }
-  process.stdout.write('\n');
-}
-
 // The one-shot dispatch that used to sit at the top of `run()`: each command acts immediately and returns, without scanning.
 async function handleOneShotCommand({ opts, catalog, injectedAsk }) {
   if (opts.consentStatus) {
@@ -176,5 +150,4 @@ module.exports = {
   doConsentEmail,
   doSetEndpoint,
   doShowEndpoint,
-  doBuildNextLevel,
 };

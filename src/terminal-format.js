@@ -46,31 +46,6 @@ function wrap(text, width = WRAP_COLS) {
   return out;
 }
 
-// One step, wrapped, with its estimate.
-function printStepLines(p, marker, text, estimate) {
-  const indent = ' '.repeat(4 + marker.length + 1);
-  const width = WRAP_COLS - indent.length;
-  const lines = wrap(text, width);
-  if (lines.length === 0) return;
-  // The estimate is measured, not just appended.
-  const plain = estimate ? ` (${estimate})` : '';
-  const coloured = estimate ? ` ${c.dim}(${estimate})${c.reset}` : '';
-  const last = lines.length - 1;
-  const fits = !estimate || lines[last].length + plain.length <= width;
-  lines.forEach((line, i) => {
-    const head = i === 0 ? `    ${marker} ` : indent;
-    p(`${head}${line}${i === last && fits ? coloured : ''}`);
-  });
-  if (estimate && !fits) p(`${indent}${c.dim}(${estimate})${c.reset}`);
-}
-
-// A LABELLED BLOCK: the label on its own dim line, the value wrapped and indented under it.
-function labelledBlock(p, label, value, indent = '    ') {
-  if (!value) return;
-  p(`  ${c.dim}${label}${c.reset}`);
-  for (const line of wrap(value, WRAP_COLS - indent.length)) p(`${indent}${c.muted}${line}${c.reset}`);
-}
-
 // Terminal-SUMMARIZE: the earlier condense over-trimmed — it left the terminal as headings + copyable prompts with the prose stripped out.
 function summarize(text, max = 140) {
   const s = String(text || '').trim().replace(/\s+/g, ' ');
@@ -82,4 +57,4 @@ function summarize(text, max = 140) {
   return (lastSpace > 0 ? slice.slice(0, lastSpace) : slice).replace(/[\s,;:.]+$/, '') + '…';
 }
 
-module.exports = { c, bar, sep, wrap, printStepLines, labelledBlock, summarize, WRAP_COLS };
+module.exports = { c, bar, sep, wrap, summarize };

@@ -86,7 +86,6 @@ function classify(report) {
     breadth,
     depth: d,
     hasAgentic,
-    next: nextStep(level, { breadth, ...d, hasAgentic }),
     // Tier (T0-T7): the fine-grained axis the band is derived from.
     tier: tierResult.tier,
     tierKey: tierResult.tierKey,
@@ -95,17 +94,6 @@ function classify(report) {
     // from the tier. `{key, code, rank, emoji}`; label localized via i18n.
     setupLevel: tierResult.setupLevel,
   };
-}
-
-function nextStep(level) {
-  const steps = {
-    0: 'Instala una herramienta de IA (Claude Code, Cursor o Copilot) y pruébala en un proyecto real.',
-    1: 'Añade un fichero de instrucciones al proyecto (CLAUDE.md, .cursorrules o copilot-instructions.md) para dar contexto persistente.',
-    2: 'Conecta un servidor MCP o crea reglas/comandos propios para que la IA acceda a tus datos y flujos.',
-    3: 'Combina una CLI agéntica con MCP y skills/comandos propios; automatiza una tarea recurrente de principio a fin.',
-    4: 'Ya operas a nivel de orquestación: documenta tu setup y encadena agentes o ejecución en background.',
-  };
-  return steps[level];
 }
 
 module.exports = { classify, LEVELS, AGENTIC_IDS };

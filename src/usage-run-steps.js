@@ -22,7 +22,6 @@ const { c: termColors } = require('./terminal-format');
 const { withSpinner } = require('./terminal-progress');
 const { computeConsentSkip } = require('./consent-skip');
 const { collectIdentityAndUsage, storedAiConsent, reanchorReusedGrant } = require('./usage-scan');
-const { doBuildNextLevel } = require('./usage-oneshot-commands');
 const { uploadFacts, withoutExcluded, summaryText, explanationText } = require('./ai-usage-review');
 const { reviewCopy } = require('./signup-copy');
 const { getCatalog } = require('./i18n');
@@ -32,7 +31,7 @@ const { offerDetectedAgentsAfterUsage } = require('./start-add-agents');
 
 async function maybeAutoShare(report, maturity, root, catalog, { bypassThrottle = false } = {}) {
   try {
-    const result = await autoShare(report, maturity, { root, bypassThrottle, cliCommandId: currentRunId() });
+    const result = await autoShare(report, maturity, { root, bypassThrottle, cliCommandId: currentRunId(), client: 'cli' });
     if (result && result.ok && result.backend) {
       process.stdout.write(`  ${catalog.backendChain.saved(result.backend)}\n`);
       return result;
@@ -173,7 +172,7 @@ async function renderAndFinalize({ report, maturity, lang, opts, root, gate, cat
     process.stdout.write(`\n  ${termColors.warning}${catalog.terminal.sessionExpiredNotice}${termColors.reset}\n`);
   }
 
-  await revealText(renderTerminal(report, maturity, lang, { showRoadmap: opts.roadmap, gate }) + '\n', {
+  await revealText(renderTerminal(report, maturity, lang, { gate }) + '\n', {
     stream: process.stdout,
     animate: opts.noAnimation ? false : null,
   });
@@ -184,12 +183,6 @@ async function renderAndFinalize({ report, maturity, lang, opts, root, gate, cat
     } catch {
       // Never break the local run over a failed state write.
     }
-  }
-
-  // "Construir el siguiente nivel ahora": optional, only when
-  // explicitly requested — never part of a normal run otherwise.
-  if (opts.buildNextLevel) {
-    doBuildNextLevel(root, maturity, opts.force, catalog);
   }
 
   const reviewed = await reviewUpload({ report, maturity, repos, lang, catalog, injectedAsk, bypassThrottle });

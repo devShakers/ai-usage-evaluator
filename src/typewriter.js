@@ -45,9 +45,8 @@ const REVEAL_TOTAL_MS = 600;
 // a ceiling, so a very long one never feels like waiting for the tool.
 const REVEAL_MIN_STEP_MS = 24;
 const REVEAL_MAX_STEP_MS = 120;
-const RULE_RE = /^[\s]*[\u2500\u2501\u2508\u2509-]{20,}[\s]*$/;
 
-// Splits rendered output into reveal chunks on BLANK LINES, holding everything between two horizontal rules together (the copyable block).
+// Splits rendered output into reveal chunks on BLANK LINES.
 function splitSections(text) {
   const s = typeof text === 'string' ? text : '';
   if (!s) return [];
@@ -55,13 +54,11 @@ function splitSections(text) {
   const last = parts.length - 1;
   const out = [];
   let current = '';
-  let held = false;
   for (let i = 0; i <= last; i++) {
     const line = parts[i];
     // The newline that FOLLOWED this line in the input belongs to this chunk, or the concatenation would lose it.
     current += line + (i < last ? '\n' : '');
-    if (RULE_RE.test(line)) { held = !held; continue; }
-    if (line.trim() === '' && !held && current.length) {
+    if (line.trim() === '' && current.length) {
       out.push(current);
       current = '';
     }

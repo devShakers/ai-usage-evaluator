@@ -4,7 +4,6 @@
 
 const agentSynthesis = require('./agent-synthesis');
 const agentEvaluation = require('./agent-evaluation');
-const roadmapPersonalization = require('./roadmap-personalization');
 const onboardingClient = require('./onboarding-client');
 const config = require('./config');
 
@@ -21,12 +20,6 @@ const AI_CALLS = Object.freeze({
     build: agentEvaluation.buildAgentEvaluationRequest,
     endpoint: config.getAgentEvaluationEndpoint,
     promptVersion: agentEvaluation.PROMPT_VERSION,
-  },
-  roadmapPersonalization: {
-    call: roadmapPersonalization.requestRoadmapPersonalization,
-    build: roadmapPersonalization.buildRoadmapPersonalizationRequest,
-    endpoint: config.getRoadmapEndpoint,
-    promptVersion: null,
   },
   onboardingOpen: {
     call: onboardingClient.requestStartTextSession,
@@ -56,9 +49,6 @@ module.exports = {
 
   requestAgentEvaluation: agentEvaluation.requestAgentEvaluation,
   buildAgentEvaluationRequest: agentEvaluation.buildAgentEvaluationRequest,
-
-  requestRoadmapPersonalization: roadmapPersonalization.requestRoadmapPersonalization,
-  buildRoadmapPersonalizationRequest: roadmapPersonalization.buildRoadmapPersonalizationRequest,
 
   requestStartTextSession: onboardingClient.requestStartTextSession,
   requestOnboardingTurn: onboardingClient.requestOnboardingTurn,

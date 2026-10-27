@@ -307,13 +307,6 @@ const catalogs = {
         desc: 'Orquestado: operas CLIs agénticas, equipos de agentes y automatización de punta a punta.',
       },
     },
-    nextSteps: {
-      0: 'Instala una herramienta de IA (Claude Code, Cursor o Copilot) y pruébala en un proyecto real.',
-      1: 'Añade un fichero de instrucciones al proyecto (CLAUDE.md, .cursorrules o copilot-instructions.md) para dar contexto persistente.',
-      2: 'Conecta un servidor MCP o crea reglas/comandos propios para que la IA acceda a tus datos y flujos.',
-      3: 'Combina una CLI agéntica con MCP y skills/comandos propios; automatiza una tarea recurrente de principio a fin.',
-      4: 'Ya operas a nivel de orquestación: documenta tu setup y encadena agentes o ejecución en background.',
-    },
     recency: {
       today: 'hoy',
       this_week: 'esta semana',
@@ -358,13 +351,10 @@ const catalogs = {
       agentUsed: (n) => `usado ${n}×`,
       agentUnused: 'sin uso local',
       agentUsageUnavailable: '(sin historial local de Claude Code: uso no disponible)',
-      // Discoverability hint for the next-steps section (behind --roadmap).
-      roadmapHint: 'Ejecuta `usage --roadmap` para ver los pasos que te separan del siguiente nivel de uso de IA. No son pasos de esta herramienta: son cambios en tu forma de trabajar, para las próximas semanas.',
       aiProfileGenerating: 'Generando tu perfil de IA (matriz, visión y cómo trabajas)…',
       aiProfilePendingRetry: 'Tu perfil de IA (matriz, visión y cómo trabajas) se está generando; re-lanza `report` en un momento para verlo.',
       // Se muestra cuando había una sesión y ha caducado, para que el talento entienda por qué vuelve a ver el informe completo.
       sessionExpiredNotice: 'Tu sesión ha caducado. Estás viendo el informe completo como usuario general; ejecuta `login` para volver a entrar.',
-      nextStep: 'Siguiente paso para subir de nivel',
       files: (n) => `${n} ${n === 1 ? 'fichero' : 'ficheros'}`,
       lastModified: (label) => `última modificación: ${label}`,
       skillsHeading: 'Skills',
@@ -384,7 +374,7 @@ const catalogs = {
       detectedSuffix: (total) => `de ${total} herramientas detectadas`,
       maturity: 'Madurez',
       tools: 'Herramientas',
-      // Only DETECTED tools are listed now (undetected ones were pure noise — any relevant next step already lives in the tier roadmap section).
+      // Only DETECTED tools are listed now (undetected ones were pure noise).
       toolsEmpty: 'No se ha detectado ninguna herramienta de IA en tu entorno.',
       configIntensity: 'intensidad de configuración',
       files: (n) => `${n}&nbsp;${n === 1 ? 'fichero' : 'ficheros'}`,
@@ -394,7 +384,6 @@ const catalogs = {
       architecture: 'Arquitectura',
       installedEditors: 'Editores instalados',
       noEditorsDetected: 'ninguno detectado',
-      nextStep: 'Siguiente paso para subir de nivel',
       diagramHeading: 'Agentes',
       agentsEmpty: 'No se han detectado agentes de IA configurados (p. ej. .claude/agents/).',
       orchestratorLabel: 'Orchestrator',
@@ -416,33 +405,6 @@ const catalogs = {
       mcpHeading: 'Servicios conectados por MCP',
       mcpEmpty: 'No se ha detectado ningún servidor MCP. Conectar uno es el criterio que te sube a T3 (Banco conectado).',
       mcpUnidentified: (n) => `${n} ${n === 1 ? 'servidor más, cuyo servicio no' : 'servidores más, cuyo servicio no'} hemos podido identificar por su nombre.`,
-      roadmapHeading: 'Tu próximo nivel de uso de IA',
-      // 083: subtitulo del bloque, para que quien entra directo con --roadmap lea
-      // el registro antes que el contenido.
-      roadmapSubheading: 'Lo que sigue lo haces tú en tu trabajo, no en esta herramienta. La herramienta solo te dice por dónde.',
-      roadmapUpgradeWhenLabel: 'Subes de tier cuando:',
-      roadmapUnlocksLabel: 'Qué desbloquea',
-      roadmapStepsLabel: 'Pasos',
-      roadmapSnippetLabel: 'Snippet copiable',
-      roadmapTipsLabel: 'Tips de comunidad',
-      roadmapMistakesLabel: 'Errores comunes',
-      roadmapConsolidationLabel: 'Pasos de consolidación',
-      roadmapHonestyLabel: 'Nota de honestidad',
-      roadmapContentUnavailable: 'El contenido detallado de este nivel aún no está disponible en este idioma.',
-      // Shown only when the 4 prose gaps below were actually replaced by a validated, project-adapted response — never on fallback to the curated content.
-      roadmapPersonalizedNotice: 'Contenido adaptado a tu proyecto.',
-      // Los dos avisos que faltaban, hermanos del `agentsEvalMissing` que añadió la 106.
-      roadmapNotPersonalizedNotice: 'Este roadmap es el genérico de tu tier: esta vez no se ha podido adaptar a tu proyecto. Vuelve a ejecutar `usage --roadmap` para intentarlo otra vez.',
-      // El antes y el después del roadmap.
-      roadmapNowLabel: 'De dónde partes',
-      roadmapProjectionLabel: 'Dónde te deja esta ruta',
-      roadmapProjectionTag: 'proyección',
-      roadmapProjectionNote: 'Calculado con el mismo motor que tu evaluación, aplicando el mínimo que piden estos pasos. Es una proyección, no una promesa: la evaluación mide uso real, así que darlos es condición necesaria y no suficiente.',
-      implementationPromptHeading: 'Prompt para implementar',
-      implementationPromptHint: 'Copia este prompt y pégalo en tu IA de confianza (Claude Code, Cursor, ChatGPT...) para que lo implemente en tu proyecto.',
-      // Copy-to-clipboard button (HTML report only): navigator.clipboard with a document.execCommand fallback, both inline, zero-network.
-      implementationPromptCopyLabel: 'Copiar',
-      implementationPromptCopiedLabel: 'Copiado ✓',
       privacyNote:
         'Este informe se ha generado en local. Solo registra qué herramientas '
         + 'existen, cuántas configuraciones tienes y tu nivel: nunca el contenido '
@@ -537,14 +499,8 @@ const catalogs = {
         `Evaluación de toda la máquina limitada a ${shown} de ${total} repos detectados (los más activos primero).`,
       reposScopeAll: 'Evaluando todo el uso de IA de la máquina.',
       synthesizingLabel: 'Sintetizando agentes con IA…',
-      // Roadmap personalization: reuses the
-      // same spinner mechanism as synthesizingLabel above.
-      personalizingRoadmapLabel: 'Personalizando roadmap…',
-      roadmapNotForAccounts: 'El roadmap no está disponible para cuentas de Shakers: tu nivel sale de certificarte.',
       // Agent definition-quality evaluation (ephemeral LLM call).
       evaluatingAgentsLabel: 'Evaluando la calidad de tus agentes…',
-      // "Construir el siguiente nivel ahora": now a SECONDARY, opt-in alternative — the copyable implementation prompt (below) is the PRIMARY "how do I implement this" path.
-      buildNextLevelHint: 'Alternativamente, ejecuta `usage --build-next-level` para generar el fichero de partida directamente en tu proyecto.',
       // Ayuda localizada: antes estaba hardcodeada en español en bin/report.js; ahora pasa por i18n y respeta la locale de la máquina.
       help:
         '\nShakers — perfil local de uso de herramientas de IA\n\n'
@@ -558,9 +514,6 @@ const catalogs = {
         + '      --repo             Evalúa solo el repo actual\n'
         + '      --scope machine|repo  Igual que --machine / --repo (salta el selector)\n'
         + '      --all-repos        Alias de --machine\n'
-        + '      --roadmap          Muestra los pasos para subir tu nivel de uso de IA (solo sin cuenta de Shakers)\n'
-        + '      --build-next-level Genera el starter del siguiente tier (alternativa secundaria)\n'
-        + '      --force            Junto a --build-next-level, sobrescribe un fichero existente\n'
         + '      --lang es|en       Fuerza el idioma (informe + prompt) en vez de detectarlo del sistema\n'
         + '      --consent-status   Muestra tu decisión de guardado / correo / último envío\n'
         + '      --consent-revoke   Revoca el guardado (→ denegado); deja de enviar\n'
@@ -585,15 +538,6 @@ const catalogs = {
       privacyNote: 'Este informe se genera y se guarda solo en tu equipo. Nada se envía a Shakers salvo que des tu consentimiento explícito.',
       updatedLabel: (when) => `Actualizado: ${when}`,
       unknownProject: '(proyecto desconocido)',
-    },
-    buildNextLevel: {
-      heading: (tierKey) => `Generando el starter para subir a ${tierKey}...`,
-      created: (filename) => `+ creado ${filename}`,
-      overwritten: (filename) => `+ sobrescrito ${filename} (--force)`,
-      skippedExists: (filename) => `${filename} ya existe — no se sobrescribe (usa --force para sobrescribir)`,
-      maxTier: 'Ya estás en el tier máximo (T7): no hay siguiente nivel que construir.',
-      noFileTarget: 'El siguiente paso no es un fichero que este comando pueda crear — revisa el snippet del roadmap en el informe.',
-      unrecognizedTier: 'No se ha podido determinar tu tier actual.',
     },
     legalNotice: {
       label: 'AVISO LEGAL',
@@ -637,8 +581,8 @@ const catalogs = {
       savedUnderEmail: (email) => `El informe se guardará a nombre de: ${email}`,
       invalidEmail: 'Correo no válido, inténtalo de nuevo.',
       notObtained: 'No se ha podido registrar tu respuesta; se te volverá a preguntar la próxima vez.',
-      // Esta pregunta se pide ahora ANTES de cualquier llamada de IA/egress (agent-synthesis, agent-evaluation, personalización de roadmap), no después.
-      noReportWithoutConsent: 'Sin tu consentimiento, este informe no incluirá síntesis, evaluación ni roadmap generados por IA esta vez (el resto del informe se muestra igual). Vuelve a ejecutar `usage` y acepta para incluirlos, o usa --consent-reset si quieres que se te pregunte de nuevo.',
+      // Esta pregunta se pide ahora ANTES de cualquier llamada de IA/egress (agent-synthesis, agent-evaluation), no después.
+      noReportWithoutConsent: 'Sin tu consentimiento, este informe no incluirá síntesis ni evaluación generadas por IA esta vez (el resto del informe se muestra igual). Vuelve a ejecutar `usage` y acepta para incluirlos, o usa --consent-reset si quieres que se te pregunte de nuevo.',
       deniedSaved: 'Entendido, no se guardará nada. Puedes cambiar de opinión más adelante volviendo a ejecutar el comando.',
       grantedSaved: (email) => `Gracias. Antes de subir nada a Shakers te enseñaré lo que se enviaría y solo lo subiré si lo apruebas (correo: ${email}, máx. 1 vez por hora).`,
       // Un talento logueado NUNCA ve el prompt de email (su cuenta ya prueba su identidad).
@@ -1314,7 +1258,7 @@ const catalogs = {
       passwordPrompt: 'Contraseña:',
       emailInvalid: 'Email no válido. Inténtalo de nuevo.',
       needInput: 'Se necesitan email y contraseña para iniciar sesión.',
-      success: 'Sesión iniciada. Tu informe ya no incluye el roadmap ni las sugerencias de mejora: tu nivel sale de certificarte.',
+      success: 'Sesión iniciada. Tu informe ya no incluye las sugerencias de mejora: tu nivel sale de certificarte.',
       expiresAt: (iso) => `La sesión caduca: ${iso}. Cuando expire te lo diré y podrás volver a entrar con \`login\`.`,
       loggedOut: 'Sesión cerrada. Vuelves a ver las sugerencias de mejora en tu informe.',
       notLoggedIn: 'No había ninguna sesión iniciada. No hay nada que cerrar.',
@@ -1662,7 +1606,7 @@ const catalogs = {
       // camino de fallo, así que afirmarlo sería inventarlo.
       staleFootprint: (days) => `El uso de IA de este proyecto tiene ${days} días. Si has cambiado de herramientas o de agentes, vuelve a ejecutar \`usage\` antes de compartir nada.`,
       nextCommand: (cmd, what) => `Siguiente comando de la herramienta: \`${cmd}\` — ${what}`,
-      journeyDone: 'Has completado el recorrido de la herramienta: no queda ningún comando por ejecutar. Los siguientes pasos para subir tu nivel de uso de IA son otra cosa y están en `usage --roadmap`.',
+      journeyDone: 'Has completado el recorrido de la herramienta: no queda ningún comando por ejecutar.',
       goodbye: 'Hasta pronto.',
       unknown: (cmd) => `Comando no reconocido: "${cmd}". Escribe "help" para ver los comandos disponibles.`,
       // ORDEN: lo declara src/command-graph.js.
@@ -1680,7 +1624,7 @@ const catalogs = {
         + '  clear                  Limpia la pantalla\n'
         + '  exit | quit            Cierra la shell\n\n'
         + 'Los flags de cada comando siguen funcionando dentro de la shell\n'
-        + '(p.ej. `usage --root <dir>`, `usage --roadmap`, `certify --dimension <clave>`). Usa\n'
+        + '(p.ej. `usage --root <dir>`, `certify --dimension <clave>`). Usa\n'
         + '`usage --help` o `certify --help` para ver todas sus opciones.',
       helpExternal:
         'shakers — comandos disponibles\n\n'
@@ -2045,13 +1989,6 @@ const catalogs = {
         desc: 'Orchestrated: you run agentic CLIs, agent teams and end-to-end automation.',
       },
     },
-    nextSteps: {
-      0: 'Install an AI tool (Claude Code, Cursor or Copilot) and try it on a real project.',
-      1: 'Add an instructions file to the project (CLAUDE.md, .cursorrules or copilot-instructions.md) to give it persistent context.',
-      2: 'Connect an MCP server or create your own rules/commands so the AI can reach your data and workflows.',
-      3: 'Combine an agentic CLI with MCP and your own skills/commands; automate a recurring task end to end.',
-      4: 'You already operate at orchestration level: document your setup and chain agents or background runs.',
-    },
     recency: {
       today: 'today',
       this_week: 'this week',
@@ -2096,14 +2033,11 @@ const catalogs = {
       agentUsed: (n) => `used ${n}×`,
       agentUnused: 'no local use',
       agentUsageUnavailable: '(no local Claude Code history: usage unavailable)',
-      // Discoverability hint for the next-steps section (behind --roadmap).
-      roadmapHint: 'Run `usage --roadmap` to see the steps between you and the next AI-usage level. These are not steps in this tool: they are changes to how you work, over the coming weeks.',
       aiProfileGenerating: 'Generating your AI profile (matrix, vision and how you work)…',
       aiProfilePendingRetry: 'Your AI profile (matrix, vision and how you work) is still being generated; re-run `report` in a moment to see it.',
       // Shown when a session existed and has expired. Opens
       // with "Your session has expired" — see the Spanish catalog.
       sessionExpiredNotice: 'Your session has expired. You are seeing the full report as a general user; run `login` to sign in again.',
-      nextStep: 'Next step to level up',
       files: (n) => `${n} ${n === 1 ? 'file' : 'files'}`,
       lastModified: (label) => `last modified: ${label}`,
       // "Project technologies" is renamed "Skills" for the TALENT profile only (naming unicity with the rest of the talent surface).
@@ -2131,7 +2065,6 @@ const catalogs = {
       architecture: 'Architecture',
       installedEditors: 'Installed editors',
       noEditorsDetected: 'none detected',
-      nextStep: 'Next step to level up',
       diagramHeading: 'Agents',
       agentsEmpty: 'No configured AI agents detected (e.g. .claude/agents/).',
       orchestratorLabel: 'Orchestrator',
@@ -2152,31 +2085,6 @@ const catalogs = {
       mcpHeading: 'Services connected over MCP',
       mcpEmpty: 'No MCP server detected. Connecting one is the criterion that takes you to T3 (Connected bench).',
       mcpUnidentified: (n) => `${n} more server${n === 1 ? '' : 's'} whose service we could not identify from its name.`,
-      roadmapHeading: 'Your next AI-usage level',
-      roadmapSubheading: 'What follows is yours to do at work, not in this tool. The tool only tells you where to aim.',
-      roadmapUpgradeWhenLabel: 'You level up when:',
-      roadmapUnlocksLabel: 'What it unlocks',
-      roadmapStepsLabel: 'Steps',
-      roadmapSnippetLabel: 'Copyable snippet',
-      roadmapTipsLabel: 'Community tips',
-      roadmapMistakesLabel: 'Common mistakes',
-      roadmapConsolidationLabel: 'Consolidation steps',
-      roadmapHonestyLabel: 'Honesty note',
-      roadmapContentUnavailable: "This level's detailed content isn't available in this language yet.",
-      roadmapPersonalizedNotice: 'Content adapted to your project.',
-      // See the Spanish catalog for why these say what was lost
-      // rather than what went wrong, and when they are allowed to show.
-      roadmapNotPersonalizedNotice: 'This roadmap is the generic one for your tier: it could not be adapted to your project this run. Run `usage --roadmap` again to retry.',
-      // See the Spanish catalog for why the tag sits next to the
-      // heading instead of in a footnote.
-      roadmapNowLabel: 'Where you start from',
-      roadmapProjectionLabel: 'Where this path leaves you',
-      roadmapProjectionTag: 'projection',
-      roadmapProjectionNote: 'Computed with the same engine as your evaluation, applying the minimum these steps ask for. It is a projection, not a promise: the evaluation measures real use, so taking them is necessary and not sufficient.',
-      implementationPromptHeading: 'Implementation prompt',
-      implementationPromptHint: 'Copy this prompt and paste it into your AI tool of choice (Claude Code, Cursor, ChatGPT...) so it implements this in your project.',
-      implementationPromptCopyLabel: 'Copy',
-      implementationPromptCopiedLabel: 'Copied ✓',
       privacyNote:
         'This report was generated locally. It only records which tools exist, '
         + 'how many configurations you have and your level: never the content of '
@@ -2269,11 +2177,8 @@ const catalogs = {
         `Whole-machine evaluation capped to ${shown} of ${total} detected repos (most active first).`,
       reposScopeAll: 'Evaluating all AI usage on this machine.',
       synthesizingLabel: 'Synthesizing agents with AI…',
-      personalizingRoadmapLabel: 'Personalizing roadmap…',
-      roadmapNotForAccounts: 'The roadmap is not available for Shakers accounts: your level comes from certifying.',
       // Agent definition-quality evaluation (ephemeral LLM call).
       evaluatingAgentsLabel: 'Evaluating your agents’ quality…',
-      buildNextLevelHint: 'Alternatively, run `usage --build-next-level` to generate the starter file directly in your project.',
       // Localized help: previously hardcoded Spanish in bin/report.js; now routed through i18n so it respects the machine locale.
       help:
         '\nShakers — local profile of your AI-tool usage\n\n'
@@ -2287,9 +2192,6 @@ const catalogs = {
         + '      --repo             Evaluate the current repo only\n'
         + '      --scope machine|repo  Same as --machine / --repo (skips the picker)\n'
         + '      --all-repos        Alias of --machine\n'
-        + '      --roadmap          Show the steps to raise your AI-usage level (only without a Shakers account)\n'
-        + '      --build-next-level Generate the next tier starter (secondary alternative)\n'
-        + '      --force            With --build-next-level, overwrite an existing file\n'
         + '      --lang es|en       Force the language (report + prompt) instead of OS detection\n'
         + '      --consent-status   Show your save decision / email / last send\n'
         + '      --consent-revoke   Revoke saving (→ denied); stops sending\n'
@@ -2315,15 +2217,6 @@ const catalogs = {
       privacyNote: 'This report is generated and stored only on your machine. Nothing is sent to Shakers unless you give explicit consent.',
       updatedLabel: (when) => `Updated: ${when}`,
       unknownProject: '(unknown project)',
-    },
-    buildNextLevel: {
-      heading: (tierKey) => `Generating the starter to reach ${tierKey}...`,
-      created: (filename) => `+ created ${filename}`,
-      overwritten: (filename) => `+ overwritten ${filename} (--force)`,
-      skippedExists: (filename) => `${filename} already exists — not overwriting (use --force to overwrite)`,
-      maxTier: "You're already at the max tier (T7): there's no next level to build.",
-      noFileTarget: "The next step isn't a file this command can create — check the roadmap snippet in the report.",
-      unrecognizedTier: "Couldn't determine your current tier.",
     },
     // Mirrors the es catalog's `legalNotice` — see its comment.
     legalNotice: {
@@ -2367,8 +2260,8 @@ const catalogs = {
       savedUnderEmail: (email) => `The report will be saved under: ${email}`,
       invalidEmail: 'Invalid email, try again.',
       notObtained: "Couldn't record your answer; you'll be asked again next time.",
-      // This question is now asked BEFORE any AI/egress call (agent-synthesis, agent-evaluation, roadmap personalization), not after.
-      noReportWithoutConsent: 'Without your consent, this report will not include AI-generated synthesis, evaluation, or roadmap this time (the rest of the report is shown as usual). Run `usage` again and accept to include them, or use --consent-reset if you want to be asked again.',
+      // This question is now asked BEFORE any AI/egress call (agent-synthesis, agent-evaluation), not after.
+      noReportWithoutConsent: 'Without your consent, this report will not include AI-generated synthesis or evaluation this time (the rest of the report is shown as usual). Run `usage` again and accept to include them, or use --consent-reset if you want to be asked again.',
       deniedSaved: 'Understood, nothing will be saved. You can change your mind later by running the command again.',
       grantedSaved: (email) => `Thanks. Before anything is uploaded to Shakers I will show you what would be sent, and I will upload it only if you approve it (email: ${email}, at most once an hour).`,
       // A logged-in Talent is NEVER asked for an email (their account already proves identity).
@@ -3037,7 +2930,7 @@ const catalogs = {
       passwordPrompt: 'Password:',
       emailInvalid: 'Invalid email. Try again.',
       needInput: 'Email and password are required to log in.',
-      success: 'Logged in. Your report no longer includes the roadmap or the improvement suggestions: your level comes from certifying.',
+      success: 'Logged in. Your report no longer includes the improvement suggestions: your level comes from certifying.',
       expiresAt: (iso) => `The session expires: ${iso}. When it does I will tell you, and you can log in again with \`login\`.`,
       loggedOut: 'Logged out. Your report shows the improvement suggestions again.',
       notLoggedIn: 'No session was active. Nothing to log out of.',
@@ -3384,7 +3277,7 @@ const catalogs = {
       blockedNoBypass: 'There is no way to skip this check: the command would fail seconds later anyway, only without an explanation.',
       staleFootprint: (days) => `This project\u2019s AI usage is ${days} days old. If your tools or agents have changed, run \`usage\` again before sharing anything.`,
       nextCommand: (cmd, what) => `Next tool command: \`${cmd}\` — ${what}`,
-      journeyDone: 'You have completed the tool\u2019s flow: there is no command left to run. The next steps for raising your AI-usage level are a different thing, and they live in `usage --roadmap`.',
+      journeyDone: 'You have completed the tool\u2019s flow: there is no command left to run.',
       goodbye: 'See you soon.',
       unknown: (cmd) => `Unknown command: "${cmd}". Type "help" to list the available commands.`,
       // ORDER: declared by src/command-graph.js.
@@ -3402,7 +3295,7 @@ const catalogs = {
         + '  clear                 Clear the screen\n'
         + '  exit | quit           Close the shell\n\n'
         + 'Each command\'s flags still work inside the shell\n'
-        + '(e.g. `usage --root <dir>`, `usage --roadmap`, `certify --dimension <clave>`). Use\n'
+        + '(e.g. `usage --root <dir>`, `certify --dimension <clave>`). Use\n'
         + '`usage --help` or `certify --help` for all their options.',
       helpExternal:
         'shakers — available commands\n\n'

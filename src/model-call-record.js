@@ -2,11 +2,10 @@
 
 // What happened with each model call, written down.
 
-// The three keys.
+// The two keys.
 const MODEL_CALL = Object.freeze({
   SYNTHESIS: 'agentSynthesis',
   EVALUATION: 'agentEvaluation',
-  ROADMAP: 'roadmapPersonalization',
 });
 
 const REASON = Object.freeze({
@@ -17,7 +16,6 @@ const REASON = Object.freeze({
   // ok:null — never attempted, and NOT a failure
   NO_AGENTS: 'no-agents',
   NO_ENDPOINT: 'no-endpoint-configured',
-  MAX_TIER: 'max-tier',
   NOT_APPLICABLE: 'not-applicable',
   NO_CONSENT: 'no-consent',
   // ok:false — attempted, and something was lost
@@ -37,7 +35,6 @@ const SUCCESS_REASONS = new Set([REASON.OK, REASON.OK_PARTIAL]);
 const SKIP_REASONS = new Set([
   REASON.NO_AGENTS,
   REASON.NO_ENDPOINT,
-  REASON.MAX_TIER,
   REASON.NOT_APPLICABLE,
   REASON.NO_CONSENT,
 ]);

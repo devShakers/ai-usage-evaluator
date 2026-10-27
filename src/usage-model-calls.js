@@ -1,6 +1,6 @@
 'use strict';
 
-// The three ephemeral model-call orchestrators of the `ai-usage` flow, extracted from bin/ai-usage.js.
+// The two ephemeral model-call orchestrators of the `ai-usage` flow, extracted from bin/ai-usage.js.
 
 const { parseAgentDescriptions, parseAgentDefinitionsForRoots } = require('./agent-org-chart');
 const {
@@ -8,18 +8,13 @@ const {
   requestAgentSynthesis,
   buildAgentEvaluationRequest,
   requestAgentEvaluation,
-  buildRoadmapPersonalizationRequest,
-  requestRoadmapPersonalization,
 } = require('./ai');
 const { MODEL_CALL, REASON, skipped, failedLocally, attachModelCall } = require('./model-call-record');
 const {
   getSynthesisEndpoint,
-  getRoadmapEndpoint,
   getAgentEvaluationEndpoint,
 } = require('./config');
 const { hasTraceContentConsent } = require('./share');
-const { getRoadmapEntry } = require('./roadmap-content');
-const { computeTierResult } = require('./tier-engine');
 
 // Agent-synthesis call ("ephemeral" — not persisted).
 async function maybeSynthesizeAgents(report, root) {
@@ -78,42 +73,4 @@ async function maybeEvaluateAgents(report, roots, lang) {
   }
 }
 
-async function maybePersonalizeRoadmap(report, maturity, lang) {
-  const KEY = MODEL_CALL.ROADMAP;
-  const tierKey = maturity && maturity.tierKey;
-  if (!tierKey) {
-    attachModelCall(report, KEY, skipped(REASON.NOT_APPLICABLE));
-    return null;
-  }
-  const entry = getRoadmapEntry(tierKey, lang);
-  if (!entry) {
-    attachModelCall(report, KEY, skipped(REASON.NOT_APPLICABLE));
-    return null;
-  }
-  if (entry.maxTier) {
-    attachModelCall(report, KEY, skipped(REASON.MAX_TIER));
-    return null;
-  }
-
-  const endpoint = getRoadmapEndpoint();
-  if (!endpoint) {
-    attachModelCall(report, KEY, skipped(REASON.NO_ENDPOINT));
-    return null;
-  }
-
-  try {
-    const tierResult = computeTierResult(report);
-    // Pass the report language so the personalized prose is localized.
-    // Fresh consent read, see maybeSynthesizeAgents above.
-    const requestBody = buildRoadmapPersonalizationRequest(entry, tierResult, report, lang, hasTraceContentConsent());
-    return await requestRoadmapPersonalization(requestBody, {
-      endpoint,
-      onOutcome: (rec) => attachModelCall(report, KEY, rec),
-    });
-  } catch {
-    attachModelCall(report, KEY, failedLocally());
-    return null; // never breaks the local report — falls back to the curated content
-  }
-}
-
-module.exports = { maybeSynthesizeAgents, maybeEvaluateAgents, maybePersonalizeRoadmap };
+module.exports = { maybeSynthesizeAgents, maybeEvaluateAgents };

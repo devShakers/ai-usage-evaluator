@@ -6,7 +6,6 @@ const { parseArgs } = require('../src/cli-args');
 const { handleOneShotCommand } = require('../src/usage-oneshot-commands');
 const { createLazyStdinAsk } = require('../src/stdin-ask');
 const { computeUsage } = require('../src/usage-scan');
-const { hasAccountTrace } = require('../src/account-trace');
 const {
   resolveRepoScope,
   machineWideToplevels,
@@ -35,18 +34,12 @@ async function run(argv = process.argv.slice(2), { ask: injectedAsk = null, bypa
   // One-shot commands (consent/endpoint config): act immediately, do NOT scan.
   if (await handleOneShotCommand({ opts, catalog, injectedAsk })) return;
 
-  if (opts.roadmap && hasAccountTrace()) {
-    process.stdout.write(`\n  ${catalog.cli.roadmapNotForAccounts}\n\n`);
-    return;
-  }
-
   const ask = injectedAsk || createLazyStdinAsk();
   try {
     const { report, maturity, root, gate, repos } = await computeUsage({
       opts,
       catalog,
       lang,
-      inRegistration,
       prepareIdentity: prepareIdentityAndUsage,
       resolveConsent: (args) => resolveAiConsent({ ...args, injectedAsk: ask }),
       resolveScope: async (args) => {

@@ -10,7 +10,6 @@ const {
   printMcpServices,
   printTierAnalysis,
   printLadder,
-  printRoadmap,
 } = require('./terminal-sections');
 
 // Terminal parity with the HTML report.
@@ -33,16 +32,7 @@ function renderTerminal(report, maturity, lang, opts = {}) {
   p(`${c.bold}${c.primary}  SHAKERS${c.reset}${c.muted}  ·  ${t.terminal.brandSub}${c.reset}`);
   p(`${c.muted}  ${new Date(report.generatedAt).toLocaleString()}  ·  ${t.terminal.toolsDetected(detectedTools(report.tools).length, report.tools.length)}${c.reset}`);
 
-  // `--roadmap` (opts.showRoadmap): render ONLY the next-steps/roadmap section (header + steps + the copyable implementation prompt) — NOT the rest of the report.
-  if (opts.showRoadmap) {
-    sep(p);
-    if (gate.showRoadmap) {
-      printRoadmap(report, maturity, t, lang, p);
-    }
-    return lines.join('\n');
-  }
-
-  // Default report: score -> why -> tools -> technologies -> agents, then a dim hint pointing at --roadmap (so the next-steps section is discoverable).
+  // Default report: score -> why -> tools -> technologies -> agents.
 
   sep(p);
   const tierName = (maturity.tierKey && t.tierNames[maturity.tierKey]) || maturity.tierName || '';
@@ -96,10 +86,6 @@ function renderTerminal(report, maturity, lang, opts = {}) {
     for (const line of activityLines) p(line);
   }
 
-  // Where the roadmap pointer went.
-  if (gate.showRoadmap) {
-    p(`  ${c.dim}${t.terminal.roadmapHint}${c.reset}`);
-  }
   p();
 
   return lines.join('\n');

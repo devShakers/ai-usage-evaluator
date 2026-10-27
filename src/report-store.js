@@ -154,10 +154,6 @@ function recordBackendAcceptance({ root, kind, backend }) {
   return stampAndSaveState(state, absRoot);
 }
 
-function hasRecordedUpload(env = process.env) {
-  return Object.values(loadState(env).projects).some((p) => !!(p && p.backendAcceptance && Object.keys(p.backendAcceptance).length));
-}
-
 function loadFootprint({ root } = {}) {
   const absRoot = path.resolve(root || process.cwd());
   const state = loadState();
@@ -224,7 +220,6 @@ module.exports = {
   loadAgentClassifications,
   loadFootprint,
   recordBackendAcceptance,
-  hasRecordedUpload,
   materializeProjectReport,
   certKey,
   SCHEMA_VERSION,

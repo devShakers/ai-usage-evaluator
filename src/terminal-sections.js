@@ -1,15 +1,10 @@
 'use strict';
 
-// The MCP-services, tier-analysis, progression-ladder and tier-roadmap sections of the terminal report, extracted from src/render-terminal.js.
+// The MCP-services, tier-analysis and progression-ladder sections of the terminal report, extracted from src/render-terminal.js.
 
-const { getRoadmapEntry } = require('./roadmap-content');
 const { analyzeTier, buildLadder } = require('./tier-analysis');
-const { mergeRoadmapPersonalization } = require('./roadmap-personalization');
-const { buildImplementationPrompt } = require('./roadmap-prompt');
 const { sanitizeRenderText } = require('./sanitize-network-text');
-const { callFailed, MODEL_CALL } = require('./model-call-record');
-const { projectNextTier } = require('./tier-projection');
-const { c, sep, wrap, summarize, labelledBlock, printStepLines } = require('./terminal-format');
+const { c, wrap, summarize } = require('./terminal-format');
 
 function printMcpServices(report, t, p) {
   const mcp = report && report.mcp ? report.mcp : null;
@@ -102,118 +97,4 @@ function printLadder(report, t, p) {
   }
 }
 
-// One side of the before/after, in the SAME format for both — the comparison is the feature, so a second formatter here would defeat it.
-function projectionLine(side, t) {
-  const name = (t.tierNames && t.tierNames[side.tierKey]) || side.tierKey;
-  const setup = (t.setupLevels && t.setupLevels[side.setupLevelKey] && t.setupLevels[side.setupLevelKey].label)
-    || side.setupLevelKey;
-  return `${side.tierKey} · ${name} · ${setup} · ${side.score}/100`;
-}
-
-function printProjection(report, t, p) {
-  const projection = projectNextTier(report);
-  if (!projection) return;
-
-  p();
-  p(`  ${c.dim}${t.html.roadmapNowLabel}${c.reset}`);
-  p(`  ${c.white}${projectionLine(projection.current, t)}${c.reset}`);
-  p();
-  // The tag rides ON the heading, not in a footnote: a reader who skims the two
-  // numbers must still see that the second one is a projection.
-  p(`  ${c.dim}${t.html.roadmapProjectionLabel}${c.reset}  ${c.warning}[${t.html.roadmapProjectionTag}]${c.reset}`);
-  p(`  ${c.white}${projectionLine(projection.projected, t)}${c.reset}`);
-  for (const line of wrap(t.html.roadmapProjectionNote)) p(`  ${c.dim}${line}${c.reset}`);
-}
-
-function printRoadmap(report, maturity, t, lang, p) {
-  const tierKey = maturity && maturity.tierKey;
-  const curatedEntry = tierKey ? getRoadmapEntry(tierKey, lang) : null;
-
-  if (!curatedEntry) {
-    const nextStep = t.nextSteps[maturity.level] || maturity.next;
-    p(`  ${c.bold}${c.warning}${t.terminal.nextStep}${c.reset}`);
-    p(`  ${c.white}${nextStep}${c.reset}`);
-    p();
-    return;
-  }
-
-  p(`  ${c.bold}${c.warning}${t.html.roadmapHeading}${c.reset}`);
-  // The register, stated before the content.
-  // Wrapped like every other prose line in this block: it was the one line still running past the 80th column, which is the shape the squad read as a dump.
-  for (const line of wrap(t.html.roadmapSubheading)) p(`  ${c.dim}${line}${c.reset}`);
-
-  if (curatedEntry.contentUnavailable) {
-    p(`  ${c.white}${t.html.roadmapContentUnavailable}${c.reset}`);
-    if (!curatedEntry.maxTier) p(`  ${c.dim}${t.cli.buildNextLevelHint}${c.reset}`);
-    p();
-    return;
-  }
-
-  const personalization = report && report.roadmapPersonalization;
-  const entry = mergeRoadmapPersonalization(curatedEntry, personalization);
-
-  // The jump title gets air and its own line, and everything below it hangs off it.
-  // THE BEFORE AND THE AFTER, above the steps and not below them.
-  printProjection(report, t, p);
-
-  p();
-  p(`  ${c.white}${c.bold}${sanitizeRenderText(entry.title)}${c.reset}`);
-  p();
-
-  // Whether this roadmap is YOURS or the template, said out loud.
-  if (personalization) {
-    p(`  ${c.dim}${t.html.roadmapPersonalizedNotice}${c.reset}`);
-    p();
-  } else if (callFailed(report, MODEL_CALL.ROADMAP)) {
-    for (const line of wrap(t.html.roadmapNotPersonalizedNotice)) p(`  ${c.dim}${line}${c.reset}`);
-    p();
-  }
-
-  if (entry.maxTier) {
-    // T7 is NOT a dead end.
-    if (entry.whatRemains) {
-      for (const line of wrap(sanitizeRenderText(entry.whatRemains))) p(`  ${c.muted}${line}${c.reset}`);
-      p();
-    }
-    if (Array.isArray(entry.consolidationSteps) && entry.consolidationSteps.length) {
-      p(`  ${c.dim}${t.html.roadmapConsolidationLabel}:${c.reset}`);
-      entry.consolidationSteps.forEach((step) => printStepLines(p, `${c.success}•${c.reset}`, sanitizeRenderText(step), null));
-    }
-  } else {
-    labelledBlock(p, t.html.roadmapUpgradeWhenLabel, sanitizeRenderText(entry.upgradeWhen));
-    if (entry.upgradeWhen) p();
-    labelledBlock(p, `${t.html.roadmapUnlocksLabel}:`, sanitizeRenderText(entry.unlocks));
-    if (entry.unlocks) p();
-    if (Array.isArray(entry.steps) && entry.steps.length) {
-      p(`  ${c.dim}${t.html.roadmapStepsLabel}:${c.reset}`);
-      // Numbered, wrapped, and with the estimate on the same line as the step it belongs to.
-      const width = String(entry.steps.length).length;
-      entry.steps.forEach((step, i) => {
-        const marker = `${String(i + 1).padStart(width)}.`;
-        printStepLines(p, marker, sanitizeRenderText(step.text), sanitizeRenderText(step.estimate));
-      });
-    }
-  }
-
-  {
-    const promptText = buildImplementationPrompt(entry, report, maturity, lang);
-    if (promptText) {
-      // THE wall of text.
-      sep(p);
-      p(`  ${c.bold}${t.html.implementationPromptHeading}${c.reset}`);
-      for (const line of wrap(t.html.implementationPromptHint)) p(`  ${c.dim}${line}${c.reset}`);
-      p();
-      const rule = `${'─'.repeat(48)}`;
-      p(`  ${c.muted}${rule}${c.reset}`);
-      for (const line of promptText.split('\n')) p(`  ${sanitizeRenderText(line)}`);
-      p(`  ${c.muted}${rule}${c.reset}`);
-    }
-  }
-
-  // --build-next-level is now a SECONDARY, opt-in alternative to the prompt above — never when already at the terminal T7 entry (there is nothing left to build).
-  if (!entry.maxTier) p(`  ${c.dim}${t.cli.buildNextLevelHint}${c.reset}`);
-
-  p();
-}
-
-module.exports = { printMcpServices, printTierAnalysis, printLadder, printRoadmap };
+module.exports = { printMcpServices, printTierAnalysis, printLadder };

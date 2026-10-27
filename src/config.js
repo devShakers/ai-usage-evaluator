@@ -4,7 +4,6 @@ const fs = require('fs');
 const path = require('path');
 const { readEnv } = require('./env-paths');
 const { getConfigDir } = require('./config-dir');
-const { recordAccountMarker } = require('./account-marker');
 
 // Persistent CLI config file.
 function configDir(env = process.env) {
@@ -269,12 +268,6 @@ function getSynthesisEndpoint(env = process.env) {
   if (value && value.trim()) return value.trim();
   // Derived as an ingest sibling when the override is unset.
   return deriveFromIngest(env, 'agent-synthesis');
-}
-
-function getRoadmapEndpoint(env = process.env) {
-  const value = readEnv(env, 'ROADMAP_ENDPOINT');
-  if (value && value.trim()) return value.trim();
-  return deriveFromIngest(env, 'roadmap-personalize');
 }
 
 // Email-verification endpoints: the OTP "prove you own this email" step that gates PERSISTENCE. Sibling-of-ingest resolution (`new URL(relative, base)`); unset ingest -> null.
@@ -815,7 +808,6 @@ function saveSuperadminSession(session, env = process.env) {
     expiresAt: session.expiresAt || null,
   };
   saveConfigFile(config, env);
-  recordAccountMarker('superadmin', env);
 }
 
 function clearSuperadminSession(env = process.env) {
@@ -829,7 +821,6 @@ function clearSuperadminSession(env = process.env) {
 module.exports = {
   getIngestEndpoint,
   getSynthesisEndpoint,
-  getRoadmapEndpoint,
   getAgentEvaluationEndpoint,
   getAuthTokenEndpoint,
   getSignOutEndpoint,

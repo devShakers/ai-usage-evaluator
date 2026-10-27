@@ -28,10 +28,7 @@ function parseArgs(argv) {
     consentEmail: null,
     setEndpoint: null,
     showEndpoint: false,
-    buildNextLevel: false,
-    force: false,
     lang: null,
-    roadmap: false,
     repos: null,
     allRepos: false,
     // Dynamic scope selector for the DEDICATED `ai-usage` command (a symptom fix: machine-wide runs were silently collapsing to the current repo's agents).
@@ -57,11 +54,6 @@ function parseArgs(argv) {
     else if (a === '--set-endpoint') opts.setEndpoint = argv[++i];
     else if (a.startsWith('--set-endpoint=')) opts.setEndpoint = a.slice('--set-endpoint='.length);
     else if (a === '--show-endpoint') opts.showEndpoint = true;
-    else if (a === '--build-next-level') opts.buildNextLevel = true;
-    else if (a === '--force') opts.force = true;
-    // The tier roadmap / "next steps" block is removed from the
-    // default footprint output; `--roadmap` (alias `--next`) shows it again.
-    else if (a === '--roadmap' || a === '--next') opts.roadmap = true;
     else if (a === '--lang') opts.lang = VALID_LANGS.has(argv[++i]) ? argv[i] : null;
     else if (a.startsWith('--lang=')) {
       const value = a.slice('--lang='.length);

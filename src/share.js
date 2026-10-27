@@ -43,7 +43,7 @@ async function requestJsonBackend(endpoint, body, { timeoutMs = 15000, idempoten
 
 /* ---------- automatic sending ---------- */
 
-async function autoShare(report, maturity, { root, bypassThrottle = false, cliCommandId = null } = {}) {
+async function autoShare(report, maturity, { root, bypassThrottle = false, cliCommandId = null, client = null } = {}) {
   const state = loadConsentState();
   const decision = getConsentDecision(state);
 
@@ -67,7 +67,7 @@ async function autoShare(report, maturity, { root, bypassThrottle = false, cliCo
     return { ok: false, skipped: true, reason: 'no-endpoint-configured' };
   }
 
-  const payload = derivePayload(report, maturity, { cliCommandId });
+  const payload = derivePayload(report, maturity, { cliCommandId, client });
 
   const idempotencyKey = crypto.randomUUID();
   let res;
