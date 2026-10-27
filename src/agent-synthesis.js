@@ -26,7 +26,11 @@ const BASE64_SECRET_RE = /\b[A-Za-z0-9+/]{40,}={0,2}\b/g; // base64-inclusive hi
 const JWT_LIKE_RE = /\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g; // dot-separated JWT-shaped triplet not starting with `eyJ`
 const PEM_BLOCK_RE = /-----BEGIN[ A-Z]*PRIVATE KEY-----[\s\S]*?-----END[ A-Z]*PRIVATE KEY-----/g;
 const CONN_STRING_RE = /\b([a-zA-Z][a-zA-Z0-9+.-]{1,15}:\/\/)[^\s'"/:@]+:[^\s'"@]+@/g; // scheme://user:pass@ -> scheme://[REDACTED]@
-const GENERIC_KV_RE = /\b(?:password|secret|token|api[_-]?key|bearer)\s*[:=]\s*\S+/gi;
+const SECRET_KV_RE = /\b((?:[A-Za-z0-9_-]*?(?:password|passwd|passphrase|secrets?|token|api[_-]?key|private[_-]?key|credentials?|authorization|contrase(?:ñ|n)a)|(?:[A-Za-z0-9]+[_-])*(?:pass|pwd|auth))(?:[_-][A-Za-z0-9_-]*)?["']?[ \t]*[:=][ \t]*)(?:(?:basic|bearer|digest)[ \t]+)?(?:"[^"\n]*"|'[^'\n]*'|[^\s"']+)/gi;
+const PASSWORD_FLAG_RE = /(--pass(?:word)?[ \t]+)(?:"[^"\n]*"|'[^'\n]*'|[^\s"']+)/gi;
+const MYSQL_PASSWORD_RE = /(\b(?:mysql|mariadb|mysqldump|mysqladmin|mysqlimport|mysqlshow)\b[^\n|;&]*?[ \t]-p)[^\s]+/g;
+const USER_PASS_FLAG_RE = /((?:^|\s)(?:-u[ \t]*|--user[= \t][ \t]*)["']?[^\s:'"]+:)(?:"[^"\n]*"|'[^'\n]*'|[^\s"']+)/g;
+const SPOKEN_PASSWORD_RE = /(\b(?:password|passwd|pwd|contrase(?:ñ|n)a)[ \t]+(?:is|was|es|era)[ \t]*:?[ \t]+)(?!(?:required|missing|wrong|invalid|incorrect|correct|not|empty|set|stored|hashed|too|the|a|an|valid|expired|obligatoria|incorrecta|correcta|necesaria|requerida|inválida|válida|la|el|un|una|no|muy)(?![\wáéíóúñ]))(?:"[^"\n]*"|'[^'\n]*'|[^\s"']+)/gi;
 
 // Heuristic, best-effort redaction — an "invisible safety net", not a substitute for the talent's own judgment about what they write in agent descriptions.
 function scrubSecrets(text) {
@@ -45,7 +49,11 @@ function scrubSecrets(text) {
   out = out.replace(JWT_LIKE_RE, '[REDACTED]');
   out = out.replace(GENERIC_LONG_TOKEN_RE, '[REDACTED]');
   out = out.replace(BASE64_SECRET_RE, '[REDACTED]');
-  out = out.replace(GENERIC_KV_RE, '[REDACTED]');
+  out = out.replace(MYSQL_PASSWORD_RE, '$1[REDACTED]');
+  out = out.replace(USER_PASS_FLAG_RE, '$1[REDACTED]');
+  out = out.replace(PASSWORD_FLAG_RE, '$1[REDACTED]');
+  out = out.replace(SPOKEN_PASSWORD_RE, '$1[REDACTED]');
+  out = out.replace(SECRET_KV_RE, '$1[REDACTED]');
   out = out.replace(EMAIL_RE, '[REDACTED]');
   out = out.replace(WINDOWS_PATH_RE, '[REDACTED]');
   out = out.replace(UNIX_PATH_RE, '[REDACTED]');

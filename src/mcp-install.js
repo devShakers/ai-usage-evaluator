@@ -95,6 +95,16 @@ function claudeDesktopConfigPath({ platform, homedir, env }) {
   return path.join(homedir, '.config', 'Claude', 'claude_desktop_config.json');
 }
 
+function backUpThenWrite(file, text, mode) {
+  const bak = `${file}.bak`;
+  if (fs.existsSync(file)) {
+    fs.writeFileSync(bak, fs.readFileSync(file), { mode: 0o600 });
+    fs.chmodSync(bak, 0o600);
+  }
+  writeFileAtomic(file, text, mode);
+  fs.rmSync(bak, { force: true });
+}
+
 function writeFileAtomic(file, text, mode) {
   const tmp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${Date.now()}.tmp`);
   const fd = fs.openSync(tmp, 'wx', mode);
@@ -137,8 +147,7 @@ function installIntoJsonConfig(file, entry, key = 'mcpServers') {
 
   const next = { ...config, [key]: { ...servers, [SERVER_NAME]: entry } };
   delete next[key][LEGACY_SERVER_NAME];
-  if (fs.existsSync(file)) fs.copyFileSync(file, `${file}.bak`);
-  writeFileAtomic(file, `${JSON.stringify(next, null, 2)}\n`, mode);
+  backUpThenWrite(file, `${JSON.stringify(next, null, 2)}\n`, mode);
   return { status: 'configured', removedLegacy: legacy };
 }
 
@@ -269,8 +278,7 @@ function installIntoTomlConfig(file, entry) {
   const next = base + tomlServerBlock(entry, eol);
   if (next === raw) return { status: 'unchanged' };
   const mode = exists ? fs.statSync(file).mode & 0o777 : 0o600;
-  if (exists) fs.copyFileSync(file, `${file}.bak`);
-  writeFileAtomic(file, next, mode);
+  backUpThenWrite(file, next, mode);
   return { status: 'configured', removedLegacy: removed.removedLegacy };
 }
 

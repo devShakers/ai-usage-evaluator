@@ -6,7 +6,7 @@ const path = require('path');
 const { getCatalog } = require('./i18n');
 const { setupLevelForTier } = require('./tier-engine');
 const { renderDocument } = require('./report-theme');
-const { loadState, configDir, projectSlug, fileUrl } = require('./report-store');
+const { loadState, configDir, projectSlug, fileUrl, writePrivateFile } = require('./report-store');
 const { WORDMARK_VIEWBOX, WORDMARK_PATHS } = require('./shakers-wordmark');
 
 // LinkedIn shares render best at 1.91:1 (1200×627). Fixed so the browser-side
@@ -343,9 +343,8 @@ function generateShareCard({ root, load } = {}) {
 
   const model = buildCardModel(fp);
   const html = renderShareCardHtml(model);
-  fs.mkdirSync(configDir(), { recursive: true });
   const htmlPath = cardPathFor(absRoot);
-  fs.writeFileSync(htmlPath, html);
+  writePrivateFile(htmlPath, html);
   return { ok: true, root: absRoot, model, html, htmlPath, fileUrl: fileUrl(htmlPath) };
 }
 

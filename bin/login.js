@@ -9,6 +9,7 @@ const { runDeviceLogin, withDeviceParams, deviceSessionRecord } = require('../sr
 const { buildRegistrationContext } = require('../src/signup-client');
 const { openPath } = require('../src/open-file');
 const { endSession } = require('../src/session-refresh');
+const { clearLocalReports } = require('../src/report-store');
 const {
   saveAuthSession,
   loadAuthSession,
@@ -200,6 +201,7 @@ async function runLogout(argv = process.argv.slice(2), { output = process.stdout
   const c = getCatalog(lang).login;
   const had = await endSession(process.env);
   clearConsentState();
+  clearLocalReports(process.env);
   output.write(`\n  ${had ? c.loggedOut : c.notLoggedIn}\n\n`);
 }
 

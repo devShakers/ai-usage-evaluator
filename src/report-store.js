@@ -68,9 +68,29 @@ function loadState(env = process.env) {
   return migrateFromV1(parsed);
 }
 
+function writePrivateFile(p, text) {
+  fs.mkdirSync(path.dirname(p), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(p, text, { mode: 0o600 });
+  fs.chmodSync(p, 0o600);
+}
+
 function saveState(state) {
-  fs.mkdirSync(configDir(), { recursive: true });
-  fs.writeFileSync(statePath(), JSON.stringify(state, null, 2));
+  writePrivateFile(statePath(), JSON.stringify(state, null, 2));
+}
+
+function clearLocalReports(env = process.env) {
+  const dir = getConfigDir(env);
+  let names;
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    if (name === 'report-state.json' || /^(?:report|share)-[0-9a-f]{12}\.html$/.test(name)) {
+      fs.rmSync(path.join(dir, name), { force: true });
+    }
+  }
 }
 
 function getOrCreateProject(state, absRoot) {
@@ -111,9 +131,8 @@ function stampAndSaveState(state, absRoot) {
 
 function writeProjectHtml(project, absRoot, lang, gate) {
   const html = renderProjectHtml(project, lang, gate);
-  fs.mkdirSync(configDir(), { recursive: true });
   const p = htmlPathFor(absRoot);
-  fs.writeFileSync(p, html);
+  writePrivateFile(p, html);
   return { htmlPath: p, fileUrl: fileUrl(p) };
 }
 
@@ -214,6 +233,8 @@ module.exports = {
   fileUrl,
   loadState,
   saveState,
+  writePrivateFile,
+  clearLocalReports,
   renderProjectHtml,
   persistFootprint,
   persistCertification,

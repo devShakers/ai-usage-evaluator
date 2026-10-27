@@ -4,6 +4,8 @@ const crypto = require('crypto');
 
 const { getIngestEndpoint } = require('./config');
 const { requestBackend } = require('./backend-request');
+const { loadAuthSession, decodeJwtPayload } = require('./auth-session-store');
+const { ensureFreshSession } = require('./session-refresh');
 const { recordBackendAcceptance } = require('./report-store');
 const {
   consentPath,
@@ -34,11 +36,24 @@ const {
 /* ---------- minimal HTTP utility (no dependencies) ---------- */
 
 // POSTs `body` to the ONE backend (the PRIMARY -> FALLBACK chain is retired), via src/backend-request.js.
-async function requestJsonBackend(endpoint, body, { timeoutMs = 15000, idempotencyKey = null } = {}) {
-  const { status, raw, backend } = await requestBackend({ endpoint, body, timeoutMs, idempotencyKey });
+async function requestJsonBackend(endpoint, body, { timeoutMs = 15000, idempotencyKey = null, extraHeaders = null } = {}) {
+  const { status, raw, backend } = await requestBackend({ endpoint, body, timeoutMs, idempotencyKey, extraHeaders });
   let json = null;
   try { json = raw ? JSON.parse(raw) : null; } catch { /* non-JSON response */ }
   return { status, json, raw, backend };
+}
+
+async function talentSessionHeaders(now = Date.now()) {
+  let session = null;
+  try {
+    session = (await ensureFreshSession()) || loadAuthSession();
+  } catch {
+    try { session = loadAuthSession(); } catch { session = null; }
+  }
+  const token = session && typeof session.hubAccessToken === 'string' ? session.hubAccessToken : null;
+  const payload = decodeJwtPayload(token);
+  const exp = payload && typeof payload.exp === 'number' ? payload.exp * 1000 : NaN;
+  return Number.isFinite(exp) && exp > now ? { Authorization: `Bearer ${token}` } : null;
 }
 
 /* ---------- automatic sending ---------- */
@@ -72,7 +87,8 @@ async function autoShare(report, maturity, { root, bypassThrottle = false, cliCo
   const idempotencyKey = crypto.randomUUID();
   let res;
   try {
-    res = await requestJsonBackend(endpoint, { email: state.email, payload }, { idempotencyKey });
+    const extraHeaders = await talentSessionHeaders();
+    res = await requestJsonBackend(endpoint, { email: state.email, payload }, { idempotencyKey, extraHeaders });
   } catch (e) {
     // Network failure (on every hop): doesn't break the local report.
     return { ok: false, skipped: false, reason: 'network-error', error: e.message };
@@ -138,7 +154,8 @@ async function shareCertification(items, { repository = null, commitRange = null
     // Idempotency-Key (three-way security review, cross-repo): ONE key per
     // logical certification-persist submission — same reasoning as autoShare.
     const idempotencyKey = crypto.randomUUID();
-    res = await requestJsonBackend(endpoint, body, { idempotencyKey });
+    const extraHeaders = superadminToken ? null : await talentSessionHeaders();
+    res = await requestJsonBackend(endpoint, body, { idempotencyKey, extraHeaders });
   } catch (e) {
     return { ok: false, skipped: false, reason: 'network-error', error: e.message };
   }

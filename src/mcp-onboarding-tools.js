@@ -100,6 +100,7 @@ function makeOnboardingTools(deps = {}) {
     requestDiscoveredInventoryWithRefresh = require('./inventory-client').requestDiscoveredInventoryWithRefresh,
     ensureFreshSession = require('./session-refresh').ensureFreshSession,
     endSession = require('./session-refresh').endSession,
+    clearLocalReports = require('./report-store').clearLocalReports,
     requestDeclareSkill = require('./skills-client').requestDeclareSkill,
     requestDeclareAgent = require('./agents-client').requestDeclareAgent,
     requestListAgents = require('./agents-client').requestListAgents,
@@ -143,6 +144,7 @@ function makeOnboardingTools(deps = {}) {
 
   async function logout() {
     const wasLoggedIn = await endSession(process.env, { loadAuthSession, clearAuthSession });
+    clearLocalReports(process.env);
     return { ok: true, wasLoggedIn };
   }
 
