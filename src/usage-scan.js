@@ -181,10 +181,8 @@ async function computeUsage({
   report.profileAgentNames = await listProfileAgents(process.env);
   const maturity = classify(report);
   const hasAgents = Array.isArray(report.agents) && report.agents.length > 0;
-  report.analyzedRepos =
-    scope.mode === 'all'
-      ? null
-      : scope.toplevels.map((tl) => tl.split(/[/\\]/).pop() || tl);
+  report.scope = scope.mode;
+  report.analyzedRepos = scope.toplevels.map((tl) => tl.split(/[/\\]/).pop() || tl);
 
   // 6. The two ephemeral model calls, serialized and gated by consent.
   await runModelCalls({

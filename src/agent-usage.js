@@ -99,13 +99,21 @@ function collectClaudeAgentUsage(env = process.env) {
   return { available: true, byAgent: counts, totalInvocations, sessionsScanned: files.length };
 }
 
-// Annotate the DETECTED local agents with their usage count (exact match of the agent `name` against the recorded `subagent_type`).
+function invocationsOf(name, counts) {
+  let total = 0;
+  for (const [type, n] of Object.entries(counts)) {
+    if (type === name || type.endsWith(`:${name}`)) total += n;
+  }
+  return total;
+}
+
+// Annotate the DETECTED local agents with their usage count.
 function collectAgentUsage(agents, env = process.env) {
   const usage = collectClaudeAgentUsage(env);
   const byAgent = {};
   for (const a of agents || []) {
     if (!a || !a.name) continue;
-    byAgent[a.name] = usage.available ? usage.byAgent[a.name] || 0 : null;
+    byAgent[a.name] = usage.available ? invocationsOf(a.name, usage.byAgent) : null;
   }
   return {
     available: usage.available,

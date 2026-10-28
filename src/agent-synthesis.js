@@ -32,10 +32,69 @@ const MYSQL_PASSWORD_RE = /(\b(?:mysql|mariadb|mysqldump|mysqladmin|mysqlimport|
 const USER_PASS_FLAG_RE = /((?:^|\s)(?:-u[ \t]*|--user[= \t][ \t]*)["']?[^\s:'"]+:)(?:"[^"\n]*"|'[^'\n]*'|[^\s"']+)/g;
 const SPOKEN_PASSWORD_RE = /(\b(?:password|passwd|pwd|contrase(?:ñ|n)a)[ \t]+(?:is|was|es|era)[ \t]*:?[ \t]+)(?!(?:required|missing|wrong|invalid|incorrect|correct|not|empty|set|stored|hashed|too|the|a|an|valid|expired|obligatoria|incorrecta|correcta|necesaria|requerida|inválida|válida|la|el|un|una|no|muy)(?![\wáéíóúñ]))(?:"[^"\n]*"|'[^'\n]*'|[^\s"']+)/gi;
 
+const WORD_START = String.raw`(?<![\p{L}\p{N}_])`;
+const WORD_END = String.raw`(?![\p{L}\p{N}_])`;
+const PASSWORD_LABEL = String.raw`(?:passwords?|passwd|pwd|contrase[ñn]as?|contrasenyas?|claves?|senhas?|mots?[ \t]+de[ \t]+passe|passw[oö]rt|parola[ \t]+d['’]ordine|wachtwoord|has[łl]o)`;
+const QUOTED_VALUE = String.raw`"[^"\n]*"|'[^'\n]*'`;
+const LABELLED_PASSWORD_RE = new RegExp(String.raw`(${WORD_START}${PASSWORD_LABEL}${WORD_END}["']?[ \t]*[:=][ \t]*)(?:${QUOTED_VALUE}|[^\s"']+)`, 'giu');
+const SPOKEN_LABELLED_PASSWORD_RE = new RegExp(String.raw`(${WORD_START}${PASSWORD_LABEL}${WORD_END}[ \t]+(?:is|es|és|é|est|ist|è)[ \t]*:?[ \t]+)(?:${QUOTED_VALUE}|(?=[^\s"']*\d)[^\s"']+)`, 'giu');
+const PASSWORD_MENTION_RE = new RegExp(String.raw`${WORD_START}${PASSWORD_LABEL}${WORD_END}[ \t]*(?:["']?[ \t]*[:=]|[ \t](?:is|es|és|é|est|ist|è)${WORD_END})`, 'iu');
+const USER_LABEL = String.raw`(?:usuarios?|users?|username|user[_-]name|login|e-?mail|correo)`;
+const USER_KV_RE = new RegExp(String.raw`(${WORD_START}${USER_LABEL}${WORD_END}["']?[ \t]*[:=][ \t]*)(?:${QUOTED_VALUE}|[^\s"',]+)`, 'giu');
+const URL_RE = /\b(?:[a-z][a-z0-9+.-]*:\/\/|www\.)[^\s"'<>()]+/gi;
+const CREDENTIAL_HINT_RE = new RegExp(String.raw`${WORD_START}(?:${PASSWORD_LABEL}|secrets?|api[ _-]?keys?|apikey|tokens?|credentials?|credenciales?|private[ _-]?key|access[ _-]?key|bearer)${WORD_END}["']?[ \t]*(?:[:=]|(?:is|es|és|é|est|ist|è)${WORD_END})`, 'iu');
+const ENTROPY_SYMBOL_RE = /[!#$%&*+?@^~|]/;
+const CODE_SHAPE_RE = /[/\\()[\]{}<>;,"'`]|==|=>|&&|\|\||[+\-*]=/;
+const PACKAGE_VERSION_RE = /^@?[a-z0-9._-]+(?:\/[a-z0-9._-]+)?@[\^~]?\d+(?:\.\d+)*/;
+const ENV_REFERENCE_RE = /^\$[A-Z_][A-Z0-9_]*$/;
+
+function scrubCredentialPairs(text) {
+  return text
+    .split(/(\n[ \t]*\n)/)
+    .map((block) => {
+      if (!PASSWORD_MENTION_RE.test(block)) return block;
+      const userless = block.replace(USER_KV_RE, '$1[REDACTED]');
+      return userless === block ? block : userless.replace(URL_RE, '[REDACTED]');
+    })
+    .join('');
+}
+
+function isHighEntropyToken(core) {
+  return (
+    core.length >= 12 &&
+    /[A-Za-z]/.test(core) &&
+    /\d/.test(core) &&
+    ENTROPY_SYMBOL_RE.test(core) &&
+    !CODE_SHAPE_RE.test(core) &&
+    !PACKAGE_VERSION_RE.test(core) &&
+    !ENV_REFERENCE_RE.test(core) &&
+    !/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(core)
+  );
+}
+
+function tokenCore(token) {
+  return token.replace(/^["'`([{<]+/, '').replace(/[)"'`\]}>.,;:]+$/, '');
+}
+
+function hasHighEntropyToken(text) {
+  return (text.match(/\S{12,}/g) || []).some((token) => isHighEntropyToken(tokenCore(token)));
+}
+
+function looksLikeCredential(text) {
+  return typeof text === 'string' && (CREDENTIAL_HINT_RE.test(text) || hasHighEntropyToken(text));
+}
+
+function scrubHighEntropyTokens(text) {
+  return text.replace(/\S{12,}/g, (token) => {
+    const core = tokenCore(token);
+    return isHighEntropyToken(core) ? token.replace(core, '[REDACTED]') : token;
+  });
+}
+
 // Heuristic, best-effort redaction — an "invisible safety net", not a substitute for the talent's own judgment about what they write in agent descriptions.
 function scrubSecrets(text) {
   if (typeof text !== 'string' || !text) return '';
-  let out = text;
+  let out = scrubCredentialPairs(text);
   out = out.replace(PEM_BLOCK_RE, '[REDACTED]');
   out = out.replace(CONN_STRING_RE, '$1[REDACTED]@');
   out = out.replace(JWT_RE, '[REDACTED]');
@@ -54,10 +113,12 @@ function scrubSecrets(text) {
   out = out.replace(PASSWORD_FLAG_RE, '$1[REDACTED]');
   out = out.replace(SPOKEN_PASSWORD_RE, '$1[REDACTED]');
   out = out.replace(SECRET_KV_RE, '$1[REDACTED]');
+  out = out.replace(SPOKEN_LABELLED_PASSWORD_RE, '$1[REDACTED]');
+  out = out.replace(LABELLED_PASSWORD_RE, '$1[REDACTED]');
   out = out.replace(EMAIL_RE, '[REDACTED]');
   out = out.replace(WINDOWS_PATH_RE, '[REDACTED]');
   out = out.replace(UNIX_PATH_RE, '[REDACTED]');
-  return out;
+  return scrubHighEntropyTokens(out);
 }
 
 /* ---------- request builder ---------- */
@@ -135,6 +196,7 @@ async function requestAgentSynthesis(requestBody, { endpoint, timeoutMs = DEFAUL
 
 module.exports = {
   scrubSecrets,
+  looksLikeCredential,
   buildSynthesisRequest,
   requestAgentSynthesis,
 };

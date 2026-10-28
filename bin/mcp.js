@@ -35,7 +35,11 @@ const { emitCommandAudit } = require('../src/command-audit');
 const { createFunnel } = require('../src/onboarding-funnel');
 
 function narrateTool(lang) {
-  return (name, { failed = false, args } = {}) => mcpNarration(narratedTool(name, args), narrationLanguage(name, args, lang), { failed });
+  return (name, { failed = false, args, result } = {}) => {
+    const tool = narratedTool(name, args);
+    const uploaded = tool === 'ai_usage' && !!result && result.uploaded === true;
+    return mcpNarration(uploaded ? 'ai_usage_upload' : tool, narrationLanguage(name, args, lang), { failed });
+  };
 }
 
 let VERSION = '';

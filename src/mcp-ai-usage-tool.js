@@ -92,6 +92,8 @@ const UPLOAD_INPUT_SCHEMA = {
         repos: { type: 'array', items: { type: 'string' } },
         agents: { type: 'array', items: { type: 'string' } },
         excerpts: { type: 'boolean', description: 'true = send no text excerpts.' },
+        excerptItems: { type: 'array', items: { type: 'number' }, description: 'Numbers (#n in the review) of the text excerpts or commands the talent asked to leave out.' },
+        keepFlaggedItems: { type: 'array', items: { type: 'number' }, description: 'Numbers of excerpts flagged as possible credentials that the talent explicitly asked to keep; flagged ones are left out otherwise.' },
       },
     },
     waitSeconds: { type: 'number', description: 'Sign-up only: how long to wait for the background analysis before answering (max 45).' },
@@ -99,6 +101,25 @@ const UPLOAD_INPUT_SCHEMA = {
 };
 
 const MAX_WAIT_MS = 45000;
+const PREVIOUS_PROFILE_TIMEOUT_MS = 5000;
+
+async function readStoredAiProfile(session) {
+  const { requestAiProfile } = require('./ai-profile-client');
+  const { normalizeProfile, hasRenderableProfile } = require('./ai-profile-preview');
+  const res = await requestAiProfile(session, { endpoint: require('./config').getAiProfileEndpoint(), timeoutMs: PREVIOUS_PROFILE_TIMEOUT_MS });
+  const preview = res && res.ok ? normalizeProfile(res.profile) : null;
+  return preview && hasRenderableProfile(preview) ? preview : null;
+}
+
+function evaluationKey(preview) {
+  const m = (preview && preview.matrix) || {};
+  const explanation = (part) => (preview && preview[part] && preview[part].explanation) || null;
+  return JSON.stringify([m.setupLevel || null, m.usageLevel || null, m.cell || null, explanation('setup'), explanation('usage')]);
+}
+
+function sameEvaluation(previous, current) {
+  return !!previous && !!current && evaluationKey(previous) === evaluationKey(current);
+}
 
 function makeAiUsageTools(deps = {}) {
   const {
@@ -118,6 +139,7 @@ function makeAiUsageTools(deps = {}) {
     tierLadder = require('./tier-engine').tierLadder,
     inlineWaitMs = 35000,
     resolveAiProfilePreview = require('./ai-profile-preview').resolveAiProfilePreview,
+    readPreviousAiProfile = readStoredAiProfile,
     ensureFreshSession = require('./session-refresh').ensureFreshSession,
     getAiProfileEndpoint = require('./config').getAiProfileEndpoint,
     renderFullReportText = require('./render-report-text').renderFullReportText,
@@ -167,9 +189,19 @@ function makeAiUsageTools(deps = {}) {
     return reviewTexts.uploadFacts({ report: review.scan.report, maturity: review.scan.maturity, repos: review.scan.repos || [] });
   }
 
-  function reviewSchema(c, facts) {
+  function reviewItems(review) {
+    if (!review.items) review.items = reviewTexts.excerptItems(review.scan);
+    return review.items;
+  }
+
+  const flaggedNumbers = (items) => items.filter((i) => i.flagged).map((i) => i.n);
+  const numbersIn = (value) => (String(value || '').match(/\d+/g) || []).map(Number);
+  const keptTexts = (items, excluded) => items.filter((i) => !excluded.has(i.n)).map((i) => i.text);
+
+  function reviewSchema(c, facts, items, lang) {
     const properties = { decision: { type: 'string', title: c.question, enum: [c.yes, c.no] } };
     if (facts.conversationExcerpts + facts.commandExcerpts > 0) properties.excerpts = { type: 'boolean', title: c.formExcerpts, default: true };
+    if (items.length > 0) properties.excludeExcerpts = { type: 'string', title: reviewTexts.excerptCopy(lang).formField, default: flaggedNumbers(items).join(', ') };
     if (facts.repos.length > 1) facts.repos.forEach((name, i) => { properties[`repo_${i}`] = { type: 'boolean', title: c.formRepo(name), default: true }; });
     facts.agents.forEach((name, i) => { properties[`agent_${i}`] = { type: 'boolean', title: c.formAgent(name), default: true }; });
     return { type: 'object', properties, required: ['decision'] };
@@ -177,10 +209,13 @@ function makeAiUsageTools(deps = {}) {
 
   function exclusionsFromForm(review, facts, content) {
     const repos = review.scan.repos || [];
+    const items = reviewItems(review);
+    const typed = typeof content.excludeExcerpts === 'string' ? content.excludeExcerpts : flaggedNumbers(items).join(', ');
     return {
       repos: repos.filter((_, i) => content[`repo_${i}`] === false),
       agents: facts.agents.filter((_, i) => content[`agent_${i}`] === false),
       excerpts: content.excerpts !== false,
+      keptExcerpts: keptTexts(items, new Set(numbersIn(typed))),
     };
   }
 
@@ -191,11 +226,17 @@ function makeAiUsageTools(deps = {}) {
     const repos = known.filter((r) => names.has(r) || names.has(reviewTexts.repoName(r)));
     const agentNames = reviewFacts(review).agents;
     const agents = Array.isArray(e.agents) ? e.agents.map(String) : [];
+    const items = reviewItems(review);
+    const shown = new Set(items.map((i) => i.n));
+    const dropped = (Array.isArray(e.excerptItems) ? e.excerptItems : []).map(Number);
+    const kept = new Set((Array.isArray(e.keepFlaggedItems) ? e.keepFlaggedItems : []).map(Number));
+    const excluded = new Set([...dropped, ...flaggedNumbers(items).filter((n) => !kept.has(n))]);
     const unknown = [
       ...[...names].filter((n) => !known.some((r) => r === n || reviewTexts.repoName(r) === n)),
       ...agents.filter((a) => !agentNames.includes(a)),
+      ...[...dropped, ...kept].filter((n) => !shown.has(n)).map((n) => `#${n}`),
     ];
-    return { repos, agents, excerpts: e.excerpts !== true, unknown };
+    return { repos, agents, excerpts: e.excerpts !== true, keptExcerpts: keptTexts(items, excluded), unknown };
   }
 
   function declineUpload(review) {
@@ -210,21 +251,33 @@ function makeAiUsageTools(deps = {}) {
       return { ok: false, reason: 'throttled', relayVerbatim: c.throttled, message: `Nothing was sent. ${VERBATIM}` };
     }
     const facts = reviewFacts(review);
-    const texts = [reviewTexts.summaryText(review.lang, facts), reviewTexts.explanationText(review.lang)];
+    const items = reviewItems(review);
+    const texts = [
+      reviewTexts.summaryText(review.lang, facts),
+      ...(items.length ? [reviewTexts.excerptItemsText(review.lang, items)] : []),
+      reviewTexts.explanationText(review.lang),
+    ];
     if (ctx && ctx.elicitation && typeof ctx.elicit === 'function') {
-      const reply = await ctx.elicit({ message: [...narrationOf(ctx), ...texts, c.question].join('\n\n'), requestedSchema: reviewSchema(c, facts) });
+      const reply = await ctx.elicit({ message: [...narrationOf(ctx), ...texts, c.question].join('\n\n'), requestedSchema: reviewSchema(c, facts, items, review.lang) });
       const content = reply && reply.action === 'accept' && reply.content ? reply.content : null;
       if (content && content.decision === c.yes) return upload(review, exclusionsFromForm(review, facts, content));
       if ((content && content.decision === c.no) || (reply && reply.action === 'decline')) return declineUpload(review);
     }
     review.askedInChat = true;
-    const { choiceMessage, ...shown } = chatChoice(c.question, [c.yes, c.no], [...texts, c.excludeHint]);
+    const hints = [c.excludeHint, ...(items.length ? [reviewTexts.excerptCopy(review.lang).chatHint] : [])];
+    const { choiceMessage, ...shown } = chatChoice(c.question, [c.yes, c.no], [...texts, ...hints]);
     return {
       ok: false,
       reason: 'upload-approval-required',
       ...shown,
-      excludable: { repos: facts.repos, agents: facts.agents, excerpts: facts.conversationExcerpts + facts.commandExcerpts > 0 },
-      message: `Nothing has been sent. ${choiceMessage} Then call ai_usage_upload with confirm:true only if they pick "${c.yes}" (adding exclude with the repos and agents they want left out, exactly as listed in excludable, and excerpts:true if they want no text excerpts), or confirm:false if they pick "${c.no}". Only the talent decides: never answer for them.`,
+      excludable: {
+        repos: facts.repos,
+        agents: facts.agents,
+        excerpts: facts.conversationExcerpts + facts.commandExcerpts > 0,
+        excerptItems: items.map((i) => i.n),
+        flaggedExcerptItems: flaggedNumbers(items),
+      },
+      message: `Nothing has been sent. ${choiceMessage} Then call ai_usage_upload with confirm:true only if they pick "${c.yes}" (adding exclude with the repos and agents they want left out, exactly as listed in excludable, excerptItems with the numbers of the texts they want left out, keepFlaggedItems only with flagged numbers they explicitly ask to keep, and excerpts:true if they want no text excerpts), or confirm:false if they pick "${c.no}". Only the talent decides: never answer for them.`,
     };
   }
 
@@ -247,7 +300,8 @@ function makeAiUsageTools(deps = {}) {
       }
       scan = rescanned;
     }
-    const trimmed = reviewTexts.withoutExcluded(scan.report, { agents: exclude.agents, excerpts: exclude.excerpts });
+    const trimmed = reviewTexts.withoutExcluded(scan.report, { agents: exclude.agents, excerpts: exclude.excerpts, keptExcerpts: exclude.keptExcerpts });
+    const previous = await readPreviousAiProfile(session).catch(() => null);
     let send;
     try {
       recordConsent('granted', session.email, { verified: true });
@@ -260,13 +314,13 @@ function makeAiUsageTools(deps = {}) {
       return { ok: false, reason: (send && send.reason) || 'upload-failed', send, relayVerbatim: c.uploadFailed, message: `Nothing was saved in Shakers. ${VERBATIM}` };
     }
     const sent = reviewTexts.summaryText(review.lang, reviewTexts.uploadFacts({ report: trimmed.report, maturity: trimmed.maturity, repos: scan.repos || [] }), { sent: true });
-    const excluded = exclude.repos.length > 0 || exclude.agents.length > 0 || !exclude.excerpts;
+    const excluded = exclude.repos.length > 0 || exclude.agents.length > 0 || !exclude.excerpts || exclude.keptExcerpts.length < reviewItems(review).length;
     const confirmation = excluded ? [c.uploaded, sent] : [c.uploaded];
     review.outcome = { ok: true, uploaded: true, send, sentReport: trimmed, sent };
-    if (!review.registration) return Object.assign(review.outcome, await afterUpload(review, trimmed, confirmation));
+    if (!review.registration) return Object.assign(review.outcome, await afterUpload(review, trimmed, confirmation, { previous }));
     // The sign-up shows the same result as outside it, at the same moment, on the next question: the review already
     // explained the two axes and how to disagree, so the result does not repeat them.
-    const result = await afterUpload(review, trimmed, confirmation, { inventoryMs: signupInventoryWaitMs, profileMs: signupProfileWaitMs, explained: true });
+    const result = await afterUpload(review, trimmed, confirmation, { inventoryMs: signupInventoryWaitMs, profileMs: signupProfileWaitMs, explained: true, previous });
     queueNotice([result.relayVerbatim, result.text].filter(Boolean).join('\n\n'));
     const { relayVerbatim: _shown, message: _rule, ...rest } = result;
     return Object.assign(review.outcome, rest, {
@@ -275,7 +329,7 @@ function makeAiUsageTools(deps = {}) {
   }
 
   // The classified agents and the profile result are awaited together, so the answer stays under the client's cut.
-  async function afterUpload(review, { report, maturity }, confirmation, { inventoryMs = inlineWaitMs, profileMs = aiFluencyWaitMs, explained = false } = {}) {
+  async function afterUpload(review, { report, maturity }, confirmation, { inventoryMs = inlineWaitMs, profileMs = aiFluencyWaitMs, explained = false, previous = null } = {}) {
     const hasAgents = Array.isArray(report.agents) && report.agents.length > 0;
     const classify = async () => {
       if (!hasAgents) return null;
@@ -303,7 +357,10 @@ function makeAiUsageTools(deps = {}) {
     const displayAgents = enrichedAgents
       ? enrichedAgents.map((a) => ({ name: a.name, category: a.category, role: a.role }))
       : (report.agents || []).map((a) => ({ name: a.name }));
-    const text = renderFullReportText(report, maturity, { status: aiProfile.status, preview: aiProfile.preview }, { lang: review.lang });
+    const stale = aiProfile.status === 'ready' && sameEvaluation(previous, aiProfile.preview);
+    const fresh = aiProfile.status === 'ready' && !stale;
+    const waiting = enrichment === 'pending' || !fresh;
+    const text = renderFullReportText(report, maturity, fresh ? { status: aiProfile.status, preview: aiProfile.preview } : { status: 'pending', preview: null }, { lang: review.lang });
     return {
       report,
       maturity,
@@ -311,13 +368,14 @@ function makeAiUsageTools(deps = {}) {
       agents: enrichedAgents,
       text,
       aiProfile,
-      relayVerbatim: [...confirmation, reviewTexts.resultText(review.lang, aiProfile.status === 'ready' ? aiProfile.preview : null, { explained })].join('\n\n'),
-      next: enrichment === 'pending' || aiProfile.status !== 'ready' ? 'ai_usage_result' : null,
-      message: `Uploaded. ${VERBATIM} Then show \`text\`, the full report, verbatim.${enrichment === 'pending' || aiProfile.status !== 'ready' ? ' Shakers is still evaluating (normal, not an error): call ai_usage_result in a few minutes for the result and its explanation.' : ''}${hasAgents && !explained ? ' Then call add_detected_agents to offer adding the detected agents to the profile.' : ''}`,
+      relayVerbatim: [...confirmation, reviewTexts.resultText(review.lang, aiProfile.status === 'ready' ? aiProfile.preview : null, { explained, previous: stale })].join('\n\n'),
+      next: waiting ? 'ai_usage_result' : null,
+      message: `Uploaded. ${VERBATIM} Then show \`text\`, the full report, verbatim.${waiting ? ` Shakers is still evaluating (normal, not an error): call ai_usage_result in a few minutes for the result and its explanation.${stale ? ' The levels shown are the previous evaluation, not the result of this upload: never present them as the new result.' : ''}` : ''}${hasAgents && !explained ? ' Then call add_detected_agents to offer adding the detected agents to the profile.' : ''}`,
       display: {
         tier: { key: maturity.tierKey, name: maturity.tierName, setupLevel: maturity.name, score: maturity.score },
         aiProfile: {
           status: aiProfile.status,
+          previous: stale,
           setup: aiProfile.preview ? aiProfile.preview.matrix.setupCode : null,
           usage: aiProfile.preview ? aiProfile.preview.matrix.usageLevel : null,
           cell: aiProfile.preview ? aiProfile.preview.matrix.cell : null,
@@ -504,7 +562,7 @@ function makeAiUsageTools(deps = {}) {
       const exclude = exclusionsFromChat(pending, args.exclude);
       if (exclude.unknown.length > 0) {
         const facts = reviewFacts(pending);
-        return { ok: false, reason: 'unknown-exclusion', unknown: exclude.unknown, excludable: { repos: facts.repos, agents: facts.agents }, message: `Nothing was sent: ${exclude.unknown.join(', ')} is not in excludable. Ask the talent which of the listed names they meant, then call ai_usage_upload again with those exact names.` };
+        return { ok: false, reason: 'unknown-exclusion', unknown: exclude.unknown, excludable: { repos: facts.repos, agents: facts.agents, excerptItems: reviewItems(pending).map((i) => i.n) }, message: `Nothing was sent: ${exclude.unknown.join(', ')} is not in excludable. Ask the talent which of the listed names they meant, then call ai_usage_upload again with those exact names.` };
       }
       return upload(pending, exclude);
     }

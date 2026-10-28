@@ -196,15 +196,16 @@ function createMcpServer({ tools = [], prompts = [], serverInfo = {}, protocolVe
     if (typeof beforeCall === 'function') {
       try { await beforeCall(name); } catch { /* hook must never break a tool call */ }
     }
-    const narration = (failed) => {
-      const text = typeof narrate === 'function' ? narrate(name, { failed, args }) : null;
+    const narration = (failed, result = null) => {
+      const text = typeof narrate === 'function' ? narrate(name, { failed, args, result }) : null;
       return text ? [{ type: 'text', text }] : [];
     };
     try {
       const asking = narration(false);
       const value = await tool.handler(args, { elicit, elicitation: !!send && canElicitForm(), narration: asking.length ? asking[0].text : null });
+      const shown = narration(false, value);
       return {
-        content: contentOf(value, asking.length ? asking[0].text : null),
+        content: contentOf(value, shown.length ? shown[0].text : null),
         isError: false,
       };
     } catch (e) {

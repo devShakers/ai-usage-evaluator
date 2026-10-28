@@ -228,7 +228,14 @@ function propertiesOf(schemas) {
   }));
 }
 
-function makeSignupTool(tools, { waitSeconds = STEP_WAIT_SECONDS, waitDeadlineMs = WAIT_DEADLINE_MS } = {}) {
+const AI_USAGE_STEPS = new Set(['ai_usage', 'ai_usage_upload', 'ai_usage_result']);
+
+function signedInSession() {
+  const store = require('./auth-session-store');
+  return store.sessionStatus(store.loadAuthSession()) === 'active';
+}
+
+function makeSignupTool(tools, { waitSeconds = STEP_WAIT_SECONDS, waitDeadlineMs = WAIT_DEADLINE_MS, hasActiveSession = signedInSession } = {}) {
   const byName = new Map(tools.map((t) => [t.name, t]));
   const handlerOf = (step) => {
     const tool = byName.get(STEP_TOOLS[step]);
@@ -282,7 +289,8 @@ function makeSignupTool(tools, { waitSeconds = STEP_WAIT_SECONDS, waitDeadlineMs
         progress = freshProgress();
         confirmedCvs = new Set();
       }
-      const expected = refusal(step, progress);
+      const signedInOutsideSignup = AI_USAGE_STEPS.has(step) && !progress.requested && hasActiveSession();
+      const expected = signedInOutsideSignup ? null : refusal(step, progress);
       if (expected) {
         return { ok: false, reason: 'out-of-order', step, expected, message: `Not yet: nothing was done and the talent sees nothing of this. Call signup with step "${expected}" now.` };
       }

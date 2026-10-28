@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { getHomeDir } = require('./env-paths');
+const { EXCLUDED_DIRS } = require('./scan-exclusions');
 
 // Deterministic (no-LLM) parser of the talent's AI agent org chart.
 
@@ -10,31 +11,82 @@ const { getHomeDir } = require('./env-paths');
 // never a product requirement).
 const AGENTS_MAX_FILES = 500;
 const AGENTS_MAX_DEPTH = 6;
+const PLUGIN_SEARCH_MAX_DEPTH = 4;
+const PLUGIN_SEARCH_MAX_DIRS = 2000;
 
 // Only these frontmatter keys are ever captured.
 const WHITELISTED_KEYS = new Set(['name', 'tools', 'model', 'parent']);
 
-function listAgentMarkdownFiles(dir, depth = 0, budget = { count: 0 }) {
-  const results = [];
-  if (depth > AGENTS_MAX_DEPTH || budget.count >= AGENTS_MAX_FILES) return results;
-  let entries;
+function realpathOrNull(p) {
   try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
+    return fs.realpathSync(p);
   } catch {
-    return results; // no .claude/agents directory: not an error, just nothing to parse
+    return null;
   }
-  for (const entry of entries) {
-    if (budget.count >= AGENTS_MAX_FILES) break;
-    if (entry.isSymbolicLink()) continue; // never follow symlinks (mirrors scanner.js)
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...listAgentMarkdownFiles(full, depth + 1, budget));
-    } else if (entry.isFile() && entry.name.endsWith('.md')) {
-      budget.count += 1;
-      results.push(full);
+}
+
+function isInside(child, parent) {
+  const rel = path.relative(parent, child);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+function listAgentMarkdownFiles(source) {
+  const boundary = realpathOrNull(source.boundary);
+  const results = [];
+  const visited = new Set();
+  const walk = (dir, depth) => {
+    if (depth > AGENTS_MAX_DEPTH || results.length >= AGENTS_MAX_FILES) return;
+    const real = realpathOrNull(dir);
+    if (!real || visited.has(real)) return;
+    visited.add(real);
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
     }
-  }
+    for (const entry of entries) {
+      if (results.length >= AGENTS_MAX_FILES) break;
+      const full = path.join(dir, entry.name);
+      let kind = entry;
+      if (entry.isSymbolicLink()) {
+        const target = realpathOrNull(full);
+        if (!target || !boundary || !isInside(target, boundary)) continue;
+        try {
+          kind = fs.statSync(target);
+        } catch {
+          continue;
+        }
+      }
+      if (kind.isDirectory()) walk(full, depth + 1);
+      else if (kind.isFile() && entry.name.endsWith('.md')) results.push(full);
+    }
+  };
+  walk(source.dir, 0);
   return results;
+}
+
+function pluginAgentDirs(root) {
+  const dirs = [];
+  let visited = 0;
+  const walk = (dir, depth) => {
+    if (visited >= PLUGIN_SEARCH_MAX_DIRS) return;
+    visited += 1;
+    if (fs.existsSync(path.join(dir, '.claude-plugin', 'plugin.json'))) dirs.push(path.join(dir, 'agents'));
+    if (depth >= PLUGIN_SEARCH_MAX_DEPTH) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.') || EXCLUDED_DIRS.has(entry.name)) continue;
+      walk(path.join(dir, entry.name), depth + 1);
+    }
+  };
+  walk(root, 0);
+  return dirs;
 }
 
 function stripQuotes(value) {
@@ -125,13 +177,6 @@ function parseFrontmatter(content, { includeDescription = false } = {}) {
   return data;
 }
 
-// Parses one `.claude/agents/*.md` file into { name, tools, model, parent }.
-function deriveAiProduct(filePath) {
-  const p = String(filePath || '').replace(/\\/g, '/');
-  if (p.includes('/.claude/agents/') || p.includes('/.claude/agents')) return 'claude-code';
-  return null;
-}
-
 function buildAgentFromFrontmatter(fm, filePath) {
   const fallbackName = path.basename(filePath, path.extname(filePath));
   const name = typeof fm.name === 'string' && fm.name.trim() ? fm.name.trim() : fallbackName;
@@ -141,9 +186,7 @@ function buildAgentFromFrontmatter(fm, filePath) {
   return {
     name,
     tools,
-    // AI product derived from the source path (see deriveAiProduct) — shown on
-    // the card in place of the LLM `model`.
-    aiProduct: deriveAiProduct(filePath),
+    aiProduct: 'claude-code',
     model: typeof fm.model === 'string' && fm.model ? fm.model : null,
     // Hierarchy: first honour an explicit `parent` frontmatter key when a project declares one.
     parent: typeof fm.parent === 'string' && fm.parent ? fm.parent : null,
@@ -179,18 +222,24 @@ function deriveParentFromText(selfName, text, knownNames) {
   return null;
 }
 
-// Both `.claude/agents/` locations in scope order (project first, so it
-// wins on a name collision when the results are merged/deduped below).
-function agentDirs(root) {
-  return [path.join(root, '.claude', 'agents'), path.join(getHomeDir(), '.claude', 'agents')];
+function agentSources(roots) {
+  const sources = [];
+  for (const root of roots) {
+    for (const dir of [path.join(root, '.claude', 'agents'), ...pluginAgentDirs(root)]) {
+      sources.push({ dir, boundary: root, project: true });
+    }
+  }
+  const homeClaude = path.join(getHomeDir(), '.claude');
+  sources.push({ dir: path.join(homeClaude, 'agents'), boundary: homeClaude, project: false });
+  return sources;
 }
 
-// Per-repo AI-usage scoping: `.claude/agents/` across EVERY selected project root, PLUS home appended ONCE at the end.
+function agentDirs(root) {
+  return agentSources([root]);
+}
+
 function agentDirsForRoots(roots) {
-  const dirs = [];
-  for (const root of roots) dirs.push(path.join(root, '.claude', 'agents'));
-  dirs.push(path.join(getHomeDir(), '.claude', 'agents'));
-  return dirs;
+  return agentSources(Array.isArray(roots) ? roots : [roots]);
 }
 
 // Deterministic (no-LLM) agent org chart over a fixed list of `.claude/agents/` directories (in precedence order — first occurrence of a name wins).
@@ -200,8 +249,8 @@ function parseAgentOrgChartFromDirs(dirs) {
   // TRANSIENT prose (description + body) per agent, kept LOCAL to this function purely to derive parent edges below.
   const textByName = new Map();
 
-  for (const dir of dirs) {
-    for (const file of listAgentMarkdownFiles(dir)) {
+  for (const source of dirs) {
+    for (const file of listAgentMarkdownFiles(source)) {
       let content;
       try {
         content = fs.readFileSync(file, 'utf8');
@@ -246,15 +295,15 @@ function parseAgentOrgChart(root) {
 
 // Per-repo AI-usage scoping: the org chart across ALL selected project roots (∪ home, once), deduped by name.
 function parseAgentOrgChartForRoots(roots) {
-  return parseAgentOrgChartFromDirs(agentDirsForRoots(Array.isArray(roots) ? roots : [roots]));
+  return parseAgentOrgChartFromDirs(agentDirsForRoots(roots));
 }
 
 // Returns `[{ name, description }]` — the ONLY function in this module that ever returns description/prompt content.
 function parseAgentDescriptionsFromDirs(dirs) {
   const seen = new Set();
   const result = [];
-  for (const dir of dirs) {
-    for (const file of listAgentMarkdownFiles(dir)) {
+  for (const source of dirs) {
+    for (const file of listAgentMarkdownFiles(source)) {
       let content;
       try {
         content = fs.readFileSync(file, 'utf8');
@@ -281,14 +330,14 @@ function parseAgentDescriptions(root) {
 // Per-repo AI-usage scoping: card-description fallbacks across ALL selected
 // project roots (∪ home, once), same dedup/precedence as parseAgentOrgChartForRoots.
 function parseAgentDescriptionsForRoots(roots) {
-  return parseAgentDescriptionsFromDirs(agentDirsForRoots(Array.isArray(roots) ? roots : [roots]));
+  return parseAgentDescriptionsFromDirs(agentDirsForRoots(roots));
 }
 
 function parseAgentDefinitionsFromDirs(dirs) {
   const seen = new Set();
   const result = [];
-  for (const dir of dirs) {
-    for (const file of listAgentMarkdownFiles(dir)) {
+  for (const source of dirs) {
+    for (const file of listAgentMarkdownFiles(source)) {
       let content;
       try {
         content = fs.readFileSync(file, 'utf8');
@@ -317,14 +366,13 @@ function parseAgentDefinitions(root) {
 // Per-repo AI-usage scoping: full agent definitions (for the quality-evaluation
 // call) across ALL selected project roots (∪ home, once), same dedup/precedence.
 function parseAgentDefinitionsForRoots(roots) {
-  return parseAgentDefinitionsFromDirs(agentDirsForRoots(Array.isArray(roots) ? roots : [roots]));
+  return parseAgentDefinitionsFromDirs(agentDirsForRoots(roots));
 }
 
 function agentSourceFilesByName(root) {
   const byName = new Map();
-  const dirs = agentDirs(root);
-  dirs.forEach((dir, dirIndex) => {
-    for (const file of listAgentMarkdownFiles(dir)) {
+  for (const source of agentDirs(root)) {
+    for (const file of listAgentMarkdownFiles(source)) {
       let content;
       try {
         content = fs.readFileSync(file, 'utf8');
@@ -334,12 +382,10 @@ function agentSourceFilesByName(root) {
       const fm = parseFrontmatter(content);
       if (!fm) continue;
       const agent = buildAgentFromFrontmatter(fm, file);
-      if (byName.has(agent.name)) continue; // project (dirIndex 0) wins on collision
-      const rel =
-        dirIndex === 0 ? path.relative(root, file).split(path.sep).join('/') : null;
-      byName.set(agent.name, rel);
+      if (byName.has(agent.name)) continue;
+      byName.set(agent.name, source.project ? path.relative(root, file).split(path.sep).join('/') : null);
     }
-  });
+  }
   return byName;
 }
 

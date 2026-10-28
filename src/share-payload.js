@@ -59,6 +59,7 @@ function derivePayload(report, maturity, { cliCommandId = null, client = null } 
   const catalogIdsByName = agentCatalogIdsByName(report);
   const definitionsByName = agentDefinitionsByName(report);
   const technologies = Array.isArray(report.technologies) ? report.technologies : [];
+  const steering = whitelistSteering(report.steering);
   const synthesisAgents =
     report.agentSynthesis && Array.isArray(report.agentSynthesis.agents)
       ? report.agentSynthesis.agents
@@ -143,8 +144,8 @@ function derivePayload(report, maturity, { cliCommandId = null, client = null } 
     sessions: whitelistSessions(report.sessions),
     // One DETERMINISTIC block (workStreams) and two REDACTED-excerpt blocks (steering, decisions).
     workStreams: whitelistWorkStreams(report.workStreams),
-    steering: whitelistSteering(report.steering),
-    decisions: whitelistDecisions(report.decisions),
+    steering,
+    decisions: whitelistDecisions(report.decisions, steering ? steering.redactedSteeringExcerpts : []),
     // PER-CANDIDATE authorship + depth (per detected skill, per detected agent).
     detectionEvidence: whitelistDetectionEvidence(report.detectionEvidence),
     ...(typeof cliCommandId === 'string' && UUID_RE.test(cliCommandId) ? { cliCommandId } : {}),
@@ -230,23 +231,28 @@ function whitelistSteering(s) {
 }
 
 // Re-derives the `decisions` block, same discipline as `steering`. `null` when absent.
-function whitelistDecisions(d) {
+function whitelistDecisions(d, alreadySent = []) {
   if (!d || typeof d !== 'object') return null;
+  const sent = new Set(alreadySent);
   return {
     decisionExchangeCount: numOr0(d.decisionExchangeCount),
-    redactedDecisionExcerpts: whitelistExcerpts(d.redactedDecisionExcerpts),
+    redactedDecisionExcerpts: whitelistExcerpts(d.redactedDecisionExcerpts).filter((x) => !sent.has(x)),
   };
 }
 
 const MAX_WHITELISTED_EXCERPTS = 20;
 const MAX_WHITELISTED_EXCERPT_LEN = 200;
+function wireExcerpt(x) {
+  return scrubSecrets(x).slice(0, MAX_WHITELISTED_EXCERPT_LEN);
+}
+
 function whitelistExcerpts(arr) {
   return Array.isArray(arr)
-    ? arr
+    ? [...new Set(arr
         .filter((x) => typeof x === 'string' && x)
         .slice(0, MAX_WHITELISTED_EXCERPTS)
-        .map((x) => scrubSecrets(x).slice(0, MAX_WHITELISTED_EXCERPT_LEN))
-        .filter((x) => x)
+        .map(wireExcerpt)
+        .filter((x) => x))]
     : [];
 }
 
@@ -296,7 +302,7 @@ function whitelistSessions(sessions) {
     redactedCommandSample: Array.isArray(sessions.redactedCommandSample)
       ? sessions.redactedCommandSample
           .filter((c) => typeof c === 'string')
-          .map((c) => scrubSecrets(c).slice(0, MAX_WHITELISTED_EXCERPT_LEN))
+          .map(wireExcerpt)
           .filter((c) => c)
       : [],
   };
@@ -306,4 +312,4 @@ function numOr0(n) {
   return typeof n === 'number' && Number.isFinite(n) ? n : 0;
 }
 
-module.exports = { derivePayload };
+module.exports = { derivePayload, wireExcerpt };
