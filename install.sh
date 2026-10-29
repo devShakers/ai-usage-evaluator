@@ -5,35 +5,24 @@
 # Quick usage (from anywhere):
 #   curl -fsSL https://raw.githubusercontent.com/devShakers/ai-usage-evaluator/release/install.sh | bash
 #
-# Or, if you've cloned the repo, from inside the folder:
-#   ./install.sh
-#
-# The script detects whether the files are local (installs by copying) or
-# not (downloads them from the repo). When done it leaves the `shakers`
-# command available. Uninstall: ./install.sh --uninstall
+# Uninstall: ./install.sh --uninstall
 #
 set -euo pipefail
 
 # ─── Configuration (EDIT THIS with your real org/repo) ─────────────────────
 OWNER="devShakers"
 REPO="ai-usage-evaluator"
-# "Distribution only" PoC: the CLI
-# already lives on release (the curl | raw.githubusercontent one-liner resolves
-# files by branch, so the installer breaks if BRANCH doesn't match the
-# branch published on the remote).
-BRANCH="release"
-# Immutable-ref pin (installer integrity hardening): leave empty to install
-# from $BRANCH (the mutable default, current behaviour). Set to a full commit
-# SHA to pin every download to that exact tree regardless of what `main`
-# later becomes — closes the "curl|bash always fetches whatever main is
-# TODAY" exposure without needing a signing key (none assigned yet).
-# Overridable per-run via SHAKERS_CLI_INSTALL_REF (legacy AI_FOOTPRINT_INSTALL_REF
-# still honoured) for one-off pinned installs without editing this file.
 PIN_REF="${SHAKERS_CLI_INSTALL_REF:-${AI_FOOTPRINT_INSTALL_REF:-}}"
-REF="${PIN_REF:-$BRANCH}"
+RELEASES="https://github.com/${OWNER}/${REPO}/releases"
+if [ -n "$PIN_REF" ]; then
+  RELEASE_BASE="${RELEASES}/download/${PIN_REF}"
+else
+  RELEASE_BASE="${RELEASES}/latest/download"
+fi
+TARBALL_URL="${SHAKERS_CLI_TARBALL_URL:-${RELEASE_BASE}/shakers-cli.tgz}"
+TARBALL_SHA256_URL="${SHAKERS_CLI_TARBALL_SHA256_URL:-${TARBALL_URL}.sha256}"
 # ───────────────────────────────────────────────────────────────────────────
 
-RAW="https://raw.githubusercontent.com/${OWNER}/${REPO}/${REF}"
 INSTALL_DIR="${SHAKERS_CLI_HOME:-${AI_FOOTPRINT_HOME:-$HOME/.shakers}}"
 BIN_DIR="${SHAKERS_CLI_BIN:-${AI_FOOTPRINT_BIN:-$HOME/.local/bin}}"
 VERSION="0.1.0"
@@ -76,17 +65,6 @@ case "$SHAKERS_PROFILE" in
     ;;
 esac
 
-# Fixed top-level files. Everything under bin/ and src/ is discovered and
-# copied as a whole below — NOT listed one by one here — precisely so a new
-# module or command (like the i18n.js/locale.js pair, or the register/
-# onboarding commands) never goes missing from an install by being left off a
-# hardcoded list. `shakers` is the only launcher created; the other bin/*.js
-# entry points are dispatched by bin/shakers.js.
-FILES=(
-  "package.json"
-  "README.md"
-)
-
 # NATIVE DEPENDENCY — nothing to COPY here, but the installer FETCHES it post-verify
 # (see the LiveKit step after the manifest check). The LiveKit interview lazy-requires
 # @livekit/rtc-node — a native-FFI package declared under package.json `dependencies`
@@ -96,13 +74,6 @@ FILES=(
 # and the tree is swapped in, keeping node_modules out of the manifest. Installed for
 # EVERY flavor now; the fetch is non-fatal (a failure only disables the interview).
 # npm/npx installs of the package pull it automatically via `dependencies`.
-
-# Non-.js assets under src/ that the src/*.js discovery below does NOT pick up
-# but that modules read at runtime (e.g. the shareable report HTML template that
-# render-sheet.js loads). Ship these explicitly.
-ASSETS=(
-  "src/templates/report-sheet.html"
-)
 
 say()  { printf "  %b\n" "$1"; }
 die()  { printf "  ${R}✗ %b${N}\n" "$1" >&2; exit 1; }
@@ -175,82 +146,14 @@ else
 fi
 
 # ─── Requirements ───────────────────────────────────────────────────────────
-command -v node >/dev/null 2>&1 || die "Node.js is required and not installed.\n    Install it from https://nodejs.org (v18 or higher)."
+command -v node >/dev/null 2>&1 || die "Node.js is required and not installed.\n    Install Node 22 or newer from https://nodejs.org and re-run."
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
-[ "$NODE_MAJOR" -ge 18 ] || die "Node 18+ is required. You have $(node -v)."
+[ "$NODE_MAJOR" -ge 22 ] || die "Shakers needs Node 22 or newer, and this machine has $(node -v).\n    Update Node from https://nodejs.org (or with your version manager, e.g. nvm install 22) and re-run."
 say "${G}+${N} Node $(node -v) detected"
 
-# Local install (cloned repo) or remote (curl)?
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo '')"
-LOCAL=0
-if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/bin/shakers.js" ]; then
-  LOCAL=1
-  say "${G}+${N} Files found locally — installing by copy"
-else
-  command -v curl >/dev/null 2>&1 || die "curl is required for remote installation."
-  say "${G}+${N} Installing from ${OWNER}/${REPO}@${REF}"
-fi
-
-# ─── Discover src/ modules ──────────────────────────────────────────────────
-# Read live, never hardcoded: locally we list the actual directory; remotely
-# we ask the GitHub Contents API (Node, already a hard requirement, parses
-# the JSON — no jq dependency added). This is what makes adding a module to
-# src/ safe: nothing here needs to change for it to be picked up.
-SRC_FILES=()
-if [ "$LOCAL" -eq 1 ]; then
-  for f in "$SCRIPT_DIR"/src/*.js; do
-    [ -e "$f" ] && SRC_FILES+=("$(basename "$f")")
-  done
-else
-  API_URL="https://api.github.com/repos/${OWNER}/${REPO}/contents/src?ref=${REF}"
-  SRC_JSON="$(curl -fsSL "$API_URL")" \
-    || die "Could not list src/ via the GitHub API (${API_URL}).\n    Check your connection or the script's OWNER/REPO/BRANCH config."
-  while IFS= read -r name; do
-    SRC_FILES+=("$name")
-  done < <(printf '%s' "$SRC_JSON" | node -e '
-    let data = "";
-    process.stdin.on("data", (c) => { data += c; });
-    process.stdin.on("end", () => {
-      let items;
-      try { items = JSON.parse(data); } catch { items = []; }
-      if (!Array.isArray(items)) items = [];
-      for (const item of items) {
-        if (item && item.type === "file" && /\.js$/.test(item.name)) {
-          console.log(item.name);
-        }
-      }
-    });
-  ')
-fi
-[ "${#SRC_FILES[@]}" -gt 0 ] || die "No modules found in src/.\n    Check OWNER/REPO/BRANCH in install.sh, or that the local checkout has the src/ folder."
-
-BIN_FILES=()
-if [ "$LOCAL" -eq 1 ]; then
-  for f in "$SCRIPT_DIR"/bin/*.js; do
-    [ -e "$f" ] && BIN_FILES+=("$(basename "$f")")
-  done
-else
-  BIN_API_URL="https://api.github.com/repos/${OWNER}/${REPO}/contents/bin?ref=${REF}"
-  BIN_JSON="$(curl -fsSL "$BIN_API_URL")" \
-    || die "Could not list bin/ via the GitHub API (${BIN_API_URL}).\n    Check your connection or the script's OWNER/REPO/BRANCH config."
-  while IFS= read -r name; do
-    BIN_FILES+=("$name")
-  done < <(printf '%s' "$BIN_JSON" | node -e '
-    let data = "";
-    process.stdin.on("data", (c) => { data += c; });
-    process.stdin.on("end", () => {
-      let items;
-      try { items = JSON.parse(data); } catch { items = []; }
-      if (!Array.isArray(items)) items = [];
-      for (const item of items) {
-        if (item && item.type === "file" && /\.js$/.test(item.name)) {
-          console.log(item.name);
-        }
-      }
-    });
-  ')
-fi
-[ "${#BIN_FILES[@]}" -gt 0 ] || die "No entry points found in bin/.\n    Check OWNER/REPO/BRANCH in install.sh, or that the local checkout has the bin/ folder."
+command -v curl >/dev/null 2>&1 || die "curl is required for installation."
+command -v tar >/dev/null 2>&1 || die "tar is required for installation."
+say "${G}+${N} Installing from ${TARBALL_URL}"
 
 # ─── Stage the files (installer integrity hardening) ────────────────────────
 # Everything is downloaded/copied into a STAGING dir first, never directly
@@ -288,46 +191,25 @@ _install_cleanup() {
 }
 trap _install_cleanup EXIT
 
-mkdir -p "$STAGING_DIR/bin" "$STAGING_DIR/src" "$BIN_DIR"
-say "\n  Copying files..."
-for f in "${FILES[@]}"; do
-  dest="$STAGING_DIR/$f"
-  mkdir -p "$(dirname "$dest")"
-  if [ "$LOCAL" -eq 1 ]; then
-    cp "$SCRIPT_DIR/$f" "$dest" || die "Could not copy $f"
-  else
-    curl -fsSL "$RAW/$f" -o "$dest" || die "Could not download $f\n    Check your connection or the script's OWNER/REPO/BRANCH config."
-  fi
-  say "    ${G}+${N} $f"
-done
-for f in "${BIN_FILES[@]}"; do
-  dest="$STAGING_DIR/bin/$f"
-  if [ "$LOCAL" -eq 1 ]; then
-    cp "$SCRIPT_DIR/bin/$f" "$dest" || die "Could not copy bin/$f"
-  else
-    curl -fsSL "$RAW/bin/$f" -o "$dest" || die "Could not download bin/$f\n    Check your connection or the script's OWNER/REPO/BRANCH config."
-  fi
-  say "    ${G}+${N} bin/$f"
-done
-for f in "${SRC_FILES[@]}"; do
-  dest="$STAGING_DIR/src/$f"
-  if [ "$LOCAL" -eq 1 ]; then
-    cp "$SCRIPT_DIR/src/$f" "$dest" || die "Could not copy src/$f"
-  else
-    curl -fsSL "$RAW/src/$f" -o "$dest" || die "Could not download src/$f\n    Check your connection or the script's OWNER/REPO/BRANCH config."
-  fi
-  say "    ${G}+${N} src/$f"
-done
-for f in "${ASSETS[@]}"; do
-  dest="$STAGING_DIR/$f"
-  mkdir -p "$(dirname "$dest")"
-  if [ "$LOCAL" -eq 1 ]; then
-    cp "$SCRIPT_DIR/$f" "$dest" || die "Could not copy $f"
-  else
-    curl -fsSL "$RAW/$f" -o "$dest" || die "Could not download $f\n    Check your connection or the script's OWNER/REPO/BRANCH config."
-  fi
-  say "    ${G}+${N} $f"
-done
+mkdir -p "$BIN_DIR"
+TARBALL="$STAGING_DIR.tgz"
+TARBALL_SHA256="$STAGING_DIR.tgz.sha256"
+_tarball_cleanup() { rm -f "$TARBALL" "$TARBALL_SHA256" 2>/dev/null || true; _install_cleanup; }
+trap _tarball_cleanup EXIT
+say "\n  Downloading the package..."
+curl -fsSL "$TARBALL_URL" -o "$TARBALL" || die "Could not download ${TARBALL_URL}\n    Check your connection, or pin a release with SHAKERS_CLI_INSTALL_REF."
+curl -fsSL "$TARBALL_SHA256_URL" -o "$TARBALL_SHA256" || die "Could not download ${TARBALL_SHA256_URL}\n    Check your connection, or pin a release with SHAKERS_CLI_INSTALL_REF."
+node -e '
+  const fs = require("fs");
+  const crypto = require("crypto");
+  const expected = fs.readFileSync(process.argv[2], "utf8").trim().split(/\s+/)[0].toLowerCase();
+  const actual = crypto.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex");
+  if (!/^[0-9a-f]{64}$/.test(expected) || expected !== actual) { console.error(`expected ${expected}, got ${actual}`); process.exit(1); }
+' "$TARBALL" "$TARBALL_SHA256" || die "The downloaded package does not match its SHA-256 checksum. Nothing was installed."
+say "    ${G}+${N} SHA-256 verified"
+tar -xzf "$TARBALL" -C "$STAGING_DIR" --strip-components=1 || die "Could not unpack the downloaded package."
+[ -f "$STAGING_DIR/bin/shakers.js" ] && [ -f "$STAGING_DIR/package.json" ] || die "The downloaded package has no bin/shakers.js. Nothing was installed."
+say "    ${G}+${N} Package unpacked"
 
 # ─── Manifest (generate, then swap, then verify) ────────────────────────────
 say "\n  Generating SHA-256 manifest..."
@@ -428,12 +310,12 @@ cat > "$SHIM" <<EOF
 # "node: command not found" / modern-syntax SyntaxError if this install is run
 # on a machine where Node is missing or too old (e.g. copied elsewhere).
 if ! command -v node >/dev/null 2>&1; then
-  printf '\n  shakers: Node.js was not found on your PATH.\n  Install Node 18+ from https://nodejs.org and re-run.\n\n' >&2
+  printf '\n  shakers: Node.js was not found on your PATH.\n  Install Node 22 or newer from https://nodejs.org and re-run.\n\n' >&2
   exit 1
 fi
 _nm="\$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
-if [ "\${_nm:-0}" -lt 18 ] 2>/dev/null; then
-  printf '\n  shakers: Node 18+ is required (found %s).\n  Update Node from https://nodejs.org and re-run.\n\n' "\$(node -v 2>/dev/null || echo none)" >&2
+if [ "\${_nm:-0}" -lt 22 ] 2>/dev/null; then
+  printf '\n  shakers needs Node 22 or newer, and this machine has %s.\n  Update Node from https://nodejs.org (or with your version manager, e.g. nvm install 22) and re-run.\n\n' "\$(node -v 2>/dev/null || echo none)" >&2
   exit 1
 fi
 exec node "$INSTALL_DIR/bin/shakers.js" "\$@"

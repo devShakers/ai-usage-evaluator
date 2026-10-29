@@ -7,7 +7,7 @@ assistant.
 
 ## Install
 
-Requires Node 18 or later.
+Requires Node 22 or later.
 
 **Command line (npm)**
 
