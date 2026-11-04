@@ -37,9 +37,8 @@ The plugin adds the Shakers MCP server and these slash-commands: `onboarding`, `
 
 **Claude Desktop**
 
-Download the `.mcpb` file from the latest
-[GitHub Release](https://github.com/devShakers/ai-usage-evaluator/releases) and open it
-with Claude Desktop.
+The installer above connects it: its last step, `shakers mcp install`, adds the Shakers
+server to Claude Desktop's configuration. You can run `shakers mcp install` again at any time.
 
 ## Main commands
 
