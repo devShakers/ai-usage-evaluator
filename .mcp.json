@@ -2,7 +2,7 @@
   "mcpServers": {
     "shakers": {
       "command": "npx",
-      "args": ["-y", "shakers-cli", "mcp"]
+      "args": ["-y", "shakers-cli@latest", "mcp"]
     }
   }
 }
